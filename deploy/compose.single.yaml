@@ -1,0 +1,26 @@
+# Single voter, local users (Pflichtenheft Kap. 3, Konzept 16.1).
+# Start from the repository root:  docker compose -f deploy/compose.single.yaml up --build
+services:
+  uptime:
+    image: ghcr.io/joinsider/uptimecluster:latest
+    build:
+      context: ..
+    restart: unless-stopped
+    environment:
+      NODE_NAME: vps1
+      NODE_ROLE: voter
+      # PUBLIC_URL: https://mon1.example.com
+      AUTH_MODE: local
+      STORAGE_BACKEND: embedded
+      LOG_FORMAT: json
+    volumes:
+      # The image runs as nonroot (uid 65532); a named volume is writable out of the box.
+      - uptime-data:/data
+    ports:
+      - "8080:8080" # API + UI
+      - "9443:9443" # cluster port (for a later join)
+    cap_add:
+      - NET_RAW # ICMP checks (privileged mode), see Pflichtenheft FA-CHK-31
+
+volumes:
+  uptime-data:

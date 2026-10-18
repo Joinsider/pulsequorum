@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Local runtime data
+/.data/
+
+# Go
+*.test
+coverage.out
+
+# OS / editors
+.DS_Store
+.idea/

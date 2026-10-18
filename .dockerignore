@@ -1,0 +1,12 @@
+.git
+.github
+.data
+bin
+docs
+spikes
+deploy
+web/node_modules
+web/dist
+web/.angular
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
