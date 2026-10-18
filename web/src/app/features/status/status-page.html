@@ -1,0 +1,31 @@
+<section class="status" aria-labelledby="status-heading">
+  <h1 id="status-heading">Node status</h1>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="status__message" role="status">Loading node status&hellip;</p>
+    }
+    @case ('error') {
+      <p class="status__message status__message--error" role="alert">
+        <strong>Error:</strong> Backend not reachable
+      </p>
+    }
+    @case ('ok') {
+      @if (health(); as h) {
+        <p class="status__badge status__badge--ok">
+          <span aria-hidden="true">&#10003;</span> Status: {{ h.status }}
+        </p>
+        <dl class="status__details">
+          <dt>Node</dt>
+          <dd>{{ h.nodeName }}</dd>
+          <dt>Role</dt>
+          <dd>{{ h.role }}</dd>
+          <dt>Version</dt>
+          <dd>{{ h.version }}</dd>
+          <dt>Commit</dt>
+          <dd>{{ h.commit }}</dd>
+        </dl>
+      }
+    }
+  }
+</section>

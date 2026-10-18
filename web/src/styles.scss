@@ -1,0 +1,61 @@
+/* Global styles. Colours are CSS custom properties so components can use them in both themes. */
+:root {
+  color-scheme: light dark;
+  --background: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c1f24;
+  --muted: #5b6270;
+  --border: #d7dbe2;
+  --success: #17703a;
+  --success-bg: #dff5e7;
+  --danger: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: #14161a;
+    --surface: #1e2127;
+    --text: #e6e8ec;
+    --muted: #9aa1ad;
+    --border: #353a44;
+    --success: #6fdc8c;
+    --success-bg: #1d3a28;
+    --danger: #ff8a80;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #14161a;
+  --surface: #1e2127;
+  --text: #e6e8ec;
+  --muted: #9aa1ad;
+  --border: #353a44;
+  --success: #6fdc8c;
+  --success-bg: #1d3a28;
+  --danger: #ff8a80;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
