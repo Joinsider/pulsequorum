@@ -437,7 +437,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 
 | ID | Anforderung | P | Ph | Abnahmekriterium |
 |----|-------------|---|----|------------------|
-| FA-API-01 | REST-API gemäß Konzept Kap. 14, versioniert unter `/api/v1`, beschrieben in `api/openapi.yaml` (OpenAPI 3.1) als Vertrag. | M | P0 (Entwurf), P1 | Contract-Tests: Implementierung entspricht Spezifikation. |
+| FA-API-01 | REST-API gemäß Konzept Kap. 14, versioniert unter `/api/v1`, beschrieben in `api/openapi.yaml` (OpenAPI 3.x, Version gemäß ADR 0003) als Vertrag. | M | P0 (Entwurf), P1 | Contract-Tests: Implementierung entspricht Spezifikation. |
 | FA-API-02 | Einheitliches Fehlerformat (RFC 9457 Problem Details). | M | P1 | Test. |
 | FA-API-03 | Paginierung (Cursor) für Listen; Zeitbereichsabfragen für Heartbeats mit Obergrenze der Ergebnismenge. | M | P1 | Test. |
 | FA-API-04 | WebSocket `/api/v1/stream`: Heartbeats, Statuswechsel, Node-Status; Client kann auf Monitore filtern. | M | P1 | Test. |
@@ -591,7 +591,7 @@ Basierend auf Konzept 6.5, mit folgenden **Präzisierungen**:
 
 ### 9.1 REST-API
 
-Vertrag: `api/openapi.yaml` (OpenAPI 3.1). Endpunkte gemäß Konzept Kap. 14, ergänzt um:
+Vertrag: `api/openapi.yaml` (OpenAPI 3.x, siehe ADR 0003). Endpunkte gemäß Konzept Kap. 14, ergänzt um:
 
 ```
 GET    /healthz | /readyz                     # Liveness / Readiness

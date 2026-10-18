@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P0 – Fundament |
-| **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | ADRs 0001–0011 vorschlagen, Grundgerüst aufsetzen |
+| **Wartet auf Projektinhaber** | Review ADR 0001–0011 (AP-0.5) |
+| **Nächster Schritt (Claude)** | Grundgerüst aufsetzen (AP-0.6–0.9), danach Spikes AP-0.14/0.15 |
 
 ---
 
@@ -39,8 +39,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.1 | CLAUDE.md, ADR-Prozess und -Vorlage | NFA-MNT-05 | – | ✅ |
 | AP-0.2 | Pflichtenheft inkl. Pitfall-Recherche | – | – | ✅ |
 | AP-0.3 | Roadmap | – | – | ✅ |
-| AP-0.4 | ADRs 0001–0011 vorschlagen | – | – | ⬜ |
-| AP-0.5 | Review der ADRs durch Projektinhaber | – | AP-0.4 | ⬜ |
+| AP-0.4 | ADRs 0001–0011 vorschlagen | – | – | ✅ |
+| AP-0.5 | Review der ADRs durch Projektinhaber | – | AP-0.4 | ⏳ |
 | AP-0.6 | Backend-Grundgerüst: Go-Modul, `main`, Konfiguration (Env), `slog`, HTTP-Server, `/healthz`, `/readyz`, `/api/v1/health`, Graceful Shutdown, Version per ldflags | FA-NODE-01/02/05/07 | ADR 0001, 0002 (Annahme: Vorschlag) | ⬜ |
 | AP-0.7 | Frontend-Grundgerüst: Angular 22 (standalone, zoneless, Vitest), Laufzeit-`config.json`, Health-Ansicht, Dev-Proxy | FA-UI-01/02 | ADR 0001, 0007 (Annahme: Vorschlag) | ⬜ |
 | AP-0.8 | Build: Makefile, SPA-Einbettung per `go:embed` mit Platzhalter, Cache-Header, SPA-Fallback, Dockerfile (distroless, nonroot), Compose Single | FA-UI-01, NFA-PERF-07, PF-38, PF-39 | ADR 0001 | ⬜ |
@@ -64,7 +64,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-1.2 | Node-Identität (Node-ID, Inkarnation), Raft mit einem Mitglied, FSM-Befehle, Request-Dedup, Snapshots per Backup-API, Determinismus-Test | FA-NODE-03, FA-CLU-01/02/06/07/09 | 0005 | ⬜ |
 | AP-1.3 | Geheimnisverschlüsselung (Envelope, KEK/DEK, Rotation) | FA-SEC-SEC | 0011 | ⬜ |
 | AP-1.4 | Checker-Registry, zentraler Dialer mit SSRF-Hook, HTTP-Checker (frische Verbindungen, Phasen-Timeouts, TLS-Prüfung, Fehlerklassen) | FA-CHK-01..04, 10..15 | – | ⬜ |
-| AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ⬜ |
+| AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ⬜ |
 | AP-1.6 | Scheduler: Jitter inkl. Erstlauf, keine Selbstüberlappung, Nebenläufigkeitslimit, Goroutine-Leak-Tests | FA-SCH-01/03/04/05/07 | – | ⬜ |
 | AP-1.7 | Monitor-API (CRUD, Pause, Klonen, Typen mit JSON-Schema), Problem Details, Paginierung | FA-MON-*, FA-API-01..03/06 | 0003 | ⬜ |
 | AP-1.8 | Statuslogik Single-Node (Retries, PENDING, DEGRADED), Incidents | FA-CON-03, FA-INC-01/02 | – | ⬜ |
