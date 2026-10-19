@@ -12,9 +12,9 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 | | |
 |---|---|
-| **Aktive Phase** | P0 – Fundament |
+| **Aktive Phase** | P1 – Kern (P0 abgeschlossen bis auf Läufe, die einen GitHub-Remote bzw. Docker-Daemon brauchen: AP-0.8–0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-0.16, danach AP-1.1 |
+| **Nächster Schritt (Claude)** | AP-1.1 Storage-Schicht |
 
 ---
 
@@ -51,7 +51,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ✅ `proto/uptimecluster/v1`, `buf lint` (STANDARD), Codegen nach `internal/pb`; FSM-Payloads werden in AP-1.2 verfeinert |
 | AP-0.14 | **Spike Raft** (`spikes/raft`): 3 Container, Konfiguration per Raft, Heartbeats per Replikation inkl. Inkarnation, Leader-Kill, Partition 2\|1, Bootstrap-Erkennung. Ergebnisse und Empfehlungen zu ADR 0005/0006: [spikes/raft/README.md](../spikes/raft/README.md) | FA-CLU-01..07, FA-REP-01..03 | – (Spike) | ✅ |
 | AP-0.15 | **Spike SQLite**: Benchmark `modernc.org/sqlite` vs. `ncruces/go-sqlite3` mit Heartbeat-Last (Batch-Insert, Range-Query, Retention-Delete) | PF-22..24, O-07 | – (Spike) | ✅ Ergebnisse: [spikes/sqlite/README.md](../spikes/sqlite/README.md); Entscheidung in ADR 0013 |
-| AP-0.16 | Folgearbeiten ADR 0012: `ClusterService.GetStatus` im Proto, Kommentar `StreamPosition` (lückenlose Hochwassermarke), Pflichtenheft FA-CLU-03/06/08/10, FA-NODE-05 anpassen | – | ADR 0012 | ⬜ |
+| AP-0.16 | Folgearbeiten ADR 0012: `ClusterService.GetStatus` im Proto, Kommentar `StreamPosition` (lückenlose Hochwassermarke), Pflichtenheft FA-CLU-03/06/08/10, FA-NODE-05 anpassen | – | ADR 0012 | ✅ Proto `GetStatus` + Hochwassermarke; Pflichtenheft v1.1 |
 
 **Hinweis zu AP-0.6–0.9:** Das Grundgerüst wurde vor dem ADR-Review nach den damals vorgeschlagenen ADRs aufgesetzt; alle ADRs wurden unverändert angenommen, es ist keine Anpassung nötig.
 
@@ -61,8 +61,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
-| AP-1.1 | Storage-Schicht: Repository-Interfaces mit Tenant-Scope, SQLite (Schreib-/Lese-Pool, Pragmas + Selbsttest), Migrationen (`auto_vacuum=INCREMENTAL`), Mandanten-Isolationstests | FA-TEN-01, FA-NODE-06, NFA-SEC-02, PF-22..24 | 0004 | ⬜ |
-| AP-1.2 | Node-Identität (Node-ID, Inkarnation), Raft mit einem Mitglied, FSM-Befehle, Request-Dedup, Snapshots per Backup-API, Determinismus-Test | FA-NODE-03, FA-CLU-01/02/06/07/09 | 0005 | ⬜ |
+| AP-1.1 | Storage-Schicht: Repository-Interfaces mit Tenant-Scope, SQLite (Schreib-/Lese-Pool, Pragmas + Selbsttest), Migrationen (`auto_vacuum=INCREMENTAL`), Mandanten-Isolationstests | FA-TEN-01, FA-NODE-06, NFA-SEC-02, PF-22..24 | 0004, 0013 | ⬜ |
+| AP-1.2 | Node-Identität (Node-ID, Inkarnation), Raft mit einem Mitglied, FSM-Befehle, Request-Dedup, Snapshots per Backup-API, Determinismus-Test | FA-NODE-03, FA-CLU-01/02/06/07/09/13 | 0005, 0012 | ⬜ |
 | AP-1.3 | Geheimnisverschlüsselung (Envelope, KEK/DEK, Rotation) | FA-SEC-SEC | 0011 | ⬜ |
 | AP-1.4 | Checker-Registry, zentraler Dialer mit SSRF-Hook, HTTP-Checker (frische Verbindungen, Phasen-Timeouts, TLS-Prüfung, Fehlerklassen) | FA-CHK-01..04, 10..15 | – | ⬜ |
 | AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ⬜ |

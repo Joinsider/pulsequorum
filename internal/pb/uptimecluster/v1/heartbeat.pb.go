@@ -275,8 +275,10 @@ func (x *Heartbeat) GetDetailsJson() []byte {
 	return nil
 }
 
-// StreamPosition identifies the highest contiguous seq of one heartbeat stream
-// (watermark).
+// StreamPosition is the watermark of one heartbeat stream: the highest seq up
+// to which every heartbeat is present without gaps, counted from the retention
+// horizon. It is NOT max(seq): push batches may be dropped, and a max-based
+// watermark would never request the gap (ADR 0012 B2).
 type StreamPosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`

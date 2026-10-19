@@ -23,6 +23,11 @@ service ClusterService {
   // Apply forwards a command from a follower to the leader (FA-CLU-05).
   // Returns FAILED_PRECONDITION with the current leader if called on a follower.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
+
+  // GetStatus reports the callee's Raft and replication state. The leader uses
+  // it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
+  // admin UI use it to show replication lag (ADR 0012 A9).
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 }
 
 message JoinRequest {
@@ -70,4 +75,21 @@ message ApplyResponse {
   bytes result_json = 2;
   // true if the request ID had already been applied (deduplicated retry).
   bool duplicate = 3;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string node_id = 1;
+  // Raft state: "Leader", "Follower", "Candidate" or "Shutdown".
+  string raft_state = 2;
+  // Highest log index applied to the FSM (state.db).
+  uint64 applied_index = 3;
+  // Highest log index known to be committed.
+  uint64 commit_index = 4;
+  uint64 last_log_index = 5;
+  // Time since the last contact with the leader in milliseconds; 0 on the leader.
+  int64 last_contact_ms = 6;
+  // Node ID of the current leader as seen by the callee; empty without leader.
+  string leader_id = 7;
 }

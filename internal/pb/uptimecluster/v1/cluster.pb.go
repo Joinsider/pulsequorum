@@ -388,6 +388,139 @@ func (x *ApplyResponse) GetDuplicate() bool {
 	return false
 }
 
+type GetStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStatusRequest) Reset() {
+	*x = GetStatusRequest{}
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatusRequest) ProtoMessage() {}
+
+func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetStatusRequest) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_cluster_proto_rawDescGZIP(), []int{6}
+}
+
+type GetStatusResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	NodeId string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// Raft state: "Leader", "Follower", "Candidate" or "Shutdown".
+	RaftState string `protobuf:"bytes,2,opt,name=raft_state,json=raftState,proto3" json:"raft_state,omitempty"`
+	// Highest log index applied to the FSM (state.db).
+	AppliedIndex uint64 `protobuf:"varint,3,opt,name=applied_index,json=appliedIndex,proto3" json:"applied_index,omitempty"`
+	// Highest log index known to be committed.
+	CommitIndex  uint64 `protobuf:"varint,4,opt,name=commit_index,json=commitIndex,proto3" json:"commit_index,omitempty"`
+	LastLogIndex uint64 `protobuf:"varint,5,opt,name=last_log_index,json=lastLogIndex,proto3" json:"last_log_index,omitempty"`
+	// Time since the last contact with the leader in milliseconds; 0 on the leader.
+	LastContactMs int64 `protobuf:"varint,6,opt,name=last_contact_ms,json=lastContactMs,proto3" json:"last_contact_ms,omitempty"`
+	// Node ID of the current leader as seen by the callee; empty without leader.
+	LeaderId      string `protobuf:"bytes,7,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStatusResponse) Reset() {
+	*x = GetStatusResponse{}
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatusResponse) ProtoMessage() {}
+
+func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetStatusResponse) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_cluster_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetStatusResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetRaftState() string {
+	if x != nil {
+		return x.RaftState
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetAppliedIndex() uint64 {
+	if x != nil {
+		return x.AppliedIndex
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetCommitIndex() uint64 {
+	if x != nil {
+		return x.CommitIndex
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetLastLogIndex() uint64 {
+	if x != nil {
+		return x.LastLogIndex
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetLastContactMs() int64 {
+	if x != nil {
+		return x.LastContactMs
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetLeaderId() string {
+	if x != nil {
+		return x.LeaderId
+	}
+	return ""
+}
+
 var File_uptimecluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
@@ -417,11 +550,22 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x05index\x18\x01 \x01(\x04R\x05index\x12\x1f\n" +
 	"\vresult_json\x18\x02 \x01(\fR\n" +
 	"resultJson\x12\x1c\n" +
-	"\tduplicate\x18\x03 \x01(\bR\tduplicate2\x8c\x02\n" +
+	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"\x12\n" +
+	"\x10GetStatusRequest\"\xfe\x01\n" +
+	"\x11GetStatusResponse\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
+	"\n" +
+	"raft_state\x18\x02 \x01(\tR\traftState\x12#\n" +
+	"\rapplied_index\x18\x03 \x01(\x04R\fappliedIndex\x12!\n" +
+	"\fcommit_index\x18\x04 \x01(\x04R\vcommitIndex\x12$\n" +
+	"\x0elast_log_index\x18\x05 \x01(\x04R\flastLogIndex\x12&\n" +
+	"\x0flast_contact_ms\x18\x06 \x01(\x03R\rlastContactMs\x12\x1b\n" +
+	"\tleader_id\x18\a \x01(\tR\bleaderId2\xe2\x02\n" +
 	"\x0eClusterService\x12E\n" +
 	"\x04Join\x12\x1d.uptimecluster.v1.JoinRequest\x1a\x1e.uptimecluster.v1.JoinResponse\x12i\n" +
 	"\x10RenewCertificate\x12).uptimecluster.v1.RenewCertificateRequest\x1a*.uptimecluster.v1.RenewCertificateResponse\x12H\n" +
-	"\x05Apply\x12\x1e.uptimecluster.v1.ApplyRequest\x1a\x1f.uptimecluster.v1.ApplyResponseBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
+	"\x05Apply\x12\x1e.uptimecluster.v1.ApplyRequest\x1a\x1f.uptimecluster.v1.ApplyResponse\x12T\n" +
+	"\tGetStatus\x12\".uptimecluster.v1.GetStatusRequest\x1a#.uptimecluster.v1.GetStatusResponseBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
 
 var (
 	file_uptimecluster_v1_cluster_proto_rawDescOnce sync.Once
@@ -435,7 +579,7 @@ func file_uptimecluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_uptimecluster_v1_cluster_proto_rawDescData
 }
 
-var file_uptimecluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_uptimecluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_uptimecluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),              // 0: uptimecluster.v1.JoinRequest
 	(*JoinResponse)(nil),             // 1: uptimecluster.v1.JoinResponse
@@ -443,21 +587,25 @@ var file_uptimecluster_v1_cluster_proto_goTypes = []any{
 	(*RenewCertificateResponse)(nil), // 3: uptimecluster.v1.RenewCertificateResponse
 	(*ApplyRequest)(nil),             // 4: uptimecluster.v1.ApplyRequest
 	(*ApplyResponse)(nil),            // 5: uptimecluster.v1.ApplyResponse
-	(*NodeInfo)(nil),                 // 6: uptimecluster.v1.NodeInfo
-	(*Command)(nil),                  // 7: uptimecluster.v1.Command
+	(*GetStatusRequest)(nil),         // 6: uptimecluster.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),        // 7: uptimecluster.v1.GetStatusResponse
+	(*NodeInfo)(nil),                 // 8: uptimecluster.v1.NodeInfo
+	(*Command)(nil),                  // 9: uptimecluster.v1.Command
 }
 var file_uptimecluster_v1_cluster_proto_depIdxs = []int32{
-	6, // 0: uptimecluster.v1.JoinRequest.node:type_name -> uptimecluster.v1.NodeInfo
-	6, // 1: uptimecluster.v1.JoinResponse.voters:type_name -> uptimecluster.v1.NodeInfo
-	7, // 2: uptimecluster.v1.ApplyRequest.command:type_name -> uptimecluster.v1.Command
+	8, // 0: uptimecluster.v1.JoinRequest.node:type_name -> uptimecluster.v1.NodeInfo
+	8, // 1: uptimecluster.v1.JoinResponse.voters:type_name -> uptimecluster.v1.NodeInfo
+	9, // 2: uptimecluster.v1.ApplyRequest.command:type_name -> uptimecluster.v1.Command
 	0, // 3: uptimecluster.v1.ClusterService.Join:input_type -> uptimecluster.v1.JoinRequest
 	2, // 4: uptimecluster.v1.ClusterService.RenewCertificate:input_type -> uptimecluster.v1.RenewCertificateRequest
 	4, // 5: uptimecluster.v1.ClusterService.Apply:input_type -> uptimecluster.v1.ApplyRequest
-	1, // 6: uptimecluster.v1.ClusterService.Join:output_type -> uptimecluster.v1.JoinResponse
-	3, // 7: uptimecluster.v1.ClusterService.RenewCertificate:output_type -> uptimecluster.v1.RenewCertificateResponse
-	5, // 8: uptimecluster.v1.ClusterService.Apply:output_type -> uptimecluster.v1.ApplyResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
+	6, // 6: uptimecluster.v1.ClusterService.GetStatus:input_type -> uptimecluster.v1.GetStatusRequest
+	1, // 7: uptimecluster.v1.ClusterService.Join:output_type -> uptimecluster.v1.JoinResponse
+	3, // 8: uptimecluster.v1.ClusterService.RenewCertificate:output_type -> uptimecluster.v1.RenewCertificateResponse
+	5, // 9: uptimecluster.v1.ClusterService.Apply:output_type -> uptimecluster.v1.ApplyResponse
+	7, // 10: uptimecluster.v1.ClusterService.GetStatus:output_type -> uptimecluster.v1.GetStatusResponse
+	7, // [7:11] is the sub-list for method output_type
+	3, // [3:7] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name
@@ -475,7 +623,7 @@ func file_uptimecluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_cluster_proto_rawDesc), len(file_uptimecluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

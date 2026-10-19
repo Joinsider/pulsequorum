@@ -25,6 +25,7 @@ const (
 	ClusterService_Join_FullMethodName             = "/uptimecluster.v1.ClusterService/Join"
 	ClusterService_RenewCertificate_FullMethodName = "/uptimecluster.v1.ClusterService/RenewCertificate"
 	ClusterService_Apply_FullMethodName            = "/uptimecluster.v1.ClusterService/Apply"
+	ClusterService_GetStatus_FullMethodName        = "/uptimecluster.v1.ClusterService/GetStatus"
 )
 
 // ClusterServiceClient is the client API for ClusterService service.
@@ -43,6 +44,10 @@ type ClusterServiceClient interface {
 	// Apply forwards a command from a follower to the leader (FA-CLU-05).
 	// Returns FAILED_PRECONDITION with the current leader if called on a follower.
 	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
+	// GetStatus reports the callee's Raft and replication state. The leader uses
+	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
+	// admin UI use it to show replication lag (ADR 0012 A9).
+	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
 }
 
 type clusterServiceClient struct {
@@ -83,6 +88,16 @@ func (c *clusterServiceClient) Apply(ctx context.Context, in *ApplyRequest, opts
 	return out, nil
 }
 
+func (c *clusterServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStatusResponse)
+	err := c.cc.Invoke(ctx, ClusterService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClusterServiceServer is the server API for ClusterService service.
 // All implementations must embed UnimplementedClusterServiceServer
 // for forward compatibility.
@@ -99,6 +114,10 @@ type ClusterServiceServer interface {
 	// Apply forwards a command from a follower to the leader (FA-CLU-05).
 	// Returns FAILED_PRECONDITION with the current leader if called on a follower.
 	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
+	// GetStatus reports the callee's Raft and replication state. The leader uses
+	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
+	// admin UI use it to show replication lag (ADR 0012 A9).
+	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
 	mustEmbedUnimplementedClusterServiceServer()
 }
 
@@ -117,6 +136,9 @@ func (UnimplementedClusterServiceServer) RenewCertificate(context.Context, *Rene
 }
 func (UnimplementedClusterServiceServer) Apply(context.Context, *ApplyRequest) (*ApplyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Apply not implemented")
+}
+func (UnimplementedClusterServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
 }
 func (UnimplementedClusterServiceServer) mustEmbedUnimplementedClusterServiceServer() {}
 func (UnimplementedClusterServiceServer) testEmbeddedByValue()                        {}
@@ -193,6 +215,24 @@ func _ClusterService_Apply_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClusterService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).GetStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_GetStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).GetStatus(ctx, req.(*GetStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ClusterService_ServiceDesc is the grpc.ServiceDesc for ClusterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -211,6 +251,10 @@ var ClusterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Apply",
 			Handler:    _ClusterService_Apply_Handler,
+		},
+		{
+			MethodName: "GetStatus",
+			Handler:    _ClusterService_GetStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

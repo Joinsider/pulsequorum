@@ -48,8 +48,10 @@ message Heartbeat {
   bytes details_json = 11;
 }
 
-// StreamPosition identifies the highest contiguous seq of one heartbeat stream
-// (watermark).
+// StreamPosition is the watermark of one heartbeat stream: the highest seq up
+// to which every heartbeat is present without gaps, counted from the retention
+// horizon. It is NOT max(seq): push batches may be dropped, and a max-based
+// watermark would never request the gap (ADR 0012 B2).
 message StreamPosition {
   string node_id = 1;
   string incarnation = 2;
