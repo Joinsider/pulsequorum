@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-ALR-01..03/05/07..09/12/13, NFA-REL-03, Konzept E7/E8 und Kap. 9, ADR 0005, 0011, 0012 |
@@ -94,3 +94,4 @@ Recherche (Haiku-Agent) und lokale Prüfung am 2026-10-19:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | Freigabe im Chat |

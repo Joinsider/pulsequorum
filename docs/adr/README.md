@@ -19,4 +19,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0011](0011-geheimnisverwaltung.md) | Verschlüsselung von Geheimnissen (Envelope Encryption) | Accepted | 2026-10-19 |
 | [0012](0012-praezisierungen-aus-spikes.md) | Präzisierungen aus den Spikes (Raft, SQLite) | Accepted | 2026-10-19 |
 | [0013](0013-persistenz-ergebnisse-sqlite-spike.md) | Persistenz: Ergebnisse des SQLite-Spikes | Accepted | 2026-10-19 |
-| [0014](0014-benachrichtigungen.md) | Benachrichtigungen: Kanäle, Outbox und Versand (Shoutrrr) | Proposed | 2026-10-19 |
+| [0014](0014-benachrichtigungen.md) | Benachrichtigungen: Kanäle, Outbox und Versand (Shoutrrr) | Accepted | 2026-10-19 |

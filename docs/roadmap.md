@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P1 – Kern (P0 abgeschlossen bis auf Läufe, die einen GitHub-Remote bzw. Docker-Daemon brauchen: AP-0.8–0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-1.10 nach Freigabe von ADR 0014 |
+| **Nächster Schritt (Claude)** | AP-1.10 Benachrichtigungen (Outbox, Shoutrrr, Webhook) |
 
 ---
 
@@ -70,7 +70,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-1.7 | Monitor-API (CRUD, Pause, Klonen, Typen mit JSON-Schema), Problem Details, Paginierung | FA-MON-*, FA-API-01..03/06 | 0003 | ✅ CRUD, Pause/Resume, Klonen, Test-Lauf, Heartbeats, Typen; Idempotency-Key mandantenbezogen. Geschützte Endpunkte liefern 401 bis AP-1.12; Status/Uptime-Felder folgen mit AP-1.8/1.9; Uptime-Endpunkt bleibt 501 bis AP-1.9 |
 | AP-1.8 | Statuslogik Single-Node (Retries, PENDING, DEGRADED), Incidents | FA-CON-03, FA-INC-01/02 | – | ✅ Aggregator (`internal/aggregator`) bewertet die eigenen Ergebnisse und schreibt nur Statuswechsel per Raft (`SetMonitorState`, Incident atomar im selben Befehl, ersetzt `OpenIncident`/`ResolveIncident`); FSM hält PAUSED/PENDING bei Pause/Fortsetzen konsistent und beendet offene Incidents; Retry-Zähler wird nach Neustart aus eigenen Heartbeats rekonstruiert; Incident-API und Statusfilter in SQL. Incidents werden mit ihrem Monitor gelöscht |
 | AP-1.9 | Uptime-Berechnung (Heartbeat-Speicherung bereits in AP-1.6), Rollups, Verdichtung, Retention in Batches | FA-UPT-01..06 | 0004 | ✅ Paket `internal/uptime`: Node-Uptime aus dem eigenen Heartbeat-Strom (Heartbeat gilt bis zum nächsten, höchstens 2 × Intervall), Konsens-Uptime aus der replizierten Statushistorie (`monitor_status_history`, 30 Tage, FSM prunt deterministisch); Stunden-Rollups nach 2 min Karenz, Tages-Rollups als Summe der Stunden; Verdichtung nach 48 h zu Latenz-Minuten, Statuswechsel bleiben; Retention in Batches à 5.000 mit `incremental_vacuum`; Uptime-Endpunkt und `uptime24h`; `RETENTION_*_DAYS`. Grenzen: p95 über Tage/Bereiche ist der gewichtete Mittelwert der Stunden-p95; Wartungszeiten folgen mit AP-1.11; verspätet replizierte Heartbeats (P2) erfordern eine Neuberechnung betroffener Rollups; Rollups gelöschter Monitore laufen nur über die Retention aus |
-| AP-1.10 | Benachrichtigungen: Outbox, Shoutrrr-Kapselung, Webhook mit JSON-sicheren Templates, Testversand, Maskierung | FA-ALR-01..03/07..09/13 | 0014 | blockiert (ADR 0014) |
+| AP-1.10 | Benachrichtigungen: Outbox, Shoutrrr-Kapselung, Webhook mit JSON-sicheren Templates, Testversand, Maskierung | FA-ALR-01..03/07..09/13 | 0014 | 🔄 in Arbeit |
 | AP-1.11 | Wartungsfenster (einmalig, wiederkehrend, Zeitzonen) | FA-MNT-01/02 | – | ⬜ |
 | AP-1.12 | Lokale Authentifizierung: Setup-Flow, Argon2id, JWT (EdDSA), Refresh-Rotation, Drosselung, Rollenprüfung | FA-AUTH-01..04/09, NFA-SEC-03/04 | 0008 | ⬜ |
 | AP-1.13 | WebSocket-Stream mit Ticket, Mandantenfilter, CORS, Rate-Limiting, Security-Header | FA-API-04/05/07, FA-AUTH-11, FA-TEN-05, NFA-SEC-05 | 0002 | ⬜ |
