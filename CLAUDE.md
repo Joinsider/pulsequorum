@@ -14,25 +14,25 @@ Ein Binary/Image für alle Rollen (`NODE_ROLE=voter|probe`).
 
 ## Regel 1: Delegation an Haiku-Agenten
 
-Einfache, klar abgegrenzte Aufgaben werden an Subagenten mit **Haiku 5.5** (`claude-haiku-5-5`, im Agent-Tool `model: "haiku"`) ausgelagert. Der Hauptagent plant, prüft die Ergebnisse und trägt die Verantwortung.
+**Alle Entwicklungsarbeit** wird an Subagenten mit **Haiku 5.5** (`claude-haiku-5-5`, im Agent-Tool `model: "haiku"`) ausgelagert – **mit Ausnahme von sicherheitsrelevantem Code**. Der Hauptagent plant, schreibt die Vorgaben, prüft die Ergebnisse und trägt die Verantwortung.
 
 **An Haiku auslagern:**
-- Recherche: Web-Recherche, Doku/Changelogs/Versionen nachschlagen, GitHub-Issues durchsuchen, Lizenzen prüfen
-- Codebase-Suche und Zusammenfassungen („wo wird X benutzt?“)
-- Einfache Programmieraufgaben mit klarer Vorgabe: Boilerplate, DTOs, Mapper, einfache CRUD-Handler nach vorhandenem Muster, Tabellentests für reine Funktionen, Angular-Komponenten nach vorhandenem Muster, Umbenennungen, Formatierungs- und Lint-Fixes
+- Implementierung aller Pakete: Handler, Store, Schema und Migrationen, FSM-Befehle, Jobs, Scheduler, Checker, Angular-Komponenten, Konfiguration, Verdrahtung in `main`
+- Tests aller Art (Unit, Integration, Tabellentests), Fehlersuche, Lint- und Formatierungs-Fixes, Umbenennungen
+- Recherche: Web-Recherche, Doku/Changelogs/Versionen, GitHub-Issues, Lizenzen; Codebase-Suche und Zusammenfassungen
 - Doku-Pflege nach Vorgabe (README-Abschnitte, Kommentare, Changelog)
 
 **Nicht an Haiku auslagern (bleibt beim Hauptagenten):**
-- Architektur- und Designentscheidungen, ADRs, Pflichtenheft, Roadmap
-- Cluster-Layer (Raft-FSM, Replikation, Anti-Entropie, Leader-Logik), Konsens- und Uptime-Berechnung
-- Sicherheitsrelevanter Code (Auth, mTLS/PKI, Mandantentrennung, SSRF-Schutz, Verschlüsselung)
-- Datenbankschema und Migrationen
-- Fehlersuche mit unklarer Ursache
+- Sicherheitsrelevanter Code: Authentifizierung/Autorisierung, mTLS/PKI, Mandantentrennung (Durchsetzung der Tenant-Grenze), SSRF-Schutz, Verschlüsselung und Umgang mit Klartext-Geheimnissen, Maskierung/Redaktion von Geheimnissen
+- Planung und Design: Architekturentscheidungen, ADRs, Pflichtenheft, Roadmap, Zerlegung in Aufträge
+- Review: Diffs der Haiku-Agenten lesen, Tests laufen lassen, Commit
 
 **Vorgehen:**
 - Prompts für Haiku-Agenten sind selbsterklärend: Kontext, betroffene Dateien, erwartetes Ergebnis, Akzeptanzkriterium (z.B. „`go test ./internal/checker/...` grün“).
 - Unabhängige Aufgaben parallel starten (mehrere Agent-Aufrufe in einer Nachricht).
 - Ergebnisse von Haiku-Agenten werden vor dem Commit vom Hauptagenten gesichtet (Diff lesen, Tests laufen lassen).
+- Berührt eine Aufgabe Sicherheitscode, schreibt der Hauptagent diesen Teil (z.B. als Hilfsfunktion) zuerst; der Haiku-Agent nutzt ihn nur.
+- Parallele Agenten arbeiten auf getrennten Dateien und Paketen; hängen Pakete voneinander ab, laufen die Aufträge nacheinander.
 
 ## Regel 2: ADR vor jeder großen Änderung
 
