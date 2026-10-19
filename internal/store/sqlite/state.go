@@ -120,7 +120,7 @@ func (s *StateStore) GetMonitor(ctx context.Context, tenantID, id string) (store
 	if err != nil {
 		return store.Monitor{}, mapErr(err)
 	}
-	m, err := s.monitorWithTags(ctx, s.q, row.Monitor)
+	m, err := monitorWithTags(ctx, s.q, row.Monitor)
 	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs)
 	return m, err
 }
@@ -148,7 +148,7 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 			page.NextAfterID = page.Items[limit-1].ID
 			break
 		}
-		m, err := s.monitorWithTags(ctx, s.q, r.Monitor)
+		m, err := monitorWithTags(ctx, s.q, r.Monitor)
 		if err != nil {
 			return store.MonitorPage{}, err
 		}
@@ -363,6 +363,14 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 		if err := t.q.DeleteMonitorTags(ctx, statedb.DeleteMonitorTagsParams{TenantID: m.TenantID, MonitorID: m.ID}); err != nil {
 			return mapErr(err)
 		}
+		if err := t.q.DeleteMonitorChannels(ctx, statedb.DeleteMonitorChannelsParams{TenantID: m.TenantID, MonitorID: m.ID}); err != nil {
+			return mapErr(err)
+		}
+	}
+	for _, ch := range normalizeTags(m.ChannelIDs) {
+		if err := t.q.InsertMonitorChannel(ctx, statedb.InsertMonitorChannelParams{TenantID: m.TenantID, MonitorID: m.ID, ChannelID: ch}); err != nil {
+			return mapErr(err)
+		}
 	}
 
 	for _, tag := range normalizeTags(m.Tags) {
@@ -523,8 +531,12 @@ func incidentFromRow(r statedb.Incident, monitorName string) (store.Incident, er
 	}, nil
 }
 
-func (s *StateStore) monitorWithTags(ctx context.Context, q *statedb.Queries, r statedb.Monitor) (store.Monitor, error) {
+func monitorWithTags(ctx context.Context, q *statedb.Queries, r statedb.Monitor) (store.Monitor, error) {
 	tags, err := q.ListMonitorTags(ctx, statedb.ListMonitorTagsParams{TenantID: r.TenantID, MonitorID: r.ID})
+	if err != nil {
+		return store.Monitor{}, mapErr(err)
+	}
+	channels, err := q.ListMonitorChannelIDs(ctx, statedb.ListMonitorChannelIDsParams{TenantID: r.TenantID, MonitorID: r.ID})
 	if err != nil {
 		return store.Monitor{}, mapErr(err)
 	}
@@ -547,6 +559,7 @@ func (s *StateStore) monitorWithTags(ctx context.Context, q *statedb.Queries, r 
 		Assignment:            assignment,
 		ConsensusPolicy:       r.ConsensusPolicy,
 		Tags:                  tags,
+		ChannelIDs:            channels,
 		Paused:                r.Paused != 0,
 		Revision:              uint64(max(r.Revision, 0)),
 		CreatedMs:             r.CreatedMs,

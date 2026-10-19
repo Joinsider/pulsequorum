@@ -188,3 +188,74 @@ WHERE h.tenant_id = sqlc.arg(tenant_id) AND h.monitor_id = sqlc.arg(monitor_id)
         WHERE p.tenant_id = sqlc.arg(tenant_id) AND p.monitor_id = sqlc.arg(monitor_id)
           AND p.since_ms <= sqlc.arg(from_ms)), sqlc.arg(from_ms))
 ORDER BY h.since_ms;
+
+-- name: GetChannel :one
+SELECT * FROM notification_channels WHERE tenant_id = ? AND id = ?;
+
+-- name: ListChannels :many
+SELECT * FROM notification_channels WHERE tenant_id = ? ORDER BY name, id;
+
+-- name: InsertChannel :exec
+INSERT INTO notification_channels (
+    tenant_id, id, name, kind, url_enc, webhook_method, webhook_headers_json, webhook_template,
+    events_json, is_default, state, last_error, revision, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', '', ?, ?, ?);
+
+-- name: UpdateChannel :execrows
+-- An update by the user resets the delivery state (the channel may be fixed).
+UPDATE notification_channels SET
+    name                 = sqlc.arg(name),
+    kind                 = sqlc.arg(kind),
+    url_enc              = sqlc.arg(url_enc),
+    webhook_method       = sqlc.arg(webhook_method),
+    webhook_headers_json = sqlc.arg(webhook_headers_json),
+    webhook_template     = sqlc.arg(webhook_template),
+    events_json          = sqlc.arg(events_json),
+    is_default           = sqlc.arg(is_default),
+    state                = 'ok',
+    last_error           = '',
+    revision             = sqlc.arg(revision),
+    updated_ms           = sqlc.arg(updated_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id) AND revision = sqlc.arg(expected_revision);
+
+-- name: ChannelRevision :one
+SELECT revision FROM notification_channels WHERE tenant_id = ? AND id = ?;
+
+-- name: SetChannelState :exec
+UPDATE notification_channels SET state = ?, last_error = ?
+WHERE tenant_id = ? AND id = ?;
+
+-- name: DeleteChannel :execrows
+DELETE FROM notification_channels WHERE tenant_id = ? AND id = ?;
+
+-- name: ListMonitorChannelIDs :many
+SELECT channel_id FROM monitor_channels WHERE tenant_id = ? AND monitor_id = ? ORDER BY channel_id;
+
+-- name: DeleteMonitorChannels :exec
+DELETE FROM monitor_channels WHERE tenant_id = ? AND monitor_id = ?;
+
+-- name: InsertMonitorChannel :exec
+INSERT INTO monitor_channels (tenant_id, monitor_id, channel_id) VALUES (?, ?, ?);
+
+-- name: InsertAlert :exec
+-- The same alert for the same channel is enqueued once (FA-ALR-03).
+INSERT INTO alert_outbox (
+    tenant_id, alert_key, channel_id, monitor_id, payload_json, next_attempt_ms, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (alert_key, channel_id) DO NOTHING;
+
+-- name: GetAlert :one
+SELECT * FROM alert_outbox WHERE alert_key = ? AND channel_id = ?;
+
+-- name: UpdateAlert :exec
+UPDATE alert_outbox SET attempts = ?, next_attempt_ms = ?, state = ?, last_error = ?, updated_ms = ?
+WHERE alert_key = ? AND channel_id = ?;
+
+-- name: DueAlerts :many
+SELECT * FROM alert_outbox
+WHERE state = 'pending' AND next_attempt_ms <= sqlc.arg(now_ms)
+ORDER BY next_attempt_ms, alert_key, channel_id
+LIMIT sqlc.arg(row_limit);
+
+-- name: PruneAlerts :exec
+DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?;

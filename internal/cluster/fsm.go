@@ -221,6 +221,10 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyDelete(ctx, tx, cmd, p.DeleteEntity)
 	case *pb.Command_SetMonitorState:
 		return applySetMonitorState(ctx, tx, cmd, p.SetMonitorState)
+	case *pb.Command_EnqueueAlert:
+		return applyEnqueueAlert(ctx, tx, cmd, p.EnqueueAlert)
+	case *pb.Command_AckAlertDelivery:
+		return applyAckAlertDelivery(ctx, tx, cmd, p.AckAlertDelivery)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -273,6 +277,7 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 			Assignment:            doc.Assignment,
 			ConsensusPolicy:       doc.ConsensusPolicy,
 			Tags:                  doc.Tags,
+			ChannelIDs:            doc.NotificationChannelIDs,
 			Paused:                doc.Paused,
 			CreatedMs:             issuedAt,
 			UpdatedMs:             issuedAt,
@@ -282,6 +287,20 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}
 		if err := syncPausedState(ctx, tx, cmd.GetTenantId(), put.GetId(), doc.Paused, create, issuedAt); err != nil {
 			return nil, err
+		}
+		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+
+	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
+		var doc ChannelDocument
+		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+			return nil, invalid("channel document: %v", err)
+		}
+		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.PutChannel(ctx, ch, put.GetExpectedRevision()); err != nil {
+			return nil, storeError(err)
 		}
 		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
 
@@ -311,6 +330,11 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 	switch del.GetKind() {
 	case pb.EntityKind_ENTITY_KIND_MONITOR:
 		if err := tx.DeleteMonitor(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: del.GetId()})
+	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
+		if err := tx.DeleteChannel(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
 			return nil, storeError(err)
 		}
 		return json.Marshal(PutResult{ID: del.GetId()})
@@ -404,6 +428,9 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 	}
 	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
 		return nil, err
+	}
+	if err := notifyStateChange(ctx, tx, cmd, set, cur.Status, to, since); err != nil {
+		return nil, storeError(err)
 	}
 	return json.Marshal(StateResult{Status: to})
 }

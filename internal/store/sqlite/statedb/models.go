@@ -8,6 +8,20 @@ import (
 	"database/sql"
 )
 
+type AlertOutbox struct {
+	TenantID      string
+	AlertKey      string
+	ChannelID     string
+	MonitorID     string
+	PayloadJson   string
+	Attempts      int64
+	NextAttemptMs int64
+	State         string
+	LastError     string
+	CreatedMs     int64
+	UpdatedMs     int64
+}
+
 type FsmMetum struct {
 	Key   string
 	Value int64
@@ -45,6 +59,12 @@ type Monitor struct {
 	UpdatedMs         int64
 }
 
+type MonitorChannel struct {
+	TenantID  string
+	MonitorID string
+	ChannelID string
+}
+
 type MonitorState struct {
 	TenantID  string
 	MonitorID string
@@ -64,6 +84,24 @@ type MonitorTag struct {
 	TenantID  string
 	MonitorID string
 	Tag       string
+}
+
+type NotificationChannel struct {
+	TenantID           string
+	ID                 string
+	Name               string
+	Kind               string
+	UrlEnc             string
+	WebhookMethod      string
+	WebhookHeadersJson string
+	WebhookTemplate    string
+	EventsJson         string
+	IsDefault          int64
+	State              string
+	LastError          string
+	Revision           int64
+	CreatedMs          int64
+	UpdatedMs          int64
 }
 
 type RequestDedup struct {

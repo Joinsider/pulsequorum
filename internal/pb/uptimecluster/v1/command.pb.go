@@ -744,13 +744,16 @@ func (x *IncidentStart) GetAffectedNodeIds() []string {
 	return nil
 }
 
-// EnqueueAlert adds a notification to the replicated outbox (FA-ALR-03).
+// EnqueueAlert repeats the DOWN alert of a monitor while it stays DOWN
+// (resendIntervalMinutes, FA-ALR-02). The FSM builds the payload and applies
+// it only if the monitor is still in the same DOWN period.
 type EnqueueAlert struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Stable deduplication key: monitor + incident + transition.
-	AlertKey      string   `protobuf:"bytes,1,opt,name=alert_key,json=alertKey,proto3" json:"alert_key,omitempty"`
-	ChannelIds    []string `protobuf:"bytes,2,rep,name=channel_ids,json=channelIds,proto3" json:"channel_ids,omitempty"`
-	PayloadJson   []byte   `protobuf:"bytes,3,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	MonitorId string                 `protobuf:"bytes,4,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
+	// since_ms of the DOWN state the reminder belongs to.
+	DownSinceMs int64 `protobuf:"varint,5,opt,name=down_since_ms,json=downSinceMs,proto3" json:"down_since_ms,omitempty"`
+	// Number of the reminder within this DOWN period, starting at 1.
+	Reminder      uint32 `protobuf:"varint,6,opt,name=reminder,proto3" json:"reminder,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -785,39 +788,45 @@ func (*EnqueueAlert) Descriptor() ([]byte, []int) {
 	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *EnqueueAlert) GetAlertKey() string {
+func (x *EnqueueAlert) GetMonitorId() string {
 	if x != nil {
-		return x.AlertKey
+		return x.MonitorId
 	}
 	return ""
 }
 
-func (x *EnqueueAlert) GetChannelIds() []string {
+func (x *EnqueueAlert) GetDownSinceMs() int64 {
 	if x != nil {
-		return x.ChannelIds
+		return x.DownSinceMs
 	}
-	return nil
+	return 0
 }
 
-func (x *EnqueueAlert) GetPayloadJson() []byte {
+func (x *EnqueueAlert) GetReminder() uint32 {
 	if x != nil {
-		return x.PayloadJson
+		return x.Reminder
 	}
-	return nil
+	return 0
 }
 
-// AckAlertDelivery records the outcome of a delivery attempt.
+// AckAlertDelivery records the outcome of a delivery attempt (ADR 0014).
 type AckAlertDelivery struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	AlertKey  string                 `protobuf:"bytes,1,opt,name=alert_key,json=alertKey,proto3" json:"alert_key,omitempty"`
 	ChannelId string                 `protobuf:"bytes,2,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	Delivered bool                   `protobuf:"varint,3,opt,name=delivered,proto3" json:"delivered,omitempty"`
 	// Permanent failures disable the channel (FA-ALR-05).
-	PermanentFailure bool   `protobuf:"varint,4,opt,name=permanent_failure,json=permanentFailure,proto3" json:"permanent_failure,omitempty"`
-	Error            string `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
-	NextAttemptMs    int64  `protobuf:"varint,6,opt,name=next_attempt_ms,json=nextAttemptMs,proto3" json:"next_attempt_ms,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	PermanentFailure bool `protobuf:"varint,4,opt,name=permanent_failure,json=permanentFailure,proto3" json:"permanent_failure,omitempty"`
+	// Error message, already cleaned of secrets.
+	Error string `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	// Next attempt after a temporary failure; the leader adds the jitter.
+	NextAttemptMs int64 `protobuf:"varint,6,opt,name=next_attempt_ms,json=nextAttemptMs,proto3" json:"next_attempt_ms,omitempty"`
+	// Number of this attempt (1-based); acks for other attempts are ignored.
+	Attempt uint32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	// true if this was the last allowed attempt (ALERT_MAX_ATTEMPTS).
+	GiveUp        bool `protobuf:"varint,8,opt,name=give_up,json=giveUp,proto3" json:"give_up,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AckAlertDelivery) Reset() {
@@ -890,6 +899,20 @@ func (x *AckAlertDelivery) GetNextAttemptMs() int64 {
 		return x.NextAttemptMs
 	}
 	return 0
+}
+
+func (x *AckAlertDelivery) GetAttempt() uint32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *AckAlertDelivery) GetGiveUp() bool {
+	if x != nil {
+		return x.GiveUp
+	}
+	return false
 }
 
 // RegisterNode adds or updates a node in the cluster registry.
@@ -1164,12 +1187,12 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x05cause\x18\x02 \x01(\tR\x05cause\x12=\n" +
 	"\verror_class\x18\x03 \x01(\x0e2\x1c.uptimecluster.v1.ErrorClassR\n" +
 	"errorClass\x12*\n" +
-	"\x11affected_node_ids\x18\x04 \x03(\tR\x0faffectedNodeIds\"o\n" +
-	"\fEnqueueAlert\x12\x1b\n" +
-	"\talert_key\x18\x01 \x01(\tR\balertKey\x12\x1f\n" +
-	"\vchannel_ids\x18\x02 \x03(\tR\n" +
-	"channelIds\x12!\n" +
-	"\fpayload_json\x18\x03 \x01(\fR\vpayloadJson\"\xd7\x01\n" +
+	"\x11affected_node_ids\x18\x04 \x03(\tR\x0faffectedNodeIds\"\x7f\n" +
+	"\fEnqueueAlert\x12\x1d\n" +
+	"\n" +
+	"monitor_id\x18\x04 \x01(\tR\tmonitorId\x12\"\n" +
+	"\rdown_since_ms\x18\x05 \x01(\x03R\vdownSinceMs\x12\x1a\n" +
+	"\breminder\x18\x06 \x01(\rR\breminderJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"\x8a\x02\n" +
 	"\x10AckAlertDelivery\x12\x1b\n" +
 	"\talert_key\x18\x01 \x01(\tR\balertKey\x12\x1d\n" +
 	"\n" +
@@ -1177,7 +1200,9 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\tdelivered\x18\x03 \x01(\bR\tdelivered\x12+\n" +
 	"\x11permanent_failure\x18\x04 \x01(\bR\x10permanentFailure\x12\x14\n" +
 	"\x05error\x18\x05 \x01(\tR\x05error\x12&\n" +
-	"\x0fnext_attempt_ms\x18\x06 \x01(\x03R\rnextAttemptMs\">\n" +
+	"\x0fnext_attempt_ms\x18\x06 \x01(\x03R\rnextAttemptMs\x12\x18\n" +
+	"\aattempt\x18\a \x01(\rR\aattempt\x12\x17\n" +
+	"\agive_up\x18\b \x01(\bR\x06giveUp\">\n" +
 	"\fRegisterNode\x12.\n" +
 	"\x04node\x18\x01 \x01(\v2\x1a.uptimecluster.v1.NodeInfoR\x04node\"'\n" +
 	"\x0fSetFeatureLevel\x12\x14\n" +

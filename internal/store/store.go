@@ -57,7 +57,9 @@ type Monitor struct {
 	Assignment            Assignment
 	ConsensusPolicy       string
 	Tags                  []string
-	Paused                bool
+	// ChannelIDs are the notification channels of the monitor (FA-ALR-01).
+	ChannelIDs []string
+	Paused     bool
 	// Revision starts at 1 and increases with every update (optimistic concurrency).
 	Revision  uint64
 	CreatedMs int64
@@ -96,6 +98,80 @@ type MonitorState struct {
 	// Confirmed is false if the change was made without quorum (phase 3).
 	Confirmed bool
 	SinceMs   int64
+}
+
+// Channel kinds (E7).
+const (
+	ChannelShoutrrr = "shoutrrr"
+	ChannelWebhook  = "webhook"
+)
+
+// Channel delivery states (FA-ALR-05).
+const (
+	ChannelOK       = "ok"
+	ChannelFailing  = "failing"
+	ChannelDisabled = "disabled"
+)
+
+// Notification events a channel subscribes to.
+const (
+	EventDown     = "down"
+	EventUp       = "up"
+	EventDegraded = "degraded"
+	EventPartial  = "partial"
+)
+
+// NotificationChannel is a target for alerts (FA-ALR-01). URLEnc and the
+// header values are ciphertext (ADR 0011); only internal/alert decrypts them.
+type NotificationChannel struct {
+	TenantID string
+	ID       string
+	Name     string
+	Kind     string
+	// URLEnc is the Shoutrrr URL or the webhook URL, encrypted.
+	URLEnc          string
+	WebhookMethod   string
+	WebhookHeaders  map[string]string // name → encrypted value
+	WebhookTemplate string
+	Events          []string
+	IsDefault       bool
+	State           string
+	LastError       string
+	Revision        uint64
+	CreatedMs       int64
+	UpdatedMs       int64
+}
+
+// Subscribes reports whether the channel wants the event.
+func (c NotificationChannel) Subscribes(event string) bool {
+	for _, e := range c.Events {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
+// Alert delivery states in the outbox.
+const (
+	AlertPending   = "pending"
+	AlertDelivered = "delivered"
+	AlertFailed    = "failed"
+)
+
+// AlertDelivery is one alert for one channel in the replicated outbox (FA-ALR-03).
+type AlertDelivery struct {
+	TenantID      string
+	AlertKey      string
+	ChannelID     string
+	MonitorID     string
+	Payload       json.RawMessage
+	Attempts      int
+	NextAttemptMs int64
+	State         string
+	LastError     string
+	CreatedMs     int64
+	UpdatedMs     int64
 }
 
 // StatusChange is one entry of the consensus status history.
@@ -166,6 +242,12 @@ type State interface {
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
 	GetIncident(ctx context.Context, tenantID, id string) (Incident, error)
 	ListIncidents(ctx context.Context, tenantID string, q IncidentQuery) (IncidentPage, error)
+	GetChannel(ctx context.Context, tenantID, id string) (NotificationChannel, error)
+	ListChannels(ctx context.Context, tenantID string) ([]NotificationChannel, error)
+	// DueAlerts returns pending deliveries of all tenants due at nowMs.
+	DueAlerts(ctx context.Context, nowMs int64, limit int) ([]AlertDelivery, error)
+	GetAlert(ctx context.Context, alertKey, channelID string) (AlertDelivery, error)
+
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
 	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
@@ -187,9 +269,24 @@ type StateTx interface {
 	PutTenant(ctx context.Context, t Tenant) error
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
 	// replaces the monitor at that revision. On success m.Revision is stored as
-	// expectedRevision+1.
+	// expectedRevision+1. Channels of another tenant are ErrNotFound.
 	PutMonitor(ctx context.Context, m Monitor, expectedRevision uint64) error
 	DeleteMonitor(ctx context.Context, tenantID, id string) error
+
+	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
+
+	// PutChannel creates (expectedRevision 0) or replaces a channel; a
+	// replacement resets its delivery state to ok.
+	PutChannel(ctx context.Context, c NotificationChannel, expectedRevision uint64) error
+	DeleteChannel(ctx context.Context, tenantID, id string) error
+	GetChannel(ctx context.Context, tenantID, id string) (NotificationChannel, error)
+	SetChannelState(ctx context.Context, tenantID, id, state, lastError string) error
+	// EnqueueAlert adds a delivery unless the same alert for the channel exists.
+	EnqueueAlert(ctx context.Context, a AlertDelivery) error
+	GetAlert(ctx context.Context, alertKey, channelID string) (AlertDelivery, error)
+	UpdateAlert(ctx context.Context, a AlertDelivery) error
+	// PruneAlerts deletes finished deliveries last updated before beforeMs.
+	PruneAlerts(ctx context.Context, beforeMs int64) error
 
 	// GetMonitorState returns the stored state or ErrNotFound.
 	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)

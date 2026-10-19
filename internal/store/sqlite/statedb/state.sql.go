@@ -10,6 +10,39 @@ import (
 	"database/sql"
 )
 
+const channelRevision = `-- name: ChannelRevision :one
+SELECT revision FROM notification_channels WHERE tenant_id = ? AND id = ?
+`
+
+type ChannelRevisionParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) ChannelRevision(ctx context.Context, arg ChannelRevisionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, channelRevision, arg.TenantID, arg.ID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
+const deleteChannel = `-- name: DeleteChannel :execrows
+DELETE FROM notification_channels WHERE tenant_id = ? AND id = ?
+`
+
+type DeleteChannelParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteChannel, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteMonitor = `-- name: DeleteMonitor :execrows
 DELETE FROM monitors WHERE tenant_id = ? AND id = ?
 `
@@ -27,6 +60,20 @@ func (q *Queries) DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (i
 	return result.RowsAffected()
 }
 
+const deleteMonitorChannels = `-- name: DeleteMonitorChannels :exec
+DELETE FROM monitor_channels WHERE tenant_id = ? AND monitor_id = ?
+`
+
+type DeleteMonitorChannelsParams struct {
+	TenantID  string
+	MonitorID string
+}
+
+func (q *Queries) DeleteMonitorChannels(ctx context.Context, arg DeleteMonitorChannelsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMonitorChannels, arg.TenantID, arg.MonitorID)
+	return err
+}
+
 const deleteMonitorTags = `-- name: DeleteMonitorTags :exec
 DELETE FROM monitor_tags WHERE tenant_id = ? AND monitor_id = ?
 `
@@ -39,6 +86,113 @@ type DeleteMonitorTagsParams struct {
 func (q *Queries) DeleteMonitorTags(ctx context.Context, arg DeleteMonitorTagsParams) error {
 	_, err := q.db.ExecContext(ctx, deleteMonitorTags, arg.TenantID, arg.MonitorID)
 	return err
+}
+
+const dueAlerts = `-- name: DueAlerts :many
+SELECT tenant_id, alert_key, channel_id, monitor_id, payload_json, attempts, next_attempt_ms, state, last_error, created_ms, updated_ms FROM alert_outbox
+WHERE state = 'pending' AND next_attempt_ms <= ?1
+ORDER BY next_attempt_ms, alert_key, channel_id
+LIMIT ?2
+`
+
+type DueAlertsParams struct {
+	NowMs    int64
+	RowLimit int64
+}
+
+func (q *Queries) DueAlerts(ctx context.Context, arg DueAlertsParams) ([]AlertOutbox, error) {
+	rows, err := q.db.QueryContext(ctx, dueAlerts, arg.NowMs, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertOutbox{}
+	for rows.Next() {
+		var i AlertOutbox
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.AlertKey,
+			&i.ChannelID,
+			&i.MonitorID,
+			&i.PayloadJson,
+			&i.Attempts,
+			&i.NextAttemptMs,
+			&i.State,
+			&i.LastError,
+			&i.CreatedMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAlert = `-- name: GetAlert :one
+SELECT tenant_id, alert_key, channel_id, monitor_id, payload_json, attempts, next_attempt_ms, state, last_error, created_ms, updated_ms FROM alert_outbox WHERE alert_key = ? AND channel_id = ?
+`
+
+type GetAlertParams struct {
+	AlertKey  string
+	ChannelID string
+}
+
+func (q *Queries) GetAlert(ctx context.Context, arg GetAlertParams) (AlertOutbox, error) {
+	row := q.db.QueryRowContext(ctx, getAlert, arg.AlertKey, arg.ChannelID)
+	var i AlertOutbox
+	err := row.Scan(
+		&i.TenantID,
+		&i.AlertKey,
+		&i.ChannelID,
+		&i.MonitorID,
+		&i.PayloadJson,
+		&i.Attempts,
+		&i.NextAttemptMs,
+		&i.State,
+		&i.LastError,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+	)
+	return i, err
+}
+
+const getChannel = `-- name: GetChannel :one
+SELECT tenant_id, id, name, kind, url_enc, webhook_method, webhook_headers_json, webhook_template, events_json, is_default, state, last_error, revision, created_ms, updated_ms FROM notification_channels WHERE tenant_id = ? AND id = ?
+`
+
+type GetChannelParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) GetChannel(ctx context.Context, arg GetChannelParams) (NotificationChannel, error) {
+	row := q.db.QueryRowContext(ctx, getChannel, arg.TenantID, arg.ID)
+	var i NotificationChannel
+	err := row.Scan(
+		&i.TenantID,
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.UrlEnc,
+		&i.WebhookMethod,
+		&i.WebhookHeadersJson,
+		&i.WebhookTemplate,
+		&i.EventsJson,
+		&i.IsDefault,
+		&i.State,
+		&i.LastError,
+		&i.Revision,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+	)
+	return i, err
 }
 
 const getDedup = `-- name: GetDedup :one
@@ -206,6 +360,81 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 	return i, err
 }
 
+const insertAlert = `-- name: InsertAlert :exec
+INSERT INTO alert_outbox (
+    tenant_id, alert_key, channel_id, monitor_id, payload_json, next_attempt_ms, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (alert_key, channel_id) DO NOTHING
+`
+
+type InsertAlertParams struct {
+	TenantID      string
+	AlertKey      string
+	ChannelID     string
+	MonitorID     string
+	PayloadJson   string
+	NextAttemptMs int64
+	CreatedMs     int64
+	UpdatedMs     int64
+}
+
+// The same alert for the same channel is enqueued once (FA-ALR-03).
+func (q *Queries) InsertAlert(ctx context.Context, arg InsertAlertParams) error {
+	_, err := q.db.ExecContext(ctx, insertAlert,
+		arg.TenantID,
+		arg.AlertKey,
+		arg.ChannelID,
+		arg.MonitorID,
+		arg.PayloadJson,
+		arg.NextAttemptMs,
+		arg.CreatedMs,
+		arg.UpdatedMs,
+	)
+	return err
+}
+
+const insertChannel = `-- name: InsertChannel :exec
+INSERT INTO notification_channels (
+    tenant_id, id, name, kind, url_enc, webhook_method, webhook_headers_json, webhook_template,
+    events_json, is_default, state, last_error, revision, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', '', ?, ?, ?)
+`
+
+type InsertChannelParams struct {
+	TenantID           string
+	ID                 string
+	Name               string
+	Kind               string
+	UrlEnc             string
+	WebhookMethod      string
+	WebhookHeadersJson string
+	WebhookTemplate    string
+	EventsJson         string
+	IsDefault          int64
+	Revision           int64
+	CreatedMs          int64
+	UpdatedMs          int64
+}
+
+func (q *Queries) InsertChannel(ctx context.Context, arg InsertChannelParams) error {
+	_, err := q.db.ExecContext(ctx, insertChannel,
+		arg.TenantID,
+		arg.ID,
+		arg.Name,
+		arg.Kind,
+		arg.UrlEnc,
+		arg.WebhookMethod,
+		arg.WebhookHeadersJson,
+		arg.WebhookTemplate,
+		arg.EventsJson,
+		arg.IsDefault,
+		arg.Revision,
+		arg.CreatedMs,
+		arg.UpdatedMs,
+	)
+	return err
+}
+
 const insertDedup = `-- name: InsertDedup :exec
 INSERT INTO request_dedup (request_id, applied_index, issued_at_ms, result_json, error_code, error_message)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -313,6 +542,21 @@ func (q *Queries) InsertMonitor(ctx context.Context, arg InsertMonitorParams) er
 	return err
 }
 
+const insertMonitorChannel = `-- name: InsertMonitorChannel :exec
+INSERT INTO monitor_channels (tenant_id, monitor_id, channel_id) VALUES (?, ?, ?)
+`
+
+type InsertMonitorChannelParams struct {
+	TenantID  string
+	MonitorID string
+	ChannelID string
+}
+
+func (q *Queries) InsertMonitorChannel(ctx context.Context, arg InsertMonitorChannelParams) error {
+	_, err := q.db.ExecContext(ctx, insertMonitorChannel, arg.TenantID, arg.MonitorID, arg.ChannelID)
+	return err
+}
+
 const insertMonitorTag = `-- name: InsertMonitorTag :exec
 INSERT INTO monitor_tags (tenant_id, monitor_id, tag) VALUES (?, ?, ?)
 `
@@ -326,6 +570,49 @@ type InsertMonitorTagParams struct {
 func (q *Queries) InsertMonitorTag(ctx context.Context, arg InsertMonitorTagParams) error {
 	_, err := q.db.ExecContext(ctx, insertMonitorTag, arg.TenantID, arg.MonitorID, arg.Tag)
 	return err
+}
+
+const listChannels = `-- name: ListChannels :many
+SELECT tenant_id, id, name, kind, url_enc, webhook_method, webhook_headers_json, webhook_template, events_json, is_default, state, last_error, revision, created_ms, updated_ms FROM notification_channels WHERE tenant_id = ? ORDER BY name, id
+`
+
+func (q *Queries) ListChannels(ctx context.Context, tenantID string) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, listChannels, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotificationChannel{}
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.UrlEnc,
+			&i.WebhookMethod,
+			&i.WebhookHeadersJson,
+			&i.WebhookTemplate,
+			&i.EventsJson,
+			&i.IsDefault,
+			&i.State,
+			&i.LastError,
+			&i.Revision,
+			&i.CreatedMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listIncidents = `-- name: ListIncidents :many
@@ -394,6 +681,38 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMonitorChannelIDs = `-- name: ListMonitorChannelIDs :many
+SELECT channel_id FROM monitor_channels WHERE tenant_id = ? AND monitor_id = ? ORDER BY channel_id
+`
+
+type ListMonitorChannelIDsParams struct {
+	TenantID  string
+	MonitorID string
+}
+
+func (q *Queries) ListMonitorChannelIDs(ctx context.Context, arg ListMonitorChannelIDsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listMonitorChannelIDs, arg.TenantID, arg.MonitorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var channel_id string
+		if err := rows.Scan(&channel_id); err != nil {
+			return nil, err
+		}
+		items = append(items, channel_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -606,6 +925,15 @@ func (q *Queries) MonitorRevision(ctx context.Context, arg MonitorRevisionParams
 	return revision, err
 }
 
+const pruneAlerts = `-- name: PruneAlerts :exec
+DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?
+`
+
+func (q *Queries) PruneAlerts(ctx context.Context, updatedMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneAlerts, updatedMs)
+	return err
+}
+
 const pruneDedup = `-- name: PruneDedup :execrows
 DELETE FROM request_dedup WHERE issued_at_ms < ?
 `
@@ -658,6 +986,28 @@ func (q *Queries) ResolveIncident(ctx context.Context, arg ResolveIncidentParams
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const setChannelState = `-- name: SetChannelState :exec
+UPDATE notification_channels SET state = ?, last_error = ?
+WHERE tenant_id = ? AND id = ?
+`
+
+type SetChannelStateParams struct {
+	State     string
+	LastError string
+	TenantID  string
+	ID        string
+}
+
+func (q *Queries) SetChannelState(ctx context.Context, arg SetChannelStateParams) error {
+	_, err := q.db.ExecContext(ctx, setChannelState,
+		arg.State,
+		arg.LastError,
+		arg.TenantID,
+		arg.ID,
+	)
+	return err
 }
 
 const setFSMMeta = `-- name: SetFSMMeta :exec
@@ -725,6 +1075,90 @@ func (q *Queries) StatusHistory(ctx context.Context, arg StatusHistoryParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAlert = `-- name: UpdateAlert :exec
+UPDATE alert_outbox SET attempts = ?, next_attempt_ms = ?, state = ?, last_error = ?, updated_ms = ?
+WHERE alert_key = ? AND channel_id = ?
+`
+
+type UpdateAlertParams struct {
+	Attempts      int64
+	NextAttemptMs int64
+	State         string
+	LastError     string
+	UpdatedMs     int64
+	AlertKey      string
+	ChannelID     string
+}
+
+func (q *Queries) UpdateAlert(ctx context.Context, arg UpdateAlertParams) error {
+	_, err := q.db.ExecContext(ctx, updateAlert,
+		arg.Attempts,
+		arg.NextAttemptMs,
+		arg.State,
+		arg.LastError,
+		arg.UpdatedMs,
+		arg.AlertKey,
+		arg.ChannelID,
+	)
+	return err
+}
+
+const updateChannel = `-- name: UpdateChannel :execrows
+UPDATE notification_channels SET
+    name                 = ?1,
+    kind                 = ?2,
+    url_enc              = ?3,
+    webhook_method       = ?4,
+    webhook_headers_json = ?5,
+    webhook_template     = ?6,
+    events_json          = ?7,
+    is_default           = ?8,
+    state                = 'ok',
+    last_error           = '',
+    revision             = ?9,
+    updated_ms           = ?10
+WHERE tenant_id = ?11 AND id = ?12 AND revision = ?13
+`
+
+type UpdateChannelParams struct {
+	Name               string
+	Kind               string
+	UrlEnc             string
+	WebhookMethod      string
+	WebhookHeadersJson string
+	WebhookTemplate    string
+	EventsJson         string
+	IsDefault          int64
+	Revision           int64
+	UpdatedMs          int64
+	TenantID           string
+	ID                 string
+	ExpectedRevision   int64
+}
+
+// An update by the user resets the delivery state (the channel may be fixed).
+func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateChannel,
+		arg.Name,
+		arg.Kind,
+		arg.UrlEnc,
+		arg.WebhookMethod,
+		arg.WebhookHeadersJson,
+		arg.WebhookTemplate,
+		arg.EventsJson,
+		arg.IsDefault,
+		arg.Revision,
+		arg.UpdatedMs,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateMonitor = `-- name: UpdateMonitor :execrows

@@ -73,6 +73,43 @@ type MonitorDocument struct {
 	ConsensusPolicy       string           `json:"consensusPolicy"`
 	Tags                  []string         `json:"tags,omitempty"`
 	Paused                bool             `json:"paused,omitempty"`
+	// NotificationChannelIDs must name channels of the same tenant (FA-ALR-01).
+	NotificationChannelIDs []string `json:"notificationChannelIds,omitempty"`
+}
+
+// ChannelDocument is the JSON document of a notification channel. The leader
+// encrypts URLEnc and the header values before proposing (ADR 0011, 0014);
+// the FSM rejects plaintext.
+type ChannelDocument struct {
+	Name            string            `json:"name"`
+	Kind            string            `json:"kind"`
+	URLEnc          string            `json:"urlEnc"`
+	WebhookMethod   string            `json:"webhookMethod,omitempty"`
+	WebhookHeaders  map[string]string `json:"webhookHeaders,omitempty"`
+	WebhookTemplate string            `json:"webhookTemplate,omitempty"`
+	Events          []string          `json:"events"`
+	IsDefault       bool              `json:"isDefault,omitempty"`
+}
+
+// AlertPayload is the content of an alert, built by the FSM from replicated
+// data and stored with every outbox entry (ADR 0014).
+type AlertPayload struct {
+	// AlertID is stable across retries, so receivers can deduplicate.
+	AlertID        string `json:"alertId"`
+	TenantID       string `json:"tenantId"`
+	MonitorID      string `json:"monitorId"`
+	MonitorName    string `json:"monitorName"`
+	MonitorType    string `json:"monitorType"`
+	Event          string `json:"event"`
+	Status         string `json:"status"`
+	PreviousStatus string `json:"previousStatus"`
+	SinceMs        int64  `json:"sinceMs"`
+	Cause          string `json:"cause,omitempty"`
+	ErrorClass     string `json:"errorClass,omitempty"`
+	IncidentID     string `json:"incidentId,omitempty"`
+	// Reminder counts repeated DOWN alerts; 0 for the change itself.
+	Reminder  int  `json:"reminder,omitempty"`
+	Confirmed bool `json:"confirmed"`
 }
 
 // TenantDocument is the JSON document of a tenant inside PutEntity.
@@ -111,6 +148,56 @@ func NewPutMonitor(requestID, tenantID, monitorID string, doc MonitorDocument, e
 // NewPutSecretKey builds a platform-level command that stores a data key.
 func NewPutSecretKey(requestID, keyID string, doc SecretKeyDocument) (*pb.Command, error) {
 	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_SECRET_KEY, keyID, doc, 0)
+}
+
+// NewPutChannel builds a command that creates (expectedRevision 0) or replaces a channel.
+func NewPutChannel(requestID, tenantID, channelID string, doc ChannelDocument, expectedRevision uint64) (*pb.Command, error) {
+	return newPut(requestID, tenantID, pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, channelID, doc, expectedRevision)
+}
+
+// NewDeleteChannel builds a command that deletes a channel.
+func NewDeleteChannel(requestID, tenantID, channelID string) *pb.Command {
+	return &pb.Command{
+		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, Id: channelID}},
+	}
+}
+
+// NewEnqueueReminder builds the command for the n-th repeated DOWN alert.
+func NewEnqueueReminder(tenantID, monitorID string, downSinceMs int64, n uint32) *pb.Command {
+	return &pb.Command{
+		Version:   CommandVersion,
+		RequestId: fmt.Sprintf("reminder:%s:%d:%d", monitorID, downSinceMs, n),
+		TenantId:  tenantID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_EnqueueAlert{EnqueueAlert: &pb.EnqueueAlert{
+			MonitorId: monitorID, DownSinceMs: downSinceMs, Reminder: n,
+		}},
+	}
+}
+
+// DeliveryOutcome is the result of one delivery attempt, decided by the leader.
+type DeliveryOutcome struct {
+	Delivered bool
+	Permanent bool
+	GiveUp    bool
+	// Error must already be cleaned of secrets.
+	Error         string
+	NextAttemptMs int64
+}
+
+// NewAckAlertDelivery builds the command that records a delivery attempt.
+func NewAckAlertDelivery(a store.AlertDelivery, attempt uint32, o DeliveryOutcome) *pb.Command {
+	return &pb.Command{
+		Version:   CommandVersion,
+		RequestId: fmt.Sprintf("ack:%s:%s:%d", a.AlertKey, a.ChannelID, attempt),
+		TenantId:  a.TenantID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_AckAlertDelivery{AckAlertDelivery: &pb.AckAlertDelivery{
+			AlertKey: a.AlertKey, ChannelId: a.ChannelID, Delivered: o.Delivered, PermanentFailure: o.Permanent,
+			Error: o.Error, NextAttemptMs: o.NextAttemptMs, Attempt: attempt, GiveUp: o.GiveUp,
+		}},
+	}
 }
 
 // NewDeleteMonitor builds a command that deletes a monitor.
