@@ -7,7 +7,7 @@ BIN       := bin/uptimecluster
 WEB_DIST  := web/dist/uptimecluster-web/browser
 EMBED_DIR := internal/webui/dist
 # Generated code only (internal/api/internal/stubgen is hand-written and excluded).
-GENERATED_PATHS := internal/api/gen internal/api/unimplemented.go internal/pb web/src/app/api
+GENERATED_PATHS := internal/api/gen internal/api/unimplemented.go internal/pb web/src/app/api internal/store/sqlite/statedb internal/store/sqlite/metricsdb
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -20,7 +20,7 @@ LDFLAGS := -s -w \
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-generate: api-gen proto-gen ## Regenerate all generated code (OpenAPI, protobuf)
+generate: api-gen proto-gen sqlc-gen ## Regenerate all generated code (OpenAPI, protobuf, sqlc)
 
 generate-check: generate ## Fail if generated code is stale (regenerates, then checks for diffs)
 	git diff --exit-code -- $(GENERATED_PATHS)
@@ -30,6 +30,9 @@ api-gen: web/node_modules ## Generate Go server and Angular client from the Open
 	go tool -modfile=tools/go.mod oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
 	go run ./internal/api/internal/stubgen internal/api/gen/api.gen.go internal/api/unimplemented.go
 	cd web && npx orval --config orval.config.ts
+
+sqlc-gen: ## Generate typed SQL queries for internal/store/sqlite
+	go tool -modfile=tools/go.mod sqlc generate
 
 proto-gen: ## Generate Go code from proto/ with buf
 	go tool -modfile=tools/go.mod buf generate

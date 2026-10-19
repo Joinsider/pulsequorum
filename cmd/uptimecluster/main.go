@@ -18,6 +18,7 @@ import (
 
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/server"
+	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
 )
@@ -55,10 +56,7 @@ func run(args []string) int {
 
 	switch cfg.Role {
 	case config.RoleVoter:
-		if !webui.Built() {
-			log.Warn("frontend is not embedded in this binary; build with `make build`")
-		}
-		if err := server.New(cfg, log, webui.Handler()).Run(ctx); err != nil {
+		if err := runVoter(ctx, cfg, log); err != nil {
 			log.Error("voter stopped with error", "err", err)
 			return 1
 		}
@@ -69,6 +67,34 @@ func run(args []string) int {
 
 	log.Info("stopped")
 	return 0
+}
+
+// checkpointInterval is the period of the WAL checkpoint job (ADR 0013 C4).
+const checkpointInterval = 60 * time.Second
+
+func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+	state, err := sqlite.OpenState(ctx, cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = state.Close() }()
+	metrics, err := sqlite.OpenMetrics(ctx, cfg.DataDir, sqlite.MetricsOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = metrics.Close() }()
+	log.Info("storage ready", "data_dir", cfg.DataDir, "incarnation", metrics.Incarnation())
+
+	go state.DB().RunCheckpointer(ctx, checkpointInterval, log)
+	go metrics.DB().RunCheckpointer(ctx, checkpointInterval, log)
+
+	if !webui.Built() {
+		log.Warn("frontend is not embedded in this binary; build with `make build`")
+	}
+	return server.New(cfg, log, webui.Handler()).Run(ctx)
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

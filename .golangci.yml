@@ -17,6 +17,8 @@ linters:
     paths:
       - internal/api/gen
       - internal/pb
+      - internal/store/sqlite/statedb
+      - internal/store/sqlite/metricsdb
       - internal/api/unimplemented.go
       - web
       - spikes

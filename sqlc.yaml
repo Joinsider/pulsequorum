@@ -1,0 +1,19 @@
+# sqlc configuration (ADR 0004). Run `make generate`.
+version: "2"
+sql:
+  - engine: sqlite
+    schema: internal/store/sqlite/migrations/state
+    queries: internal/store/sqlite/queries/state.sql
+    gen:
+      go:
+        package: statedb
+        out: internal/store/sqlite/statedb
+        emit_empty_slices: true
+  - engine: sqlite
+    schema: internal/store/sqlite/migrations/metrics
+    queries: internal/store/sqlite/queries/metrics.sql
+    gen:
+      go:
+        package: metricsdb
+        out: internal/store/sqlite/metricsdb
+        emit_empty_slices: true

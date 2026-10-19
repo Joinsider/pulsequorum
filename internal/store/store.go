@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+// Package store defines the persistence interfaces and records (ADR 0004).
+//
+// Data class A (configuration and state) is read through State and written only
+// by the Raft FSM through State.Update. Data class B (heartbeats) lives in Metrics.
+// Every tenant-scoped method takes the tenant ID explicitly; an object of another
+// tenant is reported as ErrNotFound (FA-TEN-01/02).
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+)
+
+var (
+	// ErrNotFound is returned when an object does not exist or belongs to another tenant.
+	ErrNotFound = errors.New("not found")
+	// ErrConflict is returned on duplicate creation or a revision mismatch.
+	ErrConflict = errors.New("conflict")
+)
+
+// Tenant is an isolated customer area (Konzept Kap. 2).
+type Tenant struct {
+	ID           string
+	Name         string
+	ZitadelOrgID string // empty in local mode
+	Plan         string
+	Limits       json.RawMessage
+	Suspended    bool
+	CreatedMs    int64
+	UpdatedMs    int64
+}
+
+// Assignment selects the nodes that run a monitor (E1).
+type Assignment struct {
+	Mode  string   `json:"mode"` // all | count | nodes
+	Count int      `json:"count,omitempty"`
+	Nodes []string `json:"nodes,omitempty"`
+}
+
+// Monitor is a configured check.
+type Monitor struct {
+	TenantID              string
+	ID                    string
+	Name                  string
+	Description           string
+	Type                  string
+	Config                json.RawMessage
+	IntervalSeconds       int
+	TimeoutSeconds        int
+	Retries               int
+	RecoveryThreshold     int
+	ResendIntervalMinutes int
+	Assignment            Assignment
+	ConsensusPolicy       string
+	Tags                  []string
+	Paused                bool
+	// Revision starts at 1 and increases with every update (optimistic concurrency).
+	Revision  uint64
+	CreatedMs int64
+	UpdatedMs int64
+}
+
+// MonitorQuery filters and pages ListMonitors. Results are ordered by ID.
+type MonitorQuery struct {
+	Tag     string // exact tag match; empty = any
+	Search  string // case-insensitive substring of the name; empty = any
+	AfterID string // keyset cursor: return monitors with ID > AfterID
+	Limit   int
+}
+
+// MonitorPage is one page of monitors.
+type MonitorPage struct {
+	Items []Monitor
+	// NextAfterID is the cursor for the next page; empty if there is none.
+	NextAfterID string
+}
+
+// State gives read access to data class A and the single write path for the FSM.
+type State interface {
+	GetTenant(ctx context.Context, id string) (Tenant, error)
+	ListTenants(ctx context.Context) ([]Tenant, error)
+	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
+	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
+
+	// Update runs fn in one write transaction. Only the Raft FSM calls it, so
+	// that every replica applies the same changes (ADR 0005, FA-CLU-07).
+	Update(ctx context.Context, fn func(tx StateTx) error) error
+}
+
+// StateTx writes data class A inside State.Update. Implementations must not read
+// the clock or a random source: timestamps and IDs come with the records.
+type StateTx interface {
+	PutTenant(ctx context.Context, t Tenant) error
+	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
+	// replaces the monitor at that revision. On success m.Revision is stored as
+	// expectedRevision+1.
+	PutMonitor(ctx context.Context, m Monitor, expectedRevision uint64) error
+	DeleteMonitor(ctx context.Context, tenantID, id string) error
+}
+
+// CheckStatus is the result of one check on one node (proto CheckStatus).
+type CheckStatus int
+
+// Check results.
+const (
+	CheckUp       CheckStatus = 1
+	CheckDown     CheckStatus = 2
+	CheckDegraded CheckStatus = 3
+)
+
+// Heartbeat is one check result, unique by (NodeID, Incarnation, Seq) (FA-REP-01).
+type Heartbeat struct {
+	NodeID      string
+	Incarnation string
+	Seq         uint64
+	TenantID    string
+	MonitorID   string
+	TsMs        int64
+	Status      CheckStatus
+	LatencyMs   int
+	ErrorClass  string
+	Message     string
+	Details     json.RawMessage
+}
+
+// HeartbeatCursor is the keyset position after which ListHeartbeats continues.
+type HeartbeatCursor struct {
+	TsMs        int64
+	NodeID      string
+	Incarnation string
+	Seq         uint64
+}
+
+// HeartbeatQuery selects heartbeats of one monitor in [FromMs, ToMs].
+type HeartbeatQuery struct {
+	MonitorID string
+	NodeID    string // empty = all nodes
+	FromMs    int64
+	ToMs      int64
+	After     *HeartbeatCursor
+	Limit     int
+}
+
+// HeartbeatPage is one page of heartbeats ordered by time.
+type HeartbeatPage struct {
+	Items []Heartbeat
+	Next  *HeartbeatCursor // nil if there is no further page
+}
+
+// Metrics stores data class B.
+type Metrics interface {
+	// Incarnation identifies this metrics database; it changes whenever the
+	// database is recreated (ADR 0012 B4).
+	Incarnation() string
+	// InsertHeartbeats stores heartbeats idempotently and returns how many were new.
+	InsertHeartbeats(ctx context.Context, hbs []Heartbeat) (int, error)
+	// LastSeq returns the highest stored seq of a stream (0 if none).
+	LastSeq(ctx context.Context, nodeID, incarnation string) (uint64, error)
+	ListHeartbeats(ctx context.Context, tenantID string, q HeartbeatQuery) (HeartbeatPage, error)
+	// DeleteHeartbeatsBefore deletes at most batchSize heartbeats older than
+	// beforeMs and returns the number deleted (FA-UPT-06). Callers loop until 0.
+	DeleteHeartbeatsBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
+}
