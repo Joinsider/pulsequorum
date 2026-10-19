@@ -641,6 +641,9 @@ Protobuf-Definitionen in `proto/`:
 | `DATABASE_URL` | – | PostgreSQL |
 | `MASTER_KEY_FILE` / `MASTER_KEY` | – | KEK für Geheimnisse (Pflicht ab P1; beim ersten Start generierbar) |
 | `RAW_COMPACTION` | `true` | Verdichtung |
+| `RETENTION_RAW_DAYS` | `30` | Aufbewahrung Heartbeats und Latenz-Minuten in Tagen (mind. 3) |
+| `RETENTION_HOURLY_DAYS` | `365` | Aufbewahrung Stunden-Rollups in Tagen |
+| `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung Tages-Rollups in Tagen (`0` = unbegrenzt) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |

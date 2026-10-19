@@ -5,7 +5,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -24,7 +23,7 @@ type Syncer interface {
 // nodes follows in phase 2.
 func Reconcile(ctx context.Context, state store.State, changes <-chan struct{}, interval time.Duration, log *slog.Logger, targets ...Syncer) {
 	load := func() {
-		monitors, err := AllMonitors(ctx, state)
+		monitors, err := store.AllMonitors(ctx, state)
 		if err != nil {
 			if ctx.Err() == nil {
 				log.Error("loading monitors for the scheduler failed", "err", err)
@@ -47,28 +46,4 @@ func Reconcile(ctx context.Context, state store.State, changes <-chan struct{}, 
 		}
 		load()
 	}
-}
-
-// AllMonitors returns the monitors of all tenants.
-func AllMonitors(ctx context.Context, state store.State) ([]store.Monitor, error) {
-	tenants, err := state.ListTenants(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list tenants: %w", err)
-	}
-	var out []store.Monitor
-	for _, t := range tenants {
-		q := store.MonitorQuery{Limit: 500}
-		for {
-			page, err := state.ListMonitors(ctx, t.ID, q)
-			if err != nil {
-				return nil, fmt.Errorf("list monitors of %s: %w", t.ID, err)
-			}
-			out = append(out, page.Items...)
-			if page.NextAfterID == "" {
-				break
-			}
-			q.AfterID = page.NextAfterID
-		}
-	}
-	return out, nil
 }

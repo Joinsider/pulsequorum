@@ -41,6 +41,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"MonitorState", testMonitorState},
 		{"Incidents", testIncidents},
 		{"IncidentTenantIsolation", testIncidentTenantIsolation},
+		{"StatusHistory", testStatusHistory},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -60,6 +61,8 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"DeleteBefore", testDeleteBefore},
 		{"TenantIsolation", testMetricsTenantIsolation},
 		{"LatestHeartbeats", testLatestHeartbeats},
+		{"Rollups", testRollups},
+		{"Compaction", testCompaction},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -637,6 +640,70 @@ func testIncidentTenantIsolation(t *testing.T, s store.State) {
 	}
 }
 
+func history(t *testing.T, s store.State, tenantID string, from, to int64) []int64 {
+	t.Helper()
+	hs, err := s.StatusHistory(context.Background(), tenantID, "m1", from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]int64, 0, len(hs))
+	for _, h := range hs {
+		out = append(out, h.SinceMs)
+	}
+	return out
+}
+
+func testStatusHistory(t *testing.T, s store.State) {
+	seedTenants(t, s, tenantA, tenantB)
+	if err := put(t, s, newMonitor(tenantA, "m1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		since  int64
+		status store.MonitorStatus
+	}{{1000, store.StatusPending}, {2000, store.StatusUp}, {3000, store.StatusPending}, {3000, store.StatusDown}, {5000, store.StatusUp}} {
+		setState(t, s, tenantA, "m1", c.status, c.since)
+	}
+	hs, err := s.StatusHistory(context.Background(), tenantA, "m1", 0, 10_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The second change at 3000 replaced the first.
+	if len(hs) != 4 || hs[2] != (store.StatusChange{SinceMs: 3000, Status: store.StatusDown}) {
+		t.Fatalf("history = %+v", hs)
+	}
+	if got := history(t, s, tenantA, 2500, 4000); !slices.Equal(got, []int64{2000, 3000}) {
+		t.Errorf("window with predecessor = %v", got)
+	}
+	if got := history(t, s, tenantA, 3000, 4000); !slices.Equal(got, []int64{3000}) {
+		t.Errorf("window starting at a change = %v", got)
+	}
+	if got := history(t, s, tenantA, 500, 900); len(got) != 0 {
+		t.Errorf("window before the first change = %v", got)
+	}
+	if got := history(t, s, tenantB, 0, 10_000); len(got) != 0 {
+		t.Errorf("tenant B sees %v", got)
+	}
+
+	// Pruning keeps the last change before the cut-off.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PruneStatusHistory(ctx, tenantA, "m1", 4000)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := history(t, s, tenantA, 0, 10_000); !slices.Equal(got, []int64{3000, 5000}) {
+		t.Errorf("after prune = %v", got)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PruneStatusHistory(ctx, tenantB, "m1", 99_999)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := history(t, s, tenantA, 0, 10_000); len(got) != 2 {
+		t.Errorf("prune in tenant B changed tenant A: %v", got)
+	}
+}
+
 // --- Metrics ----------------------------------------------------------------
 
 func heartbeats(tenantID, monitorID, node string, fromSeq, count int, startMs int64) []store.Heartbeat {
@@ -824,5 +891,79 @@ func testLatestHeartbeats(t *testing.T, m store.Metrics) {
 	}
 	if got, _ := m.LatestHeartbeats(ctx, tenantB, "m2", "", 10); len(got) != 0 {
 		t.Fatalf("tenant B sees tenant A's heartbeats: %+v", got)
+	}
+}
+
+func testRollups(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	if wm, err := m.Watermark(ctx, "x"); err != nil || wm != 0 {
+		t.Fatalf("unset watermark = %d, %v", wm, err)
+	}
+	r := func(tenant, node string, bucket, start, up int64) store.Rollup {
+		return store.Rollup{TenantID: tenant, MonitorID: "m1", NodeID: node, BucketMs: bucket, StartMs: start, UpMs: up,
+			UnknownMs: bucket - up, LatencyCount: 2, LatencyAvg: 1.5, LatencyP95: 2}
+	}
+	err := m.PutRollups(ctx, []store.Rollup{
+		r(tenantA, "", store.BucketHour, 0, 10), r(tenantA, "", store.BucketHour, 3_600_000, 20),
+		r(tenantA, "n1", store.BucketHour, 0, 30), r(tenantA, "", store.BucketDay, 0, 40),
+	}, map[string]int64{"x": 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wm, _ := m.Watermark(ctx, "x"); wm != 7 {
+		t.Fatalf("watermark = %d", wm)
+	}
+	// Replacing a rollup updates it.
+	if err := m.PutRollups(ctx, []store.Rollup{r(tenantA, "", store.BucketHour, 0, 11)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", BucketMs: store.BucketHour, ToMs: 1 << 62})
+	if err != nil || len(got) != 2 || got[0].UpMs != 11 || got[1].UpMs != 20 || got[0].LatencyAvg != 1.5 {
+		t.Fatalf("consensus hours = %+v, %v", got, err)
+	}
+	if got, _ := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 3_600_000}); len(got) != 2 || got[1].NodeID != "n1" {
+		t.Fatalf("all nodes = %+v", got)
+	}
+	if got, _ := m.ListRollups(ctx, tenantB, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 0 {
+		t.Fatalf("tenant B sees %+v", got)
+	}
+	if err := m.SetWatermark(ctx, "x", 9); err != nil {
+		t.Fatal(err)
+	}
+	if wm, _ := m.Watermark(ctx, "x"); wm != 9 {
+		t.Fatalf("watermark after set = %d", wm)
+	}
+
+	n, err := m.DeleteRollupsBefore(ctx, store.BucketHour, 3_600_000, 1)
+	if err != nil || n != 1 {
+		t.Fatalf("first batch = %d, %v", n, err)
+	}
+	if n, _ := m.DeleteRollupsBefore(ctx, store.BucketHour, 3_600_000, 10); n != 1 {
+		t.Fatalf("second batch = %d", n)
+	}
+	if got, _ := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", BucketMs: store.BucketDay, ToMs: 1}); len(got) != 1 {
+		t.Fatal("deleting hourly rollups touched daily ones")
+	}
+}
+
+func testCompaction(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 4, 0))
+	minute := store.LatencyMinute{TenantID: tenantA, MonitorID: "m1", NodeID: "n1", MinuteMs: 0, Min: 10, Max: 13, Avg: 11.5, P95: 13, OKCount: 4}
+	keys := []store.HeartbeatKey{{NodeID: "n1", Incarnation: "inc-n1", Seq: 2}, {NodeID: "n1", Incarnation: "inc-n1", Seq: 3}}
+	if err := m.CompactHeartbeats(ctx, []store.LatencyMinute{minute}, keys); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := m.ListHeartbeats(ctx, tenantA, store.HeartbeatQuery{MonitorID: "m1"})
+	if len(page.Items) != 2 || page.Items[0].Seq != 1 || page.Items[1].Seq != 4 {
+		t.Fatalf("remaining = %+v", page.Items)
+	}
+	// Repeating an interrupted compaction must not fail on existing minutes.
+	minute.OKCount = 1
+	if err := m.CompactHeartbeats(ctx, []store.LatencyMinute{minute}, keys); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := m.DeleteLatencyMinutesBefore(ctx, 1, 10); err != nil || n != 1 {
+		t.Fatalf("deleted minutes = %d, %v", n, err)
 	}
 }

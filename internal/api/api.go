@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
@@ -23,6 +24,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/config"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 )
 
@@ -50,14 +52,17 @@ type Deps struct {
 	// Authenticator verifies bearer credentials; nil denies every protected
 	// operation (auth.DenyAll).
 	Authenticator auth.Authenticator
+	// Now is the clock for uptime ranges; nil = time.Now.
+	Now func() time.Time
 }
 
 // Handlers implements gen.StrictServerInterface.
 type Handlers struct {
 	Unimplemented
-	cfg  config.Config
-	deps Deps
-	log  *slog.Logger
+	cfg    config.Config
+	deps   Deps
+	log    *slog.Logger
+	uptime *uptime.Service
 }
 
 var _ gen.StrictServerInterface = (*Handlers)(nil)
@@ -79,11 +84,14 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 	if deps.Authenticator == nil {
 		deps.Authenticator = auth.DenyAll{}
 	}
+	if deps.Now == nil {
+		deps.Now = time.Now
+	}
 	public, err := publicOperations()
 	if err != nil {
 		panic(err)
 	}
-	h := &Handlers{cfg: cfg, deps: deps, log: log}
+	h := &Handlers{cfg: cfg, deps: deps, log: log, uptime: &uptime.Service{State: deps.State, Metrics: deps.Metrics}}
 	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, deps.Authenticator)}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())

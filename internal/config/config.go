@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,8 +55,14 @@ type Config struct {
 	ICMPMode string
 	// SSRFProtection is auto, on or off (FA-SEC-SSRF); auto enables it in
 	// multi-tenant (Zitadel) mode.
-	SSRFProtection  string
-	AuthMode        AuthMode
+	SSRFProtection string
+	AuthMode       AuthMode
+	// RawCompaction compacts heartbeats older than 48 h (FA-UPT-04).
+	RawCompaction bool
+	// Retention of raw data, hourly and daily rollups (FA-UPT-05); 0 = forever.
+	RetentionRaw    time.Duration
+	RetentionHourly time.Duration
+	RetentionDaily  time.Duration
 	LogLevel        slog.Level
 	LogFormat       string
 	ShutdownTimeout time.Duration
@@ -153,6 +160,26 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("RAFT_TIMEOUT: must be a duration >= 100ms, got %q", getenv("RAFT_TIMEOUT")))
 	}
 	cfg.RaftTimeout = raftTimeout
+
+	switch v := get("RAW_COMPACTION", "true"); v {
+	case "true", "false":
+		cfg.RawCompaction = v == "true"
+	default:
+		errs = append(errs, fmt.Errorf("RAW_COMPACTION: must be true or false, got %q", v))
+	}
+	days := func(key, def string, minDays int) time.Duration {
+		v := get(key, def)
+		n, err := strconv.Atoi(v)
+		if err != nil || n < minDays {
+			errs = append(errs, fmt.Errorf("%s: must be a whole number of days >= %d, got %q", key, minDays, v))
+			return 0
+		}
+		return time.Duration(n) * 24 * time.Hour
+	}
+	// Raw data must outlive compaction and the rollup of the last day.
+	cfg.RetentionRaw = days("RETENTION_RAW_DAYS", "30", 3)
+	cfg.RetentionHourly = days("RETENTION_HOURLY_DAYS", "365", 1)
+	cfg.RetentionDaily = days("RETENTION_DAILY_DAYS", "0", 0)
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {

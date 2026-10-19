@@ -159,3 +159,32 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)
        OR (i.started_ms = sqlc.arg(before_started_ms) AND i.id < sqlc.arg(before_id)))
 ORDER BY i.started_ms DESC, i.id DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: UpsertStatusHistory :exec
+-- A second change at the same instant (PENDING, then DOWN dated back to the
+-- same failure) replaces the first.
+INSERT INTO monitor_status_history (tenant_id, monitor_id, since_ms, status)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (tenant_id, monitor_id, since_ms) DO UPDATE SET status = excluded.status;
+
+-- name: PruneStatusHistory :exec
+-- Removes changes before before_ms but keeps the last one at or before it,
+-- which still defines the status at before_ms.
+DELETE FROM monitor_status_history AS h
+WHERE h.tenant_id = sqlc.arg(tenant_id) AND h.monitor_id = sqlc.arg(monitor_id)
+  AND h.since_ms < sqlc.arg(before_ms)
+  AND h.since_ms < (
+        SELECT MAX(n.since_ms) FROM monitor_status_history n
+        WHERE n.tenant_id = sqlc.arg(tenant_id) AND n.monitor_id = sqlc.arg(monitor_id)
+          AND n.since_ms <= sqlc.arg(before_ms));
+
+-- name: StatusHistory :many
+-- Changes in [from_ms, to_ms) plus the last change before from_ms.
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = sqlc.arg(tenant_id) AND h.monitor_id = sqlc.arg(monitor_id)
+  AND h.since_ms < sqlc.arg(to_ms)
+  AND h.since_ms >= COALESCE((
+        SELECT MAX(p.since_ms) FROM monitor_status_history p
+        WHERE p.tenant_id = sqlc.arg(tenant_id) AND p.monitor_id = sqlc.arg(monitor_id)
+          AND p.since_ms <= sqlc.arg(from_ms)), sqlc.arg(from_ms))
+ORDER BY h.since_ms;

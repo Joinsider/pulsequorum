@@ -42,6 +42,8 @@ type env struct {
 	handler http.Handler
 	metrics *sqlite.MetricsStore
 	node    *cluster.Node
+	// now overrides the API clock when set.
+	now time.Time
 }
 
 func newEnv(t *testing.T) *env {
@@ -77,13 +79,21 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
+	e := &env{t: t, metrics: metrics, node: node}
 	mux := http.NewServeMux()
 	Register(mux, config.Config{NodeName: "n1", Role: config.RoleVoter}, log, Deps{
 		State: state, Metrics: metrics, Cluster: node, Registry: checker.Default,
 		CheckEnv: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"}, NodeID: "n1",
 		Authenticator: headerAuth{},
+		Now: func() time.Time {
+			if e.now.IsZero() {
+				return time.Now()
+			}
+			return e.now
+		},
 	})
-	return &env{t: t, handler: mux, metrics: metrics, node: node}
+	e.handler = mux
+	return e
 }
 
 type response struct {

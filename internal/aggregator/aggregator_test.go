@@ -109,35 +109,36 @@ func TestIncidentLifecycle(t *testing.T) {
 	f := newFixture(t)
 	a := f.aggregator()
 	m := f.putMonitor(doc(1, 2, false), 0)
+	b := m.CreatedMs
 
-	a.process(f.ctx, outcome(m, 10_000, checker.StatusDown))
+	a.process(f.ctx, outcome(m, b+10_000, checker.StatusDown))
 	f.expect(store.StatusPending, m.CreatedMs) // still the initial PENDING
-	a.process(f.ctx, outcome(m, 70_000, checker.StatusDown))
-	f.expect(store.StatusDown, 10_000)
+	a.process(f.ctx, outcome(m, b+70_000, checker.StatusDown))
+	f.expect(store.StatusDown, b+10_000)
 
 	page, err := f.state.ListIncidents(f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("open incidents = %+v, %v", page.Items, err)
 	}
 	inc := page.Items[0]
-	if inc.StartedMs != 10_000 || inc.Cause != "connection refused" || inc.ErrorClass != "connect" ||
+	if inc.StartedMs != b+10_000 || inc.Cause != "connection refused" || inc.ErrorClass != "connect" ||
 		len(inc.AffectedNodes) != 1 || inc.AffectedNodes[0] != nodeID {
 		t.Fatalf("incident = %+v", inc)
 	}
 
-	a.process(f.ctx, outcome(m, 130_000, checker.StatusUp))
-	f.expect(store.StatusDown, 10_000) // recovery threshold 2
-	a.process(f.ctx, outcome(m, 190_000, checker.StatusUp))
-	f.expect(store.StatusUp, 130_000)
+	a.process(f.ctx, outcome(m, b+130_000, checker.StatusUp))
+	f.expect(store.StatusDown, b+10_000) // recovery threshold 2
+	a.process(f.ctx, outcome(m, b+190_000, checker.StatusUp))
+	f.expect(store.StatusUp, b+130_000)
 	got, err := f.state.GetIncident(f.ctx, cluster.DefaultTenantID, inc.ID)
-	if err != nil || got.ResolvedMs != 130_000 {
+	if err != nil || got.ResolvedMs != b+130_000 {
 		t.Fatalf("resolved incident = %+v, %v", got, err)
 	}
 
 	// Pausing ends the evaluation: a stale result cannot leave PAUSED.
 	paused := f.putMonitor(doc(1, 2, true), m.Revision)
-	a.process(f.ctx, outcome(m, 250_000, checker.StatusDown))
-	a.process(f.ctx, outcome(m, 310_000, checker.StatusDown))
+	a.process(f.ctx, outcome(m, b+250_000, checker.StatusDown))
+	a.process(f.ctx, outcome(m, b+310_000, checker.StatusDown))
 	if st := f.monitor().State.Status; st != store.StatusPaused {
 		t.Fatalf("state after pause = %s", st)
 	}
@@ -152,26 +153,27 @@ func TestIncidentLifecycle(t *testing.T) {
 func TestRetryCountSurvivesRestart(t *testing.T) {
 	f := newFixture(t)
 	m := f.putMonitor(doc(2, 1, false), 0)
+	b := m.CreatedMs
 	a := f.aggregator()
-	a.process(f.ctx, outcome(m, 10_000, checker.StatusUp))
-	f.expect(store.StatusUp, 10_000)
+	a.process(f.ctx, outcome(m, b+10_000, checker.StatusUp))
+	f.expect(store.StatusUp, b+10_000)
 
 	// Two failures were recorded before the restart; one by another node
 	// and one older than the last status change must not count.
 	hbs := []store.Heartbeat{
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: 5_000, Status: store.CheckDown},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 2, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: 10_000, Status: store.CheckUp},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 3, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: 70_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
-		{NodeID: "other", Incarnation: "x", Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: 100_000, Status: store.CheckDown},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 4, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: 130_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
+		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 5_000, Status: store.CheckDown},
+		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 2, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 10_000, Status: store.CheckUp},
+		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 3, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 70_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
+		{NodeID: "other", Incarnation: "x", Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 100_000, Status: store.CheckDown},
+		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 4, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 130_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
 	}
 	if _, err := f.metrics.InsertHeartbeats(f.ctx, hbs); err != nil {
 		t.Fatal(err)
 	}
 	// The state is still UP: the failures above happened while no aggregator ran.
 	restarted := f.aggregator()
-	restarted.process(f.ctx, outcome(m, 190_000, checker.StatusDown))
-	f.expect(store.StatusDown, 70_000)
+	restarted.process(f.ctx, outcome(m, b+190_000, checker.StatusDown))
+	f.expect(store.StatusDown, b+70_000)
 }
 
 func TestRunAndSync(t *testing.T) {

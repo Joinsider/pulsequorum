@@ -21,6 +21,10 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
+// statusHistoryRetention is how long consensus status changes are kept,
+// measured in command time (Pflichtenheft 7.3).
+const statusHistoryRetention = 30 * 24 * time.Hour
+
 // dedupRetention is how long applied request IDs are remembered, measured in
 // command time (issued_at_ms), so pruning is deterministic (ADR 0005 point 3).
 const dedupRetention = 24 * time.Hour
@@ -337,7 +341,10 @@ func syncPausedState(ctx context.Context, tx store.StateTx, tenantID, monitorID 
 			}
 		}
 	}
-	return tx.PutMonitorState(ctx, tenantID, monitorID, next)
+	if err := tx.PutMonitorState(ctx, tenantID, monitorID, next); err != nil {
+		return err
+	}
+	return tx.PruneStatusHistory(ctx, tenantID, monitorID, nowMs-statusHistoryRetention.Milliseconds())
 }
 
 // applySetMonitorState records a status change decided by the leader and
@@ -367,9 +374,11 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 	if cur.Status == to {
 		return nil, invalid("monitor %s is already %s", monitorID, to)
 	}
+	// The history must stay ordered; a change never predates the current state.
+	since := max(set.GetSinceMs(), cur.SinceMs)
 
 	if cur.Status == store.StatusDown {
-		if err := tx.ResolveIncident(ctx, tenantID, monitorID, set.GetSinceMs()); err != nil {
+		if err := tx.ResolveIncident(ctx, tenantID, monitorID, since); err != nil {
 			return nil, storeError(err)
 		}
 	}
@@ -379,7 +388,7 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 			TenantID:      tenantID,
 			ID:            inc.GetIncidentId(),
 			MonitorID:     monitorID,
-			StartedMs:     set.GetSinceMs(),
+			StartedMs:     since,
 			Cause:         inc.GetCause(),
 			ErrorClass:    ErrorClassFromProto(inc.GetErrorClass()),
 			AffectedNodes: inc.GetAffectedNodeIds(),
@@ -389,9 +398,12 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 			return nil, storeError(err)
 		}
 	}
-	err = tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{Status: to, Confirmed: set.GetConfirmed(), SinceMs: set.GetSinceMs()})
+	err = tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{Status: to, Confirmed: set.GetConfirmed(), SinceMs: since})
 	if err != nil {
 		return nil, storeError(err)
+	}
+	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
+		return nil, err
 	}
 	return json.Marshal(StateResult{Status: to})
 }

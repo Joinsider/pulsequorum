@@ -24,16 +24,23 @@ func TestLoadDefaults(t *testing.T) {
 		cfg.LogLevel != slog.LevelInfo || cfg.ShutdownTimeout != 10*time.Second {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
+	day := 24 * time.Hour
+	if !cfg.RawCompaction || cfg.RetentionRaw != 30*day || cfg.RetentionHourly != 365*day || cfg.RetentionDaily != 0 {
+		t.Errorf("unexpected data defaults: compaction %v, retention %v/%v/%v", cfg.RawCompaction, cfg.RetentionRaw, cfg.RetentionHourly, cfg.RetentionDaily)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
 	cfg, err := Load(env(map[string]string{
-		"NODE_NAME":        "probe-1",
-		"NODE_ROLE":        "probe",
-		"PUBLIC_URL":       "https://mon1.example.com/",
-		"LOG_LEVEL":        "debug",
-		"LOG_FORMAT":       "text",
-		"SHUTDOWN_TIMEOUT": "3s",
+		"NODE_NAME":            "probe-1",
+		"NODE_ROLE":            "probe",
+		"PUBLIC_URL":           "https://mon1.example.com/",
+		"LOG_LEVEL":            "debug",
+		"LOG_FORMAT":           "text",
+		"SHUTDOWN_TIMEOUT":     "3s",
+		"RAW_COMPACTION":       "false",
+		"RETENTION_RAW_DAYS":   "7",
+		"RETENTION_DAILY_DAYS": "3650",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -43,6 +50,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.PublicURL != "https://mon1.example.com" {
 		t.Errorf("PublicURL = %q, want trailing slash trimmed", cfg.PublicURL)
+	}
+	if cfg.RawCompaction || cfg.RetentionRaw != 7*24*time.Hour || cfg.RetentionDaily != 3650*24*time.Hour {
+		t.Errorf("data settings = %v %v %v", cfg.RawCompaction, cfg.RetentionRaw, cfg.RetentionDaily)
 	}
 	if cfg.LogLevel != slog.LevelDebug || cfg.LogFormat != "text" || cfg.ShutdownTimeout != 3*time.Second {
 		t.Errorf("unexpected values: %+v", cfg)
@@ -68,6 +78,10 @@ func TestLoadInvalid(t *testing.T) {
 		{"raft timeout too small", map[string]string{"RAFT_TIMEOUT": "10ms"}, "RAFT_TIMEOUT"},
 		{"two master keys", map[string]string{"MASTER_KEY": "a", "MASTER_KEY_FILE": "/k"}, "MASTER_KEY"},
 		{"icmp mode", map[string]string{"ICMP_MODE": "raw"}, "ICMP_MODE"},
+		{"raw compaction", map[string]string{"RAW_COMPACTION": "yes"}, "RAW_COMPACTION"},
+		{"raw retention too short", map[string]string{"RETENTION_RAW_DAYS": "2"}, "RETENTION_RAW_DAYS"},
+		{"hourly retention not a number", map[string]string{"RETENTION_HOURLY_DAYS": "1y"}, "RETENTION_HOURLY_DAYS"},
+		{"daily retention negative", map[string]string{"RETENTION_DAILY_DAYS": "-1"}, "RETENTION_DAILY_DAYS"},
 		{"ssrf protection", map[string]string{"SSRF_PROTECTION": "maybe"}, "SSRF_PROTECTION"},
 	}
 	for _, tt := range tests {

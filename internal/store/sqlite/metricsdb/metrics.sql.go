@@ -9,6 +9,21 @@ import (
 	"context"
 )
 
+const deleteHeartbeat = `-- name: DeleteHeartbeat :exec
+DELETE FROM heartbeats WHERE node_id = ? AND incarnation = ? AND seq = ?
+`
+
+type DeleteHeartbeatParams struct {
+	NodeID      string
+	Incarnation string
+	Seq         int64
+}
+
+func (q *Queries) DeleteHeartbeat(ctx context.Context, arg DeleteHeartbeatParams) error {
+	_, err := q.db.ExecContext(ctx, deleteHeartbeat, arg.NodeID, arg.Incarnation, arg.Seq)
+	return err
+}
+
 const deleteHeartbeatsBefore = `-- name: DeleteHeartbeatsBefore :execrows
 DELETE FROM heartbeats
 WHERE rowid IN (SELECT h.rowid FROM heartbeats AS h WHERE h.ts_ms < ?1 LIMIT ?2)
@@ -22,6 +37,45 @@ type DeleteHeartbeatsBeforeParams struct {
 // One retention batch; short write transactions keep the writer responsive (FA-UPT-06).
 func (q *Queries) DeleteHeartbeatsBefore(ctx context.Context, arg DeleteHeartbeatsBeforeParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteHeartbeatsBefore, arg.BeforeMs, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteLatencyMinutesBefore = `-- name: DeleteLatencyMinutesBefore :execrows
+DELETE FROM latency_minutes
+WHERE rowid IN (SELECT l.rowid FROM latency_minutes AS l WHERE l.minute_ms < ?1 LIMIT ?2)
+`
+
+type DeleteLatencyMinutesBeforeParams struct {
+	BeforeMs  int64
+	BatchSize int64
+}
+
+func (q *Queries) DeleteLatencyMinutesBefore(ctx context.Context, arg DeleteLatencyMinutesBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteLatencyMinutesBefore, arg.BeforeMs, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteRollupsBefore = `-- name: DeleteRollupsBefore :execrows
+DELETE FROM uptime_rollups
+WHERE rowid IN (SELECT r.rowid FROM uptime_rollups AS r
+                WHERE r.bucket_ms = ?1 AND r.start_ms < ?2
+                LIMIT ?3)
+`
+
+type DeleteRollupsBeforeParams struct {
+	BucketMs  int64
+	BeforeMs  int64
+	BatchSize int64
+}
+
+func (q *Queries) DeleteRollupsBefore(ctx context.Context, arg DeleteRollupsBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteRollupsBefore, arg.BucketMs, arg.BeforeMs, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -86,6 +140,42 @@ func (q *Queries) InsertHeartbeat(ctx context.Context, arg InsertHeartbeatParams
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const insertLatencyMinute = `-- name: InsertLatencyMinute :exec
+INSERT INTO latency_minutes (
+    tenant_id, monitor_id, node_id, minute_ms, min_ms, max_ms, avg_ms, p95_ms, ok_count, err_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (monitor_id, node_id, minute_ms) DO NOTHING
+`
+
+type InsertLatencyMinuteParams struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+	MinuteMs  int64
+	MinMs     int64
+	MaxMs     int64
+	AvgMs     float64
+	P95Ms     float64
+	OkCount   int64
+	ErrCount  int64
+}
+
+func (q *Queries) InsertLatencyMinute(ctx context.Context, arg InsertLatencyMinuteParams) error {
+	_, err := q.db.ExecContext(ctx, insertLatencyMinute,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.NodeID,
+		arg.MinuteMs,
+		arg.MinMs,
+		arg.MaxMs,
+		arg.AvgMs,
+		arg.P95Ms,
+		arg.OkCount,
+		arg.ErrCount,
+	)
+	return err
 }
 
 const insertMeta = `-- name: InsertMeta :exec
@@ -248,4 +338,130 @@ func (q *Queries) ListHeartbeats(ctx context.Context, arg ListHeartbeatsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRollups = `-- name: ListRollups :many
+SELECT tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms, latency_count, latency_avg, latency_p95 FROM uptime_rollups
+WHERE tenant_id = ?1 AND monitor_id = ?2
+  AND (CAST(?3 AS INTEGER) = 1 OR node_id = ?4)
+  AND bucket_ms = ?5
+  AND start_ms >= ?6 AND start_ms < ?7
+ORDER BY node_id, start_ms
+`
+
+type ListRollupsParams struct {
+	TenantID  string
+	MonitorID string
+	AllNodes  int64
+	NodeID    string
+	BucketMs  int64
+	FromMs    int64
+	ToMs      int64
+}
+
+func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]UptimeRollup, error) {
+	rows, err := q.db.QueryContext(ctx, listRollups,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.AllNodes,
+		arg.NodeID,
+		arg.BucketMs,
+		arg.FromMs,
+		arg.ToMs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UptimeRollup{}
+	for rows.Next() {
+		var i UptimeRollup
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.MonitorID,
+			&i.NodeID,
+			&i.BucketMs,
+			&i.StartMs,
+			&i.UpMs,
+			&i.DownMs,
+			&i.MaintMs,
+			&i.UnknownMs,
+			&i.LatencyCount,
+			&i.LatencyAvg,
+			&i.LatencyP95,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const upsertMeta = `-- name: UpsertMeta :exec
+INSERT INTO meta (key, value) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value
+`
+
+type UpsertMetaParams struct {
+	Key   string
+	Value string
+}
+
+func (q *Queries) UpsertMeta(ctx context.Context, arg UpsertMetaParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMeta, arg.Key, arg.Value)
+	return err
+}
+
+const upsertRollup = `-- name: UpsertRollup :exec
+INSERT INTO uptime_rollups (
+    tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms,
+    latency_count, latency_avg, latency_p95
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (monitor_id, node_id, bucket_ms, start_ms) DO UPDATE SET
+    up_ms         = excluded.up_ms,
+    down_ms       = excluded.down_ms,
+    maint_ms      = excluded.maint_ms,
+    unknown_ms    = excluded.unknown_ms,
+    latency_count = excluded.latency_count,
+    latency_avg   = excluded.latency_avg,
+    latency_p95   = excluded.latency_p95
+`
+
+type UpsertRollupParams struct {
+	TenantID     string
+	MonitorID    string
+	NodeID       string
+	BucketMs     int64
+	StartMs      int64
+	UpMs         int64
+	DownMs       int64
+	MaintMs      int64
+	UnknownMs    int64
+	LatencyCount int64
+	LatencyAvg   float64
+	LatencyP95   float64
+}
+
+func (q *Queries) UpsertRollup(ctx context.Context, arg UpsertRollupParams) error {
+	_, err := q.db.ExecContext(ctx, upsertRollup,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.NodeID,
+		arg.BucketMs,
+		arg.StartMs,
+		arg.UpMs,
+		arg.DownMs,
+		arg.MaintMs,
+		arg.UnknownMs,
+		arg.LatencyCount,
+		arg.LatencyAvg,
+		arg.LatencyP95,
+	)
+	return err
 }

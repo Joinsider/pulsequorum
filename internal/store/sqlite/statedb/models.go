@@ -53,6 +53,13 @@ type MonitorState struct {
 	SinceMs   int64
 }
 
+type MonitorStatusHistory struct {
+	TenantID  string
+	MonitorID string
+	SinceMs   int64
+	Status    string
+}
+
 type MonitorTag struct {
 	TenantID  string
 	MonitorID string

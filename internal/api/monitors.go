@@ -21,6 +21,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/uptime"
 )
 
 // Monitor limits (FA-MON-03). The minimum interval becomes a per-plan limit
@@ -562,6 +563,13 @@ func (h *Handlers) apiMonitor(ctx context.Context, m store.Monitor) (gen.Monitor
 		at := time.UnixMilli(last[0].TsMs).UTC()
 		out.LastCheckAt = &at
 		out.LastLatencyMs = &last[0].LatencyMs
+	}
+	stats, err := h.uptime.Stats(ctx, m, "", uptime.Range24h, h.deps.Now(), false)
+	if err != nil {
+		return gen.Monitor{}, err
+	}
+	if pct, ok := uptime.Percent(stats.Total); ok {
+		out.Uptime24h = &pct
 	}
 	return out, nil
 }

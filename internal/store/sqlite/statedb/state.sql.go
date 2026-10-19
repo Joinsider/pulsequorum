@@ -618,6 +618,29 @@ func (q *Queries) PruneDedup(ctx context.Context, issuedAtMs int64) (int64, erro
 	return result.RowsAffected()
 }
 
+const pruneStatusHistory = `-- name: PruneStatusHistory :exec
+DELETE FROM monitor_status_history AS h
+WHERE h.tenant_id = ?1 AND h.monitor_id = ?2
+  AND h.since_ms < ?3
+  AND h.since_ms < (
+        SELECT MAX(n.since_ms) FROM monitor_status_history n
+        WHERE n.tenant_id = ?1 AND n.monitor_id = ?2
+          AND n.since_ms <= ?3)
+`
+
+type PruneStatusHistoryParams struct {
+	TenantID  string
+	MonitorID string
+	BeforeMs  int64
+}
+
+// Removes changes before before_ms but keeps the last one at or before it,
+// which still defines the status at before_ms.
+func (q *Queries) PruneStatusHistory(ctx context.Context, arg PruneStatusHistoryParams) error {
+	_, err := q.db.ExecContext(ctx, pruneStatusHistory, arg.TenantID, arg.MonitorID, arg.BeforeMs)
+	return err
+}
+
 const resolveIncident = `-- name: ResolveIncident :execrows
 UPDATE incidents SET resolved_ms = ?1
 WHERE tenant_id = ?2 AND monitor_id = ?3 AND resolved_ms = 0
@@ -650,6 +673,58 @@ type SetFSMMetaParams struct {
 func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
 	_, err := q.db.ExecContext(ctx, setFSMMeta, arg.Key, arg.Value)
 	return err
+}
+
+const statusHistory = `-- name: StatusHistory :many
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = ?1 AND h.monitor_id = ?2
+  AND h.since_ms < ?3
+  AND h.since_ms >= COALESCE((
+        SELECT MAX(p.since_ms) FROM monitor_status_history p
+        WHERE p.tenant_id = ?1 AND p.monitor_id = ?2
+          AND p.since_ms <= ?4), ?4)
+ORDER BY h.since_ms
+`
+
+type StatusHistoryParams struct {
+	TenantID  string
+	MonitorID string
+	ToMs      int64
+	FromMs    int64
+}
+
+type StatusHistoryRow struct {
+	SinceMs int64
+	Status  string
+}
+
+// Changes in [from_ms, to_ms) plus the last change before from_ms.
+func (q *Queries) StatusHistory(ctx context.Context, arg StatusHistoryParams) ([]StatusHistoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusHistory,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.ToMs,
+		arg.FromMs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatusHistoryRow{}
+	for rows.Next() {
+		var i StatusHistoryRow
+		if err := rows.Scan(&i.SinceMs, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateMonitor = `-- name: UpdateMonitor :execrows
@@ -770,6 +845,31 @@ func (q *Queries) UpsertSecretKey(ctx context.Context, arg UpsertSecretKeyParams
 		arg.KekFingerprint,
 		arg.CreatedMs,
 		arg.RetiredMs,
+	)
+	return err
+}
+
+const upsertStatusHistory = `-- name: UpsertStatusHistory :exec
+INSERT INTO monitor_status_history (tenant_id, monitor_id, since_ms, status)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (tenant_id, monitor_id, since_ms) DO UPDATE SET status = excluded.status
+`
+
+type UpsertStatusHistoryParams struct {
+	TenantID  string
+	MonitorID string
+	SinceMs   int64
+	Status    string
+}
+
+// A second change at the same instant (PENDING, then DOWN dated back to the
+// same failure) replaces the first.
+func (q *Queries) UpsertStatusHistory(ctx context.Context, arg UpsertStatusHistoryParams) error {
+	_, err := q.db.ExecContext(ctx, upsertStatusHistory,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.SinceMs,
+		arg.Status,
 	)
 	return err
 }

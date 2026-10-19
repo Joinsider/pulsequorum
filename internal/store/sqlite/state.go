@@ -211,6 +211,21 @@ func (s *StateStore) ListIncidents(ctx context.Context, tenantID string, q store
 	return page, nil
 }
 
+// StatusHistory returns the status changes in [fromMs, toMs) and the last one before.
+func (s *StateStore) StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]store.StatusChange, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.q.StatusHistory(ctx, statedb.StatusHistoryParams{TenantID: tenantID, MonitorID: monitorID, FromMs: fromMs, ToMs: toMs})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.StatusChange, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.StatusChange{SinceMs: r.SinceMs, Status: store.MonitorStatus(r.Status)})
+	}
+	return out, nil
+}
+
 // ListSecretKeys returns all data encryption keys ordered by creation.
 func (s *StateStore) ListSecretKeys(ctx context.Context) ([]store.SecretKey, error) {
 	s.mu.RLock()
@@ -437,13 +452,23 @@ func (t *stateTx) PutMonitorState(ctx context.Context, tenantID, monitorID strin
 	if !st.Status.Valid() {
 		return fmt.Errorf("put monitor state: invalid status %q", st.Status)
 	}
-	return mapErr(t.q.UpsertMonitorState(ctx, statedb.UpsertMonitorStateParams{
+	err := t.q.UpsertMonitorState(ctx, statedb.UpsertMonitorStateParams{
 		TenantID:  tenantID,
 		MonitorID: monitorID,
 		Status:    string(st.Status),
 		Confirmed: boolToInt(st.Confirmed),
 		SinceMs:   st.SinceMs,
+	})
+	if err != nil {
+		return mapErr(err)
+	}
+	return mapErr(t.q.UpsertStatusHistory(ctx, statedb.UpsertStatusHistoryParams{
+		TenantID: tenantID, MonitorID: monitorID, SinceMs: st.SinceMs, Status: string(st.Status),
 	}))
+}
+
+func (t *stateTx) PruneStatusHistory(ctx context.Context, tenantID, monitorID string, beforeMs int64) error {
+	return mapErr(t.q.PruneStatusHistory(ctx, statedb.PruneStatusHistoryParams{TenantID: tenantID, MonitorID: monitorID, BeforeMs: beforeMs}))
 }
 
 func (t *stateTx) OpenIncident(ctx context.Context, inc store.Incident) error {

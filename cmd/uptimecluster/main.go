@@ -30,6 +30,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
 )
@@ -181,6 +182,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
+	maintenance := uptime.NewJob(uptime.JobOptions{
+		State: state, Metrics: metrics, Logger: log, Compaction: cfg.RawCompaction,
+		Retention: uptime.Retention{Raw: cfg.RetentionRaw, Hourly: cfg.RetentionHourly, Daily: cfg.RetentionDaily},
+		Vacuum:    func(ctx context.Context) error { return metrics.DB().IncrementalVacuum(ctx, 0) },
+	})
+	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
 	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, sched, agg) })
 

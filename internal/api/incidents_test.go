@@ -46,20 +46,21 @@ func (e *env) changeState(monitorID string, from, to store.MonitorStatus, sinceM
 func TestMonitorStatusAndIncidents(t *testing.T) {
 	e := newEnv(t)
 	web, db := e.createMonitor("web"), e.createMonitor("db")
+	b := time.Now().UnixMilli()
 
-	first := e.changeState(web, store.StatusPending, store.StatusDown, 1_000_000)
-	e.changeState(web, store.StatusDown, store.StatusUp, 1_060_000)
-	second := e.changeState(web, store.StatusUp, store.StatusDown, 2_000_000)
-	third := e.changeState(db, store.StatusPending, store.StatusDown, 3_000_000)
+	first := e.changeState(web, store.StatusPending, store.StatusDown, b+1_000_000)
+	e.changeState(web, store.StatusDown, store.StatusUp, b+1_060_000)
+	second := e.changeState(web, store.StatusUp, store.StatusDown, b+2_000_000)
+	third := e.changeState(db, store.StatusPending, store.StatusDown, b+3_000_000)
 
 	_, err := e.metrics.InsertHeartbeats(context.Background(), []store.Heartbeat{{NodeID: "n1", Incarnation: "i", Seq: 1,
-		TenantID: cluster.DefaultTenantID, MonitorID: web, TsMs: 2_000_000, Status: store.CheckDown, LatencyMs: 42}})
+		TenantID: cluster.DefaultTenantID, MonitorID: web, TsMs: b + 2_000_000, Status: store.CheckDown, LatencyMs: 42}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := decode[gen.Monitor](t, e.do("GET", "/api/v1/monitors/"+web, viewer, nil))
-	if m.Status != gen.MonitorStatusDOWN || !m.StatusSince.Equal(time.UnixMilli(2_000_000)) ||
-		m.LastCheckAt == nil || !m.LastCheckAt.Equal(time.UnixMilli(2_000_000)) || *m.LastLatencyMs != 42 {
+	if m.Status != gen.MonitorStatusDOWN || !m.StatusSince.Equal(time.UnixMilli(b+2_000_000)) ||
+		m.LastCheckAt == nil || !m.LastCheckAt.Equal(time.UnixMilli(b+2_000_000)) || *m.LastLatencyMs != 42 {
 		t.Fatalf("monitor = %+v", m)
 	}
 	if m := decode[gen.Monitor](t, e.do("GET", "/api/v1/monitors/"+db, viewer, nil)); m.LastCheckAt != nil {
@@ -88,7 +89,7 @@ func TestMonitorStatusAndIncidents(t *testing.T) {
 	if got := ids(decode[gen.IncidentPage](t, e.do("GET", "/api/v1/incidents?open=true&monitorId="+web, viewer, nil))); len(got) != 1 || got[0] != second {
 		t.Errorf("open incidents of web = %v", got)
 	}
-	q := url.Values{"from": {time.UnixMilli(1_030_000).UTC().Format(time.RFC3339)}, "to": {time.UnixMilli(1_500_000).UTC().Format(time.RFC3339)}}
+	q := url.Values{"from": {time.UnixMilli(b + 1_030_000).UTC().Format(time.RFC3339)}, "to": {time.UnixMilli(b + 1_500_000).UTC().Format(time.RFC3339)}}
 	if got := ids(decode[gen.IncidentPage](t, e.do("GET", "/api/v1/incidents?"+q.Encode(), viewer, nil))); len(got) != 1 || got[0] != first {
 		t.Errorf("incidents in period = %v", got)
 	}
@@ -108,7 +109,7 @@ func TestMonitorStatusAndIncidents(t *testing.T) {
 	res := e.do("GET", "/api/v1/incidents/"+first, viewer, nil)
 	inc := decode[gen.Incident](t, res)
 	if res.code != http.StatusOK || inc.MonitorName != "web" || inc.Cause != "connection refused" ||
-		*inc.ErrorClass != gen.Connect || inc.ResolvedAt == nil || !inc.ResolvedAt.Equal(time.UnixMilli(1_060_000)) ||
+		*inc.ErrorClass != gen.Connect || inc.ResolvedAt == nil || !inc.ResolvedAt.Equal(time.UnixMilli(b+1_060_000)) ||
 		len(*inc.AffectedNodes) != 1 || !*inc.Confirmed {
 		t.Fatalf("incident = %d %+v", res.code, inc)
 	}
@@ -124,6 +125,62 @@ func TestMonitorStatusAndIncidents(t *testing.T) {
 		t.Errorf("tenant B sees %v", got)
 	}
 	if res := e.do("GET", "/api/v1/incidents", "", nil); res.code != http.StatusUnauthorized {
+		t.Errorf("anonymous = %d", res.code)
+	}
+}
+
+// TestUptime covers GET /monitors/{id}/uptime and uptime24h (FA-UPT-01).
+func TestUptime(t *testing.T) {
+	e := newEnv(t)
+	id := e.createMonitor("web")
+	// The monitor was UP for 10 minutes after its creation, then DOWN for 10
+	// minutes until the API's now.
+	start := time.Now().UnixMilli() + 1000
+	now := start + 20*60_000
+	e.now = time.UnixMilli(now)
+	e.changeState(id, store.StatusPending, store.StatusUp, start)
+	e.changeState(id, store.StatusUp, store.StatusDown, now-10*60_000)
+	var hbs []store.Heartbeat
+	for i := range 20 {
+		s, lat := store.CheckUp, 80
+		if i >= 10 {
+			s, lat = store.CheckDown, 0
+		}
+		hbs = append(hbs, store.Heartbeat{NodeID: "n1", Incarnation: "i", Seq: uint64(i + 1), TenantID: cluster.DefaultTenantID,
+			MonitorID: id, TsMs: start + int64(i)*60_000, Status: s, LatencyMs: lat})
+	}
+	if _, err := e.metrics.InsertHeartbeats(context.Background(), hbs); err != nil {
+		t.Fatal(err)
+	}
+
+	res := e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=24h", viewer, nil)
+	stats := decode[gen.UptimeStats](t, res)
+	if res.code != http.StatusOK || stats.UptimePercent == nil || *stats.UptimePercent != 50 ||
+		len(stats.Buckets) != 24 || stats.NodeId != nil || *stats.LatencyAvgMs != 80 {
+		t.Fatalf("uptime = %d %s", res.code, res.body)
+	}
+	res = e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=24h&node=n1", viewer, nil)
+	node := decode[gen.UptimeStats](t, res)
+	if res.code != http.StatusOK || *node.NodeId != "n1" || node.UpSeconds != 600 || node.DownSeconds != 600 {
+		t.Fatalf("node uptime = %d %s", res.code, res.body)
+	}
+	if res := e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=365d", viewer, nil); res.code != http.StatusOK ||
+		len(decode[gen.UptimeStats](t, res).Buckets) != 365 {
+		t.Fatalf("365d = %d %s", res.code, res.body)
+	}
+
+	m := decode[gen.Monitor](t, e.do("GET", "/api/v1/monitors/"+id, viewer, nil))
+	if m.Uptime24h == nil || *m.Uptime24h != *stats.UptimePercent {
+		t.Errorf("uptime24h = %v, want %v", m.Uptime24h, *stats.UptimePercent)
+	}
+
+	if res := e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=1y", viewer, nil); res.code != http.StatusBadRequest {
+		t.Errorf("invalid range = %d", res.code)
+	}
+	if res := e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=24h", other, nil); res.code != http.StatusNotFound {
+		t.Errorf("foreign monitor = %d", res.code)
+	}
+	if res := e.do("GET", "/api/v1/monitors/"+id+"/uptime?range=24h", "", nil); res.code != http.StatusUnauthorized {
 		t.Errorf("anonymous = %d", res.code)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/raft"
@@ -63,6 +64,8 @@ func TestMonitorStateAndIncidents(t *testing.T) {
 		{put("p3", monitorDoc("one"), 2), 6000, nil, store.StatusPending, 6000},
 		{stateChange(store.StatusPending, store.StatusPaused, 6500, ""), 6500, ErrInvalidCommand, store.StatusPending, 6000},
 		{downNoIncident, 7000, ErrInvalidCommand, store.StatusPending, 6000},
+		// A change never predates the current state; the history stays ordered.
+		{stateChange(store.StatusPending, store.StatusUp, 5900, ""), 7100, nil, store.StatusUp, 6000},
 	}
 
 	var prints []string
@@ -111,6 +114,17 @@ func TestMonitorStateAndIncidents(t *testing.T) {
 		if i1.Cause != "connection refused" || i1.ErrorClass != "connect" || i1.MonitorName != "one" ||
 			len(i1.AffectedNodes) != 1 || i1.AffectedNodes[0] != "n1" || !i1.Confirmed {
 			t.Fatalf("incident details = %+v", i1)
+		}
+
+		hist, err := st.StatusHistory(ctx, "default", "m1", 0, 10_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []store.StatusChange{{SinceMs: 1001, Status: store.StatusPending}, {SinceMs: 2000, Status: store.StatusDown},
+			{SinceMs: 3000, Status: store.StatusUp}, {SinceMs: 4000, Status: store.StatusDown},
+			{SinceMs: 5000, Status: store.StatusPaused}, {SinceMs: 6000, Status: store.StatusUp}}
+		if !slices.Equal(hist, want) {
+			t.Fatalf("history = %+v", hist)
 		}
 
 		fp, err := st.Fingerprint(ctx)

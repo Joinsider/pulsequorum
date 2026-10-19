@@ -98,6 +98,12 @@ type MonitorState struct {
 	SinceMs   int64
 }
 
+// StatusChange is one entry of the consensus status history.
+type StatusChange struct {
+	SinceMs int64
+	Status  MonitorStatus
+}
+
 // Incident is a DOWN period of a monitor (FA-INC-01).
 type Incident struct {
 	TenantID    string
@@ -160,6 +166,9 @@ type State interface {
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
 	GetIncident(ctx context.Context, tenantID, id string) (Incident, error)
 	ListIncidents(ctx context.Context, tenantID string, q IncidentQuery) (IncidentPage, error)
+	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
+	// the last change before fromMs if it is still stored, ordered by time.
+	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
 
 	// ListSecretKeys returns all data encryption keys ordered by creation (ADR 0011).
 	ListSecretKeys(ctx context.Context) ([]SecretKey, error)
@@ -184,7 +193,11 @@ type StateTx interface {
 
 	// GetMonitorState returns the stored state or ErrNotFound.
 	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)
+	// PutMonitorState stores the state and records it in the status history.
 	PutMonitorState(ctx context.Context, tenantID, monitorID string, st MonitorState) error
+	// PruneStatusHistory deletes a monitor's changes before beforeMs except
+	// the last one, which still defines the status at beforeMs.
+	PruneStatusHistory(ctx context.Context, tenantID, monitorID string, beforeMs int64) error
 	// OpenIncident stores a new incident; a second open incident of the same
 	// monitor is ErrConflict.
 	OpenIncident(ctx context.Context, inc Incident) error
@@ -274,6 +287,62 @@ type HeartbeatPage struct {
 	Next  *HeartbeatCursor // nil if there is no further page
 }
 
+// Rollup bucket sizes (FA-UPT-03).
+const (
+	BucketHour int64 = 3_600_000
+	BucketDay  int64 = 86_400_000
+)
+
+// Rollup is the uptime and latency summary of one monitor in one bucket.
+// NodeID is empty for the consensus view. Durations are milliseconds.
+type Rollup struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+	BucketMs  int64
+	StartMs   int64
+	UpMs      int64
+	DownMs    int64
+	MaintMs   int64
+	UnknownMs int64
+	// Latency over successful checks; LatencyCount = 0 means no data.
+	LatencyCount int64
+	LatencyAvg   float64
+	LatencyP95   float64
+}
+
+// RollupQuery selects a monitor's rollups of one bucket size with StartMs in [FromMs, ToMs).
+type RollupQuery struct {
+	MonitorID string
+	// NodeID "" is the consensus view; AllNodes returns the consensus and every node.
+	NodeID   string
+	AllNodes bool
+	BucketMs int64
+	FromMs   int64
+	ToMs     int64
+}
+
+// LatencyMinute aggregates one node's results of a monitor in one minute (FA-UPT-04).
+type LatencyMinute struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+	MinuteMs  int64
+	Min       int
+	Max       int
+	Avg       float64
+	P95       float64
+	OKCount   int
+	ErrCount  int
+}
+
+// HeartbeatKey identifies a heartbeat.
+type HeartbeatKey struct {
+	NodeID      string
+	Incarnation string
+	Seq         uint64
+}
+
 // Metrics stores data class B.
 type Metrics interface {
 	// Incarnation identifies this metrics database; it changes whenever the
@@ -290,4 +359,21 @@ type Metrics interface {
 	// DeleteHeartbeatsBefore deletes at most batchSize heartbeats older than
 	// beforeMs and returns the number deleted (FA-UPT-06). Callers loop until 0.
 	DeleteHeartbeatsBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
+
+	// PutRollups stores rollups (replacing existing ones) and the named
+	// watermarks in one transaction.
+	PutRollups(ctx context.Context, rollups []Rollup, watermarks map[string]int64) error
+	// ListRollups returns a monitor's rollups ordered by node and time.
+	ListRollups(ctx context.Context, tenantID string, q RollupQuery) ([]Rollup, error)
+	DeleteRollupsBefore(ctx context.Context, bucketMs, beforeMs int64, batchSize int) (int64, error)
+
+	// Watermark returns a stored watermark, 0 if unset.
+	Watermark(ctx context.Context, name string) (int64, error)
+	SetWatermark(ctx context.Context, name string, value int64) error
+
+	// CompactHeartbeats stores latency minutes and deletes heartbeats in one
+	// transaction. Existing minutes are kept: they were computed from the full
+	// data before an interrupted compaction (FA-UPT-04).
+	CompactHeartbeats(ctx context.Context, minutes []LatencyMinute, deleted []HeartbeatKey) error
+	DeleteLatencyMinutesBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
 }
