@@ -17,3 +17,5 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0009](0009-ci-cd-und-release.md) | CI/CD, Qualitäts-Gates und Release | Accepted | 2026-10-19 |
 | [0010](0010-lizenzierung.md) | Lizenzierung, CLA und Abhängigkeitslizenzen | Accepted | 2026-10-19 |
 | [0011](0011-geheimnisverwaltung.md) | Verschlüsselung von Geheimnissen (Envelope Encryption) | Accepted | 2026-10-19 |
+| [0012](0012-praezisierungen-aus-spikes.md) | Präzisierungen aus den Spikes (Raft, SQLite) | Accepted | 2026-10-19 |
+| [0013](0013-persistenz-ergebnisse-sqlite-spike.md) | Persistenz: Ergebnisse des SQLite-Spikes | Proposed | 2026-10-19 |

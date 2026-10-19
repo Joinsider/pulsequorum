@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P0 – Fundament |
-| **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-0.15 (SQLite-Spike) abschließen; danach Empfehlungen aus den Spikes in ADR 0004/0005/0006 einarbeiten (nach Freigabe) und P1 beginnen |
+| **Wartet auf Projektinhaber** | Review ADR 0013 (Ergebnisse SQLite-Spike) |
+| **Nächster Schritt (Claude)** | AP-0.16 (Folgearbeiten ADR 0012); danach P1 mit AP-1.1 (Storage-Schicht, nach Accept von ADR 0013) |
 
 ---
 
@@ -50,7 +50,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.12 | OpenAPI-Entwurf für alle P1-Endpunkte + Codegenerierung (Server/Client) | FA-API-01..07 | ADR 0003 | ✅ `make generate`, `make api-lint`; alle Operationen außer Health antworten 501 bis zur Umsetzung in P1 |
 | AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ✅ `proto/uptimecluster/v1`, `buf lint` (STANDARD), Codegen nach `internal/pb`; FSM-Payloads werden in AP-1.2 verfeinert |
 | AP-0.14 | **Spike Raft** (`spikes/raft`): 3 Container, Konfiguration per Raft, Heartbeats per Replikation inkl. Inkarnation, Leader-Kill, Partition 2\|1, Bootstrap-Erkennung. Ergebnisse und Empfehlungen zu ADR 0005/0006: [spikes/raft/README.md](../spikes/raft/README.md) | FA-CLU-01..07, FA-REP-01..03 | – (Spike) | ✅ |
-| AP-0.15 | **Spike SQLite**: Benchmark `modernc.org/sqlite` vs. `ncruces/go-sqlite3` mit Heartbeat-Last (Batch-Insert, Range-Query, Retention-Delete) | PF-22..24, O-07 | – (Spike) | ⬜ |
+| AP-0.15 | **Spike SQLite**: Benchmark `modernc.org/sqlite` vs. `ncruces/go-sqlite3` mit Heartbeat-Last (Batch-Insert, Range-Query, Retention-Delete) | PF-22..24, O-07 | – (Spike) | ✅ Ergebnisse: [spikes/sqlite/README.md](../spikes/sqlite/README.md); Entscheidung in ADR 0013 |
+| AP-0.16 | Folgearbeiten ADR 0012: `ClusterService.GetStatus` im Proto, Kommentar `StreamPosition` (lückenlose Hochwassermarke), Pflichtenheft FA-CLU-03/06/08/10, FA-NODE-05 anpassen | – | ADR 0012 | ⬜ |
 
 **Hinweis zu AP-0.6–0.9:** Das Grundgerüst wurde vor dem ADR-Review nach den damals vorgeschlagenen ADRs aufgesetzt; alle ADRs wurden unverändert angenommen, es ist keine Anpassung nötig.
 
