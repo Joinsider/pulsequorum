@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/joinsider/uptimecluster/internal/aggregator"
+	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
@@ -177,11 +178,17 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		UserAgent: "UptimeCluster/" + version.Version,
 		ICMPMode:  icmpMode,
 	}
+	sender := alert.NewSender(checkEnv.Dialer, log)
+	dispatcher := alert.NewDispatcher(alert.DispatcherOptions{
+		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
+		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log,
+	})
 	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID, Logger: log})
 	sink := scheduler.Sinks{heartbeats, agg}
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
+	bg.Go(func() { dispatcher.Run(ctx) })
 	maintenance := uptime.NewJob(uptime.JobOptions{
 		State: state, Metrics: metrics, Logger: log, Compaction: cfg.RawCompaction,
 		Retention: uptime.Retention{Raw: cfg.RetentionRaw, Hourly: cfg.RetentionHourly, Daily: cfg.RetentionDaily},
@@ -198,6 +205,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	apiDeps := api.Deps{
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
+		Keyring: keyring, Alerts: sender,
 	}
 	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(raftNode.Ready).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.

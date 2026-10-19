@@ -63,9 +63,11 @@ type Config struct {
 	RetentionRaw    time.Duration
 	RetentionHourly time.Duration
 	RetentionDaily  time.Duration
-	LogLevel        slog.Level
-	LogFormat       string
-	ShutdownTimeout time.Duration
+	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
+	AlertMaxAttempts int
+	LogLevel         slog.Level
+	LogFormat        string
+	ShutdownTimeout  time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -180,6 +182,13 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RetentionRaw = days("RETENTION_RAW_DAYS", "30", 3)
 	cfg.RetentionHourly = days("RETENTION_HOURLY_DAYS", "365", 1)
 	cfg.RetentionDaily = days("RETENTION_DAILY_DAYS", "0", 0)
+
+	attemptsRaw := get("ALERT_MAX_ATTEMPTS", "10")
+	attempts, err := strconv.Atoi(attemptsRaw)
+	if err != nil || attempts < 1 || attempts > 100 {
+		errs = append(errs, fmt.Errorf("ALERT_MAX_ATTEMPTS: must be a whole number from 1 to 100, got %q", attemptsRaw))
+	}
+	cfg.AlertMaxAttempts = attempts
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {

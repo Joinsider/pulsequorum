@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/checker"
@@ -85,6 +86,8 @@ func newEnv(t *testing.T) *env {
 		State: state, Metrics: metrics, Cluster: node, Registry: checker.Default,
 		CheckEnv: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"}, NodeID: "n1",
 		Authenticator: headerAuth{},
+		Keyring:       newTestKeyring(t),
+		Alerts:        alert.NewSender(&checker.Dialer{}, log),
 		Now: func() time.Time {
 			if e.now.IsZero() {
 				return time.Now()
@@ -214,7 +217,7 @@ func TestValidationErrors(t *testing.T) {
 		{"empty name", map[string]any{"name": " ", "type": "http", "intervalSeconds": 60, "config": map[string]any{"url": "https://a"}}, "/name"},
 		{"assignment count", map[string]any{"name": "x", "type": "http", "intervalSeconds": 60, "config": map[string]any{"url": "https://a"},
 			"assignment": map[string]any{"mode": "count"}}, "/assignment/count"},
-		{"channels not yet", map[string]any{"name": "x", "type": "http", "intervalSeconds": 60, "config": map[string]any{"url": "https://a"},
+		{"unknown channel", map[string]any{"name": "x", "type": "http", "intervalSeconds": 60, "config": map[string]any{"url": "https://a"},
 			"notificationChannelIds": []string{"0192d5e0-0000-7000-8000-000000000000"}}, "/notificationChannelIds"},
 	}
 	for _, tt := range tests {

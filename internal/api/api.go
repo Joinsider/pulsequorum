@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/checker"
@@ -54,6 +55,10 @@ type Deps struct {
 	Authenticator auth.Authenticator
 	// Now is the clock for uptime ranges; nil = time.Now.
 	Now func() time.Time
+	// Keyring encrypts and decrypts channel secrets (ADR 0011, 0014).
+	Keyring alert.Keyring
+	// Alerts validates channels and sends test messages.
+	Alerts *alert.Sender
 }
 
 // Handlers implements gen.StrictServerInterface.

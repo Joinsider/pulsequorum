@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
@@ -41,6 +43,7 @@ type access int
 const (
 	readAccess access = iota
 	editAccess
+	adminAccess
 )
 
 // principal returns the caller and checks the role (FA-AUTH-09).
@@ -50,8 +53,11 @@ func principal(ctx context.Context, need access) (auth.Principal, error) {
 		return auth.Principal{}, &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized"}
 	}
 	allowed := p.CanRead()
-	if need == editAccess {
+	switch need {
+	case editAccess:
 		allowed = p.CanEdit()
+	case adminAccess:
+		allowed = p.CanAdmin()
 	}
 	if !allowed {
 		return auth.Principal{}, &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: "your role does not allow this action"}
@@ -166,7 +172,7 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	doc, err := h.monitorDocument(req.Body)
+	doc, err := h.monitorDocument(ctx, p.TenantID, req.Body, true)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +218,7 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	doc, err := h.monitorDocument(req.Body)
+	doc, err := h.monitorDocument(ctx, p.TenantID, req.Body, false)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +429,9 @@ func (h *Handlers) monitor(ctx context.Context, p auth.Principal, id uuid.UUID) 
 }
 
 // monitorDocument validates the input and fills defaults (FA-MON-02/03).
-func (h *Handlers) monitorDocument(in *gen.MonitorInput) (cluster.MonitorDocument, error) {
+// On create (creating true) an omitted notificationChannelIds assigns the
+// tenant's default channels (FA-ALR-01).
+func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen.MonitorInput, creating bool) (cluster.MonitorDocument, error) {
 	if in == nil {
 		return cluster.MonitorDocument{}, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
 	}
@@ -514,9 +522,11 @@ func (h *Handlers) monitorDocument(in *gen.MonitorInput) (cluster.MonitorDocumen
 	if in.Paused != nil {
 		doc.Paused = *in.Paused
 	}
-	if in.NotificationChannelIds != nil && len(*in.NotificationChannelIds) > 0 {
-		add("/notificationChannelIds", "notification channels are not available yet")
+	channels, err := h.monitorChannels(ctx, tenantID, in.NotificationChannelIds, creating, add)
+	if err != nil {
+		return cluster.MonitorDocument{}, err
 	}
+	doc.NotificationChannelIDs = channels
 
 	cfg, err := json.Marshal(in.Config)
 	if err != nil {
@@ -543,12 +553,56 @@ func (h *Handlers) monitorDocument(in *gen.MonitorInput) (cluster.MonitorDocumen
 	return doc, nil
 }
 
+// monitorChannels returns the notification channel IDs of a monitor. Unknown
+// or foreign channels are reported through add. An omitted list takes the
+// tenant's default channels on create and no channels on update; an explicit
+// empty list means no channels (FA-ALR-01).
+func (h *Handlers) monitorChannels(ctx context.Context, tenantID string, ids *[]openapi_types.UUID, creating bool,
+	add func(field, msg string)) ([]string, error) {
+	if ids == nil {
+		if !creating {
+			return nil, nil
+		}
+		all, err := h.deps.State.ListChannels(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		var out []string
+		for _, ch := range all {
+			if ch.IsDefault {
+				out = append(out, ch.ID)
+			}
+		}
+		return out, nil
+	}
+	out := make([]string, 0, len(*ids))
+	seen := make(map[string]bool, len(*ids))
+	for _, id := range *ids {
+		key := id.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		_, err := h.deps.State.GetChannel(ctx, tenantID, key)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			add("/notificationChannelIds", "unknown notification channel "+key)
+		case err != nil:
+			return nil, err
+		default:
+			out = append(out, key)
+		}
+	}
+	return out, nil
+}
+
 func documentFromMonitor(m store.Monitor) cluster.MonitorDocument {
 	return cluster.MonitorDocument{
 		Name: m.Name, Description: m.Description, Type: m.Type, Config: m.Config,
 		IntervalSeconds: m.IntervalSeconds, TimeoutSeconds: m.TimeoutSeconds, Retries: m.Retries,
 		RecoveryThreshold: m.RecoveryThreshold, ResendIntervalMinutes: m.ResendIntervalMinutes,
 		Assignment: m.Assignment, ConsensusPolicy: m.ConsensusPolicy, Tags: m.Tags, Paused: m.Paused,
+		NotificationChannelIDs: slices.Clone(m.ChannelIDs),
 	}
 }
 
@@ -592,26 +646,33 @@ func toAPIMonitor(m store.Monitor) gen.Monitor {
 	if tags == nil {
 		tags = []string{}
 	}
+	channelIDs := make([]openapi_types.UUID, 0, len(m.ChannelIDs))
+	for _, c := range m.ChannelIDs {
+		if id, err := uuid.Parse(c); err == nil {
+			channelIDs = append(channelIDs, id)
+		}
+	}
 	id, _ := uuid.Parse(m.ID)
 	return gen.Monitor{
-		Id:                    id,
-		Name:                  m.Name,
-		Description:           &m.Description,
-		Type:                  m.Type,
-		Config:                cfg,
-		IntervalSeconds:       m.IntervalSeconds,
-		TimeoutSeconds:        &m.TimeoutSeconds,
-		Retries:               &m.Retries,
-		RecoveryThreshold:     &m.RecoveryThreshold,
-		ResendIntervalMinutes: &m.ResendIntervalMinutes,
-		Assignment:            &assignment,
-		ConsensusPolicy:       &policy,
-		Tags:                  &tags,
-		Paused:                &m.Paused,
-		Status:                gen.MonitorStatus(m.State.Status),
-		StatusSince:           time.UnixMilli(m.State.SinceMs).UTC(),
-		CreatedAt:             time.UnixMilli(m.CreatedMs).UTC(),
-		UpdatedAt:             time.UnixMilli(m.UpdatedMs).UTC(),
+		Id:                     id,
+		Name:                   m.Name,
+		Description:            &m.Description,
+		Type:                   m.Type,
+		Config:                 cfg,
+		IntervalSeconds:        m.IntervalSeconds,
+		TimeoutSeconds:         &m.TimeoutSeconds,
+		Retries:                &m.Retries,
+		RecoveryThreshold:      &m.RecoveryThreshold,
+		ResendIntervalMinutes:  &m.ResendIntervalMinutes,
+		Assignment:             &assignment,
+		ConsensusPolicy:        &policy,
+		Tags:                   &tags,
+		Paused:                 &m.Paused,
+		NotificationChannelIds: &channelIDs,
+		Status:                 gen.MonitorStatus(m.State.Status),
+		StatusSince:            time.UnixMilli(m.State.SinceMs).UTC(),
+		CreatedAt:              time.UnixMilli(m.CreatedMs).UTC(),
+		UpdatedAt:              time.UnixMilli(m.UpdatedMs).UTC(),
 	}
 }
 

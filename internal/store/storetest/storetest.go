@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 
@@ -42,6 +43,10 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"Incidents", testIncidents},
 		{"IncidentTenantIsolation", testIncidentTenantIsolation},
 		{"StatusHistory", testStatusHistory},
+		{"Channels", testChannels},
+		{"MonitorChannels", testMonitorChannels},
+		{"Outbox", testOutbox},
+		{"ChannelTenantIsolation", testChannelTenantIsolation},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -701,6 +706,397 @@ func testStatusHistory(t *testing.T, s store.State) {
 	}
 	if got := history(t, s, tenantA, 0, 10_000); len(got) != 2 {
 		t.Errorf("prune in tenant B changed tenant A: %v", got)
+	}
+}
+
+// --- Notification channels and outbox -----------------------------------------
+
+func newChannel(tenantID, id string) store.NotificationChannel {
+	return store.NotificationChannel{
+		TenantID:        tenantID,
+		ID:              id,
+		Name:            "Channel " + id,
+		Kind:            store.ChannelWebhook,
+		URLEnc:          "enc-url-" + id,
+		WebhookMethod:   "POST",
+		WebhookHeaders:  map[string]string{"Authorization": "enc-header-" + id},
+		WebhookTemplate: `{"text":"{{.Name}}"}`,
+		Events:          []string{store.EventUp, store.EventDown},
+		CreatedMs:       1000,
+		UpdatedMs:       1000,
+	}
+}
+
+func putChannel(t *testing.T, s store.State, c store.NotificationChannel, expectedRevision uint64) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutChannel(ctx, c, expectedRevision)
+	})
+}
+
+func delChannel(t *testing.T, s store.State, tenantID, id string) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.DeleteChannel(ctx, tenantID, id)
+	})
+}
+
+func alertEntry(monitorID, key, channelID string, nextAttemptMs int64) store.AlertDelivery {
+	return store.AlertDelivery{
+		TenantID: tenantA, AlertKey: key, ChannelID: channelID, MonitorID: monitorID,
+		Payload: json.RawMessage(`{"event":"down"}`), NextAttemptMs: nextAttemptMs,
+		State: store.AlertPending, CreatedMs: nextAttemptMs, UpdatedMs: nextAttemptMs,
+	}
+}
+
+func enqueueAlert(t *testing.T, s store.State, a store.AlertDelivery) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.EnqueueAlert(ctx, a)
+	})
+}
+
+// editAlert reads an outbox entry in the transaction, applies edit and stores it.
+func editAlert(t *testing.T, s store.State, key, channelID string, edit func(a *store.AlertDelivery)) {
+	t.Helper()
+	err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		a, err := tx.GetAlert(ctx, key, channelID)
+		if err != nil {
+			return err
+		}
+		edit(&a)
+		return tx.UpdateAlert(ctx, a)
+	})
+	if err != nil {
+		t.Fatalf("edit alert %s/%s: %v", key, channelID, err)
+	}
+}
+
+// dueKeys returns "alertKey/channelID" of the due deliveries in order.
+func dueKeys(t *testing.T, s store.State, nowMs int64, limit int) []string {
+	t.Helper()
+	due, err := s.DueAlerts(context.Background(), nowMs, limit)
+	if err != nil {
+		t.Fatalf("DueAlerts: %v", err)
+	}
+	out := make([]string, 0, len(due))
+	for _, a := range due {
+		out = append(out, a.AlertKey+"/"+a.ChannelID)
+	}
+	return out
+}
+
+func testChannels(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+
+	c := newChannel(tenantA, "ch-b")
+	c.Events = []string{"up", "down", "up"}
+	c.IsDefault = true
+	if err := putChannel(t, s, c, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetChannel(ctx, tenantA, "ch-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != tenantA || got.ID != "ch-b" || got.Name != c.Name || got.Kind != store.ChannelWebhook ||
+		got.URLEnc != c.URLEnc || got.WebhookMethod != "POST" || got.WebhookTemplate != c.WebhookTemplate ||
+		!got.IsDefault || got.State != store.ChannelOK || got.LastError != "" || got.Revision != 1 ||
+		got.CreatedMs != 1000 || got.UpdatedMs != 1000 {
+		t.Errorf("unexpected channel: %+v", got)
+	}
+	if !maps.Equal(got.WebhookHeaders, c.WebhookHeaders) {
+		t.Errorf("headers = %v, want %v", got.WebhookHeaders, c.WebhookHeaders)
+	}
+	if !slices.Equal(got.Events, []string{"down", "up"}) {
+		t.Errorf("events = %v, want sorted unique [down up]", got.Events)
+	}
+
+	if err := putChannel(t, s, c, 0); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate create error = %v, want ErrConflict", err)
+	}
+
+	// An update repairs a failing channel: the delivery state is reset.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.SetChannelState(ctx, tenantA, "ch-b", store.ChannelFailing, "connection refused")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Name = "Beta"
+	c.UpdatedMs = 2000
+	if err := putChannel(t, s, c, 1); err != nil {
+		t.Fatalf("update at revision 1: %v", err)
+	}
+	got, err = s.GetChannel(ctx, tenantA, "ch-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 2 || got.Name != "Beta" || got.UpdatedMs != 2000 || got.CreatedMs != 1000 ||
+		got.State != store.ChannelOK || got.LastError != "" {
+		t.Errorf("after update: %+v", got)
+	}
+	if err := putChannel(t, s, c, 1); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("stale update error = %v, want ErrConflict", err)
+	}
+	if err := putChannel(t, s, newChannel(tenantA, "missing"), 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update of missing channel error = %v, want ErrNotFound", err)
+	}
+
+	// The list is ordered by name, not by creation time.
+	gamma := newChannel(tenantA, "ch-c")
+	gamma.Name = "Gamma"
+	alpha := newChannel(tenantA, "ch-a")
+	alpha.Name = "Alpha"
+	for _, ch := range []store.NotificationChannel{gamma, alpha} {
+		if err := putChannel(t, s, ch, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := s.ListChannels(ctx, tenantA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, ch := range list {
+		names = append(names, ch.Name)
+	}
+	if !slices.Equal(names, []string{"Alpha", "Beta", "Gamma"}) {
+		t.Errorf("channel names = %v, want ordered by name", names)
+	}
+
+	if err := delChannel(t, s, tenantA, "ch-b"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetChannel(ctx, tenantA, "ch-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+	}
+	if err := delChannel(t, s, tenantA, "ch-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("second delete error = %v, want ErrNotFound", err)
+	}
+}
+
+func testMonitorChannels(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	for _, id := range []string{"c1", "c2", "c3"} {
+		if err := putChannel(t, s, newChannel(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := putChannel(t, s, newChannel(tenantB, "cb1"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newMonitor(tenantA, "m1")
+	m.ChannelIDs = []string{"c3", "c1", "c3", "c2", "c1"}
+	if err := put(t, s, m, 0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMonitor(ctx, tenantA, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.ChannelIDs, []string{"c1", "c2", "c3"}) {
+		t.Errorf("channel IDs = %v, want sorted unique [c1 c2 c3]", got.ChannelIDs)
+	}
+
+	// An update replaces the whole set.
+	m.ChannelIDs = []string{"c2"}
+	if err := put(t, s, m, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.GetMonitor(ctx, tenantA, "m1"); err != nil || !slices.Equal(got.ChannelIDs, []string{"c2"}) {
+		t.Errorf("after replacing the set: %v, %v", got.ChannelIDs, err)
+	}
+
+	// A channel of another tenant is rejected and the update is rolled back.
+	m.ChannelIDs = []string{"c1", "cb1"}
+	if err := put(t, s, m, 2); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("foreign channel error = %v, want ErrNotFound", err)
+	}
+	if got, err = s.GetMonitor(ctx, tenantA, "m1"); err != nil || got.Revision != 2 || !slices.Equal(got.ChannelIDs, []string{"c2"}) {
+		t.Errorf("rejected update changed the monitor: %+v, %v", got, err)
+	}
+
+	// Deleting a channel removes it from the monitor's set.
+	m.ChannelIDs = []string{"c1", "c2"}
+	if err := put(t, s, m, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := delChannel(t, s, tenantA, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.GetMonitor(ctx, tenantA, "m1"); err != nil || got.Revision != 3 || !slices.Equal(got.ChannelIDs, []string{"c2"}) {
+		t.Errorf("after deleting c1: %+v, %v", got, err)
+	}
+}
+
+func testOutbox(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+	for _, id := range []string{"m1", "m2"} {
+		if err := put(t, s, newMonitor(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"c1", "c2", "c3"} {
+		if err := putChannel(t, s, newChannel(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first := alertEntry("m1", "m1:1000:DOWN", "c1", 1000)
+	if err := enqueueAlert(t, s, first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != tenantA || got.MonitorID != "m1" || string(got.Payload) != `{"event":"down"}` ||
+		got.Attempts != 0 || got.NextAttemptMs != 1000 || got.State != store.AlertPending ||
+		got.LastError != "" || got.CreatedMs != 1000 {
+		t.Errorf("unexpected entry: %+v", got)
+	}
+
+	// The same alert for the same channel is enqueued once: the first payload wins.
+	again := alertEntry("m1", "m1:1000:DOWN", "c1", 5000)
+	again.Payload = json.RawMessage(`{"event":"other"}`)
+	if err := enqueueAlert(t, s, again); err != nil {
+		t.Fatalf("repeated enqueue: %v", err)
+	}
+	if got, err = s.GetAlert(ctx, "m1:1000:DOWN", "c1"); err != nil || string(got.Payload) != `{"event":"down"}` || got.NextAttemptMs != 1000 {
+		t.Errorf("repeated enqueue changed the entry: %+v, %v", got, err)
+	}
+
+	for _, a := range []store.AlertDelivery{
+		alertEntry("m1", "m1:1000:DOWN", "c2", 3000),
+		alertEntry("m1", "m1:2000:DOWN", "c1", 1000), // same time as first, sorted after it by key
+		alertEntry("m1", "m1:1000:UP", "c1", 500),
+		alertEntry("m2", "m2:5:DOWN", "c3", 2000),
+	} {
+		if err := enqueueAlert(t, s, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wantDue := []string{"m1:1000:UP/c1", "m1:1000:DOWN/c1", "m1:2000:DOWN/c1"}
+	if got := dueKeys(t, s, 1000, 10); !slices.Equal(got, wantDue) {
+		t.Errorf("DueAlerts(1000) = %v, want %v", got, wantDue)
+	}
+	if got := dueKeys(t, s, 1000, 2); !slices.Equal(got, wantDue[:2]) {
+		t.Errorf("DueAlerts(1000, limit 2) = %v, want %v", got, wantDue[:2])
+	}
+
+	editAlert(t, s, "m1:1000:DOWN", "c1", func(a *store.AlertDelivery) {
+		a.Attempts, a.NextAttemptMs, a.LastError, a.UpdatedMs = 1, 9000, "timeout", 1500
+	})
+	editAlert(t, s, "m1:1000:UP", "c1", func(a *store.AlertDelivery) {
+		a.State, a.Attempts, a.UpdatedMs = store.AlertDelivered, 1, 1700
+	})
+	editAlert(t, s, "m1:2000:DOWN", "c1", func(a *store.AlertDelivery) {
+		a.State, a.Attempts, a.LastError, a.UpdatedMs = store.AlertFailed, 3, "gave up", 1600
+	})
+	got, err = s.GetAlert(ctx, "m1:1000:DOWN", "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Attempts != 1 || got.NextAttemptMs != 9000 || got.LastError != "timeout" || got.UpdatedMs != 1500 || got.State != store.AlertPending {
+		t.Errorf("after UpdateAlert: %+v", got)
+	}
+	// Only pending entries are due.
+	if got := dueKeys(t, s, 10_000, 10); !slices.Equal(got, []string{"m2:5:DOWN/c3", "m1:1000:DOWN/c2", "m1:1000:DOWN/c1"}) {
+		t.Errorf("DueAlerts(10000) = %v, want pending entries ordered by time", got)
+	}
+
+	// Pruning removes finished entries updated before the cut-off, never pending ones.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PruneAlerts(ctx, 1650)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:2000:DOWN", "c1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("failed entry before cut-off survived pruning: %v", err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); err != nil {
+		t.Errorf("delivered entry after cut-off pruned: %v", err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1"); err != nil {
+		t.Errorf("old pending entry pruned: %v", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PruneAlerts(ctx, 1700) // updated exactly at the cut-off: kept
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); err != nil {
+		t.Errorf("entry updated at the cut-off pruned: %v", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PruneAlerts(ctx, 1701)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delivered entry before cut-off survived pruning: %v", err)
+	}
+
+	// Deleting a channel or a monitor removes its outbox entries.
+	if err := delChannel(t, s, tenantA, "c2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c2"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("entry of deleted channel: %v, want ErrNotFound", err)
+	}
+	if err := delChannel(t, s, tenantA, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("pending entry of deleted channel: %v, want ErrNotFound", err)
+	}
+	if err := del(t, s, tenantA, "m2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAlert(ctx, "m2:5:DOWN", "c3"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("entry of deleted monitor: %v, want ErrNotFound", err)
+	}
+	if got := dueKeys(t, s, 10_000, 10); len(got) != 0 {
+		t.Errorf("DueAlerts after cascades = %v, want none", got)
+	}
+}
+
+func testChannelTenantIsolation(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	if err := putChannel(t, s, newChannel(tenantA, "ch-a"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.GetChannel(ctx, tenantB, "ch-a"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetChannel across tenants error = %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListChannels(ctx, tenantB); err != nil || len(list) != 0 {
+		t.Errorf("ListChannels for other tenant = %d channels, %v", len(list), err)
+	}
+	if err := delChannel(t, s, tenantB, "ch-a"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetChannel(ctx, tenantA, "ch-a"); err != nil {
+		t.Errorf("owner's channel gone after foreign delete: %v", err)
+	}
+
+	if err := putChannel(t, s, newChannel(tenantB, "ch-a"), 0); err == nil {
+		t.Error("channel ID of another tenant reused")
+	}
+	hijack := newChannel(tenantB, "ch-a")
+	hijack.Name = "hijacked"
+	if err := putChannel(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+	}
+	got, err := s.GetChannel(ctx, tenantA, "ch-a")
+	if err != nil || got.Name != "Channel ch-a" || got.Revision != 1 {
+		t.Errorf("owner's channel changed by other tenant: %+v, %v", got, err)
 	}
 }
 

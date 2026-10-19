@@ -644,6 +644,7 @@ Protobuf-Definitionen in `proto/`:
 | `RETENTION_RAW_DAYS` | `30` | Aufbewahrung Heartbeats und Latenz-Minuten in Tagen (mind. 3) |
 | `RETENTION_HOURLY_DAYS` | `365` | Aufbewahrung Stunden-Rollups in Tagen |
 | `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung Tages-Rollups in Tagen (`0` = unbegrenzt) |
+| `ALERT_MAX_ATTEMPTS` | `10` | Maximale Zustellversuche je Alert und Kanal (FA-ALR-03) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |

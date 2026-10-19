@@ -28,6 +28,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.RawCompaction || cfg.RetentionRaw != 30*day || cfg.RetentionHourly != 365*day || cfg.RetentionDaily != 0 {
 		t.Errorf("unexpected data defaults: compaction %v, retention %v/%v/%v", cfg.RawCompaction, cfg.RetentionRaw, cfg.RetentionHourly, cfg.RetentionDaily)
 	}
+	if cfg.AlertMaxAttempts != 10 {
+		t.Errorf("AlertMaxAttempts = %d, want 10", cfg.AlertMaxAttempts)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -41,6 +44,7 @@ func TestLoadOverrides(t *testing.T) {
 		"RAW_COMPACTION":       "false",
 		"RETENTION_RAW_DAYS":   "7",
 		"RETENTION_DAILY_DAYS": "3650",
+		"ALERT_MAX_ATTEMPTS":   "3",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -53,6 +57,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.RawCompaction || cfg.RetentionRaw != 7*24*time.Hour || cfg.RetentionDaily != 3650*24*time.Hour {
 		t.Errorf("data settings = %v %v %v", cfg.RawCompaction, cfg.RetentionRaw, cfg.RetentionDaily)
+	}
+	if cfg.AlertMaxAttempts != 3 {
+		t.Errorf("AlertMaxAttempts = %d, want 3", cfg.AlertMaxAttempts)
 	}
 	if cfg.LogLevel != slog.LevelDebug || cfg.LogFormat != "text" || cfg.ShutdownTimeout != 3*time.Second {
 		t.Errorf("unexpected values: %+v", cfg)
@@ -83,6 +90,9 @@ func TestLoadInvalid(t *testing.T) {
 		{"hourly retention not a number", map[string]string{"RETENTION_HOURLY_DAYS": "1y"}, "RETENTION_HOURLY_DAYS"},
 		{"daily retention negative", map[string]string{"RETENTION_DAILY_DAYS": "-1"}, "RETENTION_DAILY_DAYS"},
 		{"ssrf protection", map[string]string{"SSRF_PROTECTION": "maybe"}, "SSRF_PROTECTION"},
+		{"alert attempts not a number", map[string]string{"ALERT_MAX_ATTEMPTS": "many"}, "ALERT_MAX_ATTEMPTS"},
+		{"alert attempts zero", map[string]string{"ALERT_MAX_ATTEMPTS": "0"}, "ALERT_MAX_ATTEMPTS"},
+		{"alert attempts above limit", map[string]string{"ALERT_MAX_ATTEMPTS": "101"}, "ALERT_MAX_ATTEMPTS"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
