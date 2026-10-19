@@ -1,0 +1,20 @@
+# Weekly dependency updates (ADR 0009). Go modules of the main module and of tools/,
+# npm packages of the web UI, and the pinned GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -17,6 +17,8 @@ import (
 // Role is the role a node runs in.
 type Role string
 
+// Supported node roles: a voter participates in the Raft cluster, a probe only
+// runs checks.
 const (
 	RoleVoter Role = "voter"
 	RoleProbe Role = "probe"
@@ -25,6 +27,7 @@ const (
 // AuthMode selects how users authenticate.
 type AuthMode string
 
+// Supported authentication modes.
 const (
 	AuthLocal   AuthMode = "local"
 	AuthZitadel AuthMode = "zitadel"

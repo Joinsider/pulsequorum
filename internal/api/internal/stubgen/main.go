@@ -69,7 +69,7 @@ type Unimplemented struct{}
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := os.WriteFile(os.Args[2], src, 0o644); err != nil {
+	if err := os.WriteFile(os.Args[2], src, 0o644); err != nil { //nolint:gosec // G306: generated Go source must stay readable like other tracked files
 		log.Fatal(err)
 	}
 }

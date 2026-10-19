@@ -13,3 +13,6 @@ coverage.out
 # OS / editors
 .DS_Store
 .idea/
+
+# Generated third-party notices (make notices)
+/THIRD_PARTY_NOTICES.md

@@ -96,12 +96,12 @@ func healthcheck() int {
 	}
 
 	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz") //nolint:gosec // G704: target is the operator-configured local listen address, not user input
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "unhealthy: HTTP %d\n", resp.StatusCode)
 		return 1

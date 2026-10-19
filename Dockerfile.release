@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1
+
+# Release image packaged by GoReleaser (dockers_v2, see .goreleaser.yaml).
+# GoReleaser cross-compiles the binary and places it in $TARGETPLATFORM/ of the
+# build context, so this file only packages the prebuilt artifact. Local builds
+# use the multi-stage Dockerfile instead.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/uptimecluster /uptimecluster
+COPY LICENSE THIRD_PARTY_NOTICES.md /licenses/
+ENV DATA_DIR=/data
+EXPOSE 8080 9443
+USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/uptimecluster", "healthcheck"]
+ENTRYPOINT ["/uptimecluster"]

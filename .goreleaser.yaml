@@ -1,0 +1,105 @@
+# GoReleaser v2 configuration (ADR 0009, AP-0.10).
+# Validate locally: go run github.com/goreleaser/goreleaser/v2@latest check
+# Release: .github/workflows/release.yml on tags v*, runs `goreleaser release --clean`.
+version: 2
+
+project_name: uptimecluster
+
+before:
+  hooks:
+    - make web-embed
+    - make notices
+
+builds:
+  - id: uptimecluster
+    main: ./cmd/uptimecluster
+    binary: uptimecluster
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/joinsider/uptimecluster/internal/version.Version={{.Version}}
+      - -X github.com/joinsider/uptimecluster/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/joinsider/uptimecluster/internal/version.Date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+
+archives:
+  - id: uptimecluster
+    ids:
+      - uptimecluster
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - LICENSING.md
+      - THIRD_PARTY_NOTICES.md
+
+checksum:
+  name_template: checksums.txt
+
+# SBOM per archive via syft (installed in the release workflow).
+sboms:
+  - id: archives
+    artifacts: archive
+
+dockers_v2:
+  - id: uptimecluster
+    ids:
+      - uptimecluster
+    dockerfile: Dockerfile.release
+    images:
+      - ghcr.io/joinsider/uptimecluster
+    tags:
+      - "{{ .Version }}"
+      - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not .Prerelease }}latest{{ end }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    # Copied into the build context; Dockerfile.release COPYs them to /licenses.
+    extra_files:
+      - LICENSE
+      - THIRD_PARTY_NOTICES.md
+    labels:
+      org.opencontainers.image.title: uptimecluster
+      org.opencontainers.image.source: https://github.com/joinsider/uptimecluster
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: AGPL-3.0-only
+
+# Explicit, so the config also validates without a git remote.
+release:
+  github:
+    owner: joinsider
+    name: uptimecluster
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs'
+      - '^test'
+      - '^chore'
+      - '^ci'
+      - '^Merge'
+  groups:
+    - title: Features
+      regexp: '^feat(\(.*\))?!?:'
+      order: 0
+    - title: Bug fixes
+      regexp: '^fix(\(.*\))?!?:'
+      order: 1
+    - title: Others
+      order: 999

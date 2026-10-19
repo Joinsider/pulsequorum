@@ -100,7 +100,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				if rec == http.ErrAbortHandler {
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rec)
 				}
 				s.log.Error("panic in http handler", "panic", rec, "method", r.Method, "path", r.URL.Path)

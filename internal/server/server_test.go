@@ -145,9 +145,9 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 	url := "http://" + ln.Addr().String() + "/readyz"
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		resp, err := http.Get(url)
+		resp, err := http.Get(url) //nolint:gosec // G107: loopback listener created by this test
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				break
 			}
