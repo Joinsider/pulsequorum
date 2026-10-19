@@ -68,6 +68,7 @@ func TestLoadInvalid(t *testing.T) {
 		{"raft timeout too small", map[string]string{"RAFT_TIMEOUT": "10ms"}, "RAFT_TIMEOUT"},
 		{"two master keys", map[string]string{"MASTER_KEY": "a", "MASTER_KEY_FILE": "/k"}, "MASTER_KEY"},
 		{"icmp mode", map[string]string{"ICMP_MODE": "raw"}, "ICMP_MODE"},
+		{"ssrf protection", map[string]string{"SSRF_PROTECTION": "maybe"}, "SSRF_PROTECTION"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -98,5 +99,17 @@ func TestClusterAdvertiseDefault(t *testing.T) {
 	cfg, err = Load(env(map[string]string{"NODE_NAME": "vps1", "CLUSTER_ADVERTISE": "mon1.example.com:9443", "RAFT_TIMEOUT": "500ms"}))
 	if err != nil || cfg.ClusterAdvertise != "mon1.example.com:9443" || cfg.RaftTimeout != 500*time.Millisecond {
 		t.Errorf("override: %+v, %v", cfg, err)
+	}
+}
+
+func TestSSRFProtectionEnabled(t *testing.T) {
+	for _, tt := range []struct {
+		setting string
+		mode    AuthMode
+		want    bool
+	}{{"auto", AuthLocal, false}, {"auto", AuthZitadel, true}, {"on", AuthLocal, true}, {"off", AuthZitadel, false}} {
+		if got := (Config{SSRFProtection: tt.setting, AuthMode: tt.mode}).SSRFProtectionEnabled(); got != tt.want {
+			t.Errorf("%s/%s = %v, want %v", tt.setting, tt.mode, got, tt.want)
+		}
 	}
 }

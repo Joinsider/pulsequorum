@@ -58,6 +58,9 @@ type FSM struct {
 	applied  atomic.Uint64
 	haltErr  atomic.Pointer[error]
 	haltOnce sync.Once
+	// changes signals (coalesced) that state.db changed; it is a notification
+	// outside the replicated state and does not affect determinism.
+	changes chan struct{}
 }
 
 var _ raft.FSM = (*FSM)(nil)
@@ -69,9 +72,20 @@ func NewFSM(ctx context.Context, state StateStore, log *slog.Logger, onFatal fun
 	if err != nil {
 		return nil, err
 	}
-	f := &FSM{state: state, log: log, onFatal: onFatal}
+	f := &FSM{state: state, log: log, onFatal: onFatal, changes: make(chan struct{}, 1)}
 	f.applied.Store(idx)
 	return f, nil
+}
+
+// Changes returns a channel that receives a value after state.db changed. Several
+// changes may be coalesced into one signal.
+func (f *FSM) Changes() <-chan struct{} { return f.changes }
+
+func (f *FSM) notify() {
+	select {
+	case f.changes <- struct{}{}:
+	default:
+	}
 }
 
 // AppliedIndex returns the last log index reflected in state.db.
@@ -149,6 +163,9 @@ func (f *FSM) Apply(l *raft.Log) any {
 		return ApplyResult{Index: l.Index, Err: f.Healthy()}
 	}
 	f.applied.Store(l.Index)
+	if !res.Duplicate {
+		f.notify()
+	}
 	return res
 }
 
@@ -327,6 +344,7 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 		return err
 	}
 	f.applied.Store(idx)
+	f.notify()
 	f.log.Info("restored state from snapshot", "applied_index", idx)
 	return nil
 }

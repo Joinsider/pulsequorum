@@ -51,7 +51,10 @@ type Config struct {
 	MasterKey     string
 	MasterKeyFile string
 	// ICMPMode is auto, privileged, unprivileged or off (FA-CHK-31).
-	ICMPMode        string
+	ICMPMode string
+	// SSRFProtection is auto, on or off (FA-SEC-SSRF); auto enables it in
+	// multi-tenant (Zitadel) mode.
+	SSRFProtection  string
 	AuthMode        AuthMode
 	LogLevel        slog.Level
 	LogFormat       string
@@ -129,6 +132,13 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("ICMP_MODE: must be auto, privileged, unprivileged or off, got %q", cfg.ICMPMode))
 	}
 
+	cfg.SSRFProtection = get("SSRF_PROTECTION", "auto")
+	switch cfg.SSRFProtection {
+	case "auto", "on", "off":
+	default:
+		errs = append(errs, fmt.Errorf("SSRF_PROTECTION: must be auto, on or off, got %q", cfg.SSRFProtection))
+	}
+
 	cfg.ClusterAdvertise = get("CLUSTER_ADVERTISE", "")
 	if cfg.ClusterAdvertise == "" {
 		_, port, _ := net.SplitHostPort(cfg.ClusterAddr)
@@ -151,4 +161,10 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.ShutdownTimeout = timeout
 
 	return cfg, errors.Join(errs...)
+}
+
+// SSRFProtectionEnabled reports whether check and notification targets in
+// private networks are blocked.
+func (c Config) SSRFProtectionEnabled() bool {
+	return c.SSRFProtection == "on" || (c.SSRFProtection == "auto" && c.AuthMode == AuthZitadel)
 }

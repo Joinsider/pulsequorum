@@ -631,7 +631,8 @@ Protobuf-Definitionen in `proto/`:
 | `HTTP_ADDR` | `:8080` | API/UI |
 | `CLUSTER_ADDR` | `:9443` | Cluster-Port |
 | `PUBLIC_URL` | – | Öffentliche URL des Voters |
-| `CLUSTER_ADVERTISE` | – | Stabile Cluster-Adresse (DNS:Port) |
+| `CLUSTER_ADVERTISE` | `<NODE_NAME>:<Cluster-Port>` | Stabile Cluster-Adresse (DNS:Port) |
+| `RAFT_TIMEOUT` | `1s` | Raft-Heartbeat- und Election-Timeout (ADR 0012 A6) |
 | `CLUSTER_JOIN` / `CLUSTER_SEEDS` | – | Beitritt (Voter) / Seeds (Probe) |
 | `CLUSTER_JOIN_TOKEN` | – | Join-Token |
 | `AUTH_MODE` | `local` | `local` \| `zitadel` |

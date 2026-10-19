@@ -14,13 +14,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/checker"
+	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/node"
+	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
@@ -74,13 +78,21 @@ func run(args []string) int {
 	return 0
 }
 
-// checkpointInterval is the period of the WAL checkpoint job (ADR 0013 C4).
-const checkpointInterval = 60 * time.Second
+const (
+	// checkpointInterval is the period of the WAL checkpoint job (ADR 0013 C4).
+	checkpointInterval = 60 * time.Second
+	// reconcileInterval bounds how long the scheduler may miss a change signal.
+	reconcileInterval = 30 * time.Second
+)
 
 func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
+	// A halted FSM or a foreign master key stops the whole process (FA-CLU-13).
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+
 	state, err := sqlite.OpenState(ctx, cfg.DataDir)
 	if err != nil {
 		return err
@@ -93,11 +105,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	defer func() { _ = metrics.Close() }()
 	log.Info("storage ready", "data_dir", cfg.DataDir, "incarnation", metrics.Incarnation())
 
-	go state.DB().RunCheckpointer(ctx, checkpointInterval, log)
-	go metrics.DB().RunCheckpointer(ctx, checkpointInterval, log)
-
-	// ICMP self-test (FA-CHK-31, FA-NODE-06); the mode is handed to the
-	// checkers by the scheduler (AP-1.6).
+	// ICMP self-test (FA-CHK-31, FA-NODE-06).
 	icmpMode, icmpErr := icmpcheck.DetectMode(ctx, cfg.ICMPMode)
 	if icmpMode == icmpcheck.ModeOff && cfg.ICMPMode != icmpcheck.ModeOff {
 		log.Warn("ICMP checks are unavailable on this node; see docs/betrieb/icmp.md", "configured", cfg.ICMPMode, "err", icmpErr)
@@ -117,9 +125,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthZitadel {
 		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
 	}
-	// A halted FSM stops the whole process (FA-CLU-13).
-	ctx, stop := context.WithCancelCause(ctx)
-	defer stop(nil)
+
 	raftNode, err := cluster.Start(ctx, cluster.Config{
 		NodeID:       nodeID,
 		Advertise:    cfg.ClusterAdvertise,
@@ -139,9 +145,43 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}()
 	log.Info("node ready", "node_id", nodeID, "advertise", cfg.ClusterAdvertise)
 
+	// Background work stops and finishes before Raft and the stores close
+	// (deferred calls run in reverse order).
+	var bg sync.WaitGroup
+	defer func() {
+		stop(nil)
+		bg.Wait()
+	}()
+
+	bg.Go(func() { state.DB().RunCheckpointer(ctx, checkpointInterval, log) })
+	bg.Go(func() { metrics.DB().RunCheckpointer(ctx, checkpointInterval, log) })
+
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
-	go bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, stop)
-	go cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log)
+	bg.Go(func() { bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, stop) })
+	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
+
+	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, metrics, nodeID, log)
+	if err != nil {
+		return err
+	}
+	var policy checker.AddressPolicy
+	if cfg.SSRFProtectionEnabled() {
+		policy = checker.BlockPrivate{}
+	}
+	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
+	sched := scheduler.New(scheduler.Options{
+		Registry: checker.Default,
+		Env: &checker.Env{
+			Dialer:    &checker.Dialer{Policy: policy},
+			UserAgent: "UptimeCluster/" + version.Version,
+			ICMPMode:  icmpMode,
+		},
+		Sink:   heartbeats,
+		Logger: log,
+	})
+	bg.Go(func() { heartbeats.Run(ctx) })
+	bg.Go(func() { sched.Run(ctx) })
+	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), sched, reconcileInterval, log) })
 
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
