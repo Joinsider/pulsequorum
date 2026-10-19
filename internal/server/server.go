@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/config"
 )
 
@@ -39,9 +40,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleLiveness)
 	mux.HandleFunc("GET /readyz", s.handleReadiness)
 	mux.HandleFunc("GET /config.json", s.handleFrontendConfig)
-	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	api.Register(mux, s.cfg, s.log)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeProblem(w, http.StatusNotFound, "Not Found", "no API endpoint "+r.Method+" "+r.URL.Path)
+		api.WriteProblem(w, http.StatusNotFound, "Not Found", "no API endpoint "+r.Method+" "+r.URL.Path)
 	})
 	mux.Handle("/", s.ui)
 
@@ -103,7 +104,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 					panic(rec)
 				}
 				s.log.Error("panic in http handler", "panic", rec, "method", r.Method, "path", r.URL.Path)
-				writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
+				api.WriteProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -127,19 +128,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// problem is an RFC 9457 problem details object.
-type problem struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail,omitempty"`
-}
-
-func writeProblem(w http.ResponseWriter, status int, title, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(problem{Type: "about:blank", Title: title, Status: status, Detail: detail})
 }

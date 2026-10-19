@@ -3,21 +3,7 @@
 
 package server
 
-import (
-	"net/http"
-
-	"github.com/joinsider/uptimecluster/internal/version"
-)
-
-// Health is the public node status returned by GET /api/v1/health.
-// Cluster fields (leader, quorum, replication lag) follow in phase 2.
-type Health struct {
-	Status   string `json:"status"`
-	Role     string `json:"role"`
-	NodeName string `json:"nodeName"`
-	Version  string `json:"version"`
-	Commit   string `json:"commit"`
-}
+import "net/http"
 
 // FrontendConfig is the runtime configuration consumed by the SPA (FA-UI-02).
 type FrontendConfig struct {
@@ -41,16 +27,6 @@ func (s *Server) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
-}
-
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, Health{
-		Status:   "ok",
-		Role:     string(s.cfg.Role),
-		NodeName: s.cfg.NodeName,
-		Version:  version.Version,
-		Commit:   version.Commit,
-	})
 }
 
 func (s *Server) handleFrontendConfig(w http.ResponseWriter, _ *http.Request) {

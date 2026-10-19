@@ -3,8 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Health } from '../../core/health/health';
-import { HealthService } from '../../core/health/health.service';
+import { SystemService } from '../../api/gen/endpoints/system/system.service';
+import { Health } from '../../api/gen/model';
 
 type LoadState = 'loading' | 'ok' | 'error';
 
@@ -15,15 +15,15 @@ type LoadState = 'loading' | 'ok' | 'error';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class StatusPage {
-  private readonly healthService = inject(HealthService);
+  private readonly system = inject(SystemService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly state = signal<LoadState>('loading');
   protected readonly health = signal<Health | null>(null);
 
   constructor() {
-    this.healthService
-      .get()
+    this.system
+      .getHealth()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (health) => {

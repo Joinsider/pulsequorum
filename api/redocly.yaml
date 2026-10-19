@@ -1,0 +1,9 @@
+# Lint rules for the OpenAPI contract (ADR 0003). Run `make api-lint`.
+extends:
+  - recommended
+rules:
+  # Write-only secrets (e.g. notification URLs) are deliberate.
+  no-invalid-media-type-examples: error
+  operation-4xx-response: warn
+  # StreamEvent documents the WebSocket messages and is intentionally not referenced by a path.
+  no-unused-components: off

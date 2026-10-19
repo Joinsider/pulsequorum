@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Observable, of, throwError } from 'rxjs';
-import { Health } from '../../core/health/health';
-import { HealthService } from '../../core/health/health.service';
+import { SystemService } from '../../api/gen/endpoints/system/system.service';
+import { Health } from '../../api/gen/model';
 import { StatusPage } from './status-page';
 
 const HEALTH: Health = {
@@ -20,7 +20,7 @@ const HEALTH: Health = {
 function setup(result: Observable<Health>): ComponentFixture<StatusPage> {
   TestBed.configureTestingModule({
     imports: [StatusPage],
-    providers: [{ provide: HealthService, useValue: { get: () => result } }],
+    providers: [{ provide: SystemService, useValue: { getHealth: () => result } }],
   });
   const fixture = TestBed.createComponent(StatusPage);
   fixture.detectChanges();

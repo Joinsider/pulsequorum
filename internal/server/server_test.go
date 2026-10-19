@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/config"
 )
 
@@ -44,7 +45,7 @@ func TestHealth(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	var h Health
+	var h gen.Health
 	if err := json.Unmarshal(rec.Body.Bytes(), &h); err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +86,22 @@ func TestFrontendConfig(t *testing.T) {
 	rec = get(t, s.Handler(), "/config.json")
 	if body := rec.Body.String(); body != "{\"nodes\":[],\"auth\":{\"mode\":\"local\"}}\n" {
 		t.Errorf("without PUBLIC_URL: body = %q, want empty node list", body)
+	}
+}
+
+func TestUnimplementedOperationIs501(t *testing.T) {
+	rec := get(t, testServer().Handler(), "/api/v1/monitors")
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+}
+
+func TestInvalidParameterIs400(t *testing.T) {
+	if rec := get(t, testServer().Handler(), "/api/v1/monitors?limit=abc"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 

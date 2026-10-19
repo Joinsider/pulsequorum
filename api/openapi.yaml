@@ -1,0 +1,1215 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 The UptimeCluster Authors
+#
+# REST contract between backend and frontend (ADR 0003). Spec-first: change this
+# file, then run `make generate`. Scope: all phase-1 endpoints (single voter).
+openapi: 3.0.3
+info:
+  title: UptimeCluster API
+  version: 0.1.0
+  description: |
+    REST API of an UptimeCluster voter. Every voter answers every request;
+    writes are forwarded to the Raft leader internally.
+
+    The tenant is always derived from the access token, never from URL or body.
+    Errors use RFC 9457 problem details (`application/problem+json`).
+  license:
+    name: AGPL-3.0-only
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: system
+    description: Node status
+  - name: auth
+    description: Login, tokens and the current user (local mode)
+  - name: users
+    description: Local users of the tenant
+  - name: monitors
+    description: Monitors, heartbeats and uptime
+  - name: notifications
+    description: Notification channels (Shoutrrr, webhook)
+  - name: maintenance
+    description: Maintenance windows
+  - name: incidents
+    description: Incidents
+  - name: stream
+    description: Live updates over WebSocket
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Public node status
+      security: []
+      responses:
+        "200":
+          description: Node status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  # --- Auth (local mode, ADR 0008) ------------------------------------------
+  /auth/setup:
+    post:
+      tags: [auth]
+      operationId: setup
+      summary: Create the first platform admin using the one-time setup token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupRequest" }
+      responses:
+        "201":
+          description: Admin created and logged in
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Logged in
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Rotate the refresh cookie and issue a new access token
+      description: "Requires the refresh cookie and the header `X-Requested-With: uptimecluster`."
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestedWith"
+      responses:
+        "200":
+          description: New access token
+          headers:
+            Set-Cookie: { $ref: "#/components/headers/RefreshCookie" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the refresh token family and clear the cookie
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestedWith"
+      responses:
+        "204": { description: Logged out }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Get the current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /me/password:
+    put:
+      tags: [auth]
+      operationId: changeMyPassword
+      summary: Change my password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "204": { description: Password changed; other sessions revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  # --- Users (local mode) ----------------------------------------------------
+  /users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: List users
+      responses:
+        "200":
+          description: Users of the tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [users]
+      operationId: createUser
+      summary: Create user
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [users]
+      operationId: updateUser
+      summary: Update user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [users]
+      operationId: deleteUser
+      summary: Delete user
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Monitors ----------------------------------------------------------------
+  /monitor-types:
+    get:
+      tags: [monitors]
+      operationId: listMonitorTypes
+      summary: Available checker plugins with their JSON schema
+      responses:
+        "200":
+          description: Monitor types
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MonitorType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors:
+    get:
+      tags: [monitors]
+      operationId: listMonitors
+      summary: List monitors
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: tag
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/MonitorStatus" }
+        - name: q
+          in: query
+          description: Case-insensitive search in name and target
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Monitors including their current status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MonitorPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [monitors]
+      operationId: createMonitor
+      summary: Create monitor
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MonitorInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    get:
+      tags: [monitors]
+      operationId: getMonitor
+      summary: Get monitor
+      responses:
+        "200":
+          description: Monitor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [monitors]
+      operationId: updateMonitor
+      summary: Update monitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MonitorInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [monitors]
+      operationId: deleteMonitor
+      summary: Delete monitor
+      responses:
+        "204": { description: Deleted; measurement data is removed asynchronously }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    post:
+      tags: [monitors]
+      operationId: pauseMonitor
+      summary: Pause monitor
+      responses:
+        "200":
+          description: Paused
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/resume:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    post:
+      tags: [monitors]
+      operationId: resumeMonitor
+      summary: Resume monitor
+      responses:
+        "200":
+          description: Resumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/clone:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    post:
+      tags: [monitors]
+      operationId: cloneMonitor
+      summary: Clone monitor
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Clone (paused, name suffixed with " (copy)")
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Monitor" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/test:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    post:
+      tags: [monitors]
+      operationId: testMonitor
+      summary: Run the check once now without storing the result
+      responses:
+        "200":
+          description: Check result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResult" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/heartbeats:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    get:
+      tags: [monitors]
+      operationId: listHeartbeats
+      summary: List heartbeats
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/NodeFilter"
+        - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 1000 }
+      responses:
+        "200":
+          description: Heartbeats ordered by time ascending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HeartbeatPage" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /monitors/{monitorId}/uptime:
+    parameters:
+      - $ref: "#/components/parameters/MonitorId"
+    get:
+      tags: [monitors]
+      operationId: getUptime
+      summary: Get uptime
+      parameters:
+        - name: range
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [24h, 7d, 30d, 365d]
+        - $ref: "#/components/parameters/NodeFilter"
+      responses:
+        "200":
+          description: Uptime statistics computed from rollups
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UptimeStats" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Notifications -----------------------------------------------------------
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotificationChannels
+      summary: List notification channels
+      responses:
+        "200":
+          description: Channels (secrets masked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationChannel" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [notifications]
+      operationId: createNotificationChannel
+      summary: Create notification channel
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /notifications/{channelId}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [notifications]
+      operationId: getNotificationChannel
+      summary: Get notification channel
+      responses:
+        "200":
+          description: Channel (secrets masked)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [notifications]
+      operationId: updateNotificationChannel
+      summary: Update notification channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [notifications]
+      operationId: deleteNotificationChannel
+      summary: Delete notification channel
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /notifications/{channelId}/test:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    post:
+      tags: [notifications]
+      operationId: testNotificationChannel
+      summary: Send a test message synchronously
+      responses:
+        "200":
+          description: Delivery result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryResult" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Maintenance -------------------------------------------------------------
+  /maintenance:
+    get:
+      tags: [maintenance]
+      operationId: listMaintenanceWindows
+      summary: List maintenance windows
+      responses:
+        "200":
+          description: Maintenance windows
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MaintenanceWindow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [maintenance]
+      operationId: createMaintenanceWindow
+      summary: Create maintenance window
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaintenanceWindowInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaintenanceWindow" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /maintenance/{maintenanceId}:
+    parameters:
+      - $ref: "#/components/parameters/MaintenanceId"
+    get:
+      tags: [maintenance]
+      operationId: getMaintenanceWindow
+      summary: Get maintenance window
+      responses:
+        "200":
+          description: Maintenance window
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaintenanceWindow" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [maintenance]
+      operationId: updateMaintenanceWindow
+      summary: Update maintenance window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaintenanceWindowInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaintenanceWindow" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [maintenance]
+      operationId: deleteMaintenanceWindow
+      summary: Delete maintenance window
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Incidents ---------------------------------------------------------------
+  /incidents:
+    get:
+      tags: [incidents]
+      operationId: listIncidents
+      summary: List incidents
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: monitorId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - name: open
+          in: query
+          description: Only unresolved incidents
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Incidents, newest first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /incidents/{incidentId}:
+    parameters:
+      - name: incidentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [incidents]
+      operationId: getIncident
+      summary: Get incident
+      responses:
+        "200":
+          description: Incident
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Live stream (FA-AUTH-11) -------------------------------------------------
+  /stream/ticket:
+    post:
+      tags: [stream]
+      operationId: createStreamTicket
+      summary: One-time ticket (30 s) for opening the WebSocket `/api/v1/stream?ticket=…`
+      description: |
+        The WebSocket itself is not described by OpenAPI. Messages are JSON
+        objects of schema `StreamEvent`.
+      responses:
+        "201":
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StreamTicket" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  headers:
+    RefreshCookie:
+      description: "`uc_refresh=…; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`"
+      schema: { type: string }
+
+  parameters:
+    MonitorId:
+      name: monitorId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MaintenanceId:
+      name: maintenanceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from `nextCursor` of the previous page
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    From:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
+    NodeFilter:
+      name: node
+      in: query
+      description: Restrict to one node; omitted = consensus view
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: |
+        Client-generated request ID (UUID). Retrying with the same key never
+        creates a second object (FA-CLU-06).
+      schema: { type: string, format: uuid }
+    XRequestedWith:
+      name: X-Requested-With
+      in: header
+      required: true
+      schema: { type: string, enum: [uptimecluster] }
+
+  responses:
+    BadRequest:
+      description: Malformed request (parameters, headers or body)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Role does not allow this action or tenant limit reached
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Not found (also returned for objects of other tenants)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: Conflicting state
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ValidationError:
+      description: Request body failed validation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: Rate limit or login throttling
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    # --- Common -------------------------------------------------------------
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          type: array
+          description: Field errors for validation problems
+          items: { $ref: "#/components/schemas/FieldError" }
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string, description: "JSON pointer, e.g. /config/url" }
+        message: { type: string }
+    Role:
+      type: string
+      enum: [platform-admin, tenant-admin, tenant-editor, tenant-viewer]
+
+    # --- System -------------------------------------------------------------
+    Health:
+      type: object
+      required: [status, role, nodeName, version, commit]
+      properties:
+        status: { type: string, enum: [ok] }
+        role: { type: string, enum: [voter, probe] }
+        nodeName: { type: string }
+        version: { type: string }
+        commit: { type: string }
+
+    # --- Auth ---------------------------------------------------------------
+    SetupRequest:
+      type: object
+      required: [setupToken, username, password]
+      properties:
+        setupToken: { type: string }
+        username: { type: string, minLength: 3, maxLength: 64 }
+        displayName: { type: string, maxLength: 128 }
+        password: { type: string, minLength: 12, maxLength: 256, format: password }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    TokenResponse:
+      type: object
+      required: [accessToken, expiresAt]
+      properties:
+        accessToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, format: password }
+        newPassword: { type: string, minLength: 12, maxLength: 256, format: password }
+    Me:
+      type: object
+      required: [id, username, tenantId, roles, authMode]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        displayName: { type: string }
+        tenantId: { type: string }
+        tenantName: { type: string }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+        authMode: { type: string, enum: [local, zitadel] }
+
+    # --- Users --------------------------------------------------------------
+    User:
+      type: object
+      required: [id, username, role, disabled, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        displayName: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+    UserCreate:
+      type: object
+      required: [username, password, role]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64 }
+        displayName: { type: string, maxLength: 128 }
+        password: { type: string, minLength: 12, maxLength: 256, format: password }
+        role: { $ref: "#/components/schemas/Role" }
+    UserUpdate:
+      type: object
+      properties:
+        displayName: { type: string, maxLength: 128 }
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+          format: password
+          description: Admin password reset; revokes the user's sessions
+
+    # --- Monitors -----------------------------------------------------------
+    MonitorStatus:
+      type: string
+      description: |
+        Consensus status. DEGRADED = check passed with a warning (e.g. TLS expiry);
+        PARTIAL = some nodes report DOWN but the DOWN rule is not met (phase 3).
+      enum: [UP, DOWN, DEGRADED, PARTIAL, PENDING, MAINTENANCE, PAUSED, UNKNOWN]
+    CheckStatus:
+      type: string
+      description: Result of a single check on a single node
+      enum: [UP, DOWN, DEGRADED]
+    ErrorClass:
+      type: string
+      enum: [dns, connect, tls, timeout, http_status, assertion, ssrf_blocked, internal]
+    Assignment:
+      type: object
+      description: Which nodes run the check (E1). Single-node clusters ignore this until phase 2.
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [all, count, nodes], default: all }
+        count:
+          type: integer
+          minimum: 1
+          description: Required for mode `count`
+        nodes:
+          type: array
+          description: Node IDs, required for mode `nodes`
+          items: { type: string }
+    ConsensusPolicy:
+      type: string
+      enum: [majority, any, all]
+      default: majority
+    MonitorInput:
+      type: object
+      required: [name, type, config, intervalSeconds]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        type: { type: string, description: Monitor type key from /monitor-types, example: http }
+        config:
+          type: object
+          additionalProperties: true
+          description: Type-specific configuration, validated against the type's JSON schema
+        intervalSeconds: { type: integer, minimum: 20, maximum: 86400, default: 60 }
+        timeoutSeconds:
+          type: integer
+          minimum: 1
+          description: Must not exceed 80 % of the interval (FA-MON-03). Default 0.8 × interval, max 48 s.
+        retries: { type: integer, minimum: 0, maximum: 10, default: 1 }
+        recoveryThreshold:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+          description: Consecutive successes needed to return to UP
+        resendIntervalMinutes:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Repeat DOWN notifications every N minutes; 0 = never
+        assignment: { $ref: "#/components/schemas/Assignment" }
+        consensusPolicy: { $ref: "#/components/schemas/ConsensusPolicy" }
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 64 }
+        notificationChannelIds:
+          type: array
+          items: { type: string, format: uuid }
+        paused: { type: boolean, default: false }
+    Monitor:
+      allOf:
+        - $ref: "#/components/schemas/MonitorInput"
+        - type: object
+          required: [id, status, statusSince, createdAt, updatedAt]
+          properties:
+            id: { type: string, format: uuid }
+            status: { $ref: "#/components/schemas/MonitorStatus" }
+            statusSince: { type: string, format: date-time }
+            lastCheckAt: { type: string, format: date-time, nullable: true }
+            lastLatencyMs: { type: integer, nullable: true }
+            uptime24h:
+              type: number
+              format: double
+              nullable: true
+              description: Percentage 0–100, null if no data
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    MonitorPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Monitor" }
+        nextCursor: { type: string, nullable: true }
+    MonitorType:
+      type: object
+      required: [type, name, configSchema]
+      properties:
+        type: { type: string, example: http }
+        name: { type: string, example: HTTP(S) }
+        description: { type: string }
+        requiresCapability:
+          type: string
+          description: Node capability needed to run this type (e.g. icmp)
+        configSchema:
+          type: object
+          additionalProperties: true
+          description: JSON Schema (draft 2020-12) of `MonitorInput.config`
+    CheckResult:
+      type: object
+      required: [status, latencyMs, checkedAt, nodeId]
+      properties:
+        status: { $ref: "#/components/schemas/CheckStatus" }
+        latencyMs: { type: integer }
+        message: { type: string }
+        errorClass: { $ref: "#/components/schemas/ErrorClass" }
+        details:
+          type: object
+          additionalProperties: true
+          description: Type-specific details, e.g. statusCode, resolvedIp, tlsExpiresAt, phase timings
+        checkedAt: { type: string, format: date-time }
+        nodeId: { type: string }
+    Heartbeat:
+      type: object
+      required: [nodeId, ts, status, latencyMs]
+      properties:
+        nodeId: { type: string }
+        ts: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/CheckStatus" }
+        latencyMs: { type: integer }
+        errorClass: { $ref: "#/components/schemas/ErrorClass" }
+        message: { type: string }
+    HeartbeatPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Heartbeat" }
+        nextCursor: { type: string, nullable: true }
+    UptimeStats:
+      type: object
+      required: [range, uptimePercent, upSeconds, downSeconds, maintenanceSeconds, unknownSeconds, buckets]
+      properties:
+        range: { type: string, enum: [24h, 7d, 30d, 365d] }
+        nodeId: { type: string, nullable: true }
+        uptimePercent:
+          type: number
+          format: double
+          nullable: true
+          description: null if the whole range is unknown/maintenance
+        upSeconds: { type: integer, format: int64 }
+        downSeconds: { type: integer, format: int64 }
+        maintenanceSeconds: { type: integer, format: int64 }
+        unknownSeconds: { type: integer, format: int64 }
+        latencyAvgMs: { type: number, format: double, nullable: true }
+        latencyP95Ms: { type: number, format: double, nullable: true }
+        buckets:
+          type: array
+          description: Hourly buckets for 24h/7d, daily buckets for 30d/365d
+          items: { $ref: "#/components/schemas/UptimeBucket" }
+    UptimeBucket:
+      type: object
+      required: [start, upSeconds, downSeconds, maintenanceSeconds, unknownSeconds]
+      properties:
+        start: { type: string, format: date-time }
+        upSeconds: { type: integer, format: int64 }
+        downSeconds: { type: integer, format: int64 }
+        maintenanceSeconds: { type: integer, format: int64 }
+        unknownSeconds: { type: integer, format: int64 }
+        latencyAvgMs: { type: number, format: double, nullable: true }
+
+    # --- Notifications ------------------------------------------------------
+    NotificationKind:
+      type: string
+      enum: [shoutrrr, webhook]
+    NotificationEvent:
+      type: string
+      enum: [down, up, degraded, partial]
+    WebhookConfig:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        method: { type: string, enum: [POST, PUT], default: POST }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Stored encrypted; values are masked on read
+        bodyTemplate:
+          type: string
+          description: |
+            JSON template with placeholders such as {{monitor.name}}, {{status}},
+            {{confirmed}}. Values are JSON-encoded on insertion (FA-ALR-07).
+    NotificationChannelInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        url:
+          type: string
+          description: Shoutrrr URL (kind=shoutrrr). Write-only; omit on update to keep the stored value.
+          writeOnly: true
+        webhook: { $ref: "#/components/schemas/WebhookConfig" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationEvent" }
+          default: [down, up]
+        isDefault:
+          type: boolean
+          default: false
+          description: Attach to new monitors automatically
+    NotificationChannel:
+      type: object
+      required: [id, name, kind, events, isDefault, state, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        maskedUrl:
+          type: string
+          example: "telegram://***@telegram?chats=@ops"
+        webhook: { $ref: "#/components/schemas/WebhookConfig" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationEvent" }
+        isDefault: { type: boolean }
+        state:
+          type: string
+          enum: [ok, failing, disabled]
+          description: "`disabled` after permanent errors such as HTTP 401/403/404 (FA-ALR-05)"
+        lastError: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    DeliveryResult:
+      type: object
+      required: [delivered]
+      properties:
+        delivered: { type: boolean }
+        error: { type: string }
+        durationMs: { type: integer }
+
+    # --- Maintenance --------------------------------------------------------
+    MaintenanceWindowInput:
+      type: object
+      required: [name, monitorIds, schedule]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        monitorIds:
+          type: array
+          description: Empty = all monitors of the tenant
+          items: { type: string, format: uuid }
+        schedule: { $ref: "#/components/schemas/MaintenanceSchedule" }
+        active: { type: boolean, default: true }
+    MaintenanceSchedule:
+      type: object
+      description: |
+        `once`: startsAt/endsAt. `recurring`: cron expression (5 fields, local time
+        in `timezone`) plus durationMinutes, optionally bounded by startsAt/endsAt.
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [once, recurring] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        cron: { type: string, example: "0 3 * * 0" }
+        durationMinutes: { type: integer, minimum: 1, maximum: 10080 }
+        timezone: { type: string, example: Europe/Berlin, default: UTC }
+    MaintenanceWindow:
+      allOf:
+        - $ref: "#/components/schemas/MaintenanceWindowInput"
+        - type: object
+          required: [id, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            nextStart: { type: string, format: date-time, nullable: true }
+            inProgress: { type: boolean }
+            createdAt: { type: string, format: date-time }
+
+    # --- Incidents ----------------------------------------------------------
+    Incident:
+      type: object
+      required: [id, monitorId, monitorName, startedAt, cause]
+      properties:
+        id: { type: string, format: uuid }
+        monitorId: { type: string, format: uuid }
+        monitorName: { type: string }
+        startedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        cause: { type: string, description: Error message at the start of the incident }
+        errorClass: { $ref: "#/components/schemas/ErrorClass" }
+        affectedNodes:
+          type: array
+          items: { type: string }
+        confirmed:
+          type: boolean
+          description: false if raised in degraded mode without quorum (phase 3)
+    IncidentPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Incident" }
+        nextCursor: { type: string, nullable: true }
+
+    # --- Stream -------------------------------------------------------------
+    StreamTicket:
+      type: object
+      required: [ticket, expiresAt]
+      properties:
+        ticket: { type: string }
+        expiresAt: { type: string, format: date-time }
+    StreamEvent:
+      type: object
+      description: Message on the WebSocket `/api/v1/stream`, filtered by the tenant of the ticket.
+      required: [type, ts]
+      properties:
+        type: { type: string, enum: [heartbeat, state, incident, node] }
+        ts: { type: string, format: date-time }
+        monitorId: { type: string, format: uuid }
+        heartbeat: { $ref: "#/components/schemas/Heartbeat" }
+        status: { $ref: "#/components/schemas/MonitorStatus" }
+        incident: { $ref: "#/components/schemas/Incident" }

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build go-build web-install web-build web-embed test go-test web-test lint go-lint web-lint run web-dev docker clean
+.PHONY: help generate api-gen api-lint build go-build web-install web-build web-embed test go-test web-test lint go-lint web-lint run web-dev docker clean
 
 MODULE    := github.com/joinsider/uptimecluster
 GO_PKGS   := ./cmd/... ./internal/...
@@ -17,6 +17,16 @@ LDFLAGS := -s -w \
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
+
+generate: api-gen ## Regenerate code from api/openapi.yaml (and later proto/, sqlc)
+
+api-gen: web/node_modules ## Generate Go server and Angular client from the OpenAPI contract
+	go tool -modfile=tools/go.mod oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+	go run ./internal/api/internal/stubgen internal/api/gen/api.gen.go internal/api/unimplemented.go
+	cd web && npx orval --config orval.config.ts
+
+api-lint: web/node_modules ## Lint the OpenAPI contract
+	cd web && npx redocly lint ../api/openapi.yaml --config ../api/redocly.yaml
 
 build: web-embed go-build ## Build the frontend and the binary with the embedded SPA
 
@@ -43,7 +53,7 @@ go-test: ## Run Go tests with race detector
 web-test: web/node_modules ## Run frontend unit tests
 	cd web && npx ng test --watch=false
 
-lint: go-lint web-lint ## Run all linters
+lint: go-lint web-lint api-lint ## Run all linters
 
 go-lint: ## go vet and gofmt check
 	go vet $(GO_PKGS)
