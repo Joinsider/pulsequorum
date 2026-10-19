@@ -1,0 +1,75 @@
+# AP-0.14 raft spike: 3 voters. Inter-node traffic only on the "cluster"
+# network under the alias raft-nX (ADVERTISE address); admin ports are
+# published via the "mgmt" network so a node stays observable while it is
+# disconnected from "cluster" (partition scenario).
+name: raftspike
+
+x-node: &node
+  image: localhost/uc-raft-spike:dev
+  volumes:
+    - ./certs:/certs:ro
+  stop_grace_period: 10s
+
+services:
+  n1:
+    <<: *node
+    container_name: spike-n1
+    environment:
+      NODE_NAME: n1
+      CLUSTER_ADVERTISE: raft-n1:9443
+      CLUSTER_JOIN: ${N1_JOIN:-}
+      RAFT_TIMEOUT_MS: ${RAFT_TIMEOUT_MS:-1000}
+      RAFT_TRAILING_LOGS: ${RAFT_TRAILING_LOGS:-20000}
+      JOIN_HOLD_MS: ${JOIN_HOLD_MS:-0}
+    volumes:
+      - ./certs:/certs:ro
+      - n1data:/data
+    ports: ["18001:8080"]
+    networks:
+      mgmt: {}
+      cluster: {aliases: [raft-n1]}
+  n2:
+    <<: *node
+    container_name: spike-n2
+    environment:
+      NODE_NAME: n2
+      CLUSTER_ADVERTISE: raft-n2:9443
+      CLUSTER_JOIN: ${N2_JOIN-raft-n1:9443}
+      RAFT_TIMEOUT_MS: ${RAFT_TIMEOUT_MS:-1000}
+      RAFT_TRAILING_LOGS: ${RAFT_TRAILING_LOGS:-20000}
+      JOIN_HOLD_MS: ${JOIN_HOLD_MS:-0}
+    volumes:
+      - ./certs:/certs:ro
+      - n2data:/data
+    ports: ["18002:8080"]
+    networks:
+      mgmt: {}
+      cluster: {aliases: [raft-n2]}
+  n3:
+    <<: *node
+    container_name: spike-n3
+    environment:
+      NODE_NAME: n3
+      CLUSTER_ADVERTISE: raft-n3:9443
+      CLUSTER_JOIN: ${N3_JOIN-raft-n1:9443}
+      RAFT_TIMEOUT_MS: ${RAFT_TIMEOUT_MS:-1000}
+      RAFT_TRAILING_LOGS: ${RAFT_TRAILING_LOGS:-20000}
+      JOIN_HOLD_MS: ${JOIN_HOLD_MS:-0}
+    volumes:
+      - ./certs:/certs:ro
+      - n3data:/data
+    ports: ["18003:8080"]
+    networks:
+      mgmt: {}
+      cluster: {aliases: [raft-n3]}
+
+networks:
+  mgmt:
+    name: raftspike-mgmt
+  cluster:
+    name: raftspike-cluster
+
+volumes:
+  n1data: {name: raftspike-n1}
+  n2data: {name: raftspike-n2}
+  n3data: {name: raftspike-n3}

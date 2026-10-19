@@ -1,0 +1,110 @@
+
+==================== S0 setup (RAFT_TIMEOUT_MS=1000, TRAILING_LOGS=5) ====================
+[07:58:54] n1 boot: bootstrap single-node cluster state=Leader
+[07:58:54] write on n1: 200
+{"status":"ok","ms":60}
+[07:58:54] bulk 10k rows applied: rows=10001
+[07:58:54] user snapshot n1: {"err":"<nil>","ms":31}
+    time=2026-10-19T05:58:54.897Z level=INFO msg="snapshot persisted" node=n1 bytes=6074368 vacuum_ms=16 total_ms=21
+
+==================== S0b concurrent join of n2 + n3 (nonvoter -> catch-up -> voter, serialised) ====================
+[07:58:59] 3 voters after 4520 ms (incl. container start)
+    level=INFO msg="join: start" node=n1 joiner=n2 id=1ca72588-00ae-4996-a2d8-cd2cbb9ac7b2 waited_mutex_ms=0
+    level=INFO msg="join: nonvoter added" node=n1 joiner=n2 ms=1
+    level=INFO msg="join: promoted to voter" node=n1 joiner=n2 catch_up_ms=1501 promote_ms=4
+    level=INFO msg="join: start" node=n1 joiner=n3 id=4f8d4302-75a9-422d-a0a5-f38775bf798f waited_mutex_ms=1357
+    level=INFO msg="join: nonvoter added" node=n1 joiner=n3 ms=3
+    level=INFO msg="join: promoted to voter" node=n1 joiner=n3 catch_up_ms=1501 promote_ms=1
+    n2: level=INFO msg="join attempt" node=n2 attempt=1 status=200 body="{\"waited_mutex_ms\":0,\"nonvoter_ms\":1,\"catch_up_ms\":1501,\"promote_ms\":4,\"leader\":\"n1\",\"leader_last_index_after_nonvoter\":5,\"joiner_applied_at_promotion\":5}"
+    n3: level=INFO msg="join attempt" node=n3 attempt=1 status=200 body="{\"waited_mutex_ms\":1357,\"nonvoter_ms\":3,\"catch_up_ms\":1501,\"promote_ms\":1,\"leader\":\"n1\",\"leader_last_index_after_nonvoter\":7,\"joiner_applied_at_promotion\":7}"
+[07:59:00] FSM identical on all nodes: n1=ac473556648cf821(rows=10001,applied=4) n2=ac473556648cf821(rows=10001,applied=4) n3=ac473556648cf821(rows=10001,applied=4) 
+
+==================== S1 bootstrap detection from persisted state (changed env) ====================
+[07:59:01] n1 recreated with CLUSTER_JOIN=raft-n2:9443 -> resume (existing raft state; CLUSTER_JOIN and bootstrap ignored); has_existing_state=true
+[07:59:02] n2 recreated WITHOUT CLUSTER_JOIN    -> resume (existing raft state; CLUSTER_JOIN and bootstrap ignored); has_existing_state=true
+[07:59:02] voters seen by n1/n2/n3: 3/3/3; leader=n1 (single cluster)
+[07:59:02] n1:term=4/Leader n2:term=4/Follower n3:term=4/Follower 
+
+==================== S2 write forwarding + request-id dedup ====================
+[07:59:04] PUT on follower n1: 200 {"forwarded":true,"applied_by":"n3","ms":2,"v":"01a152bd-fb15-76e5-9b54-f7917c07a904","deduped":false}
+[07:59:04] same request id on n2: 200 {"forwarded":true,"applied_by":"n3","ms":1,"v":"01a152bd-fb15-76e5-9b54-f7917c07a904","deduped":true}
+[07:59:05]   GET fwd on n1: {"served_by":"n1","value":"1","version_id":"01a152bd-fb15-76e5-9b54-f7917c07a904"}
+[07:59:05]   GET fwd on n2: {"served_by":"n2","value":"1","version_id":"01a152bd-fb15-76e5-9b54-f7917c07a904"}
+[07:59:05]   GET fwd on n3: {"served_by":"n3","value":"1","version_id":"01a152bd-fb15-76e5-9b54-f7917c07a904"}
+[07:59:06] avg write latency (curl, 20x): leader 22 ms, via follower 22 ms
+
+==================== S3 kill -9 leader (5 rounds) ====================
+  round killed new_lead elect_ms     first_write_ms dedup_ok   rejoin_ms
+  1     n3     n1       2164         2198           yes        367
+  2     n1     n3       2518         2551           yes        404
+  3     n3     n2       2399         2433           yes        245
+  4     n2     n3       2356         2391           yes        411
+  5     n3     n2       1825         1917           yes        608
+
+==================== S3b graceful stop of leader (SIGTERM -> leadership transfer) ====================
+[07:59:30] new leader n1 after 385 ms
+    level=INFO msg="leadership transfer on shutdown" node=n2 err=<nil> ms=134
+    level=INFO msg="shutdown complete" node=n2 ms=199
+
+==================== S4 partition 2|1 with the LEADER in the minority ====================
+[07:59:31] before: n1:term=12/Leader n2:term=12/Follower n3:term=12/Follower 
+[07:59:34] majority n2 n3 elected n3 after 2543 ms
+[07:59:34] old leader n1 stepped down after 2592 ms (state=Candidate)
+[07:59:34] write on majority n2: 200
+[07:59:34] write on minority n1: 503 after 19 ms: {"error":"no leader (minority partition or election running)","result_unknown":null}
+[07:59:34] read on minority n1 (stale ok): {"served_by":"n1","value":"world","version_id":"01a152bd-d421-7290-81c5-bf1d71451b34"}
+[07:59:49] after 15 s partition: n1:term=12/Candidate n2:term=13/Follower n3:term=13/Leader 
+[07:59:50] hb: n1 own contig=518, seen by n2=339
+[07:59:51] after heal: n1 follows n3 after 843 ms; n1:term=13/Follower n2:term=13/Follower n3:term=13/Leader 
+[07:59:56] FSM converged after 5774 ms: n1=d41572f38df018b0(rows=10053,applied=77) n2=d41572f38df018b0(rows=10053,applied=77) n3=d41572f38df018b0(rows=10053,applied=77) 
+[07:59:56] hb gap closed in both directions after 6451 ms
+  stream 1ca72588…/eee58ee7: n1 contig=548 max=548  n2 contig=548 max=548  n3 contig=548 max=548
+  stream 28cfc6c8…/a7928cf8: n1 contig=584 max=584  n2 contig=585 max=585  n3 contig=585 max=585
+  stream 4f8d4302…/a5703639: n1 contig=528 max=528  n2 contig=528 max=528  n3 contig=529 max=529
+[07:59:56] replication stats on n2: {"28cfc6c8-3aac-4404-aae0-3521248bcb8e":{"pushed":70,"dropped_buffer_full":0,"push_errors":11,"ae_fetched_new_rows":200},"4f8d4302-75a9-422d-a0a5-f38775bf798f":{"pushed":250,"dropped_buffer_full":0,"push_errors":0,"ae_fetched_new_rows":10}}
+
+==================== S4b partition 2|1 with a FOLLOWER in the minority ====================
+[07:59:57] 20 writes on leader during isolation: last=200; leader unchanged: n3
+[08:00:04] write on isolated follower n1: 503 {"error":"forward: Post \"https://raft-n3:9443/cluster/apply\": http2: client connection lost","result_unknown":true}
+[08:00:10] n1:term=13/Candidate n2:term=13/Follower n3:term=13/Leader 
+[08:00:13] follower n1 caught up 2759 ms after heal; n1:term=13/Follower n2:term=13/Follower n3:term=13/Leader 
+
+==================== S5 wipe data dir of one node (new node id + incarnation) ====================
+[08:00:13] wiped n2 (old id 1ca72588, inc eee58ee7); its stream on n1: contig=716, on n3: 716
+[08:00:13] 10 writes while n2 is gone: 200; leader snapshot: {"err":"<nil>","ms":40}
+[08:00:21] join attempts of the wiped node:
+    level=INFO msg="boot decision" node=n2 node_id=f7f3f88e-c072-4a97-b399-9d2aa203ca2d incarnation=561cc989 info="map[cluster_join_env:raft-n1:9443 decision:join raft-n1:9443 fresh_node_id:true fsm_applied_index_at_start:0 has_existing_state:false latest_snap
+    level=INFO msg="join attempt" node=n2 attempt=1 status=409 body="{\"error\":\"address already used by another server id; remove it first\",\"conflict_id\":\"1ca72588-00ae-4996-a2d8-cd2cbb9ac7b2\",\"waited_mutex_ms\":0,\"nonvoter_ms\":0,\"catch_up_ms\":0,\"
+    level=INFO msg="join attempt" node=n2 attempt=2 status=409 body="{\"error\":\"address already used by another server id; remove it first\",\"conflict_id\":\"1ca72588-00ae-4996-a2d8-cd2cbb9ac7b2\",\"waited_mutex_ms\":0,\"nonvoter_ms\":0,\"catch_up_ms\":0,\"
+[08:00:21] cluster still writable with 2/3 voters: yes
+[08:00:21] operator removes old id: {"err":"<nil>"}
+[08:00:24] n2 rejoined as voter 3413 ms after removal; new id f7f3f88e, new inc 561cc989
+    level=INFO msg="join: nonvoter added" node=n3 joiner=n2 ms=1
+    level=INFO msg="join: promoted to voter" node=n3 joiner=n2 catch_up_ms=1501 promote_ms=1
+    level=INFO msg="snapshot restored" node=n2 bytes=6094848 applied_index=107 ms=27
+[08:00:25] FSM identical: n1=34b5b7c89288deb1(rows=10084,applied=108) n2=34b5b7c89288deb1(rows=10084,applied=108) n3=34b5b7c89288deb1(rows=10084,applied=108) 
+[08:00:25] old incarnation stream restored onto new n2 via anti-entropy: contig=716 (expected 716)
+[08:00:25] old stream still complete on n1/n3: 716/716
+  stream 1ca72588…/eee58ee7: n1 contig=716 max=716  n2 contig=716 max=716  n3 contig=716 max=716
+  stream 28cfc6c8…/a7928cf8: n1 contig=872 max=872  n2 contig=872 max=872  n3 contig=872 max=872
+  stream 4f8d4302…/a5703639: n1 contig=816 max=816  n2 contig=816 max=816  n3 contig=816 max=816
+  stream f7f3f88e…/561cc989: n1 contig=101 max=101  n2 contig=101 max=101  n3 contig=101 max=101
+
+==================== S6 restart all ====================
+[08:00:27] [kill all] leader n1 after 1835 ms, first write after 1872 ms (incl. container start)
+[08:00:27]   n1 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":108,"latest_snapshot_index":4,"no_snapshot_restore_on_start":true} skipped_on_replay=89
+[08:00:27]   n2 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":108,"latest_snapshot_index":107,"no_snapshot_restore_on_start":true} skipped_on_replay=1
+[08:00:27]   n3 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":108,"latest_snapshot_index":107,"no_snapshot_restore_on_start":true} skipped_on_replay=1
+[08:00:27]   fingerprint before=34b5b7c89288deb1 after: n1=92389018c0b506e9(rows=10085,applied=113) n2=92389018c0b506e9(rows=10085,applied=113) n3=92389018c0b506e9(rows=10085,applied=113) 
+[08:00:30] [stop all] leader n2 after 1485 ms, first write after 1521 ms (incl. container start)
+[08:00:30]   n1 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":113,"latest_snapshot_index":4,"no_snapshot_restore_on_start":true} skipped_on_replay=90
+[08:00:30]   n2 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":113,"latest_snapshot_index":107,"no_snapshot_restore_on_start":true} skipped_on_replay=2
+[08:00:30]   n3 boot: {"decision":"resume (existing raft state; CLUSTER_JOIN and bootstrap ignored)","fsm_applied_index_at_start":113,"latest_snapshot_index":107,"no_snapshot_restore_on_start":true} skipped_on_replay=2
+[08:00:30]   fingerprint before=92389018c0b506e9 after: n1=04f115e8f60b9d57(rows=10086,applied=116) n2=04f115e8f60b9d57(rows=10086,applied=116) n3=04f115e8f60b9d57(rows=10086,applied=116) 
+  stream 1ca72588…/eee58ee7: n1 contig=716 max=716  n2 contig=716 max=716  n3 contig=716 max=716
+  stream 28cfc6c8…/a7928cf8: n1 contig=913 max=913  n2 contig=913 max=913  n3 contig=913 max=913
+  stream 4f8d4302…/a5703639: n1 contig=857 max=857  n2 contig=857 max=857  n3 contig=858 max=858
+  stream f7f3f88e…/561cc989: n1 contig=143 max=143  n2 contig=143 max=143  n3 contig=143 max=143
+
+==================== logs ====================
+[08:00:30] container logs in results/logs/, summary in results/run-20261019-075848-t1000.txt
