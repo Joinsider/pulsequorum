@@ -38,6 +38,15 @@ WHERE tenant_id = sqlc.arg(tenant_id)
 ORDER BY ts_ms, node_id, incarnation, seq
 LIMIT sqlc.arg(row_limit);
 
+-- name: LatestHeartbeats :many
+-- Newest heartbeats of a monitor, optionally of one node.
+SELECT * FROM heartbeats
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND monitor_id = sqlc.arg(monitor_id)
+  AND (CAST(sqlc.arg(node_id) AS TEXT) = '' OR node_id = sqlc.arg(node_id))
+ORDER BY ts_ms DESC, seq DESC
+LIMIT sqlc.arg(row_limit);
+
 -- name: DeleteHeartbeatsBefore :execrows
 -- One retention batch; short write transactions keep the writer responsive (FA-UPT-06).
 DELETE FROM heartbeats

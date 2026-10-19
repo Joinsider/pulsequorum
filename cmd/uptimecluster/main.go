@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/aggregator"
 	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
@@ -175,10 +176,13 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		UserAgent: "UptimeCluster/" + version.Version,
 		ICMPMode:  icmpMode,
 	}
-	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: heartbeats, Logger: log})
+	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID, Logger: log})
+	sink := scheduler.Sinks{heartbeats, agg}
+	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
+	bg.Go(func() { agg.Run(ctx) })
 	bg.Go(func() { sched.Run(ctx) })
-	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), sched, reconcileInterval, log) })
+	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, sched, agg) })
 
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")

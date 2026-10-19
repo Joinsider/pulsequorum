@@ -115,6 +115,9 @@ func (h *Handlers) ListMonitors(ctx context.Context, req gen.ListMonitorsRequest
 	if req.Params.Q != nil {
 		q.Search = *req.Params.Q
 	}
+	if req.Params.Status != nil {
+		q.Status = store.MonitorStatus(*req.Params.Status)
+	}
 	if req.Params.Cursor != nil {
 		if q.AfterID, err = decodeCursor(*req.Params.Cursor, "m"); err != nil {
 			return nil, err
@@ -126,10 +129,9 @@ func (h *Handlers) ListMonitors(ctx context.Context, req gen.ListMonitorsRequest
 	}
 	out := gen.MonitorPage{Items: make([]gen.Monitor, 0, len(page.Items))}
 	for _, m := range page.Items {
-		api := toAPIMonitor(m)
-		// Status filtering happens per page until consensus state exists (AP-1.8).
-		if req.Params.Status != nil && api.Status != *req.Params.Status {
-			continue
+		api, err := h.apiMonitor(ctx, m)
+		if err != nil {
+			return nil, err
 		}
 		out.Items = append(out.Items, api)
 	}
@@ -150,7 +152,11 @@ func (h *Handlers) GetMonitor(ctx context.Context, req gen.GetMonitorRequestObje
 	if err != nil {
 		return nil, err
 	}
-	return gen.GetMonitor200JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetMonitor200JSONResponse(out), nil
 }
 
 // CreateMonitor validates the input and creates the monitor through Raft.
@@ -167,7 +173,11 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	return gen.CreateMonitor201JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.CreateMonitor201JSONResponse(out), nil
 }
 
 func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID string, doc cluster.MonitorDocument) (store.Monitor, error) {
@@ -209,7 +219,11 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	return gen.UpdateMonitor200JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.UpdateMonitor200JSONResponse(out), nil
 }
 
 func (h *Handlers) replace(ctx context.Context, p auth.Principal, current store.Monitor, doc cluster.MonitorDocument) (store.Monitor, error) {
@@ -245,7 +259,11 @@ func (h *Handlers) PauseMonitor(ctx context.Context, req gen.PauseMonitorRequest
 	if err != nil {
 		return nil, err
 	}
-	return gen.PauseMonitor200JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.PauseMonitor200JSONResponse(out), nil
 }
 
 // ResumeMonitor restarts checks of a paused monitor.
@@ -254,7 +272,11 @@ func (h *Handlers) ResumeMonitor(ctx context.Context, req gen.ResumeMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	return gen.ResumeMonitor200JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.ResumeMonitor200JSONResponse(out), nil
 }
 
 func (h *Handlers) setPaused(ctx context.Context, id uuid.UUID, paused bool) (store.Monitor, error) {
@@ -291,7 +313,11 @@ func (h *Handlers) CloneMonitor(ctx context.Context, req gen.CloneMonitorRequest
 	if err != nil {
 		return nil, err
 	}
-	return gen.CloneMonitor201JSONResponse(toAPIMonitor(m)), nil
+	out, err := h.apiMonitor(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	return gen.CloneMonitor201JSONResponse(out), nil
 }
 
 // TestMonitor runs the check once on this node without storing the result.
@@ -525,6 +551,21 @@ func documentFromMonitor(m store.Monitor) cluster.MonitorDocument {
 	}
 }
 
+// apiMonitor converts a monitor and adds the newest heartbeat of any node.
+func (h *Handlers) apiMonitor(ctx context.Context, m store.Monitor) (gen.Monitor, error) {
+	out := toAPIMonitor(m)
+	last, err := h.deps.Metrics.LatestHeartbeats(ctx, m.TenantID, m.ID, "", 1)
+	if err != nil {
+		return gen.Monitor{}, err
+	}
+	if len(last) > 0 {
+		at := time.UnixMilli(last[0].TsMs).UTC()
+		out.LastCheckAt = &at
+		out.LastLatencyMs = &last[0].LatencyMs
+	}
+	return out, nil
+}
+
 func toAPIMonitor(m store.Monitor) gen.Monitor {
 	var cfg map[string]any
 	_ = json.Unmarshal(m.Config, &cfg)
@@ -543,11 +584,6 @@ func toAPIMonitor(m store.Monitor) gen.Monitor {
 	if tags == nil {
 		tags = []string{}
 	}
-	// Consensus status follows in AP-1.8; until then a running monitor is PENDING.
-	status := gen.MonitorStatusPENDING
-	if m.Paused {
-		status = gen.MonitorStatusPAUSED
-	}
 	id, _ := uuid.Parse(m.ID)
 	return gen.Monitor{
 		Id:                    id,
@@ -564,8 +600,8 @@ func toAPIMonitor(m store.Monitor) gen.Monitor {
 		ConsensusPolicy:       &policy,
 		Tags:                  &tags,
 		Paused:                &m.Paused,
-		Status:                status,
-		StatusSince:           time.UnixMilli(m.UpdatedMs).UTC(),
+		Status:                gen.MonitorStatus(m.State.Status),
+		StatusSince:           time.UnixMilli(m.State.SinceMs).UTC(),
 		CreatedAt:             time.UnixMilli(m.CreatedMs).UTC(),
 		UpdatedAt:             time.UnixMilli(m.UpdatedMs).UTC(),
 	}

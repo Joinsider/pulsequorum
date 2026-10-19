@@ -70,8 +70,49 @@ func (q *Queries) GetFSMMeta(ctx context.Context, key string) (int64, error) {
 	return value, err
 }
 
+const getIncident = `-- name: GetIncident :one
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+FROM incidents i
+JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
+WHERE i.tenant_id = ?1 AND i.id = ?2
+`
+
+type GetIncidentParams struct {
+	TenantID string
+	ID       string
+}
+
+type GetIncidentRow struct {
+	Incident    Incident
+	MonitorName string
+}
+
+func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIncidentRow, error) {
+	row := q.db.QueryRowContext(ctx, getIncident, arg.TenantID, arg.ID)
+	var i GetIncidentRow
+	err := row.Scan(
+		&i.Incident.TenantID,
+		&i.Incident.ID,
+		&i.Incident.MonitorID,
+		&i.Incident.StartedMs,
+		&i.Incident.ResolvedMs,
+		&i.Incident.Cause,
+		&i.Incident.ErrorClass,
+		&i.Incident.AffectedNodesJson,
+		&i.Incident.Confirmed,
+		&i.MonitorName,
+	)
+	return i, err
+}
+
 const getMonitor = `-- name: GetMonitor :one
-SELECT tenant_id, id, name, description, type, config_json, interval_s, timeout_s, retries, recovery_threshold, resend_interval_min, assignment_json, consensus_policy, paused, revision, created_ms, updated_ms FROM monitors WHERE tenant_id = ? AND id = ?
+SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms,
+       CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
+       CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+FROM monitors m
+LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
+WHERE m.tenant_id = ?1 AND m.id = ?2
 `
 
 type GetMonitorParams struct {
@@ -79,27 +120,61 @@ type GetMonitorParams struct {
 	ID       string
 }
 
-func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor, error) {
+type GetMonitorRow struct {
+	Monitor        Monitor
+	StateStatus    string
+	StateConfirmed int64
+	StateSinceMs   int64
+}
+
+// Monitors and their state are written in the same FSM transaction; the
+// defaults only cover monitors stored without the FSM (store tests).
+func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (GetMonitorRow, error) {
 	row := q.db.QueryRowContext(ctx, getMonitor, arg.TenantID, arg.ID)
-	var i Monitor
+	var i GetMonitorRow
+	err := row.Scan(
+		&i.Monitor.TenantID,
+		&i.Monitor.ID,
+		&i.Monitor.Name,
+		&i.Monitor.Description,
+		&i.Monitor.Type,
+		&i.Monitor.ConfigJson,
+		&i.Monitor.IntervalS,
+		&i.Monitor.TimeoutS,
+		&i.Monitor.Retries,
+		&i.Monitor.RecoveryThreshold,
+		&i.Monitor.ResendIntervalMin,
+		&i.Monitor.AssignmentJson,
+		&i.Monitor.ConsensusPolicy,
+		&i.Monitor.Paused,
+		&i.Monitor.Revision,
+		&i.Monitor.CreatedMs,
+		&i.Monitor.UpdatedMs,
+		&i.StateStatus,
+		&i.StateConfirmed,
+		&i.StateSinceMs,
+	)
+	return i, err
+}
+
+const getMonitorState = `-- name: GetMonitorState :one
+SELECT tenant_id, monitor_id, status, confirmed, since_ms FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?
+`
+
+type GetMonitorStateParams struct {
+	TenantID  string
+	MonitorID string
+}
+
+func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams) (MonitorState, error) {
+	row := q.db.QueryRowContext(ctx, getMonitorState, arg.TenantID, arg.MonitorID)
+	var i MonitorState
 	err := row.Scan(
 		&i.TenantID,
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.Type,
-		&i.ConfigJson,
-		&i.IntervalS,
-		&i.TimeoutS,
-		&i.Retries,
-		&i.RecoveryThreshold,
-		&i.ResendIntervalMin,
-		&i.AssignmentJson,
-		&i.ConsensusPolicy,
-		&i.Paused,
-		&i.Revision,
-		&i.CreatedMs,
-		&i.UpdatedMs,
+		&i.MonitorID,
+		&i.Status,
+		&i.Confirmed,
+		&i.SinceMs,
 	)
 	return i, err
 }
@@ -153,6 +228,36 @@ func (q *Queries) InsertDedup(ctx context.Context, arg InsertDedupParams) error 
 		arg.ResultJson,
 		arg.ErrorCode,
 		arg.ErrorMessage,
+	)
+	return err
+}
+
+const insertIncident = `-- name: InsertIncident :exec
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertIncidentParams struct {
+	TenantID          string
+	ID                string
+	MonitorID         string
+	StartedMs         int64
+	Cause             string
+	ErrorClass        string
+	AffectedNodesJson string
+	Confirmed         int64
+}
+
+func (q *Queries) InsertIncident(ctx context.Context, arg InsertIncidentParams) error {
+	_, err := q.db.ExecContext(ctx, insertIncident,
+		arg.TenantID,
+		arg.ID,
+		arg.MonitorID,
+		arg.StartedMs,
+		arg.Cause,
+		arg.ErrorClass,
+		arg.AffectedNodesJson,
+		arg.Confirmed,
 	)
 	return err
 }
@@ -223,6 +328,82 @@ func (q *Queries) InsertMonitorTag(ctx context.Context, arg InsertMonitorTagPara
 	return err
 }
 
+const listIncidents = `-- name: ListIncidents :many
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+FROM incidents i
+JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
+WHERE i.tenant_id = ?1
+  AND (CAST(?2 AS TEXT) = '' OR i.monitor_id = ?2)
+  AND i.started_ms <= ?3
+  AND (i.resolved_ms = 0 OR i.resolved_ms >= ?4)
+  AND (CAST(?5 AS INTEGER) = 0 OR i.resolved_ms = 0)
+  AND (i.started_ms < ?6
+       OR (i.started_ms = ?6 AND i.id < ?7))
+ORDER BY i.started_ms DESC, i.id DESC
+LIMIT ?8
+`
+
+type ListIncidentsParams struct {
+	TenantID        string
+	MonitorID       string
+	ToMs            int64
+	FromMs          int64
+	OpenOnly        int64
+	BeforeStartedMs int64
+	BeforeID        string
+	RowLimit        int64
+}
+
+type ListIncidentsRow struct {
+	Incident    Incident
+	MonitorName string
+}
+
+// Newest first with keyset (started_ms, id) descending. An incident matches
+// the period if it overlaps [from_ms, to_ms].
+func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([]ListIncidentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIncidents,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.ToMs,
+		arg.FromMs,
+		arg.OpenOnly,
+		arg.BeforeStartedMs,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIncidentsRow{}
+	for rows.Next() {
+		var i ListIncidentsRow
+		if err := rows.Scan(
+			&i.Incident.TenantID,
+			&i.Incident.ID,
+			&i.Incident.MonitorID,
+			&i.Incident.StartedMs,
+			&i.Incident.ResolvedMs,
+			&i.Incident.Cause,
+			&i.Incident.ErrorClass,
+			&i.Incident.AffectedNodesJson,
+			&i.Incident.Confirmed,
+			&i.MonitorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMonitorTags = `-- name: ListMonitorTags :many
 SELECT tag FROM monitor_tags WHERE tenant_id = ? AND monitor_id = ? ORDER BY tag
 `
@@ -256,29 +437,44 @@ func (q *Queries) ListMonitorTags(ctx context.Context, arg ListMonitorTagsParams
 }
 
 const listMonitors = `-- name: ListMonitors :many
-SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms FROM monitors m
+SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms,
+       CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
+       CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+FROM monitors m
+LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = ?1
   AND m.id > ?2
-  AND (CAST(?3 AS TEXT) = '' OR m.name LIKE '%' || ?3 || '%')
-  AND (CAST(?4 AS TEXT) = '' OR EXISTS (
+  AND (CAST(?3 AS TEXT) = '' OR COALESCE(s.status, 'PENDING') = ?3)
+  AND (CAST(?4 AS TEXT) = '' OR m.name LIKE '%' || ?4 || '%')
+  AND (CAST(?5 AS TEXT) = '' OR EXISTS (
         SELECT 1 FROM monitor_tags t
-        WHERE t.tenant_id = m.tenant_id AND t.monitor_id = m.id AND t.tag = ?4))
+        WHERE t.tenant_id = m.tenant_id AND t.monitor_id = m.id AND t.tag = ?5))
 ORDER BY m.id
-LIMIT ?5
+LIMIT ?6
 `
 
 type ListMonitorsParams struct {
 	TenantID string
 	AfterID  string
+	Status   string
 	Search   string
 	Tag      string
 	RowLimit int64
 }
 
-func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]Monitor, error) {
+type ListMonitorsRow struct {
+	Monitor        Monitor
+	StateStatus    string
+	StateConfirmed int64
+	StateSinceMs   int64
+}
+
+func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]ListMonitorsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listMonitors,
 		arg.TenantID,
 		arg.AfterID,
+		arg.Status,
 		arg.Search,
 		arg.Tag,
 		arg.RowLimit,
@@ -287,27 +483,30 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]M
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Monitor{}
+	items := []ListMonitorsRow{}
 	for rows.Next() {
-		var i Monitor
+		var i ListMonitorsRow
 		if err := rows.Scan(
-			&i.TenantID,
-			&i.ID,
-			&i.Name,
-			&i.Description,
-			&i.Type,
-			&i.ConfigJson,
-			&i.IntervalS,
-			&i.TimeoutS,
-			&i.Retries,
-			&i.RecoveryThreshold,
-			&i.ResendIntervalMin,
-			&i.AssignmentJson,
-			&i.ConsensusPolicy,
-			&i.Paused,
-			&i.Revision,
-			&i.CreatedMs,
-			&i.UpdatedMs,
+			&i.Monitor.TenantID,
+			&i.Monitor.ID,
+			&i.Monitor.Name,
+			&i.Monitor.Description,
+			&i.Monitor.Type,
+			&i.Monitor.ConfigJson,
+			&i.Monitor.IntervalS,
+			&i.Monitor.TimeoutS,
+			&i.Monitor.Retries,
+			&i.Monitor.RecoveryThreshold,
+			&i.Monitor.ResendIntervalMin,
+			&i.Monitor.AssignmentJson,
+			&i.Monitor.ConsensusPolicy,
+			&i.Monitor.Paused,
+			&i.Monitor.Revision,
+			&i.Monitor.CreatedMs,
+			&i.Monitor.UpdatedMs,
+			&i.StateStatus,
+			&i.StateConfirmed,
+			&i.StateSinceMs,
 		); err != nil {
 			return nil, err
 		}
@@ -419,6 +618,25 @@ func (q *Queries) PruneDedup(ctx context.Context, issuedAtMs int64) (int64, erro
 	return result.RowsAffected()
 }
 
+const resolveIncident = `-- name: ResolveIncident :execrows
+UPDATE incidents SET resolved_ms = ?1
+WHERE tenant_id = ?2 AND monitor_id = ?3 AND resolved_ms = 0
+`
+
+type ResolveIncidentParams struct {
+	ResolvedMs int64
+	TenantID   string
+	MonitorID  string
+}
+
+func (q *Queries) ResolveIncident(ctx context.Context, arg ResolveIncidentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, resolveIncident, arg.ResolvedMs, arg.TenantID, arg.MonitorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setFSMMeta = `-- name: SetFSMMeta :exec
 INSERT INTO fsm_meta (key, value) VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET value = excluded.value
@@ -497,6 +715,34 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (i
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const upsertMonitorState = `-- name: UpsertMonitorState :exec
+INSERT INTO monitor_states (tenant_id, monitor_id, status, confirmed, since_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (tenant_id, monitor_id) DO UPDATE SET
+    status    = excluded.status,
+    confirmed = excluded.confirmed,
+    since_ms  = excluded.since_ms
+`
+
+type UpsertMonitorStateParams struct {
+	TenantID  string
+	MonitorID string
+	Status    string
+	Confirmed int64
+	SinceMs   int64
+}
+
+func (q *Queries) UpsertMonitorState(ctx context.Context, arg UpsertMonitorStateParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMonitorState,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.Status,
+		arg.Confirmed,
+		arg.SinceMs,
+	)
+	return err
 }
 
 const upsertSecretKey = `-- name: UpsertSecretKey :exec

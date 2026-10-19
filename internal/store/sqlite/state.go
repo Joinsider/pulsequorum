@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -119,7 +120,9 @@ func (s *StateStore) GetMonitor(ctx context.Context, tenantID, id string) (store
 	if err != nil {
 		return store.Monitor{}, mapErr(err)
 	}
-	return s.monitorWithTags(ctx, s.q, row)
+	m, err := s.monitorWithTags(ctx, s.q, row.Monitor)
+	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs)
+	return m, err
 }
 
 // ListMonitors returns one page of the tenant's monitors ordered by ID.
@@ -130,6 +133,7 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 	rows, err := s.q.ListMonitors(ctx, statedb.ListMonitorsParams{
 		TenantID: tenantID,
 		AfterID:  q.AfterID,
+		Status:   string(q.Status),
 		Search:   q.Search,
 		Tag:      q.Tag,
 		RowLimit: int64(limit + 1),
@@ -144,11 +148,65 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 			page.NextAfterID = page.Items[limit-1].ID
 			break
 		}
-		m, err := s.monitorWithTags(ctx, s.q, r)
+		m, err := s.monitorWithTags(ctx, s.q, r.Monitor)
 		if err != nil {
 			return store.MonitorPage{}, err
 		}
+		m.State = monitorState(r.StateStatus, r.StateConfirmed, r.StateSinceMs)
 		page.Items = append(page.Items, m)
+	}
+	return page, nil
+}
+
+// GetIncident returns an incident of the tenant.
+func (s *StateStore) GetIncident(ctx context.Context, tenantID, id string) (store.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row, err := s.q.GetIncident(ctx, statedb.GetIncidentParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return store.Incident{}, mapErr(err)
+	}
+	return incidentFromRow(row.Incident, row.MonitorName)
+}
+
+// ListIncidents returns one page of the tenant's incidents, newest first.
+func (s *StateStore) ListIncidents(ctx context.Context, tenantID string, q store.IncidentQuery) (store.IncidentPage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	limit := clampLimit(q.Limit, defaultPageSize, maxPageSize)
+	toMs := q.ToMs
+	if toMs == 0 {
+		toMs = math.MaxInt64
+	}
+	before := store.IncidentCursor{StartedMs: math.MaxInt64}
+	if q.After != nil {
+		before = *q.After
+	}
+	rows, err := s.q.ListIncidents(ctx, statedb.ListIncidentsParams{
+		TenantID:        tenantID,
+		MonitorID:       q.MonitorID,
+		ToMs:            toMs,
+		FromMs:          q.FromMs,
+		OpenOnly:        boolToInt(q.OpenOnly),
+		BeforeStartedMs: before.StartedMs,
+		BeforeID:        before.ID,
+		RowLimit:        int64(limit + 1),
+	})
+	if err != nil {
+		return store.IncidentPage{}, mapErr(err)
+	}
+	page := store.IncidentPage{Items: make([]store.Incident, 0, min(len(rows), limit))}
+	for i, r := range rows {
+		if i == limit {
+			last := page.Items[limit-1]
+			page.Next = &store.IncidentCursor{StartedMs: last.StartedMs, ID: last.ID}
+			break
+		}
+		inc, err := incidentFromRow(r.Incident, r.MonitorName)
+		if err != nil {
+			return store.IncidentPage{}, err
+		}
+		page.Items = append(page.Items, inc)
 	}
 	return page, nil
 }
@@ -365,6 +423,79 @@ func (t *stateTx) DeleteMonitor(ctx context.Context, tenantID, id string) error 
 		return store.ErrNotFound
 	}
 	return nil
+}
+
+func (t *stateTx) GetMonitorState(ctx context.Context, tenantID, monitorID string) (store.MonitorState, error) {
+	r, err := t.q.GetMonitorState(ctx, statedb.GetMonitorStateParams{TenantID: tenantID, MonitorID: monitorID})
+	if err != nil {
+		return store.MonitorState{}, mapErr(err)
+	}
+	return monitorState(r.Status, r.Confirmed, r.SinceMs), nil
+}
+
+func (t *stateTx) PutMonitorState(ctx context.Context, tenantID, monitorID string, st store.MonitorState) error {
+	if !st.Status.Valid() {
+		return fmt.Errorf("put monitor state: invalid status %q", st.Status)
+	}
+	return mapErr(t.q.UpsertMonitorState(ctx, statedb.UpsertMonitorStateParams{
+		TenantID:  tenantID,
+		MonitorID: monitorID,
+		Status:    string(st.Status),
+		Confirmed: boolToInt(st.Confirmed),
+		SinceMs:   st.SinceMs,
+	}))
+}
+
+func (t *stateTx) OpenIncident(ctx context.Context, inc store.Incident) error {
+	if inc.TenantID == "" || inc.ID == "" || inc.MonitorID == "" {
+		return errors.New("open incident: empty tenant, incident or monitor ID")
+	}
+	nodes := inc.AffectedNodes
+	if nodes == nil {
+		nodes = []string{}
+	}
+	affected, err := json.Marshal(nodes)
+	if err != nil {
+		return fmt.Errorf("open incident: affected nodes: %w", err)
+	}
+	return mapErr(t.q.InsertIncident(ctx, statedb.InsertIncidentParams{
+		TenantID:          inc.TenantID,
+		ID:                inc.ID,
+		MonitorID:         inc.MonitorID,
+		StartedMs:         inc.StartedMs,
+		Cause:             inc.Cause,
+		ErrorClass:        inc.ErrorClass,
+		AffectedNodesJson: string(affected),
+		Confirmed:         boolToInt(inc.Confirmed),
+	}))
+}
+
+func (t *stateTx) ResolveIncident(ctx context.Context, tenantID, monitorID string, resolvedMs int64) error {
+	_, err := t.q.ResolveIncident(ctx, statedb.ResolveIncidentParams{ResolvedMs: resolvedMs, TenantID: tenantID, MonitorID: monitorID})
+	return mapErr(err)
+}
+
+func monitorState(status string, confirmed, sinceMs int64) store.MonitorState {
+	return store.MonitorState{Status: store.MonitorStatus(status), Confirmed: confirmed != 0, SinceMs: sinceMs}
+}
+
+func incidentFromRow(r statedb.Incident, monitorName string) (store.Incident, error) {
+	var nodes []string
+	if err := json.Unmarshal([]byte(r.AffectedNodesJson), &nodes); err != nil {
+		return store.Incident{}, fmt.Errorf("incident %s: affected nodes: %w", r.ID, err)
+	}
+	return store.Incident{
+		TenantID:      r.TenantID,
+		ID:            r.ID,
+		MonitorID:     r.MonitorID,
+		MonitorName:   monitorName,
+		StartedMs:     r.StartedMs,
+		ResolvedMs:    r.ResolvedMs,
+		Cause:         r.Cause,
+		ErrorClass:    r.ErrorClass,
+		AffectedNodes: nodes,
+		Confirmed:     r.Confirmed != 0,
+	}, nil
 }
 
 func (s *StateStore) monitorWithTags(ctx context.Context, q *statedb.Queries, r statedb.Monitor) (store.Monitor, error) {

@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P1 – Kern (P0 abgeschlossen bis auf Läufe, die einen GitHub-Remote bzw. Docker-Daemon brauchen: AP-0.8–0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-1.8 Statuslogik (Retries, PENDING, DEGRADED) und Incidents |
+| **Nächster Schritt (Claude)** | AP-1.9 Uptime-Berechnung, Rollups, Verdichtung, Retention |
 
 ---
 
@@ -68,7 +68,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ✅ Echte Pings in der Entwicklungs-Sandbox nicht ausführbar (Tests überspringen dann); Container-Doku `docs/betrieb/icmp.md` noch nicht in Docker/Podman/Kubernetes praktisch verifiziert |
 | AP-1.6 | Scheduler: Jitter inkl. Erstlauf, keine Selbstüberlappung, Nebenläufigkeitslimit, Goroutine-Leak-Tests | FA-SCH-01/03/04/05/07 | – | ✅ inkl. Heartbeat-Writer (vorgezogen aus AP-1.9), Reconciler über FSM-Änderungssignal, `SSRF_PROTECTION` verdrahtet; End-to-End-Test Raft → Scheduler → Heartbeat |
 | AP-1.7 | Monitor-API (CRUD, Pause, Klonen, Typen mit JSON-Schema), Problem Details, Paginierung | FA-MON-*, FA-API-01..03/06 | 0003 | ✅ CRUD, Pause/Resume, Klonen, Test-Lauf, Heartbeats, Typen; Idempotency-Key mandantenbezogen. Geschützte Endpunkte liefern 401 bis AP-1.12; Status/Uptime-Felder folgen mit AP-1.8/1.9; Uptime-Endpunkt bleibt 501 bis AP-1.9 |
-| AP-1.8 | Statuslogik Single-Node (Retries, PENDING, DEGRADED), Incidents | FA-CON-03, FA-INC-01/02 | – | ⬜ |
+| AP-1.8 | Statuslogik Single-Node (Retries, PENDING, DEGRADED), Incidents | FA-CON-03, FA-INC-01/02 | – | ✅ Aggregator (`internal/aggregator`) bewertet die eigenen Ergebnisse und schreibt nur Statuswechsel per Raft (`SetMonitorState`, Incident atomar im selben Befehl, ersetzt `OpenIncident`/`ResolveIncident`); FSM hält PAUSED/PENDING bei Pause/Fortsetzen konsistent und beendet offene Incidents; Retry-Zähler wird nach Neustart aus eigenen Heartbeats rekonstruiert; Incident-API und Statusfilter in SQL. Incidents werden mit ihrem Monitor gelöscht |
 | AP-1.9 | Uptime-Berechnung (Heartbeat-Speicherung bereits in AP-1.6), Rollups, Verdichtung, Retention in Batches | FA-UPT-01..06 | 0004 | ⬜ |
 | AP-1.10 | Benachrichtigungen: Outbox, Shoutrrr-Kapselung, Webhook mit JSON-sicheren Templates, Testversand, Maskierung | FA-ALR-01..03/07..09/13 | – | ⬜ |
 | AP-1.11 | Wartungsfenster (einmalig, wiederkehrend, Zeitzonen) | FA-MNT-01/02 | – | ⬜ |

@@ -215,6 +215,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyPut(ctx, tx, cmd, p.PutEntity)
 	case *pb.Command_DeleteEntity:
 		return applyDelete(ctx, tx, cmd, p.DeleteEntity)
+	case *pb.Command_SetMonitorState:
+		return applySetMonitorState(ctx, tx, cmd, p.SetMonitorState)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -251,6 +253,7 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("monitor document: %v", err)
 		}
+		create := put.GetExpectedRevision() == 0
 		err := tx.PutMonitor(ctx, store.Monitor{
 			TenantID:              cmd.GetTenantId(),
 			ID:                    put.GetId(),
@@ -272,6 +275,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}, put.GetExpectedRevision())
 		if err != nil {
 			return nil, storeError(err)
+		}
+		if err := syncPausedState(ctx, tx, cmd.GetTenantId(), put.GetId(), doc.Paused, create, issuedAt); err != nil {
+			return nil, err
 		}
 		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
 
@@ -307,6 +313,92 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 	default:
 		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("delete of %s is not supported yet", del.GetKind())}
 	}
+}
+
+// syncPausedState keeps the monitor state in line with the paused flag: a new
+// monitor starts PENDING (or PAUSED), pausing ends an open incident, and
+// resuming starts a new PENDING phase.
+func syncPausedState(ctx context.Context, tx store.StateTx, tenantID, monitorID string, paused, create bool, nowMs int64) error {
+	next := store.MonitorState{Status: store.StatusPending, Confirmed: true, SinceMs: nowMs}
+	if paused {
+		next.Status = store.StatusPaused
+	}
+	if !create {
+		cur, err := tx.GetMonitorState(ctx, tenantID, monitorID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if err == nil && paused == (cur.Status == store.StatusPaused) {
+			return nil
+		}
+		if err == nil && cur.Status == store.StatusDown {
+			if err := tx.ResolveIncident(ctx, tenantID, monitorID, nowMs); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.PutMonitorState(ctx, tenantID, monitorID, next)
+}
+
+// applySetMonitorState records a status change decided by the leader and
+// opens or resolves the incident with it (FA-CON-06, FA-INC-01).
+func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command, set *pb.SetMonitorState) (json.RawMessage, error) {
+	tenantID, monitorID := cmd.GetTenantId(), set.GetMonitorId()
+	to := store.MonitorStatus(set.GetStatus())
+	switch {
+	case tenantID == "" || monitorID == "":
+		return nil, invalid("monitor state without tenant or monitor")
+	case !to.Valid() || to == store.StatusPaused:
+		return nil, invalid("monitor state %q cannot be set", to)
+	case to == store.StatusDown && set.GetIncident().GetIncidentId() == "":
+		return nil, invalid("change to DOWN without incident")
+	}
+
+	cur, err := tx.GetMonitorState(ctx, tenantID, monitorID)
+	if err != nil {
+		return nil, storeError(err)
+	}
+	if cur.Status == store.StatusPaused {
+		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is paused", monitorID)}
+	}
+	if cur.Status != store.MonitorStatus(set.GetExpectedStatus()) {
+		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is %s, not %s", monitorID, cur.Status, set.GetExpectedStatus())}
+	}
+	if cur.Status == to {
+		return nil, invalid("monitor %s is already %s", monitorID, to)
+	}
+
+	if cur.Status == store.StatusDown {
+		if err := tx.ResolveIncident(ctx, tenantID, monitorID, set.GetSinceMs()); err != nil {
+			return nil, storeError(err)
+		}
+	}
+	if to == store.StatusDown {
+		inc := set.GetIncident()
+		err := tx.OpenIncident(ctx, store.Incident{
+			TenantID:      tenantID,
+			ID:            inc.GetIncidentId(),
+			MonitorID:     monitorID,
+			StartedMs:     set.GetSinceMs(),
+			Cause:         inc.GetCause(),
+			ErrorClass:    ErrorClassFromProto(inc.GetErrorClass()),
+			AffectedNodes: inc.GetAffectedNodeIds(),
+			Confirmed:     set.GetConfirmed(),
+		})
+		if err != nil {
+			return nil, storeError(err)
+		}
+	}
+	err = tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{Status: to, Confirmed: set.GetConfirmed(), SinceMs: set.GetSinceMs()})
+	if err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(StateResult{Status: to})
+}
+
+// StateResult is the result of a SetMonitorState command.
+type StateResult struct {
+	Status store.MonitorStatus `json:"status"`
 }
 
 // storeError turns deterministic store errors into command errors and passes

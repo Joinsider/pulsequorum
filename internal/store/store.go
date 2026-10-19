@@ -62,13 +62,86 @@ type Monitor struct {
 	Revision  uint64
 	CreatedMs int64
 	UpdatedMs int64
+	// State is filled on reads; PutMonitor ignores it (the FSM maintains it).
+	State MonitorState
+}
+
+// MonitorStatus is the consensus status of a monitor (REST MonitorStatus).
+type MonitorStatus string
+
+// Monitor statuses.
+const (
+	StatusUp          MonitorStatus = "UP"
+	StatusDown        MonitorStatus = "DOWN"
+	StatusDegraded    MonitorStatus = "DEGRADED"
+	StatusPartial     MonitorStatus = "PARTIAL"
+	StatusPending     MonitorStatus = "PENDING"
+	StatusMaintenance MonitorStatus = "MAINTENANCE"
+	StatusPaused      MonitorStatus = "PAUSED"
+	StatusUnknown     MonitorStatus = "UNKNOWN"
+)
+
+// Valid reports whether s is a known status.
+func (s MonitorStatus) Valid() bool {
+	switch s {
+	case StatusUp, StatusDown, StatusDegraded, StatusPartial, StatusPending, StatusMaintenance, StatusPaused, StatusUnknown:
+		return true
+	}
+	return false
+}
+
+// MonitorState is the last status change of a monitor (FA-CON-06).
+type MonitorState struct {
+	Status MonitorStatus
+	// Confirmed is false if the change was made without quorum (phase 3).
+	Confirmed bool
+	SinceMs   int64
+}
+
+// Incident is a DOWN period of a monitor (FA-INC-01).
+type Incident struct {
+	TenantID    string
+	ID          string
+	MonitorID   string
+	MonitorName string // filled on reads
+	StartedMs   int64
+	ResolvedMs  int64 // 0 while open
+	Cause       string
+	ErrorClass  string
+	// AffectedNodes are the IDs of the nodes that reported DOWN.
+	AffectedNodes []string
+	Confirmed     bool
+}
+
+// IncidentCursor is the keyset position after which ListIncidents continues.
+type IncidentCursor struct {
+	StartedMs int64
+	ID        string
+}
+
+// IncidentQuery filters and pages ListIncidents. Results are newest first.
+type IncidentQuery struct {
+	MonitorID string // empty = all monitors
+	// FromMs and ToMs select incidents overlapping the period; 0 = open end.
+	FromMs   int64
+	ToMs     int64
+	OpenOnly bool
+	After    *IncidentCursor
+	Limit    int
+}
+
+// IncidentPage is one page of incidents.
+type IncidentPage struct {
+	Items []Incident
+	Next  *IncidentCursor // nil if there is no further page
 }
 
 // MonitorQuery filters and pages ListMonitors. Results are ordered by ID.
 type MonitorQuery struct {
-	Tag     string // exact tag match; empty = any
-	Search  string // case-insensitive substring of the name; empty = any
-	AfterID string // keyset cursor: return monitors with ID > AfterID
+	Tag     string        // exact tag match; empty = any
+	Status  MonitorStatus // empty = any
+	Search  string        // case-insensitive substring of the name; empty = any
+	AfterID string        // keyset cursor: return monitors with ID > AfterID
 	Limit   int
 }
 
@@ -85,6 +158,8 @@ type State interface {
 	ListTenants(ctx context.Context) ([]Tenant, error)
 	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
+	GetIncident(ctx context.Context, tenantID, id string) (Incident, error)
+	ListIncidents(ctx context.Context, tenantID string, q IncidentQuery) (IncidentPage, error)
 
 	// ListSecretKeys returns all data encryption keys ordered by creation (ADR 0011).
 	ListSecretKeys(ctx context.Context) ([]SecretKey, error)
@@ -106,6 +181,15 @@ type StateTx interface {
 	// expectedRevision+1.
 	PutMonitor(ctx context.Context, m Monitor, expectedRevision uint64) error
 	DeleteMonitor(ctx context.Context, tenantID, id string) error
+
+	// GetMonitorState returns the stored state or ErrNotFound.
+	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)
+	PutMonitorState(ctx context.Context, tenantID, monitorID string, st MonitorState) error
+	// OpenIncident stores a new incident; a second open incident of the same
+	// monitor is ErrConflict.
+	OpenIncident(ctx context.Context, inc Incident) error
+	// ResolveIncident ends the open incident of a monitor, if there is one.
+	ResolveIncident(ctx context.Context, tenantID, monitorID string, resolvedMs int64) error
 
 	// PutSecretKey creates a DEK or updates its wrapping or retirement; the
 	// creation time of an existing key is kept.
@@ -200,6 +284,9 @@ type Metrics interface {
 	// LastSeq returns the highest stored seq of a stream (0 if none).
 	LastSeq(ctx context.Context, nodeID, incarnation string) (uint64, error)
 	ListHeartbeats(ctx context.Context, tenantID string, q HeartbeatQuery) (HeartbeatPage, error)
+	// LatestHeartbeats returns up to limit of the newest heartbeats of a
+	// monitor, newest first; nodeID empty = all nodes.
+	LatestHeartbeats(ctx context.Context, tenantID, monitorID, nodeID string, limit int) ([]Heartbeat, error)
 	// DeleteHeartbeatsBefore deletes at most batchSize heartbeats older than
 	// beforeMs and returns the number deleted (FA-UPT-06). Callers loop until 0.
 	DeleteHeartbeatsBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)

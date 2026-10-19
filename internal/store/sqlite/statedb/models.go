@@ -13,6 +13,18 @@ type FsmMetum struct {
 	Value int64
 }
 
+type Incident struct {
+	TenantID          string
+	ID                string
+	MonitorID         string
+	StartedMs         int64
+	ResolvedMs        int64
+	Cause             string
+	ErrorClass        string
+	AffectedNodesJson string
+	Confirmed         int64
+}
+
 type Monitor struct {
 	TenantID          string
 	ID                string
@@ -31,6 +43,14 @@ type Monitor struct {
 	Revision          int64
 	CreatedMs         int64
 	UpdatedMs         int64
+}
+
+type MonitorState struct {
+	TenantID  string
+	MonitorID string
+	Status    string
+	Confirmed int64
+	SinceMs   int64
 }
 
 type MonitorTag struct {

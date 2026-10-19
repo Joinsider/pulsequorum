@@ -12,11 +12,17 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// Reconcile keeps the scheduler in line with state.db: it loads all monitors
-// when changes signals and at least every interval, so a configuration change
-// is active within seconds (FA-SCH-06). In phase 1 a node runs every monitor;
-// assignment to nodes follows in phase 2.
-func Reconcile(ctx context.Context, state store.State, changes <-chan struct{}, s *Scheduler, interval time.Duration, log *slog.Logger) {
+// Syncer receives the current set of monitors.
+type Syncer interface {
+	Sync(monitors []store.Monitor)
+}
+
+// Reconcile keeps the targets (the scheduler and everything that tracks
+// monitors) in line with state.db: it loads all monitors when changes signals
+// and at least every interval, so a configuration change is active within
+// seconds (FA-SCH-06). In phase 1 a node runs every monitor; assignment to
+// nodes follows in phase 2.
+func Reconcile(ctx context.Context, state store.State, changes <-chan struct{}, interval time.Duration, log *slog.Logger, targets ...Syncer) {
 	load := func() {
 		monitors, err := AllMonitors(ctx, state)
 		if err != nil {
@@ -25,7 +31,9 @@ func Reconcile(ctx context.Context, state store.State, changes <-chan struct{}, 
 			}
 			return
 		}
-		s.Sync(monitors)
+		for _, t := range targets {
+			t.Sync(monitors)
+		}
 	}
 	load()
 	ticker := time.NewTicker(interval)

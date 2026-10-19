@@ -53,7 +53,7 @@ func TestReconcile(t *testing.T) {
 	changes := make(chan struct{}, 1)
 	done := make(chan struct{})
 	go func() {
-		Reconcile(ctx, state, changes, s, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		Reconcile(ctx, state, changes, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)), s)
 		close(done)
 	}()
 	eventually(t, func() bool { return s.Len() == 502 }, "initial load incomplete")

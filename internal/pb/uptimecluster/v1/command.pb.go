@@ -190,7 +190,7 @@ func (x NodeInfo_Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NodeInfo_Role.Descriptor instead.
 func (NodeInfo_Role) EnumDescriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{11, 0}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10, 0}
 }
 
 // Command is the envelope of every Raft log entry (ADR 0005). The leader fills
@@ -215,8 +215,6 @@ type Command struct {
 	//	*Command_PutEntity
 	//	*Command_DeleteEntity
 	//	*Command_SetMonitorState
-	//	*Command_OpenIncident
-	//	*Command_ResolveIncident
 	//	*Command_EnqueueAlert
 	//	*Command_AckAlertDelivery
 	//	*Command_RegisterNode
@@ -325,24 +323,6 @@ func (x *Command) GetSetMonitorState() *SetMonitorState {
 	return nil
 }
 
-func (x *Command) GetOpenIncident() *OpenIncident {
-	if x != nil {
-		if x, ok := x.Payload.(*Command_OpenIncident); ok {
-			return x.OpenIncident
-		}
-	}
-	return nil
-}
-
-func (x *Command) GetResolveIncident() *ResolveIncident {
-	if x != nil {
-		if x, ok := x.Payload.(*Command_ResolveIncident); ok {
-			return x.ResolveIncident
-		}
-	}
-	return nil
-}
-
 func (x *Command) GetEnqueueAlert() *EnqueueAlert {
 	if x != nil {
 		if x, ok := x.Payload.(*Command_EnqueueAlert); ok {
@@ -395,14 +375,6 @@ type Command_SetMonitorState struct {
 	SetMonitorState *SetMonitorState `protobuf:"bytes,12,opt,name=set_monitor_state,json=setMonitorState,proto3,oneof"`
 }
 
-type Command_OpenIncident struct {
-	OpenIncident *OpenIncident `protobuf:"bytes,13,opt,name=open_incident,json=openIncident,proto3,oneof"`
-}
-
-type Command_ResolveIncident struct {
-	ResolveIncident *ResolveIncident `protobuf:"bytes,14,opt,name=resolve_incident,json=resolveIncident,proto3,oneof"`
-}
-
 type Command_EnqueueAlert struct {
 	EnqueueAlert *EnqueueAlert `protobuf:"bytes,15,opt,name=enqueue_alert,json=enqueueAlert,proto3,oneof"`
 }
@@ -424,10 +396,6 @@ func (*Command_PutEntity) isCommand_Payload() {}
 func (*Command_DeleteEntity) isCommand_Payload() {}
 
 func (*Command_SetMonitorState) isCommand_Payload() {}
-
-func (*Command_OpenIncident) isCommand_Payload() {}
-
-func (*Command_ResolveIncident) isCommand_Payload() {}
 
 func (*Command_EnqueueAlert) isCommand_Payload() {}
 
@@ -614,15 +582,23 @@ func (x *DeleteEntity) GetId() string {
 	return ""
 }
 
-// SetMonitorState records a consensus status change (FA-CON-06).
+// SetMonitorState records a consensus status change (FA-CON-06). The FSM
+// keeps incidents consistent with it (FA-INC-01): a change to DOWN opens an
+// incident, leaving DOWN resolves it at since_ms.
 type SetMonitorState struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	MonitorId string                 `protobuf:"bytes,1,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
-	// MonitorStatus as defined in the REST API (UP, DOWN, …).
+	// MonitorStatus as defined in the REST API (UP, DOWN, …). PAUSED is set
+	// only by pausing the monitor.
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	// false if raised without quorum (degraded mode, FA-ALR-10).
-	Confirmed     bool  `protobuf:"varint,3,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
-	SinceMs       int64 `protobuf:"varint,4,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`
+	Confirmed bool  `protobuf:"varint,3,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
+	SinceMs   int64 `protobuf:"varint,4,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`
+	// Status the decision was based on. The FSM rejects the command with a
+	// conflict if the stored status differs, e.g. after a pause.
+	ExpectedStatus string `protobuf:"bytes,5,opt,name=expected_status,json=expectedStatus,proto3" json:"expected_status,omitempty"`
+	// Required for a change to DOWN: the incident to open.
+	Incident      *IncidentStart `protobuf:"bytes,6,opt,name=incident,proto3" json:"incident,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -685,34 +661,45 @@ func (x *SetMonitorState) GetSinceMs() int64 {
 	return 0
 }
 
-// OpenIncident starts an incident for a monitor.
-type OpenIncident struct {
+func (x *SetMonitorState) GetExpectedStatus() string {
+	if x != nil {
+		return x.ExpectedStatus
+	}
+	return ""
+}
+
+func (x *SetMonitorState) GetIncident() *IncidentStart {
+	if x != nil {
+		return x.Incident
+	}
+	return nil
+}
+
+// IncidentStart describes the cause of an incident.
+type IncidentStart struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	IncidentId      string                 `protobuf:"bytes,1,opt,name=incident_id,json=incidentId,proto3" json:"incident_id,omitempty"`
-	MonitorId       string                 `protobuf:"bytes,2,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
-	StartedAtMs     int64                  `protobuf:"varint,3,opt,name=started_at_ms,json=startedAtMs,proto3" json:"started_at_ms,omitempty"`
-	Cause           string                 `protobuf:"bytes,4,opt,name=cause,proto3" json:"cause,omitempty"`
-	ErrorClass      ErrorClass             `protobuf:"varint,5,opt,name=error_class,json=errorClass,proto3,enum=uptimecluster.v1.ErrorClass" json:"error_class,omitempty"`
-	AffectedNodeIds []string               `protobuf:"bytes,6,rep,name=affected_node_ids,json=affectedNodeIds,proto3" json:"affected_node_ids,omitempty"`
-	Confirmed       bool                   `protobuf:"varint,7,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
+	Cause           string                 `protobuf:"bytes,2,opt,name=cause,proto3" json:"cause,omitempty"`
+	ErrorClass      ErrorClass             `protobuf:"varint,3,opt,name=error_class,json=errorClass,proto3,enum=uptimecluster.v1.ErrorClass" json:"error_class,omitempty"`
+	AffectedNodeIds []string               `protobuf:"bytes,4,rep,name=affected_node_ids,json=affectedNodeIds,proto3" json:"affected_node_ids,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
-func (x *OpenIncident) Reset() {
-	*x = OpenIncident{}
+func (x *IncidentStart) Reset() {
+	*x = IncidentStart{}
 	mi := &file_uptimecluster_v1_command_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *OpenIncident) String() string {
+func (x *IncidentStart) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*OpenIncident) ProtoMessage() {}
+func (*IncidentStart) ProtoMessage() {}
 
-func (x *OpenIncident) ProtoReflect() protoreflect.Message {
+func (x *IncidentStart) ProtoReflect() protoreflect.Message {
 	mi := &file_uptimecluster_v1_command_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -724,111 +711,37 @@ func (x *OpenIncident) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use OpenIncident.ProtoReflect.Descriptor instead.
-func (*OpenIncident) Descriptor() ([]byte, []int) {
+// Deprecated: Use IncidentStart.ProtoReflect.Descriptor instead.
+func (*IncidentStart) Descriptor() ([]byte, []int) {
 	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *OpenIncident) GetIncidentId() string {
+func (x *IncidentStart) GetIncidentId() string {
 	if x != nil {
 		return x.IncidentId
 	}
 	return ""
 }
 
-func (x *OpenIncident) GetMonitorId() string {
-	if x != nil {
-		return x.MonitorId
-	}
-	return ""
-}
-
-func (x *OpenIncident) GetStartedAtMs() int64 {
-	if x != nil {
-		return x.StartedAtMs
-	}
-	return 0
-}
-
-func (x *OpenIncident) GetCause() string {
+func (x *IncidentStart) GetCause() string {
 	if x != nil {
 		return x.Cause
 	}
 	return ""
 }
 
-func (x *OpenIncident) GetErrorClass() ErrorClass {
+func (x *IncidentStart) GetErrorClass() ErrorClass {
 	if x != nil {
 		return x.ErrorClass
 	}
 	return ErrorClass_ERROR_CLASS_UNSPECIFIED
 }
 
-func (x *OpenIncident) GetAffectedNodeIds() []string {
+func (x *IncidentStart) GetAffectedNodeIds() []string {
 	if x != nil {
 		return x.AffectedNodeIds
 	}
 	return nil
-}
-
-func (x *OpenIncident) GetConfirmed() bool {
-	if x != nil {
-		return x.Confirmed
-	}
-	return false
-}
-
-// ResolveIncident ends an incident.
-type ResolveIncident struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	IncidentId    string                 `protobuf:"bytes,1,opt,name=incident_id,json=incidentId,proto3" json:"incident_id,omitempty"`
-	ResolvedAtMs  int64                  `protobuf:"varint,2,opt,name=resolved_at_ms,json=resolvedAtMs,proto3" json:"resolved_at_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResolveIncident) Reset() {
-	*x = ResolveIncident{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResolveIncident) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResolveIncident) ProtoMessage() {}
-
-func (x *ResolveIncident) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResolveIncident.ProtoReflect.Descriptor instead.
-func (*ResolveIncident) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ResolveIncident) GetIncidentId() string {
-	if x != nil {
-		return x.IncidentId
-	}
-	return ""
-}
-
-func (x *ResolveIncident) GetResolvedAtMs() int64 {
-	if x != nil {
-		return x.ResolvedAtMs
-	}
-	return 0
 }
 
 // EnqueueAlert adds a notification to the replicated outbox (FA-ALR-03).
@@ -844,7 +757,7 @@ type EnqueueAlert struct {
 
 func (x *EnqueueAlert) Reset() {
 	*x = EnqueueAlert{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[7]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -856,7 +769,7 @@ func (x *EnqueueAlert) String() string {
 func (*EnqueueAlert) ProtoMessage() {}
 
 func (x *EnqueueAlert) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[7]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -869,7 +782,7 @@ func (x *EnqueueAlert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueAlert.ProtoReflect.Descriptor instead.
 func (*EnqueueAlert) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{7}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EnqueueAlert) GetAlertKey() string {
@@ -909,7 +822,7 @@ type AckAlertDelivery struct {
 
 func (x *AckAlertDelivery) Reset() {
 	*x = AckAlertDelivery{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -921,7 +834,7 @@ func (x *AckAlertDelivery) String() string {
 func (*AckAlertDelivery) ProtoMessage() {}
 
 func (x *AckAlertDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -934,7 +847,7 @@ func (x *AckAlertDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckAlertDelivery.ProtoReflect.Descriptor instead.
 func (*AckAlertDelivery) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{8}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AckAlertDelivery) GetAlertKey() string {
@@ -989,7 +902,7 @@ type RegisterNode struct {
 
 func (x *RegisterNode) Reset() {
 	*x = RegisterNode{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1001,7 +914,7 @@ func (x *RegisterNode) String() string {
 func (*RegisterNode) ProtoMessage() {}
 
 func (x *RegisterNode) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1014,7 +927,7 @@ func (x *RegisterNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNode.ProtoReflect.Descriptor instead.
 func (*RegisterNode) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{9}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RegisterNode) GetNode() *NodeInfo {
@@ -1034,7 +947,7 @@ type SetFeatureLevel struct {
 
 func (x *SetFeatureLevel) Reset() {
 	*x = SetFeatureLevel{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +959,7 @@ func (x *SetFeatureLevel) String() string {
 func (*SetFeatureLevel) ProtoMessage() {}
 
 func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +972,7 @@ func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFeatureLevel.ProtoReflect.Descriptor instead.
 func (*SetFeatureLevel) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetFeatureLevel) GetLevel() uint32 {
@@ -1093,7 +1006,7 @@ type NodeInfo struct {
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[11]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1018,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[11]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1031,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{11}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *NodeInfo) GetId() string {
@@ -1202,7 +1115,7 @@ var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xdb\x06\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xd0\x05\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -1216,13 +1129,11 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	" \x01(\v2\x1b.uptimecluster.v1.PutEntityH\x00R\tputEntity\x12E\n" +
 	"\rdelete_entity\x18\v \x01(\v2\x1e.uptimecluster.v1.DeleteEntityH\x00R\fdeleteEntity\x12O\n" +
 	"\x11set_monitor_state\x18\f \x01(\v2!.uptimecluster.v1.SetMonitorStateH\x00R\x0fsetMonitorState\x12E\n" +
-	"\ropen_incident\x18\r \x01(\v2\x1e.uptimecluster.v1.OpenIncidentH\x00R\fopenIncident\x12N\n" +
-	"\x10resolve_incident\x18\x0e \x01(\v2!.uptimecluster.v1.ResolveIncidentH\x00R\x0fresolveIncident\x12E\n" +
 	"\renqueue_alert\x18\x0f \x01(\v2\x1e.uptimecluster.v1.EnqueueAlertH\x00R\fenqueueAlert\x12R\n" +
 	"\x12ack_alert_delivery\x18\x10 \x01(\v2\".uptimecluster.v1.AckAlertDeliveryH\x00R\x10ackAlertDelivery\x12E\n" +
 	"\rregister_node\x18\x11 \x01(\v2\x1e.uptimecluster.v1.RegisterNodeH\x00R\fregisterNode\x12O\n" +
 	"\x11set_feature_level\x18\x12 \x01(\v2!.uptimecluster.v1.SetFeatureLevelH\x00R\x0fsetFeatureLevelB\t\n" +
-	"\apayload\"\x9b\x01\n" +
+	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"P\n" +
@@ -1238,28 +1149,22 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\"P\n" +
 	"\fDeleteEntity\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.EntityKindR\x04kind\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\x81\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"\xe7\x01\n" +
 	"\x0fSetMonitorState\x12\x1d\n" +
 	"\n" +
 	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1c\n" +
 	"\tconfirmed\x18\x03 \x01(\bR\tconfirmed\x12\x19\n" +
-	"\bsince_ms\x18\x04 \x01(\x03R\asinceMs\"\x91\x02\n" +
-	"\fOpenIncident\x12\x1f\n" +
+	"\bsince_ms\x18\x04 \x01(\x03R\asinceMs\x12'\n" +
+	"\x0fexpected_status\x18\x05 \x01(\tR\x0eexpectedStatus\x12;\n" +
+	"\bincident\x18\x06 \x01(\v2\x1f.uptimecluster.v1.IncidentStartR\bincident\"\xb1\x01\n" +
+	"\rIncidentStart\x12\x1f\n" +
 	"\vincident_id\x18\x01 \x01(\tR\n" +
-	"incidentId\x12\x1d\n" +
-	"\n" +
-	"monitor_id\x18\x02 \x01(\tR\tmonitorId\x12\"\n" +
-	"\rstarted_at_ms\x18\x03 \x01(\x03R\vstartedAtMs\x12\x14\n" +
-	"\x05cause\x18\x04 \x01(\tR\x05cause\x12=\n" +
-	"\verror_class\x18\x05 \x01(\x0e2\x1c.uptimecluster.v1.ErrorClassR\n" +
+	"incidentId\x12\x14\n" +
+	"\x05cause\x18\x02 \x01(\tR\x05cause\x12=\n" +
+	"\verror_class\x18\x03 \x01(\x0e2\x1c.uptimecluster.v1.ErrorClassR\n" +
 	"errorClass\x12*\n" +
-	"\x11affected_node_ids\x18\x06 \x03(\tR\x0faffectedNodeIds\x12\x1c\n" +
-	"\tconfirmed\x18\a \x01(\bR\tconfirmed\"X\n" +
-	"\x0fResolveIncident\x12\x1f\n" +
-	"\vincident_id\x18\x01 \x01(\tR\n" +
-	"incidentId\x12$\n" +
-	"\x0eresolved_at_ms\x18\x02 \x01(\x03R\fresolvedAtMs\"o\n" +
+	"\x11affected_node_ids\x18\x04 \x03(\tR\x0faffectedNodeIds\"o\n" +
 	"\fEnqueueAlert\x12\x1b\n" +
 	"\talert_key\x18\x01 \x01(\tR\balertKey\x12\x1f\n" +
 	"\vchannel_ids\x18\x02 \x03(\tR\n" +
@@ -1324,7 +1229,7 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),          // 0: uptimecluster.v1.EntityKind
 	(Actor_Kind)(0),          // 1: uptimecluster.v1.Actor.Kind
@@ -1334,39 +1239,37 @@ var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(*PutEntity)(nil),        // 5: uptimecluster.v1.PutEntity
 	(*DeleteEntity)(nil),     // 6: uptimecluster.v1.DeleteEntity
 	(*SetMonitorState)(nil),  // 7: uptimecluster.v1.SetMonitorState
-	(*OpenIncident)(nil),     // 8: uptimecluster.v1.OpenIncident
-	(*ResolveIncident)(nil),  // 9: uptimecluster.v1.ResolveIncident
-	(*EnqueueAlert)(nil),     // 10: uptimecluster.v1.EnqueueAlert
-	(*AckAlertDelivery)(nil), // 11: uptimecluster.v1.AckAlertDelivery
-	(*RegisterNode)(nil),     // 12: uptimecluster.v1.RegisterNode
-	(*SetFeatureLevel)(nil),  // 13: uptimecluster.v1.SetFeatureLevel
-	(*NodeInfo)(nil),         // 14: uptimecluster.v1.NodeInfo
-	nil,                      // 15: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),          // 16: uptimecluster.v1.ErrorClass
+	(*IncidentStart)(nil),    // 8: uptimecluster.v1.IncidentStart
+	(*EnqueueAlert)(nil),     // 9: uptimecluster.v1.EnqueueAlert
+	(*AckAlertDelivery)(nil), // 10: uptimecluster.v1.AckAlertDelivery
+	(*RegisterNode)(nil),     // 11: uptimecluster.v1.RegisterNode
+	(*SetFeatureLevel)(nil),  // 12: uptimecluster.v1.SetFeatureLevel
+	(*NodeInfo)(nil),         // 13: uptimecluster.v1.NodeInfo
+	nil,                      // 14: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),          // 15: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
 	5,  // 1: uptimecluster.v1.Command.put_entity:type_name -> uptimecluster.v1.PutEntity
 	6,  // 2: uptimecluster.v1.Command.delete_entity:type_name -> uptimecluster.v1.DeleteEntity
 	7,  // 3: uptimecluster.v1.Command.set_monitor_state:type_name -> uptimecluster.v1.SetMonitorState
-	8,  // 4: uptimecluster.v1.Command.open_incident:type_name -> uptimecluster.v1.OpenIncident
-	9,  // 5: uptimecluster.v1.Command.resolve_incident:type_name -> uptimecluster.v1.ResolveIncident
-	10, // 6: uptimecluster.v1.Command.enqueue_alert:type_name -> uptimecluster.v1.EnqueueAlert
-	11, // 7: uptimecluster.v1.Command.ack_alert_delivery:type_name -> uptimecluster.v1.AckAlertDelivery
-	12, // 8: uptimecluster.v1.Command.register_node:type_name -> uptimecluster.v1.RegisterNode
-	13, // 9: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
-	1,  // 10: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 11: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 12: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	16, // 13: uptimecluster.v1.OpenIncident.error_class:type_name -> uptimecluster.v1.ErrorClass
-	14, // 14: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 15: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	15, // 16: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	9,  // 4: uptimecluster.v1.Command.enqueue_alert:type_name -> uptimecluster.v1.EnqueueAlert
+	10, // 5: uptimecluster.v1.Command.ack_alert_delivery:type_name -> uptimecluster.v1.AckAlertDelivery
+	11, // 6: uptimecluster.v1.Command.register_node:type_name -> uptimecluster.v1.RegisterNode
+	12, // 7: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
+	1,  // 8: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 9: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 10: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 11: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	15, // 12: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	13, // 13: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 14: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	14, // 15: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -1379,8 +1282,6 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_PutEntity)(nil),
 		(*Command_DeleteEntity)(nil),
 		(*Command_SetMonitorState)(nil),
-		(*Command_OpenIncident)(nil),
-		(*Command_ResolveIncident)(nil),
 		(*Command_EnqueueAlert)(nil),
 		(*Command_AckAlertDelivery)(nil),
 		(*Command_RegisterNode)(nil),
@@ -1392,7 +1293,7 @@ func file_uptimecluster_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   13,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -141,4 +142,56 @@ func newPut(requestID, tenantID string, kind pb.EntityKind, id string, doc any, 
 			ExpectedRevision: expectedRevision,
 		}},
 	}, nil
+}
+
+// StateChange is a consensus status change decided by the leader.
+type StateChange struct {
+	TenantID  string
+	MonitorID string
+	From      store.MonitorStatus
+	To        store.MonitorStatus
+	SinceMs   int64
+	// Incident is required for a change to DOWN.
+	Incident *store.Incident
+}
+
+// NewSetMonitorState builds the command for a status change. The request ID is
+// derived from the change, so retrying an unknown outcome cannot apply it twice.
+func NewSetMonitorState(c StateChange) *pb.Command {
+	set := &pb.SetMonitorState{
+		MonitorId:      c.MonitorID,
+		Status:         string(c.To),
+		Confirmed:      true,
+		SinceMs:        c.SinceMs,
+		ExpectedStatus: string(c.From),
+	}
+	if c.Incident != nil {
+		set.Incident = &pb.IncidentStart{
+			IncidentId:      c.Incident.ID,
+			Cause:           c.Incident.Cause,
+			ErrorClass:      ErrorClassToProto(c.Incident.ErrorClass),
+			AffectedNodeIds: c.Incident.AffectedNodes,
+		}
+	}
+	return &pb.Command{
+		Version:   CommandVersion,
+		RequestId: fmt.Sprintf("state:%s:%s:%s:%d", c.MonitorID, c.From, c.To, c.SinceMs),
+		TenantId:  c.TenantID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload:   &pb.Command_SetMonitorState{SetMonitorState: set},
+	}
+}
+
+// ErrorClassToProto maps a checker error class ("dns", "http_status", …) to
+// the protobuf enum; unknown classes map to UNSPECIFIED.
+func ErrorClassToProto(class string) pb.ErrorClass {
+	return pb.ErrorClass(pb.ErrorClass_value["ERROR_CLASS_"+strings.ToUpper(class)])
+}
+
+// ErrorClassFromProto is the inverse of ErrorClassToProto; UNSPECIFIED maps to "".
+func ErrorClassFromProto(c pb.ErrorClass) string {
+	if c == pb.ErrorClass_ERROR_CLASS_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.TrimPrefix(c.String(), "ERROR_CLASS_"))
 }

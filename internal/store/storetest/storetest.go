@@ -38,6 +38,9 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"TenantIsolation", testStateTenantIsolation},
 		{"DedupAndAppliedIndex", testDedupAndAppliedIndex},
 		{"SecretKeys", testSecretKeys},
+		{"MonitorState", testMonitorState},
+		{"Incidents", testIncidents},
+		{"IncidentTenantIsolation", testIncidentTenantIsolation},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -56,6 +59,7 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"ListPagingAndFilters", testHeartbeatList},
 		{"DeleteBefore", testDeleteBefore},
 		{"TenantIsolation", testMetricsTenantIsolation},
+		{"LatestHeartbeats", testLatestHeartbeats},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -429,6 +433,210 @@ func testSecretKeys(t *testing.T, s store.State) {
 	}
 }
 
+func update(t *testing.T, s store.State, fn func(ctx context.Context, tx store.StateTx) error) error {
+	t.Helper()
+	return s.Update(context.Background(), func(tx store.StateTx) error { return fn(context.Background(), tx) })
+}
+
+func setState(t *testing.T, s store.State, tenantID, monitorID string, status store.MonitorStatus, sinceMs int64) {
+	t.Helper()
+	err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{Status: status, Confirmed: true, SinceMs: sinceMs})
+	})
+	if err != nil {
+		t.Fatalf("set state: %v", err)
+	}
+}
+
+func testMonitorState(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+	for _, id := range []string{"m1", "m2", "m3"} {
+		if err := put(t, s, newMonitor(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Without a stored state a monitor reads as PENDING since creation.
+	if m, _ := s.GetMonitor(ctx, tenantA, "m1"); m.State.Status != store.StatusPending || m.State.SinceMs != 1000 {
+		t.Fatalf("default state = %+v", m.State)
+	}
+	err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		_, err := tx.GetMonitorState(ctx, tenantA, "m1")
+		return err
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing state: err = %v, want ErrNotFound", err)
+	}
+
+	setState(t, s, tenantA, "m1", store.StatusDown, 2000)
+	setState(t, s, tenantA, "m2", store.StatusUp, 3000)
+	setState(t, s, tenantA, "m2", store.StatusDown, 4000)
+	m, err := s.GetMonitor(ctx, tenantA, "m2")
+	if err != nil || m.State != (store.MonitorState{Status: store.StatusDown, Confirmed: true, SinceMs: 4000}) {
+		t.Fatalf("state = %+v, %v", m.State, err)
+	}
+	var got store.MonitorState
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) (err error) {
+		got, err = tx.GetMonitorState(ctx, tenantA, "m2")
+		return err
+	}); err != nil || got.Status != store.StatusDown {
+		t.Fatalf("tx state = %+v, %v", got, err)
+	}
+
+	page, err := s.ListMonitors(ctx, tenantA, store.MonitorQuery{Status: store.StatusDown})
+	if err != nil || len(page.Items) != 2 || page.Items[0].ID != "m1" || page.Items[1].ID != "m2" {
+		t.Fatalf("DOWN monitors = %+v, %v", page.Items, err)
+	}
+	if page, _ := s.ListMonitors(ctx, tenantA, store.MonitorQuery{Status: store.StatusPending}); len(page.Items) != 1 || page.Items[0].ID != "m3" {
+		t.Fatalf("PENDING monitors = %+v", page.Items)
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutMonitorState(ctx, tenantA, "m1", store.MonitorState{Status: "BOGUS"})
+	}); err == nil {
+		t.Error("invalid status accepted")
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutMonitorState(ctx, tenantA, "missing", store.MonitorState{Status: store.StatusUp})
+	}); err == nil {
+		t.Error("state for a missing monitor accepted")
+	}
+}
+
+func openIncident(t *testing.T, s store.State, tenantID, monitorID, id string, startedMs int64) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.OpenIncident(ctx, store.Incident{TenantID: tenantID, ID: id, MonitorID: monitorID, StartedMs: startedMs,
+			Cause: "refused", ErrorClass: "connect", AffectedNodes: []string{"n1", "n2"}, Confirmed: true})
+	})
+}
+
+func resolveIncident(t *testing.T, s store.State, tenantID, monitorID string, resolvedMs int64) {
+	t.Helper()
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.ResolveIncident(ctx, tenantID, monitorID, resolvedMs)
+	}); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+}
+
+func incidentIDs(p store.IncidentPage) []string {
+	ids := make([]string, 0, len(p.Items))
+	for _, i := range p.Items {
+		ids = append(ids, i.ID)
+	}
+	return ids
+}
+
+func testIncidents(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+	for _, id := range []string{"m1", "m2"} {
+		if err := put(t, s, newMonitor(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// m1: [1000, 2000], [3000, 4000], [5000, open); m2: [2500, open)
+	for _, step := range []struct {
+		monitor, id string
+		started     int64
+		resolved    int64
+	}{{"m1", "i1", 1000, 2000}, {"m1", "i2", 3000, 4000}, {"m1", "i3", 5000, 0}, {"m2", "i4", 2500, 0}} {
+		if err := openIncident(t, s, tenantA, step.monitor, step.id, step.started); err != nil {
+			t.Fatal(err)
+		}
+		if step.resolved != 0 {
+			resolveIncident(t, s, tenantA, step.monitor, step.resolved)
+		}
+	}
+	if err := openIncident(t, s, tenantA, "m1", "i5", 6000); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("second open incident: err = %v, want ErrConflict", err)
+	}
+	if err := openIncident(t, s, tenantA, "missing", "i6", 6000); err == nil {
+		t.Fatal("incident of a missing monitor accepted")
+	}
+
+	inc, err := s.GetIncident(ctx, tenantA, "i1")
+	if err != nil || inc.MonitorName != "Monitor m1" || inc.ResolvedMs != 2000 || inc.Cause != "refused" ||
+		inc.ErrorClass != "connect" || !slices.Equal(inc.AffectedNodes, []string{"n1", "n2"}) || !inc.Confirmed {
+		t.Fatalf("incident = %+v, %v", inc, err)
+	}
+
+	cases := []struct {
+		name string
+		q    store.IncidentQuery
+		want []string
+	}{
+		{"all newest first", store.IncidentQuery{}, []string{"i3", "i2", "i4", "i1"}},
+		{"by monitor", store.IncidentQuery{MonitorID: "m2"}, []string{"i4"}},
+		{"open only", store.IncidentQuery{OpenOnly: true}, []string{"i3", "i4"}},
+		{"overlapping period", store.IncidentQuery{FromMs: 2100, ToMs: 2900}, []string{"i4"}},
+		{"period touches ends", store.IncidentQuery{FromMs: 2000, ToMs: 3000}, []string{"i2", "i4", "i1"}},
+		{"open end from", store.IncidentQuery{FromMs: 4500}, []string{"i3", "i4"}},
+	}
+	for _, c := range cases {
+		page, err := s.ListIncidents(ctx, tenantA, c.q)
+		if err != nil || !slices.Equal(incidentIDs(page), c.want) {
+			t.Errorf("%s: %v, %v; want %v", c.name, incidentIDs(page), err, c.want)
+		}
+	}
+
+	var all []string
+	q := store.IncidentQuery{Limit: 3}
+	for {
+		page, err := s.ListIncidents(ctx, tenantA, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, incidentIDs(page)...)
+		if page.Next == nil {
+			break
+		}
+		q.After = page.Next
+	}
+	if !slices.Equal(all, []string{"i3", "i2", "i4", "i1"}) {
+		t.Fatalf("paged incidents = %v", all)
+	}
+
+	if err := del(t, s, tenantA, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if page, _ := s.ListIncidents(ctx, tenantA, store.IncidentQuery{}); !slices.Equal(incidentIDs(page), []string{"i4"}) {
+		t.Fatalf("incidents after deleting m1 = %v", incidentIDs(page))
+	}
+}
+
+func testIncidentTenantIsolation(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	if err := put(t, s, newMonitor(tenantA, "ma"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := openIncident(t, s, tenantA, "ma", "ia", 1000); err != nil {
+		t.Fatal(err)
+	}
+	// A monitor of another tenant cannot get an incident in tenant B.
+	if err := openIncident(t, s, tenantB, "ma", "ib", 1000); err == nil {
+		t.Error("incident for another tenant's monitor accepted")
+	}
+	if _, err := s.GetIncident(ctx, tenantB, "ia"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("foreign incident: err = %v, want ErrNotFound", err)
+	}
+	if page, _ := s.ListIncidents(ctx, tenantB, store.IncidentQuery{}); len(page.Items) != 0 {
+		t.Errorf("tenant B sees %v", incidentIDs(page))
+	}
+	// Resolving in tenant B must not touch tenant A's incident.
+	resolveIncident(t, s, tenantB, "ma", 5000)
+	if inc, _ := s.GetIncident(ctx, tenantA, "ia"); inc.ResolvedMs != 0 {
+		t.Errorf("tenant B resolved tenant A's incident: %+v", inc)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutMonitorState(ctx, tenantB, "ma", store.MonitorState{Status: store.StatusDown})
+	}); err == nil {
+		t.Error("state for another tenant's monitor accepted")
+	}
+}
+
 // --- Metrics ----------------------------------------------------------------
 
 func heartbeats(tenantID, monitorID, node string, fromSeq, count int, startMs int64) []store.Heartbeat {
@@ -589,5 +797,32 @@ func testMetricsTenantIsolation(t *testing.T, m store.Metrics) {
 		if err != nil || len(page.Items) != 0 {
 			t.Errorf("ListHeartbeats(%+v) for other tenant = %d items, %v", q, len(page.Items), err)
 		}
+	}
+}
+
+func testLatestHeartbeats(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 5, 10_000))
+	insert(t, m, heartbeats(tenantA, "m1", "n2", 1, 2, 12_500))
+	insert(t, m, heartbeats(tenantA, "m2", "n1", 10, 3, 20_000))
+	insert(t, m, heartbeats(tenantB, "m1", "n1", 20, 3, 30_000))
+
+	got, err := m.LatestHeartbeats(ctx, tenantA, "m1", "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ts []int64
+	for _, hb := range got {
+		ts = append(ts, hb.TsMs)
+	}
+	if !slices.Equal(ts, []int64{14_000, 13_500, 13_000}) {
+		t.Fatalf("latest of all nodes = %v", ts)
+	}
+	got, err = m.LatestHeartbeats(ctx, tenantA, "m1", "n2", 10)
+	if err != nil || len(got) != 2 || got[0].Seq != 2 || got[0].NodeID != "n2" {
+		t.Fatalf("latest of n2 = %+v, %v", got, err)
+	}
+	if got, _ := m.LatestHeartbeats(ctx, tenantB, "m2", "", 10); len(got) != 0 {
+		t.Fatalf("tenant B sees tenant A's heartbeats: %+v", got)
 	}
 }

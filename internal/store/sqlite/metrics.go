@@ -200,21 +200,43 @@ func (m *MetricsStore) ListHeartbeats(ctx context.Context, tenantID string, q st
 			page.Next = &store.HeartbeatCursor{TsMs: last.TsMs, NodeID: last.NodeID, Incarnation: last.Incarnation, Seq: last.Seq}
 			break
 		}
-		page.Items = append(page.Items, store.Heartbeat{
-			NodeID:      r.NodeID,
-			Incarnation: r.Incarnation,
-			Seq:         uint64(max(r.Seq, 0)),
-			TenantID:    r.TenantID,
-			MonitorID:   r.MonitorID,
-			TsMs:        r.TsMs,
-			Status:      store.CheckStatus(r.Status),
-			LatencyMs:   int(r.LatencyMs),
-			ErrorClass:  r.ErrorClass,
-			Message:     r.Message,
-			Details:     []byte(r.DetailsJson),
-		})
+		page.Items = append(page.Items, heartbeatFromRow(r))
 	}
 	return page, nil
+}
+
+func heartbeatFromRow(r metricsdb.Heartbeat) store.Heartbeat {
+	return store.Heartbeat{
+		NodeID:      r.NodeID,
+		Incarnation: r.Incarnation,
+		Seq:         uint64(max(r.Seq, 0)),
+		TenantID:    r.TenantID,
+		MonitorID:   r.MonitorID,
+		TsMs:        r.TsMs,
+		Status:      store.CheckStatus(r.Status),
+		LatencyMs:   int(r.LatencyMs),
+		ErrorClass:  r.ErrorClass,
+		Message:     r.Message,
+		Details:     []byte(r.DetailsJson),
+	}
+}
+
+// LatestHeartbeats returns the newest heartbeats of a monitor, newest first.
+func (m *MetricsStore) LatestHeartbeats(ctx context.Context, tenantID, monitorID, nodeID string, limit int) ([]store.Heartbeat, error) {
+	rows, err := m.q.LatestHeartbeats(ctx, metricsdb.LatestHeartbeatsParams{
+		TenantID:  tenantID,
+		MonitorID: monitorID,
+		NodeID:    nodeID,
+		RowLimit:  int64(clampLimit(limit, 1, maxHeartbeatLimit)),
+	})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.Heartbeat, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, heartbeatFromRow(r))
+	}
+	return out, nil
 }
 
 // DeleteHeartbeatsBefore deletes one batch of heartbeats older than beforeMs.

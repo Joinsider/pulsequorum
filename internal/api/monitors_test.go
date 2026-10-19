@@ -41,6 +41,7 @@ type env struct {
 	t       *testing.T
 	handler http.Handler
 	metrics *sqlite.MetricsStore
+	node    *cluster.Node
 }
 
 func newEnv(t *testing.T) *env {
@@ -82,7 +83,7 @@ func newEnv(t *testing.T) *env {
 		CheckEnv: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"}, NodeID: "n1",
 		Authenticator: headerAuth{},
 	})
-	return &env{t: t, handler: mux, metrics: metrics}
+	return &env{t: t, handler: mux, metrics: metrics, node: node}
 }
 
 type response struct {

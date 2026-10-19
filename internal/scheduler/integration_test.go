@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/aggregator"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin"
 	"github.com/joinsider/uptimecluster/internal/cluster"
@@ -23,7 +24,7 @@ import (
 
 // TestEndToEnd runs the phase-1 pipeline: a monitor created through Raft is
 // picked up by the reconciler, checked by the scheduler and stored as a
-// heartbeat.
+// heartbeat, and the aggregator records the consensus status UP.
 func TestEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -58,14 +59,16 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: node, NodeID: "node-1", Logger: log})
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"},
-		Sink: writer, Logger: log, Unit: 10 * time.Millisecond})
+		Sink: scheduler.Sinks{writer, agg}, Logger: log, Unit: 10 * time.Millisecond})
 	runCtx, stop := context.WithCancel(ctx)
-	done := make(chan struct{}, 3)
+	done := make(chan struct{}, 4)
 	go func() { writer.Run(runCtx); done <- struct{}{} }()
+	go func() { agg.Run(runCtx); done <- struct{}{} }()
 	go func() { sched.Run(runCtx); done <- struct{}{} }()
 	go func() {
-		scheduler.Reconcile(runCtx, state, node.FSM().Changes(), sched, time.Hour, log)
+		scheduler.Reconcile(runCtx, state, node.FSM().Changes(), time.Hour, log, sched, agg)
 		done <- struct{}{}
 	}()
 
@@ -97,8 +100,21 @@ func TestEndToEnd(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	for {
+		m, err := state.GetMonitor(ctx, cluster.DefaultTenantID, "mon-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.State.Status == store.StatusUp {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %s, want UP", m.State.Status)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	stop()
-	for range 3 {
+	for range 4 {
 		<-done
 	}
 }

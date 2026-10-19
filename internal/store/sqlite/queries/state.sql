@@ -23,12 +23,26 @@ ON CONFLICT (id) DO UPDATE SET
     updated_ms     = excluded.updated_ms;
 
 -- name: GetMonitor :one
-SELECT * FROM monitors WHERE tenant_id = ? AND id = ?;
+-- Monitors and their state are written in the same FSM transaction; the
+-- defaults only cover monitors stored without the FSM (store tests).
+SELECT sqlc.embed(m),
+       CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
+       CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+FROM monitors m
+LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
+WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.id = sqlc.arg(id);
 
 -- name: ListMonitors :many
-SELECT m.* FROM monitors m
+SELECT sqlc.embed(m),
+       CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
+       CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+FROM monitors m
+LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = sqlc.arg(tenant_id)
   AND m.id > sqlc.arg(after_id)
+  AND (CAST(sqlc.arg(status) AS TEXT) = '' OR COALESCE(s.status, 'PENDING') = sqlc.arg(status))
   AND (CAST(sqlc.arg(search) AS TEXT) = '' OR m.name LIKE '%' || sqlc.arg(search) || '%')
   AND (CAST(sqlc.arg(tag) AS TEXT) = '' OR EXISTS (
         SELECT 1 FROM monitor_tags t
@@ -104,3 +118,44 @@ ON CONFLICT (key_id) DO UPDATE SET
     wrapped_dek     = excluded.wrapped_dek,
     kek_fingerprint = excluded.kek_fingerprint,
     retired_ms      = excluded.retired_ms;
+
+-- name: GetMonitorState :one
+SELECT * FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?;
+
+-- name: UpsertMonitorState :exec
+INSERT INTO monitor_states (tenant_id, monitor_id, status, confirmed, since_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (tenant_id, monitor_id) DO UPDATE SET
+    status    = excluded.status,
+    confirmed = excluded.confirmed,
+    since_ms  = excluded.since_ms;
+
+-- name: InsertIncident :exec
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: ResolveIncident :execrows
+UPDATE incidents SET resolved_ms = sqlc.arg(resolved_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id) AND resolved_ms = 0;
+
+-- name: GetIncident :one
+SELECT sqlc.embed(i), m.name AS monitor_name
+FROM incidents i
+JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
+WHERE i.tenant_id = sqlc.arg(tenant_id) AND i.id = sqlc.arg(id);
+
+-- name: ListIncidents :many
+-- Newest first with keyset (started_ms, id) descending. An incident matches
+-- the period if it overlaps [from_ms, to_ms].
+SELECT sqlc.embed(i), m.name AS monitor_name
+FROM incidents i
+JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
+WHERE i.tenant_id = sqlc.arg(tenant_id)
+  AND (CAST(sqlc.arg(monitor_id) AS TEXT) = '' OR i.monitor_id = sqlc.arg(monitor_id))
+  AND i.started_ms <= sqlc.arg(to_ms)
+  AND (i.resolved_ms = 0 OR i.resolved_ms >= sqlc.arg(from_ms))
+  AND (CAST(sqlc.arg(open_only) AS INTEGER) = 0 OR i.resolved_ms = 0)
+  AND (i.started_ms < sqlc.arg(before_started_ms)
+       OR (i.started_ms = sqlc.arg(before_started_ms) AND i.id < sqlc.arg(before_id)))
+ORDER BY i.started_ms DESC, i.id DESC
+LIMIT sqlc.arg(row_limit);

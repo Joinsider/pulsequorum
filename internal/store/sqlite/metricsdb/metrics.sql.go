@@ -119,6 +119,63 @@ func (q *Queries) LastSeq(ctx context.Context, arg LastSeqParams) (int64, error)
 	return last_seq, err
 }
 
+const latestHeartbeats = `-- name: LatestHeartbeats :many
+SELECT node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms, error_class, message, details_json FROM heartbeats
+WHERE tenant_id = ?1
+  AND monitor_id = ?2
+  AND (CAST(?3 AS TEXT) = '' OR node_id = ?3)
+ORDER BY ts_ms DESC, seq DESC
+LIMIT ?4
+`
+
+type LatestHeartbeatsParams struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+	RowLimit  int64
+}
+
+// Newest heartbeats of a monitor, optionally of one node.
+func (q *Queries) LatestHeartbeats(ctx context.Context, arg LatestHeartbeatsParams) ([]Heartbeat, error) {
+	rows, err := q.db.QueryContext(ctx, latestHeartbeats,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.NodeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Heartbeat{}
+	for rows.Next() {
+		var i Heartbeat
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.Incarnation,
+			&i.Seq,
+			&i.TenantID,
+			&i.MonitorID,
+			&i.TsMs,
+			&i.Status,
+			&i.LatencyMs,
+			&i.ErrorClass,
+			&i.Message,
+			&i.DetailsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHeartbeats = `-- name: ListHeartbeats :many
 SELECT node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms, error_class, message, details_json FROM heartbeats
 WHERE tenant_id = ?1

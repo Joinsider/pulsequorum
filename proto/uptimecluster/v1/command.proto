@@ -26,12 +26,14 @@ message Command {
   // Empty for platform-level commands.
   string tenant_id = 5;
 
+  // 13 and 14 were OpenIncident and ResolveIncident; incidents are part of
+  // SetMonitorState so that status and incident change atomically.
+  reserved 13, 14;
+
   oneof payload {
     PutEntity put_entity = 10;
     DeleteEntity delete_entity = 11;
     SetMonitorState set_monitor_state = 12;
-    OpenIncident open_incident = 13;
-    ResolveIncident resolve_incident = 14;
     EnqueueAlert enqueue_alert = 15;
     AckAlertDelivery ack_alert_delivery = 16;
     RegisterNode register_node = 17;
@@ -80,31 +82,30 @@ message DeleteEntity {
   string id = 2;
 }
 
-// SetMonitorState records a consensus status change (FA-CON-06).
+// SetMonitorState records a consensus status change (FA-CON-06). The FSM
+// keeps incidents consistent with it (FA-INC-01): a change to DOWN opens an
+// incident, leaving DOWN resolves it at since_ms.
 message SetMonitorState {
   string monitor_id = 1;
-  // MonitorStatus as defined in the REST API (UP, DOWN, …).
+  // MonitorStatus as defined in the REST API (UP, DOWN, …). PAUSED is set
+  // only by pausing the monitor.
   string status = 2;
   // false if raised without quorum (degraded mode, FA-ALR-10).
   bool confirmed = 3;
   int64 since_ms = 4;
+  // Status the decision was based on. The FSM rejects the command with a
+  // conflict if the stored status differs, e.g. after a pause.
+  string expected_status = 5;
+  // Required for a change to DOWN: the incident to open.
+  IncidentStart incident = 6;
 }
 
-// OpenIncident starts an incident for a monitor.
-message OpenIncident {
+// IncidentStart describes the cause of an incident.
+message IncidentStart {
   string incident_id = 1;
-  string monitor_id = 2;
-  int64 started_at_ms = 3;
-  string cause = 4;
-  ErrorClass error_class = 5;
-  repeated string affected_node_ids = 6;
-  bool confirmed = 7;
-}
-
-// ResolveIncident ends an incident.
-message ResolveIncident {
-  string incident_id = 1;
-  int64 resolved_at_ms = 2;
+  string cause = 2;
+  ErrorClass error_class = 3;
+  repeated string affected_node_ids = 4;
 }
 
 // EnqueueAlert adds a notification to the replicated outbox (FA-ALR-03).

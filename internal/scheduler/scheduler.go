@@ -37,6 +37,16 @@ type Sink interface {
 	Record(ctx context.Context, o Outcome)
 }
 
+// Sinks passes every outcome to each sink in order.
+type Sinks []Sink
+
+// Record implements Sink.
+func (s Sinks) Record(ctx context.Context, o Outcome) {
+	for _, sink := range s {
+		sink.Record(ctx, o)
+	}
+}
+
 // Options configure a Scheduler.
 type Options struct {
 	Registry      *checker.Registry
