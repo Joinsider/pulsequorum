@@ -26,12 +26,21 @@ type Server struct {
 	log   *slog.Logger
 	ui    http.Handler
 	ready atomic.Bool
+	// readiness, if set, is consulted by /readyz in addition to the listener state.
+	readiness func() error
 }
 
 // New creates a server. ui serves the single-page application for all
 // non-API paths.
 func New(cfg config.Config, log *slog.Logger, ui http.Handler) *Server {
 	return &Server{cfg: cfg, log: log, ui: ui}
+}
+
+// WithReadiness adds a check to /readyz, e.g. the health of the Raft node.
+// It must be called before Run.
+func (s *Server) WithReadiness(check func() error) *Server {
+	s.readiness = check
+	return s
 }
 
 // Handler returns the root handler with all routes and middleware.

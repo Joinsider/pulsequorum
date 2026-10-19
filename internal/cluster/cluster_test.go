@@ -60,7 +60,7 @@ func commandLog(t *testing.T) []*raft.Log {
 		if err != nil {
 			t.Fatal(err)
 		}
-		logs = append(logs, &raft.Log{Index: uint64(i + 1), Type: raft.LogCommand, Data: data}) //nolint:gosec // small test values
+		logs = append(logs, &raft.Log{Index: uint64(i + 1), Type: raft.LogCommand, Data: data})
 	}
 	return append(logs, &raft.Log{Index: uint64(len(cmds) + 1), Type: raft.LogCommand, Data: []byte{0xff, 0x01}})
 }
@@ -120,7 +120,10 @@ func TestFSMHaltsOnStoreFailure(t *testing.T) {
 		t.Fatalf("result = %+v, want ErrFSMHalted", res)
 	}
 	select {
-	case <-halted:
+	case err := <-halted:
+		if !errors.Is(err, ErrFSMHalted) {
+			t.Errorf("onFatal error = %v, want ErrFSMHalted", err)
+		}
 	default:
 		t.Fatal("onFatal not called")
 	}
@@ -176,5 +179,30 @@ func TestNodeBootstrapAndRestart(t *testing.T) {
 	}
 	if s := n2.Status(); s.RaftState != "Leader" || s.AppliedIndex < 3 {
 		t.Errorf("status = %+v", s)
+	}
+}
+
+func TestEnsureDefaultTenantAndReady(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	st := openStore(t, dir)
+	n, err := Start(ctx, Config{NodeID: "22222222-2222-2222-2222-222222222222", Advertise: "node1:9443", DataDir: dir,
+		Timeout: 200 * time.Millisecond, Logger: slog.New(slog.DiscardHandler), RaftLogLevel: "error"}, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = n.Shutdown() }()
+
+	for range 2 { // idempotent
+		if err := EnsureDefaultTenant(ctx, n, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tn, err := st.GetTenant(ctx, DefaultTenantID); err != nil || tn.Name != "Default" {
+		t.Fatalf("default tenant = %+v, %v", tn, err)
+	}
+	if err := n.Ready(); err != nil {
+		t.Errorf("Ready = %v, want nil", err)
 	}
 }

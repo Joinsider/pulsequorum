@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -16,7 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/node"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/version"
@@ -91,10 +94,50 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	go state.DB().RunCheckpointer(ctx, checkpointInterval, log)
 	go metrics.DB().RunCheckpointer(ctx, checkpointInterval, log)
 
+	nodeID, err := node.LoadOrCreateID(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	// A halted FSM stops the whole process (FA-CLU-13).
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+	raftNode, err := cluster.Start(ctx, cluster.Config{
+		NodeID:       nodeID,
+		Advertise:    cfg.ClusterAdvertise,
+		DataDir:      cfg.DataDir,
+		Timeout:      cfg.RaftTimeout,
+		Logger:       log,
+		RaftLogLevel: cfg.LogLevel.String(),
+		RaftLogJSON:  cfg.LogFormat == "json",
+	}, state, stop)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := raftNode.Shutdown(); err != nil {
+			log.Warn("raft shutdown", "err", err)
+		}
+	}()
+	log.Info("node ready", "node_id", nodeID, "advertise", cfg.ClusterAdvertise)
+
+	if cfg.AuthMode == config.AuthLocal {
+		go func() {
+			bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			if err := cluster.EnsureDefaultTenant(bootCtx, raftNode, state); err != nil && ctx.Err() == nil {
+				log.Error("could not create the default tenant", "err", err)
+			}
+		}()
+	}
+
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
 	}
-	return server.New(cfg, log, webui.Handler()).Run(ctx)
+	err = server.New(cfg, log, webui.Handler()).WithReadiness(raftNode.Ready).Run(ctx)
+	if cause := context.Cause(ctx); errors.Is(cause, cluster.ErrFSMHalted) {
+		return cause
+	}
+	return err
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

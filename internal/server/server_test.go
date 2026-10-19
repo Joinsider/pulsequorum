@@ -6,11 +6,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,5 +168,19 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Serve did not return after cancel")
+	}
+}
+
+func TestReadinessCheck(t *testing.T) {
+	healthy := errors.New("raft: no leader")
+	s := testServer().WithReadiness(func() error { return healthy })
+	s.ready.Store(true)
+	rec := get(t, s.Handler(), "/readyz")
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "no leader") {
+		t.Fatalf("got %d %s, want 503 with reason", rec.Code, rec.Body.String())
+	}
+	healthy = nil
+	if rec := get(t, s.Handler(), "/readyz"); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 once the check passes", rec.Code)
 	}
 }
