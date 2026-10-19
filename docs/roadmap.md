@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P1 – Kern (P0 abgeschlossen bis auf Läufe, die einen GitHub-Remote bzw. Docker-Daemon brauchen: AP-0.8–0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-1.5 TCP-, DNS- und ICMP-Checker |
+| **Nächster Schritt (Claude)** | AP-1.6 Scheduler (Jitter, Nebenläufigkeit, Env mit Dialer/ICMP-Modus) |
 
 ---
 
@@ -65,7 +65,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-1.2 | Node-Identität (Node-ID, Inkarnation), Raft mit einem Mitglied, FSM-Befehle, Request-Dedup, Snapshots per Backup-API, Determinismus-Test | FA-NODE-03, FA-CLU-01/02/06/07/09/13 | 0005, 0012 | ✅ In-Memory-Transport auf der Advertise-Adresse bis zum mTLS-Transport (AP-2.1); FSM-Fingerprint-Vergleich zwischen Votern → AP-3.6 |
 | AP-1.3 | Geheimnisverschlüsselung (Envelope, KEK/DEK, Rotation) | FA-SEC-SEC | 0011 | ✅ KEK (Env/Datei/generiert), DEK-Rotation (jährlich automatisch), Keyring mit AAD-Bindung; Neuverschlüsselungs-Job und Stilllegung alter DEKs folgen mit den ersten verschlüsselten Objekten in AP-1.10; KEK-Rotation per Admin-CLI in P2 |
 | AP-1.4 | Checker-Registry, zentraler Dialer mit SSRF-Hook, HTTP-Checker (frische Verbindungen, Phasen-Timeouts, TLS-Prüfung, Fehlerklassen) | FA-CHK-01..04, 10..15 | – | ✅ Registry, Dialer mit SSRF-Policy (Durchsetzung per `SSRF_PROTECTION` wird mit dem Scheduler in AP-1.6 verdrahtet), HTTP-Checker; Lizenzprüfung erfasst die neuen Abhängigkeiten erst, sobald der Scheduler sie ins Binary holt |
-| AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ⬜ |
+| AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ✅ Echte Pings in der Entwicklungs-Sandbox nicht ausführbar (Tests überspringen dann); Container-Doku `docs/betrieb/icmp.md` noch nicht in Docker/Podman/Kubernetes praktisch verifiziert |
 | AP-1.6 | Scheduler: Jitter inkl. Erstlauf, keine Selbstüberlappung, Nebenläufigkeitslimit, Goroutine-Leak-Tests | FA-SCH-01/03/04/05/07 | – | ⬜ |
 | AP-1.7 | Monitor-API (CRUD, Pause, Klonen, Typen mit JSON-Schema), Problem Details, Paginierung | FA-MON-*, FA-API-01..03/06 | 0003 | ⬜ |
 | AP-1.8 | Statuslogik Single-Node (Retries, PENDING, DEGRADED), Incidents | FA-CON-03, FA-INC-01/02 | – | ⬜ |

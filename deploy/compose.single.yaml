@@ -19,8 +19,10 @@ services:
     ports:
       - "8080:8080" # API + UI
       - "9443:9443" # cluster port (for a later join)
-    cap_add:
-      - NET_RAW # ICMP checks (privileged mode), see Pflichtenheft FA-CHK-31
+    # ICMP without extra capabilities: allow the image's group (65532) to open
+    # unprivileged ICMP sockets. Details: docs/betrieb/icmp.md
+    sysctls:
+      net.ipv4.ping_group_range: "65532 65532"
 
 volumes:
   uptime-data:

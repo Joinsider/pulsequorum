@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/node"
@@ -94,6 +95,15 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	go state.DB().RunCheckpointer(ctx, checkpointInterval, log)
 	go metrics.DB().RunCheckpointer(ctx, checkpointInterval, log)
+
+	// ICMP self-test (FA-CHK-31, FA-NODE-06); the mode is handed to the
+	// checkers by the scheduler (AP-1.6).
+	icmpMode, icmpErr := icmpcheck.DetectMode(ctx, cfg.ICMPMode)
+	if icmpMode == icmpcheck.ModeOff && cfg.ICMPMode != icmpcheck.ModeOff {
+		log.Warn("ICMP checks are unavailable on this node; see docs/betrieb/icmp.md", "configured", cfg.ICMPMode, "err", icmpErr)
+	} else {
+		log.Info("ICMP mode", "mode", icmpMode)
+	}
 
 	nodeID, err := node.LoadOrCreateID(cfg.DataDir)
 	if err != nil {

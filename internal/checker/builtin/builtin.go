@@ -6,5 +6,8 @@
 package builtin
 
 import (
+	_ "github.com/joinsider/uptimecluster/internal/checker/dnscheck"  // DNS
 	_ "github.com/joinsider/uptimecluster/internal/checker/httpcheck" // HTTP(S)
+	_ "github.com/joinsider/uptimecluster/internal/checker/icmpcheck" // ICMP
+	_ "github.com/joinsider/uptimecluster/internal/checker/tcpcheck"  // TCP
 )

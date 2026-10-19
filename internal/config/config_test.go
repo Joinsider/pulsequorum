@@ -67,6 +67,7 @@ func TestLoadInvalid(t *testing.T) {
 		{"advertise without port", map[string]string{"CLUSTER_ADVERTISE": "raft-n1"}, "CLUSTER_ADVERTISE"},
 		{"raft timeout too small", map[string]string{"RAFT_TIMEOUT": "10ms"}, "RAFT_TIMEOUT"},
 		{"two master keys", map[string]string{"MASTER_KEY": "a", "MASTER_KEY_FILE": "/k"}, "MASTER_KEY"},
+		{"icmp mode", map[string]string{"ICMP_MODE": "raw"}, "ICMP_MODE"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

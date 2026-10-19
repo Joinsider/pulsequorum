@@ -82,6 +82,9 @@ type Env struct {
 	Dialer *Dialer
 	// UserAgent identifies the monitor, e.g. "UptimeCluster/1.2.0" (FA-CHK-13).
 	UserAgent string
+	// ICMPMode is the ICMP socket mode detected at startup: "privileged",
+	// "unprivileged" or "off" (FA-CHK-31).
+	ICMPMode string
 }
 
 // Checker is a monitor type plugin.

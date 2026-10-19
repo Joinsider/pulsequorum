@@ -48,8 +48,10 @@ type Config struct {
 	RaftTimeout time.Duration
 	PublicURL   string
 	// MasterKey (base64) or MasterKeyFile provide the KEK (ADR 0011). Never log them.
-	MasterKey       string
-	MasterKeyFile   string
+	MasterKey     string
+	MasterKeyFile string
+	// ICMPMode is auto, privileged, unprivileged or off (FA-CHK-31).
+	ICMPMode        string
 	AuthMode        AuthMode
 	LogLevel        slog.Level
 	LogFormat       string
@@ -118,6 +120,13 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.MasterKeyFile = get("MASTER_KEY_FILE", "")
 	if cfg.MasterKey != "" && cfg.MasterKeyFile != "" {
 		errs = append(errs, errors.New("MASTER_KEY and MASTER_KEY_FILE: set only one"))
+	}
+
+	cfg.ICMPMode = get("ICMP_MODE", "auto")
+	switch cfg.ICMPMode {
+	case "auto", "privileged", "unprivileged", "off":
+	default:
+		errs = append(errs, fmt.Errorf("ICMP_MODE: must be auto, privileged, unprivileged or off, got %q", cfg.ICMPMode))
 	}
 
 	cfg.ClusterAdvertise = get("CLUSTER_ADVERTISE", "")
