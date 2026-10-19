@@ -75,3 +75,20 @@ DELETE FROM monitor_tags WHERE tenant_id = ? AND monitor_id = ?;
 
 -- name: InsertMonitorTag :exec
 INSERT INTO monitor_tags (tenant_id, monitor_id, tag) VALUES (?, ?, ?);
+
+-- name: GetFSMMeta :one
+SELECT value FROM fsm_meta WHERE key = ?;
+
+-- name: SetFSMMeta :exec
+INSERT INTO fsm_meta (key, value) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value;
+
+-- name: GetDedup :one
+SELECT * FROM request_dedup WHERE request_id = ?;
+
+-- name: InsertDedup :exec
+INSERT INTO request_dedup (request_id, applied_index, issued_at_ms, result_json, error_code, error_message)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: PruneDedup :execrows
+DELETE FROM request_dedup WHERE issued_at_ms < ?;

@@ -8,6 +8,11 @@ import (
 	"database/sql"
 )
 
+type FsmMetum struct {
+	Key   string
+	Value int64
+}
+
 type Monitor struct {
 	TenantID          string
 	ID                string
@@ -32,6 +37,15 @@ type MonitorTag struct {
 	TenantID  string
 	MonitorID string
 	Tag       string
+}
+
+type RequestDedup struct {
+	RequestID    string
+	AppliedIndex int64
+	IssuedAtMs   int64
+	ResultJson   string
+	ErrorCode    string
+	ErrorMessage string
 }
 
 type Tenant struct {

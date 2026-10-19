@@ -4,6 +4,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -224,4 +225,93 @@ func TestMaintenance(t *testing.T) {
 	if err := m.db.writer.QueryRowContext(ctx, "PRAGMA freelist_count").Scan(&freelist); err != nil || freelist != 0 {
 		t.Errorf("freelist_count = %d, %v; want 0 after incremental vacuum", freelist, err)
 	}
+}
+
+func seedForSnapshot(t *testing.T, s *StateStore, tenant string, applied uint64) {
+	t.Helper()
+	ctx := context.Background()
+	err := s.Update(ctx, func(tx store.StateTx) error {
+		if err := tx.PutTenant(ctx, store.Tenant{ID: tenant, Name: tenant, Plan: "default", CreatedMs: 1, UpdatedMs: 1}); err != nil {
+			return err
+		}
+		if err := tx.PutMonitor(ctx, store.Monitor{
+			TenantID: tenant, ID: tenant + "-m", Name: "m", Type: "http", IntervalSeconds: 60, TimeoutSeconds: 10,
+			Assignment: store.Assignment{Mode: "all"}, ConsensusPolicy: "majority", Tags: []string{"x"},
+		}, 0); err != nil {
+			return err
+		}
+		return tx.SetAppliedIndex(ctx, applied)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSnapshotRestore covers ADR 0012 A1: VACUUM INTO on the read pool and
+// restore by swapping the file.
+func TestSnapshotRestore(t *testing.T) {
+	ctx := context.Background()
+	src := openState(t, t.TempDir())
+	seedForSnapshot(t, src, "a", 7)
+
+	var buf bytes.Buffer
+	if err := src.WriteSnapshot(ctx, &buf); err != nil {
+		t.Fatalf("WriteSnapshot: %v", err)
+	}
+	// The read pool must stay read-only after the snapshot toggled query_only.
+	for range 8 {
+		if _, err := src.DB().reader.ExecContext(ctx, "DELETE FROM tenants"); err == nil {
+			t.Fatal("read pool became writable after snapshot")
+		}
+	}
+
+	dstDir := t.TempDir()
+	dst := openState(t, dstDir)
+	seedForSnapshot(t, dst, "b", 3)
+	if err := dst.RestoreSnapshot(ctx, &buf); err != nil {
+		t.Fatalf("RestoreSnapshot: %v", err)
+	}
+
+	if _, err := dst.GetTenant(ctx, "b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("old data survived restore: %v", err)
+	}
+	if m, err := dst.GetMonitor(ctx, "a", "a-m"); err != nil || m.Tags[0] != "x" {
+		t.Errorf("restored monitor = %+v, %v", m, err)
+	}
+	if idx, err := dst.AppliedIndex(ctx); err != nil || idx != 7 {
+		t.Errorf("restored AppliedIndex = %d, %v; want 7", idx, err)
+	}
+	fa, err := src.Fingerprint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fb, err := dst.Fingerprint(ctx)
+	if err != nil || fa != fb {
+		t.Errorf("fingerprints differ after restore: %s vs %s (%v)", fa, fb, err)
+	}
+
+	// The restored store is fully usable for writes.
+	seedForSnapshot(t, dst, "c", 8)
+	if fc, _ := dst.Fingerprint(ctx); fc == fa {
+		t.Error("fingerprint did not change after a write")
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dstDir, ".restore-*")); len(leftovers) != 0 {
+		t.Errorf("temporary files left behind: %v", leftovers)
+	}
+}
+
+func TestRestoreRejectsGarbageAndKeepsState(t *testing.T) {
+	ctx := context.Background()
+	s := openState(t, t.TempDir())
+	seedForSnapshot(t, s, "a", 4)
+	before, _ := s.Fingerprint(ctx)
+
+	if err := s.RestoreSnapshot(ctx, strings.NewReader("not a database")); err == nil {
+		t.Fatal("restoring garbage succeeded")
+	}
+	after, err := s.Fingerprint(ctx)
+	if err != nil || after != before {
+		t.Fatalf("state changed by a rejected restore: %v", err)
+	}
+	seedForSnapshot(t, s, "b", 5) // still writable
 }

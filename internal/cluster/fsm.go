@@ -1,0 +1,329 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+package cluster
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/hashicorp/raft"
+	"google.golang.org/protobuf/proto"
+
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/uptimecluster/internal/store"
+)
+
+// dedupRetention is how long applied request IDs are remembered, measured in
+// command time (issued_at_ms), so pruning is deterministic (ADR 0005 point 3).
+const dedupRetention = 24 * time.Hour
+
+// ErrFSMHalted is returned for every command after the FSM stopped because of
+// an infrastructure error (ADR 0012 A7, FA-CLU-13).
+var ErrFSMHalted = errors.New("state machine halted")
+
+// StateStore is the storage the FSM materializes into.
+type StateStore interface {
+	store.State
+	WriteSnapshot(ctx context.Context, w io.Writer) error
+	RestoreSnapshot(ctx context.Context, r io.Reader) error
+}
+
+// ApplyResult is what FSM.Apply returns for a log entry.
+type ApplyResult struct {
+	Index uint64
+	// Result is the command-specific result as JSON (e.g. a PutResult).
+	Result json.RawMessage
+	// Duplicate is true if the request ID had been applied before; Result and
+	// Err are then those of the first application.
+	Duplicate bool
+	// Err is a *CommandError for deterministic rejections, or ErrFSMHalted.
+	Err error
+}
+
+// FSM applies Raft log entries to state.db. Apply is deterministic: it reads
+// neither the clock nor a random source; time and IDs come with the command.
+type FSM struct {
+	state   StateStore
+	log     *slog.Logger
+	onFatal func(error)
+
+	applied  atomic.Uint64
+	haltErr  atomic.Pointer[error]
+	haltOnce sync.Once
+}
+
+var _ raft.FSM = (*FSM)(nil)
+
+// NewFSM creates the FSM. onFatal is called once when the FSM halts; the
+// caller is expected to stop the node (FA-CLU-13).
+func NewFSM(ctx context.Context, state StateStore, log *slog.Logger, onFatal func(error)) (*FSM, error) {
+	idx, err := state.AppliedIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f := &FSM{state: state, log: log, onFatal: onFatal}
+	f.applied.Store(idx)
+	return f, nil
+}
+
+// AppliedIndex returns the last log index reflected in state.db.
+func (f *FSM) AppliedIndex() uint64 { return f.applied.Load() }
+
+// Healthy returns the halt reason, or nil while the FSM works.
+func (f *FSM) Healthy() error {
+	if p := f.haltErr.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (f *FSM) halt(err error) {
+	f.haltOnce.Do(func() {
+		wrapped := fmt.Errorf("%w: %w", ErrFSMHalted, err)
+		f.haltErr.Store(&wrapped)
+		f.log.Error("state machine halted; this node must be stopped and investigated", "err", err)
+		if f.onFatal != nil {
+			f.onFatal(wrapped)
+		}
+	})
+}
+
+// Apply implements raft.FSM.
+func (f *FSM) Apply(l *raft.Log) any {
+	if err := f.Healthy(); err != nil {
+		return ApplyResult{Index: l.Index, Err: err}
+	}
+	// Entries up to the stored applied index are already in state.db; Raft
+	// replays them after a restart (ADR 0012 A2).
+	if l.Index <= f.applied.Load() {
+		return ApplyResult{Index: l.Index}
+	}
+
+	ctx := context.Background()
+	var cmd pb.Command
+	if err := proto.Unmarshal(l.Data, &cmd); err != nil {
+		return f.reject(ctx, l.Index, nil, invalid("decode command: %v", err))
+	}
+	if cmd.GetVersion() > CommandVersion {
+		// Feature gates must prevent this; applying partially would diverge.
+		f.halt(fmt.Errorf("command version %d at index %d is newer than supported version %d", cmd.GetVersion(), l.Index, CommandVersion))
+		return ApplyResult{Index: l.Index, Err: f.Healthy()}
+	}
+
+	var res ApplyResult
+	err := f.state.Update(ctx, func(tx store.StateTx) error {
+		if id := cmd.GetRequestId(); id != "" {
+			e, err := tx.GetDedup(ctx, id)
+			switch {
+			case err == nil:
+				res = resultFromDedup(l.Index, e)
+				return tx.SetAppliedIndex(ctx, l.Index)
+			case !errors.Is(err, store.ErrNotFound):
+				return err
+			}
+		}
+		result, err := applyPayload(ctx, tx, &cmd)
+		if err != nil {
+			return err
+		}
+		res = ApplyResult{Index: l.Index, Result: result}
+		return f.finish(ctx, tx, l.Index, &cmd, store.DedupEntry{Result: result})
+	})
+
+	var cmdErr *CommandError
+	switch {
+	case err == nil:
+	case errors.As(err, &cmdErr):
+		// The payload transaction was rolled back; record the rejection.
+		return f.reject(ctx, l.Index, &cmd, cmdErr)
+	default:
+		f.halt(fmt.Errorf("apply index %d: %w", l.Index, err))
+		return ApplyResult{Index: l.Index, Err: f.Healthy()}
+	}
+	f.applied.Store(l.Index)
+	return res
+}
+
+// reject stores a deterministic command error and advances the applied index.
+func (f *FSM) reject(ctx context.Context, index uint64, cmd *pb.Command, cmdErr *CommandError) ApplyResult {
+	err := f.state.Update(ctx, func(tx store.StateTx) error {
+		return f.finish(ctx, tx, index, cmd, store.DedupEntry{ErrorCode: cmdErr.Code, ErrorMessage: cmdErr.Message})
+	})
+	if err != nil {
+		f.halt(fmt.Errorf("record rejection at index %d: %w", index, err))
+		return ApplyResult{Index: index, Err: f.Healthy()}
+	}
+	f.applied.Store(index)
+	return ApplyResult{Index: index, Err: cmdErr}
+}
+
+// finish writes the dedup entry, prunes old ones and stores the applied index
+// in the same transaction as the data (ADR 0012 A1).
+func (f *FSM) finish(ctx context.Context, tx store.StateTx, index uint64, cmd *pb.Command, e store.DedupEntry) error {
+	if cmd != nil && cmd.GetRequestId() != "" {
+		e.RequestID = cmd.GetRequestId()
+		e.AppliedIndex = index
+		e.IssuedAtMs = cmd.GetIssuedAtMs()
+		if err := tx.PutDedup(ctx, e); err != nil {
+			return err
+		}
+		if err := tx.PruneDedup(ctx, cmd.GetIssuedAtMs()-dedupRetention.Milliseconds()); err != nil {
+			return err
+		}
+	}
+	return tx.SetAppliedIndex(ctx, index)
+}
+
+func resultFromDedup(index uint64, e store.DedupEntry) ApplyResult {
+	res := ApplyResult{Index: index, Result: e.Result, Duplicate: true}
+	if e.ErrorCode != "" {
+		res.Err = &CommandError{Code: e.ErrorCode, Message: e.ErrorMessage}
+	}
+	return res
+}
+
+// applyPayload executes one command. Deterministic rejections are returned as
+// *CommandError; any other error is an infrastructure failure.
+func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.RawMessage, error) {
+	switch p := cmd.GetPayload().(type) {
+	case *pb.Command_PutEntity:
+		return applyPut(ctx, tx, cmd, p.PutEntity)
+	case *pb.Command_DeleteEntity:
+		return applyDelete(ctx, tx, cmd, p.DeleteEntity)
+	case nil:
+		return nil, invalid("command without payload")
+	default:
+		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("payload %T is not supported yet", p)}
+	}
+}
+
+func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity) (json.RawMessage, error) {
+	if put.GetId() == "" {
+		return nil, invalid("put %s without ID", put.GetKind())
+	}
+	issuedAt := cmd.GetIssuedAtMs()
+
+	switch put.GetKind() {
+	case pb.EntityKind_ENTITY_KIND_TENANT:
+		var doc TenantDocument
+		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+			return nil, invalid("tenant document: %v", err)
+		}
+		err := tx.PutTenant(ctx, store.Tenant{
+			ID: put.GetId(), Name: doc.Name, Plan: doc.Plan, ZitadelOrgID: doc.ZitadelOrgID,
+			Limits: doc.Limits, Suspended: doc.Suspended, CreatedMs: issuedAt, UpdatedMs: issuedAt,
+		})
+		if err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: put.GetId()})
+
+	case pb.EntityKind_ENTITY_KIND_MONITOR:
+		if cmd.GetTenantId() == "" {
+			return nil, invalid("monitor command without tenant")
+		}
+		var doc MonitorDocument
+		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+			return nil, invalid("monitor document: %v", err)
+		}
+		err := tx.PutMonitor(ctx, store.Monitor{
+			TenantID:              cmd.GetTenantId(),
+			ID:                    put.GetId(),
+			Name:                  doc.Name,
+			Description:           doc.Description,
+			Type:                  doc.Type,
+			Config:                doc.Config,
+			IntervalSeconds:       doc.IntervalSeconds,
+			TimeoutSeconds:        doc.TimeoutSeconds,
+			Retries:               doc.Retries,
+			RecoveryThreshold:     doc.RecoveryThreshold,
+			ResendIntervalMinutes: doc.ResendIntervalMinutes,
+			Assignment:            doc.Assignment,
+			ConsensusPolicy:       doc.ConsensusPolicy,
+			Tags:                  doc.Tags,
+			Paused:                doc.Paused,
+			CreatedMs:             issuedAt,
+			UpdatedMs:             issuedAt,
+		}, put.GetExpectedRevision())
+		if err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+
+	default:
+		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("put of %s is not supported yet", put.GetKind())}
+	}
+}
+
+func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb.DeleteEntity) (json.RawMessage, error) {
+	switch del.GetKind() {
+	case pb.EntityKind_ENTITY_KIND_MONITOR:
+		if err := tx.DeleteMonitor(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: del.GetId()})
+	default:
+		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("delete of %s is not supported yet", del.GetKind())}
+	}
+}
+
+// storeError turns deterministic store errors into command errors and passes
+// everything else through as an infrastructure failure.
+func storeError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return &CommandError{Code: CodeConflict, Message: err.Error()}
+	case errors.Is(err, store.ErrNotFound):
+		return &CommandError{Code: CodeNotFound, Message: err.Error()}
+	}
+	return err
+}
+
+// Snapshot implements raft.FSM. The copy is taken in Persist, concurrently with
+// further Apply calls; that "fuzzy" snapshot is safe because the applied index
+// is part of the copy (ADR 0012 A1).
+func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
+	return &fsmSnapshot{state: f.state}, nil
+}
+
+// Restore implements raft.FSM: it replaces state.db with the snapshot.
+func (f *FSM) Restore(rc io.ReadCloser) error {
+	defer func() { _ = rc.Close() }()
+	ctx := context.Background()
+	if err := f.state.RestoreSnapshot(ctx, rc); err != nil {
+		// An invalid snapshot leaves the old state untouched, but the node no
+		// longer matches the cluster; stop instead of serving wrong data.
+		f.halt(fmt.Errorf("restore snapshot: %w", err))
+		return err
+	}
+	idx, err := f.state.AppliedIndex(ctx)
+	if err != nil {
+		f.halt(fmt.Errorf("read applied index after restore: %w", err))
+		return err
+	}
+	f.applied.Store(idx)
+	f.log.Info("restored state from snapshot", "applied_index", idx)
+	return nil
+}
+
+type fsmSnapshot struct {
+	state StateStore
+}
+
+func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
+	if err := s.state.WriteSnapshot(context.Background(), sink); err != nil {
+		_ = sink.Cancel()
+		return fmt.Errorf("persist snapshot: %w", err)
+	}
+	return sink.Close()
+}
+
+func (s *fsmSnapshot) Release() {}

@@ -36,6 +36,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"MonitorListPagingAndFilters", testMonitorList},
 		{"UpdateRollsBackOnError", testUpdateRollback},
 		{"TenantIsolation", testStateTenantIsolation},
+		{"DedupAndAppliedIndex", testDedupAndAppliedIndex},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -322,6 +323,74 @@ func testStateTenantIsolation(t *testing.T, s store.State) {
 	got, err := s.GetMonitor(ctx, tenantA, "m-a")
 	if err != nil || got.Name != m.Name || got.Revision != 1 {
 		t.Errorf("owner's monitor changed by other tenant: %+v, %v", got, err)
+	}
+}
+
+func testDedupAndAppliedIndex(t *testing.T, s store.State) {
+	ctx := context.Background()
+	if idx, err := s.AppliedIndex(ctx); err != nil || idx != 0 {
+		t.Fatalf("initial AppliedIndex = %d, %v; want 0", idx, err)
+	}
+
+	entry := store.DedupEntry{RequestID: "req-1", AppliedIndex: 5, IssuedAtMs: 1_000, Result: json.RawMessage(`{"id":"m1"}`)}
+	failed := store.DedupEntry{RequestID: "req-2", AppliedIndex: 6, IssuedAtMs: 90_000_000, ErrorCode: "conflict", ErrorMessage: "revision mismatch"}
+	err := s.Update(ctx, func(tx store.StateTx) error {
+		if _, err := tx.GetDedup(ctx, "req-1"); !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("GetDedup before put: %w", err)
+		}
+		if err := tx.PutDedup(ctx, entry); err != nil {
+			return err
+		}
+		if err := tx.PutDedup(ctx, failed); err != nil {
+			return err
+		}
+		return tx.SetAppliedIndex(ctx, 6)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx, err := s.AppliedIndex(ctx); err != nil || idx != 6 {
+		t.Errorf("AppliedIndex = %d, %v; want 6", idx, err)
+	}
+
+	err = s.Update(ctx, func(tx store.StateTx) error {
+		got, err := tx.GetDedup(ctx, "req-1")
+		if err != nil {
+			return err
+		}
+		if got.AppliedIndex != 5 || string(got.Result) != `{"id":"m1"}` || got.ErrorCode != "" {
+			return fmt.Errorf("GetDedup = %+v", got)
+		}
+		got, err = tx.GetDedup(ctx, "req-2")
+		if err != nil || got.ErrorCode != "conflict" || got.ErrorMessage != "revision mismatch" {
+			return fmt.Errorf("GetDedup(req-2) = %+v, %w", got, err)
+		}
+		if err := tx.PutDedup(ctx, entry); !errors.Is(err, store.ErrConflict) {
+			return fmt.Errorf("duplicate PutDedup error = %w, want ErrConflict", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.Update(ctx, func(tx store.StateTx) error {
+		if err := tx.PruneDedup(ctx, 50_000_000); err != nil {
+			return err
+		}
+		if _, err := tx.GetDedup(ctx, "req-1"); !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("req-1 survived pruning: %w", err)
+		}
+		if _, err := tx.GetDedup(ctx, "req-2"); err != nil {
+			return fmt.Errorf("req-2 pruned too early: %w", err)
+		}
+		return tx.SetAppliedIndex(ctx, 9)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx, _ := s.AppliedIndex(ctx); idx != 9 {
+		t.Errorf("AppliedIndex after second update = %d, want 9", idx)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -35,11 +36,16 @@ const (
 
 // Config is the validated node configuration.
 type Config struct {
-	NodeName        string
-	Role            Role
-	DataDir         string
-	HTTPAddr        string
-	ClusterAddr     string
+	NodeName    string
+	Role        Role
+	DataDir     string
+	HTTPAddr    string
+	ClusterAddr string
+	// ClusterAdvertise is the stable host:port other nodes use to reach this
+	// node; it becomes the Raft server address (ADR 0005, FA-CLU-10).
+	ClusterAdvertise string
+	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
+	RaftTimeout     time.Duration
 	PublicURL       string
 	AuthMode        AuthMode
 	LogLevel        slog.Level
@@ -104,6 +110,21 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("PUBLIC_URL: must be an absolute http(s) URL, got %q", cfg.PublicURL))
 		}
 	}
+
+	cfg.ClusterAdvertise = get("CLUSTER_ADVERTISE", "")
+	if cfg.ClusterAdvertise == "" {
+		_, port, _ := net.SplitHostPort(cfg.ClusterAddr)
+		cfg.ClusterAdvertise = net.JoinHostPort(cfg.NodeName, port)
+	}
+	if host, port, err := net.SplitHostPort(cfg.ClusterAdvertise); err != nil || host == "" || port == "" {
+		errs = append(errs, fmt.Errorf("CLUSTER_ADVERTISE: must be host:port, got %q", cfg.ClusterAdvertise))
+	}
+
+	raftTimeout, err := time.ParseDuration(get("RAFT_TIMEOUT", "1s"))
+	if err != nil || raftTimeout < 100*time.Millisecond {
+		errs = append(errs, fmt.Errorf("RAFT_TIMEOUT: must be a duration >= 100ms, got %q", getenv("RAFT_TIMEOUT")))
+	}
+	cfg.RaftTimeout = raftTimeout
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {

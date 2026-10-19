@@ -41,6 +41,35 @@ func (q *Queries) DeleteMonitorTags(ctx context.Context, arg DeleteMonitorTagsPa
 	return err
 }
 
+const getDedup = `-- name: GetDedup :one
+SELECT request_id, applied_index, issued_at_ms, result_json, error_code, error_message FROM request_dedup WHERE request_id = ?
+`
+
+func (q *Queries) GetDedup(ctx context.Context, requestID string) (RequestDedup, error) {
+	row := q.db.QueryRowContext(ctx, getDedup, requestID)
+	var i RequestDedup
+	err := row.Scan(
+		&i.RequestID,
+		&i.AppliedIndex,
+		&i.IssuedAtMs,
+		&i.ResultJson,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const getFSMMeta = `-- name: GetFSMMeta :one
+SELECT value FROM fsm_meta WHERE key = ?
+`
+
+func (q *Queries) GetFSMMeta(ctx context.Context, key string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getFSMMeta, key)
+	var value int64
+	err := row.Scan(&value)
+	return value, err
+}
+
 const getMonitor = `-- name: GetMonitor :one
 SELECT tenant_id, id, name, description, type, config_json, interval_s, timeout_s, retries, recovery_threshold, resend_interval_min, assignment_json, consensus_policy, paused, revision, created_ms, updated_ms FROM monitors WHERE tenant_id = ? AND id = ?
 `
@@ -100,6 +129,32 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 		&i.UpdatedMs,
 	)
 	return i, err
+}
+
+const insertDedup = `-- name: InsertDedup :exec
+INSERT INTO request_dedup (request_id, applied_index, issued_at_ms, result_json, error_code, error_message)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertDedupParams struct {
+	RequestID    string
+	AppliedIndex int64
+	IssuedAtMs   int64
+	ResultJson   string
+	ErrorCode    string
+	ErrorMessage string
+}
+
+func (q *Queries) InsertDedup(ctx context.Context, arg InsertDedupParams) error {
+	_, err := q.db.ExecContext(ctx, insertDedup,
+		arg.RequestID,
+		arg.AppliedIndex,
+		arg.IssuedAtMs,
+		arg.ResultJson,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+	)
+	return err
 }
 
 const insertMonitor = `-- name: InsertMonitor :exec
@@ -317,6 +372,33 @@ func (q *Queries) MonitorRevision(ctx context.Context, arg MonitorRevisionParams
 	var revision int64
 	err := row.Scan(&revision)
 	return revision, err
+}
+
+const pruneDedup = `-- name: PruneDedup :execrows
+DELETE FROM request_dedup WHERE issued_at_ms < ?
+`
+
+func (q *Queries) PruneDedup(ctx context.Context, issuedAtMs int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneDedup, issuedAtMs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setFSMMeta = `-- name: SetFSMMeta :exec
+INSERT INTO fsm_meta (key, value) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value
+`
+
+type SetFSMMetaParams struct {
+	Key   string
+	Value int64
+}
+
+func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
+	_, err := q.db.ExecContext(ctx, setFSMMeta, arg.Key, arg.Value)
+	return err
 }
 
 const updateMonitor = `-- name: UpdateMonitor :execrows

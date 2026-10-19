@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
@@ -30,39 +31,64 @@ const (
 )
 
 // StateStore implements store.State on state.db.
+//
+// mu guards the database handle: RestoreSnapshot swaps the whole file while
+// readers keep using the store.
 type StateStore struct {
-	db *DB
-	q  *statedb.Queries // bound to the read pool
+	mu   sync.RWMutex
+	path string
+	db   *DB
+	q    *statedb.Queries // bound to the read pool
 }
 
 var _ store.State = (*StateStore)(nil)
 
 // OpenState opens or creates dataDir/state.db.
 func OpenState(ctx context.Context, dataDir string) (*StateStore, error) {
-	migrations, err := fs.Sub(stateMigrationFiles, "migrations/state")
-	if err != nil {
+	s := &StateStore{path: filepath.Join(dataDir, StateFile)}
+	if err := s.open(ctx); err != nil {
 		return nil, err
 	}
+	return s, nil
+}
+
+func (s *StateStore) open(ctx context.Context) error {
+	migrations, err := fs.Sub(stateMigrationFiles, "migrations/state")
+	if err != nil {
+		return err
+	}
 	db, err := Open(ctx, Options{
-		Path:        filepath.Join(dataDir, StateFile),
+		Path:        s.path,
 		Synchronous: SyncFull,
 		ReadConns:   4,
 		Migrations:  migrations,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &StateStore{db: db, q: statedb.New(db.reader)}, nil
+	s.db, s.q = db, statedb.New(db.reader)
+	return nil
 }
 
-// DB exposes the underlying database for maintenance (checkpoints, snapshots).
-func (s *StateStore) DB() *DB { return s.db }
+// DB exposes the underlying database for maintenance (checkpoints). The handle
+// is replaced by RestoreSnapshot; callers must not keep it across a restore.
+func (s *StateStore) DB() *DB {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db
+}
 
 // Close closes the database.
-func (s *StateStore) Close() error { return s.db.Close() }
+func (s *StateStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.Close()
+}
 
 // GetTenant returns a tenant by ID.
 func (s *StateStore) GetTenant(ctx context.Context, id string) (store.Tenant, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	row, err := s.q.GetTenant(ctx, id)
 	if err != nil {
 		return store.Tenant{}, mapErr(err)
@@ -72,6 +98,8 @@ func (s *StateStore) GetTenant(ctx context.Context, id string) (store.Tenant, er
 
 // ListTenants returns all tenants ordered by ID.
 func (s *StateStore) ListTenants(ctx context.Context) ([]store.Tenant, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	rows, err := s.q.ListTenants(ctx)
 	if err != nil {
 		return nil, mapErr(err)
@@ -85,6 +113,8 @@ func (s *StateStore) ListTenants(ctx context.Context) ([]store.Tenant, error) {
 
 // GetMonitor returns a monitor of the tenant.
 func (s *StateStore) GetMonitor(ctx context.Context, tenantID, id string) (store.Monitor, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	row, err := s.q.GetMonitor(ctx, statedb.GetMonitorParams{TenantID: tenantID, ID: id})
 	if err != nil {
 		return store.Monitor{}, mapErr(err)
@@ -94,6 +124,8 @@ func (s *StateStore) GetMonitor(ctx context.Context, tenantID, id string) (store
 
 // ListMonitors returns one page of the tenant's monitors ordered by ID.
 func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.MonitorQuery) (store.MonitorPage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	limit := clampLimit(q.Limit, defaultPageSize, maxPageSize)
 	rows, err := s.q.ListMonitors(ctx, statedb.ListMonitorsParams{
 		TenantID: tenantID,
@@ -123,6 +155,8 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 
 // Update runs fn in a single immediate write transaction.
 func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	tx, err := s.db.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin state transaction: %w", err)
@@ -246,6 +280,49 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 		}
 	}
 	return nil
+}
+
+func (t *stateTx) SetAppliedIndex(ctx context.Context, index uint64) error {
+	v, err := toInt64(index)
+	if err != nil {
+		return err
+	}
+	return mapErr(t.q.SetFSMMeta(ctx, statedb.SetFSMMetaParams{Key: metaAppliedIndex, Value: v}))
+}
+
+func (t *stateTx) GetDedup(ctx context.Context, requestID string) (store.DedupEntry, error) {
+	r, err := t.q.GetDedup(ctx, requestID)
+	if err != nil {
+		return store.DedupEntry{}, mapErr(err)
+	}
+	return store.DedupEntry{
+		RequestID:    r.RequestID,
+		AppliedIndex: uint64(max(r.AppliedIndex, 0)),
+		IssuedAtMs:   r.IssuedAtMs,
+		Result:       json.RawMessage(r.ResultJson),
+		ErrorCode:    r.ErrorCode,
+		ErrorMessage: r.ErrorMessage,
+	}, nil
+}
+
+func (t *stateTx) PutDedup(ctx context.Context, e store.DedupEntry) error {
+	idx, err := toInt64(e.AppliedIndex)
+	if err != nil {
+		return err
+	}
+	return mapErr(t.q.InsertDedup(ctx, statedb.InsertDedupParams{
+		RequestID:    e.RequestID,
+		AppliedIndex: idx,
+		IssuedAtMs:   e.IssuedAtMs,
+		ResultJson:   string(e.Result),
+		ErrorCode:    e.ErrorCode,
+		ErrorMessage: e.ErrorMessage,
+	}))
+}
+
+func (t *stateTx) PruneDedup(ctx context.Context, beforeMs int64) error {
+	_, err := t.q.PruneDedup(ctx, beforeMs)
+	return mapErr(err)
 }
 
 func (t *stateTx) DeleteMonitor(ctx context.Context, tenantID, id string) error {

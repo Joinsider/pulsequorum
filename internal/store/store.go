@@ -86,6 +86,9 @@ type State interface {
 	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
 
+	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
+	AppliedIndex(ctx context.Context) (uint64, error)
+
 	// Update runs fn in one write transaction. Only the Raft FSM calls it, so
 	// that every replica applies the same changes (ADR 0005, FA-CLU-07).
 	Update(ctx context.Context, fn func(tx StateTx) error) error
@@ -100,6 +103,26 @@ type StateTx interface {
 	// expectedRevision+1.
 	PutMonitor(ctx context.Context, m Monitor, expectedRevision uint64) error
 	DeleteMonitor(ctx context.Context, tenantID, id string) error
+
+	// SetAppliedIndex records the Raft index applied by this transaction (ADR 0005).
+	SetAppliedIndex(ctx context.Context, index uint64) error
+	// GetDedup returns the stored outcome of a request ID or ErrNotFound.
+	GetDedup(ctx context.Context, requestID string) (DedupEntry, error)
+	PutDedup(ctx context.Context, e DedupEntry) error
+	// PruneDedup removes entries issued before beforeMs (deterministic retention).
+	PruneDedup(ctx context.Context, beforeMs int64) error
+}
+
+// DedupEntry is the stored outcome of an applied command, so that a retry with
+// the same request ID returns the original result (FA-CLU-06).
+type DedupEntry struct {
+	RequestID    string
+	AppliedIndex uint64
+	IssuedAtMs   int64
+	Result       json.RawMessage
+	// ErrorCode is empty on success, otherwise a stable code such as "conflict".
+	ErrorCode    string
+	ErrorMessage string
 }
 
 // CheckStatus is the result of one check on one node (proto CheckStatus).
