@@ -91,8 +91,17 @@ func TestFrontendConfig(t *testing.T) {
 	}
 }
 
-func TestUnimplementedOperationIs501(t *testing.T) {
+func TestProtectedOperationRequiresAuth(t *testing.T) {
+	// Without an authenticator every protected operation is denied.
 	rec := get(t, testServer().Handler(), "/api/v1/monitors")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestUnimplementedOperationIs501(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testServer().Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"a","password":"b"}`)))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rec.Code)
 	}
@@ -102,7 +111,7 @@ func TestUnimplementedOperationIs501(t *testing.T) {
 }
 
 func TestInvalidParameterIs400(t *testing.T) {
-	if rec := get(t, testServer().Handler(), "/api/v1/monitors?limit=abc"); rec.Code != http.StatusBadRequest {
+	if rec := get(t, testServer().Handler(), "/api/v1/incidents/not-a-uuid"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }

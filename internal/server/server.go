@@ -28,12 +28,19 @@ type Server struct {
 	ready atomic.Bool
 	// readiness, if set, is consulted by /readyz in addition to the listener state.
 	readiness func() error
+	api       api.Deps
 }
 
 // New creates a server. ui serves the single-page application for all
 // non-API paths.
 func New(cfg config.Config, log *slog.Logger, ui http.Handler) *Server {
 	return &Server{cfg: cfg, log: log, ui: ui}
+}
+
+// WithAPI provides the services behind the REST API. It must be called before Run.
+func (s *Server) WithAPI(deps api.Deps) *Server {
+	s.api = deps
+	return s
 }
 
 // WithReadiness adds a check to /readyz, e.g. the health of the Raft node.
@@ -49,7 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleLiveness)
 	mux.HandleFunc("GET /readyz", s.handleReadiness)
 	mux.HandleFunc("GET /config.json", s.handleFrontendConfig)
-	api.Register(mux, s.cfg, s.log)
+	api.Register(mux, s.cfg, s.log, s.api)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteProblem(w, http.StatusNotFound, "Not Found", "no API endpoint "+r.Method+" "+r.URL.Path)
 	})

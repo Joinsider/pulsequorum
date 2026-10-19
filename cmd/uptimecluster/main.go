@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
@@ -169,16 +170,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		policy = checker.BlockPrivate{}
 	}
 	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
-	sched := scheduler.New(scheduler.Options{
-		Registry: checker.Default,
-		Env: &checker.Env{
-			Dialer:    &checker.Dialer{Policy: policy},
-			UserAgent: "UptimeCluster/" + version.Version,
-			ICMPMode:  icmpMode,
-		},
-		Sink:   heartbeats,
-		Logger: log,
-	})
+	checkEnv := &checker.Env{
+		Dialer:    &checker.Dialer{Policy: policy},
+		UserAgent: "UptimeCluster/" + version.Version,
+		ICMPMode:  icmpMode,
+	}
+	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: heartbeats, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { sched.Run(ctx) })
 	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), sched, reconcileInterval, log) })
@@ -186,7 +183,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
 	}
-	err = server.New(cfg, log, webui.Handler()).WithReadiness(raftNode.Ready).Run(ctx)
+	// Protected endpoints answer 401 until local authentication (AP-1.12).
+	apiDeps := api.Deps{
+		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
+		CheckEnv: checkEnv, NodeID: nodeID,
+	}
+	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(raftNode.Ready).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return cause

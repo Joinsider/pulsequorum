@@ -11,11 +11,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/joinsider/uptimecluster/internal/api/gen"
+	"github.com/joinsider/uptimecluster/internal/auth"
+	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/version"
 )
 
@@ -25,27 +32,73 @@ const BaseURL = "/api/v1"
 // ErrNotImplemented marks operations that exist in the contract but not yet in code.
 var ErrNotImplemented = errors.New("not implemented")
 
+// Applier proposes commands to the Raft cluster.
+type Applier interface {
+	Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
+}
+
+// Deps are the services the handlers use. Fields may be nil in tests that do
+// not exercise the corresponding endpoints.
+type Deps struct {
+	State    store.State
+	Metrics  store.Metrics
+	Cluster  Applier
+	Registry *checker.Registry
+	// CheckEnv runs on-demand checks (POST /monitors/{id}/test).
+	CheckEnv *checker.Env
+	NodeID   string
+	// Authenticator verifies bearer credentials; nil denies every protected
+	// operation (auth.DenyAll).
+	Authenticator auth.Authenticator
+}
+
 // Handlers implements gen.StrictServerInterface.
 type Handlers struct {
 	Unimplemented
-	cfg config.Config
+	cfg  config.Config
+	deps Deps
+	log  *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Handlers)(nil)
 
-// Register mounts all API operations on mux under BaseURL.
-func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger) {
-	strict := gen.NewStrictHandlerWithOptions(&Handlers{cfg: cfg}, nil, gen.StrictHTTPServerOptions{
+// Problem is an error that is sent as RFC 9457 problem details.
+type Problem struct {
+	Status     int
+	Title      string
+	Detail     string
+	Fields     []checker.FieldError
+	RetryAfter int // seconds; 0 = no header
+}
+
+func (p *Problem) Error() string { return fmt.Sprintf("%d %s: %s", p.Status, p.Title, p.Detail) }
+
+// Register mounts all API operations on mux under BaseURL. It panics if the
+// embedded OpenAPI spec cannot be read, which is a build defect.
+func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps) {
+	if deps.Authenticator == nil {
+		deps.Authenticator = auth.DenyAll{}
+	}
+	public, err := publicOperations()
+	if err != nil {
+		panic(err)
+	}
+	h := &Handlers{cfg: cfg, deps: deps, log: log}
+	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, deps.Authenticator)}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			if errors.Is(err, ErrNotImplemented) {
+			var p *Problem
+			switch {
+			case errors.As(err, &p):
+				writeProblem(w, p)
+			case errors.Is(err, ErrNotImplemented):
 				WriteProblem(w, http.StatusNotImplemented, "Not Implemented", r.Method+" "+r.URL.Path+" is not implemented yet")
-				return
+			default:
+				log.Error("api handler failed", "method", r.Method, "path", r.URL.Path, "err", err)
+				WriteProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
 			}
-			log.Error("api handler failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			WriteProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
 		},
 	})
 	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
@@ -70,8 +123,26 @@ func (h *Handlers) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.G
 
 // WriteProblem writes an RFC 9457 problem details response.
 func WriteProblem(w http.ResponseWriter, status int, title, detail string) {
+	writeProblem(w, &Problem{Status: status, Title: title, Detail: detail})
+}
+
+func writeProblem(w http.ResponseWriter, p *Problem) {
+	body := gen.Problem{Type: "about:blank", Title: p.Title, Status: p.Status}
+	if p.Detail != "" {
+		body.Detail = &p.Detail
+	}
+	if len(p.Fields) > 0 {
+		fields := make([]gen.FieldError, 0, len(p.Fields))
+		for _, f := range p.Fields {
+			fields = append(fields, gen.FieldError{Field: f.Field, Message: f.Message})
+		}
+		body.Errors = &fields
+	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(gen.Problem{Type: "about:blank", Title: title, Status: status, Detail: &detail})
+	if p.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(p.RetryAfter))
+	}
+	w.WriteHeader(p.Status)
+	_ = json.NewEncoder(w).Encode(body)
 }
