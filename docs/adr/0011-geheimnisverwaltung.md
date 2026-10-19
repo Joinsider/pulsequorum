@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-SEC-SEC, FA-ALR-09, FA-AUTH-02, FA-PKI-01, O-05, Konzept 15 |
@@ -46,3 +46,4 @@ Verfahren:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

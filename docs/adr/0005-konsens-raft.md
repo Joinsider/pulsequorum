@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-CLU-01..12, FA-NODE-03, PF-01..09, O-01, Konzept 6.1, E10, E12 |
@@ -55,3 +55,4 @@ FSM-Design:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

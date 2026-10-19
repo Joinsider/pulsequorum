@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-AUTH-01..04, FA-AUTH-09, FA-AUTH-11, NFA-SEC-03/04, PF-32..34, O-04, E13, E15 |
@@ -50,3 +50,4 @@ Im Modus `local` stellt der Cluster selbst Tokens aus. Die SPA spricht beliebige
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

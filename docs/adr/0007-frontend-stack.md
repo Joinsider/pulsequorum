@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-UI-01..09, NFA-USE-02, PF-34, PF-40, E15, E21, Konzept 13 |
@@ -42,3 +42,4 @@ Das Konzept legt Angular und ECharts fest. Aktuelle Major-Version ist Angular 22
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

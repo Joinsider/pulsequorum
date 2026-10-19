@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-API-01..06, NFA-MNT-03, O-03, Konzept 14, 18.1 |
@@ -45,3 +45,4 @@ Stand Okt. 2026: `oapi-codegen` v2.8.0 (Apache-2.0) unterstützt OpenAPI 3.1 nur
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

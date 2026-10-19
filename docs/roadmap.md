@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P0 – Fundament |
-| **Wartet auf Projektinhaber** | Review ADR 0001–0011 (AP-0.5) |
-| **Nächster Schritt (Claude)** | Spikes AP-0.14 (Raft) und AP-0.15 (SQLite); danach je nach ADR-Review AP-0.10–0.13 |
+| **Wartet auf Projektinhaber** | – |
+| **Nächster Schritt (Claude)** | AP-0.10–0.13, AP-0.15; AP-0.14 (Raft-Spike) läuft in eigener Session |
 
 ---
 
@@ -40,19 +40,19 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.2 | Pflichtenheft inkl. Pitfall-Recherche | – | – | ✅ |
 | AP-0.3 | Roadmap | – | – | ✅ |
 | AP-0.4 | ADRs 0001–0011 vorschlagen | – | – | ✅ |
-| AP-0.5 | Review der ADRs durch Projektinhaber | – | AP-0.4 | ⏳ |
+| AP-0.5 | Review der ADRs durch Projektinhaber | – | AP-0.4 | ✅ alle Accepted (2026-10-19) |
 | AP-0.6 | Backend-Grundgerüst: Go-Modul, `main`, Konfiguration (Env), `slog`, HTTP-Server, `/healthz`, `/readyz`, `/api/v1/health`, Graceful Shutdown, Version per ldflags | FA-NODE-01/02/05/07 | ADR 0001, 0002 (Annahme: Vorschlag) | ✅ |
 | AP-0.7 | Frontend-Grundgerüst: Angular 22 (standalone, zoneless, Vitest), Laufzeit-`config.json`, Health-Ansicht, Dev-Proxy | FA-UI-01/02 | ADR 0001, 0007 (Annahme: Vorschlag) | ✅ |
 | AP-0.8 | Build: Makefile, SPA-Einbettung per `go:embed` mit Platzhalter, Cache-Header, SPA-Fallback, Dockerfile (distroless, nonroot), Compose Single | FA-UI-01, NFA-PERF-07, PF-38, PF-39 | ADR 0001 | 🔄 Dockerfile noch nicht gebaut (lokal kein Docker-Daemon) |
 | AP-0.9 | CI-Grundpipeline: Build, Tests, `go vet`, `gofmt`, `govulncheck`, Frontend-Build/-Test | NFA-MNT-02, NFA-SEC-06 | ADR 0009 (Basis) | 🔄 Workflow angelegt, noch nicht auf GitHub gelaufen (kein Remote) |
-| AP-0.10 | CI-Ausbau: `golangci-lint`, Lizenzprüfung, Multi-Arch-Image nach GHCR, Release-Workflow | NFA-PORT-01, RB-LIC-03 | ADR 0009 | ⛔ |
-| AP-0.11 | Lizenz: `LICENSE` (AGPLv3), SPDX-Header, CLA-Einrichtung, `THIRD_PARTY_NOTICES` | RB-LIC-01..05 | ADR 0010 | ⛔ |
-| AP-0.12 | OpenAPI-Entwurf für alle P1-Endpunkte + Codegenerierung (Server/Client) | FA-API-01..07 | ADR 0003 | ⛔ |
-| AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ⛔ |
+| AP-0.10 | CI-Ausbau: `golangci-lint`, Lizenzprüfung, Multi-Arch-Image nach GHCR, Release-Workflow | NFA-PORT-01, RB-LIC-03 | ADR 0009 | ⬜ |
+| AP-0.11 | Lizenz: `LICENSE` (AGPLv3), SPDX-Header, CLA-Einrichtung, `THIRD_PARTY_NOTICES` | RB-LIC-01..05 | ADR 0010 | ⬜ |
+| AP-0.12 | OpenAPI-Entwurf für alle P1-Endpunkte + Codegenerierung (Server/Client) | FA-API-01..07 | ADR 0003 | ⬜ |
+| AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ⬜ |
 | AP-0.14 | **Spike Raft** (`spikes/raft`): 3 Container, Konfiguration per Raft, Heartbeats per Replikation inkl. Inkarnation, Leader-Kill, Partition 2\|1, Bootstrap-Erkennung | FA-CLU-01..07, FA-REP-01..03 | – (Spike) | ⬜ |
 | AP-0.15 | **Spike SQLite**: Benchmark `modernc.org/sqlite` vs. `ncruces/go-sqlite3` mit Heartbeat-Last (Batch-Insert, Range-Query, Retention-Delete) | PF-22..24, O-07 | – (Spike) | ⬜ |
 
-**Hinweis zu AP-0.6–0.9:** Das Grundgerüst wird auf ausdrücklichen Wunsch bereits vor dem ADR-Review aufgesetzt. Es folgt den *vorgeschlagenen* ADRs und beschränkt sich auf Teile mit geringem Änderungsrisiko. Wird ein ADR abgelehnt oder geändert, wird das Gerüst angepasst.
+**Hinweis zu AP-0.6–0.9:** Das Grundgerüst wurde vor dem ADR-Review nach den damals vorgeschlagenen ADRs aufgesetzt; alle ADRs wurden unverändert angenommen, es ist keine Anpassung nötig.
 
 ---
 

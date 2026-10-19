@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-UI-01, FA-UI-02, NFA-PERF-07, PF-38, PF-39, Konzept 18.2 |
@@ -49,3 +49,4 @@ Backend (Go) und Frontend (Angular) werden gemeinsam versioniert und als ein Bin
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-TEN-01, FA-UPT-02..06, FA-NODE-06, NFA-PORT-03, NFA-MNT-04, PF-22..24, PF-35, PF-36, O-07, E10, Konzept 6 |
@@ -68,3 +68,4 @@ Jeder Voter hält Klasse-A-Daten (über Raft materialisiert) und Klasse-B-Daten 
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |

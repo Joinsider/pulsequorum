@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | NFA-MNT-01/02, NFA-SEC-06, NFA-PORT-01, RB-LIC-03/05, Konzept 18.1 (GitHub Actions, GHCR, distroless) |
@@ -47,3 +47,4 @@ Das Konzept sieht GitHub Actions, Multi-Arch-Images (amd64/arm64) in GHCR und `d
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat für alle ADRs 0001–0011 bestätigt |
