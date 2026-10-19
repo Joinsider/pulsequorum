@@ -90,10 +90,15 @@ spikes/              Wegwerf-Prototypen
 make help            # Übersicht
 make build           # Frontend bauen + Go-Binary mit eingebetteter SPA
 make test            # Go- und Frontend-Tests
-make lint            # go vet + gofmt-Check + Frontend-Lint
+make lint            # go vet, gofmt, golangci-lint, Prettier, OpenAPI- und Proto-Lint
+make generate        # Code aus api/openapi.yaml und proto/ neu erzeugen (nie von Hand editieren)
+make generate-check  # schlägt fehl, wenn generierter Code veraltet ist
+make licenses        # Lizenzprüfung Go + npm gegen die Allow-List (ADR 0010)
 make run             # Single-Voter lokal starten (Port 8080)
 make web-dev         # Angular-Dev-Server mit Proxy auf :8080
 ```
+
+Generierter Code: `internal/api/gen`, `internal/api/unimplemented.go`, `internal/pb`, `web/src/app/api/gen`. Neue REST-Operationen zuerst in `api/openapi.yaml`, dann `make generate`; die Operation antwortet 501, bis `api.Handlers` die Methode implementiert. Generator-Werkzeuge liegen in `tools/go.mod` (`go tool -modfile=tools/go.mod …`).
 
 ## Konventionen
 
