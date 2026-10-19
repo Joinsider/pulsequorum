@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P0 – Fundament |
-| **Wartet auf Projektinhaber** | Review ADR 0013 (Ergebnisse SQLite-Spike) |
-| **Nächster Schritt (Claude)** | AP-0.16 (Folgearbeiten ADR 0012); danach P1 mit AP-1.1 (Storage-Schicht, nach Accept von ADR 0013) |
+| **Wartet auf Projektinhaber** | – |
+| **Nächster Schritt (Claude)** | AP-0.16, danach AP-1.1 |
 
 ---
 

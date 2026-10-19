@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-19 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | Ergänzt ADR 0004 (schließt O-07) · [Spike AP-0.15](../../spikes/sqlite/README.md), [Messwerte](../../spikes/sqlite/RESULTS.md) · ADR 0012 (Teil C) · FA-NODE-06, FA-UPT-06, NFA-PERF-01/03, PF-22..24 |
@@ -77,3 +77,4 @@ Der Bedarf liegt weit unter beiden Treibern: 1.000 Monitore à 20 s auf 3 Nodes 
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-19 | Proposed | Claude | |
+| 2026-10-19 | Accepted | Projektinhaber | im Chat bestätigt |
