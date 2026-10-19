@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
 // Package server provides the HTTP server of a voter: REST API, health endpoints,
 // runtime frontend configuration and the embedded SPA.
 package server

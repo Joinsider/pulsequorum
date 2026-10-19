@@ -30,4 +30,4 @@ Container: `docker compose -f deploy/compose.single.yaml up --build`
 
 ## Lizenz
 
-Geplant: AGPLv3 + kommerzielle Lizenz (siehe ADR 0010, noch nicht angenommen).
+[AGPL-3.0-only](LICENSE) + kommerzielle Lizenz, siehe [LICENSING.md](LICENSING.md). Beiträge nur mit CLA, siehe [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
 // Command uptimecluster runs a UptimeCluster node. The role (voter or probe) is
 // selected via NODE_ROLE; see docs/pflichtenheft.md, chapter 9.5.
 package main
