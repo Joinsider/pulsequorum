@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+syntax = "proto3";
+
+package uptimecluster.v1;
+
+import "uptimecluster/v1/heartbeat.proto";
+
+option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+
+// ProbeService is called by probes over an outbound mTLS connection to any
+// voter (FA-PRB-01). Probes are not Raft members.
+service ProbeService {
+  // Subscribe streams the monitors assigned to the calling probe: first a full
+  // snapshot, then deltas within 5 s of a change (FA-PRB-02).
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+
+  // UploadHeartbeats sends buffered and new heartbeats; the voter acknowledges
+  // what it has persisted so the probe can drop it from its buffer (FA-PRB-03).
+  rpc UploadHeartbeats(stream UploadHeartbeatsRequest) returns (stream UploadHeartbeatsResponse);
+}
+
+message SubscribeRequest {
+  // Capabilities verified by the probe's self-test (e.g. "icmp").
+  repeated string capabilities = 1;
+  string version = 2;
+  // Last assignment revision the probe has applied; 0 requests a full snapshot.
+  uint64 known_revision = 3;
+}
+
+message SubscribeResponse {
+  uint64 revision = 1;
+  // true: the probe replaces its assignment with `upserts`.
+  bool full_snapshot = 2;
+  repeated ProbeMonitor upserts = 3;
+  repeated string removed_monitor_ids = 4;
+}
+
+// ProbeMonitor is the subset of a monitor a probe needs to run its check.
+message ProbeMonitor {
+  string id = 1;
+  string tenant_id = 2;
+  string type = 3;
+  // Type-specific configuration with secrets decrypted for execution.
+  bytes config_json = 4;
+  uint32 interval_seconds = 5;
+  uint32 timeout_seconds = 6;
+  bool ssrf_protection = 7;
+}
+
+message UploadHeartbeatsRequest {
+  repeated Heartbeat heartbeats = 1;
+}
+
+message UploadHeartbeatsResponse {
+  StreamPosition persisted = 1;
+}

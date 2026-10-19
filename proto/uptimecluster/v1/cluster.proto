@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+syntax = "proto3";
+
+package uptimecluster.v1;
+
+import "uptimecluster/v1/command.proto";
+
+option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+
+// ClusterService runs on the cluster port of every voter (ALPN h2, ADR 0006).
+service ClusterService {
+  // Join enrolls a new voter or probe with a one-time join token. The caller
+  // has already verified the server certificate against the CA fingerprint
+  // embedded in the token (FA-PKI-02); Join is the only RPC that does not
+  // require a client certificate.
+  rpc Join(JoinRequest) returns (JoinResponse);
+
+  // RenewCertificate issues a new node certificate before expiry (FA-PKI-03).
+  rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+
+  // Apply forwards a command from a follower to the leader (FA-CLU-05).
+  // Returns FAILED_PRECONDITION with the current leader if called on a follower.
+  rpc Apply(ApplyRequest) returns (ApplyResponse);
+}
+
+message JoinRequest {
+  // Token ID and secret from "uc1.<token-id>.<secret>.<ca-fingerprint>".
+  string token_id = 1;
+  string token_secret = 2;
+  NodeInfo node = 3;
+  // PKCS#10 certificate signing request (DER); the private key never leaves the node.
+  bytes csr_der = 4;
+}
+
+message JoinResponse {
+  string cluster_id = 1;
+  // Leaf certificate chain (DER), leaf first.
+  repeated bytes certificate_chain_der = 2;
+  // Trusted CA certificates (DER); more than one during CA rotation.
+  repeated bytes ca_bundle_der = 3;
+  // Current voters to connect to.
+  repeated NodeInfo voters = 4;
+  // Master key (KEK) for voters when no external key is configured (ADR 0011,
+  // option B). Empty for probes and when MASTER_KEY_FILE is used.
+  bytes kek = 5;
+  // Fingerprint of the cluster KEK, so a voter with an external key can
+  // verify it uses the same one.
+  string kek_fingerprint = 6;
+}
+
+message RenewCertificateRequest {
+  bytes csr_der = 1;
+}
+
+message RenewCertificateResponse {
+  repeated bytes certificate_chain_der = 1;
+  repeated bytes ca_bundle_der = 2;
+}
+
+message ApplyRequest {
+  Command command = 1;
+}
+
+message ApplyResponse {
+  // Raft index at which the command was committed.
+  uint64 index = 1;
+  // Command-specific result (e.g. the created object) as JSON.
+  bytes result_json = 2;
+  // true if the request ID had already been applied (deduplicated retry).
+  bool duplicate = 3;
+}

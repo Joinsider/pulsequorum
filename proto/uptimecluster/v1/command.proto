@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+syntax = "proto3";
+
+package uptimecluster.v1;
+
+import "uptimecluster/v1/heartbeat.proto";
+
+option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+
+// Command is the envelope of every Raft log entry (ADR 0005). The leader fills
+// issued_at_ms and all new IDs before proposing, so FSM.Apply never reads the
+// clock or a random source (FA-CLU-07).
+//
+// Draft: the payload set is refined together with the schema in AP-1.2.
+message Command {
+  // Command format version; new versions are only proposed once every voter
+  // supports them (feature gate, FA-CLU-12).
+  uint32 version = 1;
+  // Client request ID (Idempotency-Key) used for deduplication (FA-CLU-06).
+  string request_id = 2;
+  // Leader wall-clock time when the command was proposed, UTC milliseconds.
+  int64 issued_at_ms = 3;
+  Actor actor = 4;
+  // Empty for platform-level commands.
+  string tenant_id = 5;
+
+  oneof payload {
+    PutEntity put_entity = 10;
+    DeleteEntity delete_entity = 11;
+    SetMonitorState set_monitor_state = 12;
+    OpenIncident open_incident = 13;
+    ResolveIncident resolve_incident = 14;
+    EnqueueAlert enqueue_alert = 15;
+    AckAlertDelivery ack_alert_delivery = 16;
+    RegisterNode register_node = 17;
+    SetFeatureLevel set_feature_level = 18;
+  }
+}
+
+// Actor is who caused a command (audit log, FA-DAT-01).
+message Actor {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_USER = 1;
+    KIND_API_TOKEN = 2;
+    KIND_SYSTEM = 3;
+  }
+  Kind kind = 1;
+  string id = 2;
+}
+
+// Kinds of tenant-scoped configuration objects stored as JSON documents.
+enum EntityKind {
+  ENTITY_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_MONITOR = 1;
+  ENTITY_KIND_NOTIFICATION_CHANNEL = 2;
+  ENTITY_KIND_MAINTENANCE_WINDOW = 3;
+  ENTITY_KIND_USER = 4;
+  ENTITY_KIND_TENANT = 5;
+  ENTITY_KIND_JOIN_TOKEN = 6;
+  ENTITY_KIND_SECRET_KEY = 7;
+  ENTITY_KIND_SIGNING_KEY = 8;
+}
+
+// PutEntity creates or replaces a configuration object. Secrets inside the
+// document are already encrypted by the leader (ADR 0011).
+message PutEntity {
+  EntityKind kind = 1;
+  string id = 2;
+  bytes document_json = 3;
+  // Optimistic concurrency: 0 = create, otherwise the revision being replaced.
+  uint64 expected_revision = 4;
+}
+
+// DeleteEntity removes a configuration object.
+message DeleteEntity {
+  EntityKind kind = 1;
+  string id = 2;
+}
+
+// SetMonitorState records a consensus status change (FA-CON-06).
+message SetMonitorState {
+  string monitor_id = 1;
+  // MonitorStatus as defined in the REST API (UP, DOWN, …).
+  string status = 2;
+  // false if raised without quorum (degraded mode, FA-ALR-10).
+  bool confirmed = 3;
+  int64 since_ms = 4;
+}
+
+// OpenIncident starts an incident for a monitor.
+message OpenIncident {
+  string incident_id = 1;
+  string monitor_id = 2;
+  int64 started_at_ms = 3;
+  string cause = 4;
+  ErrorClass error_class = 5;
+  repeated string affected_node_ids = 6;
+  bool confirmed = 7;
+}
+
+// ResolveIncident ends an incident.
+message ResolveIncident {
+  string incident_id = 1;
+  int64 resolved_at_ms = 2;
+}
+
+// EnqueueAlert adds a notification to the replicated outbox (FA-ALR-03).
+message EnqueueAlert {
+  // Stable deduplication key: monitor + incident + transition.
+  string alert_key = 1;
+  repeated string channel_ids = 2;
+  bytes payload_json = 3;
+}
+
+// AckAlertDelivery records the outcome of a delivery attempt.
+message AckAlertDelivery {
+  string alert_key = 1;
+  string channel_id = 2;
+  bool delivered = 3;
+  // Permanent failures disable the channel (FA-ALR-05).
+  bool permanent_failure = 4;
+  string error = 5;
+  int64 next_attempt_ms = 6;
+}
+
+// RegisterNode adds or updates a node in the cluster registry.
+message RegisterNode {
+  NodeInfo node = 1;
+}
+
+// SetFeatureLevel raises the command version the cluster may use (FA-CLU-12).
+message SetFeatureLevel {
+  uint32 level = 1;
+}
+
+// NodeInfo describes a voter or probe.
+message NodeInfo {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    ROLE_VOTER = 1;
+    ROLE_PROBE = 2;
+  }
+  string id = 1;
+  string name = 2;
+  Role role = 3;
+  string incarnation = 4;
+  // Stable cluster address (DNS:port), never derived from the IP (FA-CLU-10).
+  string advertise_addr = 5;
+  string region = 6;
+  map<string, string> labels = 7;
+  // Capabilities such as "icmp", "ipv6" (FA-CHK-31).
+  repeated string capabilities = 8;
+  // Empty for public probes.
+  string owner_tenant_id = 9;
+  string version = 10;
+  // Highest Command.version this node can apply.
+  uint32 max_command_version = 11;
+}

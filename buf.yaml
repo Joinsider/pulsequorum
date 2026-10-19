@@ -1,0 +1,10 @@
+# Protobuf module configuration (ADR 0006). Run `make proto-lint` / `make generate`.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - WIRE_JSON

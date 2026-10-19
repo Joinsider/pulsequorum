@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+syntax = "proto3";
+
+package uptimecluster.v1;
+
+import "uptimecluster/v1/heartbeat.proto";
+
+option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+
+// ReplicationService distributes heartbeats between voters outside of Raft
+// (data class B, ADR 0006). Inserts are idempotent on (node_id, incarnation, seq).
+service ReplicationService {
+  // StreamHeartbeats is opened by the producing voter towards each peer and
+  // pushes new heartbeats (own and from connected probes). The peer answers
+  // with the watermarks it has persisted. If the sender's buffer overflows it
+  // closes the stream; the peer then catches up via FetchRange (FA-REP-04).
+  rpc StreamHeartbeats(stream StreamHeartbeatsRequest) returns (stream StreamHeartbeatsResponse);
+
+  // GetWatermarks returns the highest contiguous seq per stream the callee has
+  // stored (anti-entropy, FA-REP-03).
+  rpc GetWatermarks(GetWatermarksRequest) returns (GetWatermarksResponse);
+
+  // FetchRange returns heartbeats of one stream after a given seq, paged.
+  rpc FetchRange(FetchRangeRequest) returns (FetchRangeResponse);
+}
+
+message StreamHeartbeatsRequest {
+  repeated Heartbeat heartbeats = 1;
+}
+
+message StreamHeartbeatsResponse {
+  repeated StreamPosition persisted = 1;
+}
+
+message GetWatermarksRequest {}
+
+message GetWatermarksResponse {
+  repeated StreamPosition positions = 1;
+}
+
+message FetchRangeRequest {
+  string node_id = 1;
+  string incarnation = 2;
+  uint64 after_seq = 3;
+  // Maximum number of heartbeats (server caps at 5000).
+  uint32 limit = 4;
+}
+
+message FetchRangeResponse {
+  repeated Heartbeat heartbeats = 1;
+  // true if more heartbeats follow after the last one returned.
+  bool more = 2;
+}

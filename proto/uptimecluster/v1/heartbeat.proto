@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+syntax = "proto3";
+
+package uptimecluster.v1;
+
+option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+
+// Result of a single check on a single node.
+enum CheckStatus {
+  CHECK_STATUS_UNSPECIFIED = 0;
+  CHECK_STATUS_UP = 1;
+  CHECK_STATUS_DOWN = 2;
+  CHECK_STATUS_DEGRADED = 3;
+}
+
+// Error class of a failed check (FA-CHK-03).
+enum ErrorClass {
+  ERROR_CLASS_UNSPECIFIED = 0;
+  ERROR_CLASS_DNS = 1;
+  ERROR_CLASS_CONNECT = 2;
+  ERROR_CLASS_TLS = 3;
+  ERROR_CLASS_TIMEOUT = 4;
+  ERROR_CLASS_HTTP_STATUS = 5;
+  ERROR_CLASS_ASSERTION = 6;
+  ERROR_CLASS_SSRF_BLOCKED = 7;
+  ERROR_CLASS_INTERNAL = 8;
+}
+
+// Heartbeat is one check result. The key (node_id, incarnation, seq) is unique
+// cluster-wide; seq is strictly increasing per incarnation (FA-REP-01).
+message Heartbeat {
+  string node_id = 1;
+  // Random ID that changes when the node's data directory is recreated.
+  string incarnation = 2;
+  uint64 seq = 3;
+  string tenant_id = 4;
+  string monitor_id = 5;
+  // Wall-clock time of the check on the producing node, UTC milliseconds.
+  int64 ts_ms = 6;
+  CheckStatus status = 7;
+  uint32 latency_ms = 8;
+  ErrorClass error_class = 9;
+  // Shortened error message (max. 1 KiB).
+  string message = 10;
+  // Type-specific details as JSON (status code, resolved IP, TLS expiry, …).
+  bytes details_json = 11;
+}
+
+// StreamPosition identifies the highest contiguous seq of one heartbeat stream
+// (watermark).
+message StreamPosition {
+  string node_id = 1;
+  string incarnation = 2;
+  uint64 seq = 3;
+}
