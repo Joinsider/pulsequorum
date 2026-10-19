@@ -1,0 +1,10 @@
+== driver=ncruces variant=rowid rows=1080000 (360 Intervalle, 2.00 h simuliert) db=/var/folders/sh/4pfsx__d6qq5wt4jmx354d8h0000gn/T/sqlite-spike-1788628161/hb-ncruces-rowid.db
+writer pragmas OK: map[auto_vacuum:2 busy_timeout:5000 foreign_keys:1 journal_mode:wal journal_size_limit:67108864 synchronous:1]
+reader pragmas OK on 8/8 conns
+load: 1080000 rows in 31.1 s = 34741 rows/s
+db after load: 131.9 MB (122.1 MB per 1 Mio. Zeilen)
+concurrent 20 s: writer 23345 rows/s, readers 14875 queries p50=10.03 ms p95=14.65 ms, busy=0 other=0, max WAL 2414.6 MB
+checkpoint(TRUNCATE) after concurrent phase: 0.12 s
+retention: 540000 rows in 108 batches, total 14.8 s, batch p95=334.8 ms max=537.8 ms, WAL before ckpt 5.4 MB
+after delete: db 188.9 MB, freelist 16269 pages; incremental_vacuum 0.33 s -> db 125.2 MB, freelist 0, wal 0.0 MB
+wrote results/ncruces-rowid-1080000-think0.json

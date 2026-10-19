@@ -1,0 +1,10 @@
+== driver=modernc variant=without-rowid rows=6480000 (2160 Intervalle, 12.00 h simuliert) db=/var/folders/sh/4pfsx__d6qq5wt4jmx354d8h0000gn/T/sqlite-spike-3964195628/hb-modernc-without-rowid.db
+writer pragmas OK: map[auto_vacuum:2 busy_timeout:5000 foreign_keys:1 journal_mode:wal journal_size_limit:67108864 synchronous:1]
+reader pragmas OK on 8/8 conns
+load: 6480000 rows in 211.8 s = 30601 rows/s
+db after load: 823.1 MB (127.0 MB per 1 Mio. Zeilen)
+concurrent 20 s: writer 10320 rows/s, readers 1028 queries p50=155.38 ms p95=171.63 ms, busy=0 other=0, max WAL 1258.5 MB
+checkpoint(TRUNCATE) after concurrent phase: 0.09 s
+retention: 3240000 rows in 648 batches, total 36.9 s, batch p95=71.5 ms max=132.6 ms, WAL before ckpt 5.9 MB
+after delete: db 849.1 MB, freelist 104307 pages; incremental_vacuum 2.40 s -> db 441.2 MB, freelist 0, wal 0.0 MB
+wrote results/modernc-without-rowid-6480000-think0.json
