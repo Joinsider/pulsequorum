@@ -48,6 +48,14 @@ type RequestDedup struct {
 	ErrorMessage string
 }
 
+type SecretKey struct {
+	KeyID          string
+	WrappedDek     []byte
+	KekFingerprint string
+	CreatedMs      int64
+	RetiredMs      int64
+}
+
 type Tenant struct {
 	ID           string
 	Name         string

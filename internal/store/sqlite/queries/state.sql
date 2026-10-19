@@ -92,3 +92,15 @@ VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: PruneDedup :execrows
 DELETE FROM request_dedup WHERE issued_at_ms < ?;
+
+-- name: ListSecretKeys :many
+SELECT * FROM secret_keys ORDER BY created_ms, key_id;
+
+-- name: UpsertSecretKey :exec
+-- created_ms is kept on update; rewrapping (KEK rotation) and retiring update the row.
+INSERT INTO secret_keys (key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (key_id) DO UPDATE SET
+    wrapped_dek     = excluded.wrapped_dek,
+    kek_fingerprint = excluded.kek_fingerprint,
+    retired_ms      = excluded.retired_ms;

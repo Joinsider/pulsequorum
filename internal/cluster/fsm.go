@@ -258,6 +258,23 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}
 		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
 
+	case pb.EntityKind_ENTITY_KIND_SECRET_KEY:
+		var doc SecretKeyDocument
+		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+			return nil, invalid("secret key document: %v", err)
+		}
+		if len(doc.WrappedDEK) == 0 || doc.KEKFingerprint == "" {
+			return nil, invalid("secret key without wrapped key or master key fingerprint")
+		}
+		err := tx.PutSecretKey(ctx, store.SecretKey{
+			KeyID: put.GetId(), WrappedDEK: doc.WrappedDEK, KEKFingerprint: doc.KEKFingerprint,
+			CreatedMs: issuedAt, RetiredMs: doc.RetiredMs,
+		})
+		if err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: put.GetId()})
+
 	default:
 		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("put of %s is not supported yet", put.GetKind())}
 	}

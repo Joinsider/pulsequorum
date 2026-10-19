@@ -66,6 +66,7 @@ func TestLoadInvalid(t *testing.T) {
 		{"shutdown timeout negative", map[string]string{"SHUTDOWN_TIMEOUT": "-1s"}, "SHUTDOWN_TIMEOUT"},
 		{"advertise without port", map[string]string{"CLUSTER_ADVERTISE": "raft-n1"}, "CLUSTER_ADVERTISE"},
 		{"raft timeout too small", map[string]string{"RAFT_TIMEOUT": "10ms"}, "RAFT_TIMEOUT"},
+		{"two master keys", map[string]string{"MASTER_KEY": "a", "MASTER_KEY_FILE": "/k"}, "MASTER_KEY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

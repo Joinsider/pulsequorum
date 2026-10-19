@@ -322,6 +322,39 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]M
 	return items, nil
 }
 
+const listSecretKeys = `-- name: ListSecretKeys :many
+SELECT key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms FROM secret_keys ORDER BY created_ms, key_id
+`
+
+func (q *Queries) ListSecretKeys(ctx context.Context) ([]SecretKey, error) {
+	rows, err := q.db.QueryContext(ctx, listSecretKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SecretKey{}
+	for rows.Next() {
+		var i SecretKey
+		if err := rows.Scan(
+			&i.KeyID,
+			&i.WrappedDek,
+			&i.KekFingerprint,
+			&i.CreatedMs,
+			&i.RetiredMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTenants = `-- name: ListTenants :many
 SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants ORDER BY id
 `
@@ -464,6 +497,35 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (i
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const upsertSecretKey = `-- name: UpsertSecretKey :exec
+INSERT INTO secret_keys (key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (key_id) DO UPDATE SET
+    wrapped_dek     = excluded.wrapped_dek,
+    kek_fingerprint = excluded.kek_fingerprint,
+    retired_ms      = excluded.retired_ms
+`
+
+type UpsertSecretKeyParams struct {
+	KeyID          string
+	WrappedDek     []byte
+	KekFingerprint string
+	CreatedMs      int64
+	RetiredMs      int64
+}
+
+// created_ms is kept on update; rewrapping (KEK rotation) and retiring update the row.
+func (q *Queries) UpsertSecretKey(ctx context.Context, arg UpsertSecretKeyParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSecretKey,
+		arg.KeyID,
+		arg.WrappedDek,
+		arg.KekFingerprint,
+		arg.CreatedMs,
+		arg.RetiredMs,
+	)
+	return err
 }
 
 const upsertTenant = `-- name: UpsertTenant :exec

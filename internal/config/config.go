@@ -45,8 +45,11 @@ type Config struct {
 	// node; it becomes the Raft server address (ADR 0005, FA-CLU-10).
 	ClusterAdvertise string
 	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
-	RaftTimeout     time.Duration
-	PublicURL       string
+	RaftTimeout time.Duration
+	PublicURL   string
+	// MasterKey (base64) or MasterKeyFile provide the KEK (ADR 0011). Never log them.
+	MasterKey       string
+	MasterKeyFile   string
 	AuthMode        AuthMode
 	LogLevel        slog.Level
 	LogFormat       string
@@ -109,6 +112,12 @@ func Load(getenv func(string) string) (Config, error) {
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			errs = append(errs, fmt.Errorf("PUBLIC_URL: must be an absolute http(s) URL, got %q", cfg.PublicURL))
 		}
+	}
+
+	cfg.MasterKey = getenv("MASTER_KEY")
+	cfg.MasterKeyFile = get("MASTER_KEY_FILE", "")
+	if cfg.MasterKey != "" && cfg.MasterKeyFile != "" {
+		errs = append(errs, errors.New("MASTER_KEY and MASTER_KEY_FILE: set only one"))
 	}
 
 	cfg.ClusterAdvertise = get("CLUSTER_ADVERTISE", "")

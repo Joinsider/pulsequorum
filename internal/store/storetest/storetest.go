@@ -37,6 +37,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"UpdateRollsBackOnError", testUpdateRollback},
 		{"TenantIsolation", testStateTenantIsolation},
 		{"DedupAndAppliedIndex", testDedupAndAppliedIndex},
+		{"SecretKeys", testSecretKeys},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -391,6 +392,40 @@ func testDedupAndAppliedIndex(t *testing.T, s store.State) {
 	}
 	if idx, _ := s.AppliedIndex(ctx); idx != 9 {
 		t.Errorf("AppliedIndex after second update = %d, want 9", idx)
+	}
+}
+
+func testSecretKeys(t *testing.T, s store.State) {
+	ctx := context.Background()
+	if keys, err := s.ListSecretKeys(ctx); err != nil || len(keys) != 0 {
+		t.Fatalf("initial keys = %v, %v", keys, err)
+	}
+	put := func(k store.SecretKey) error {
+		return s.Update(ctx, func(tx store.StateTx) error { return tx.PutSecretKey(ctx, k) })
+	}
+	if err := put(store.SecretKey{KeyID: "k2", WrappedDEK: []byte{2}, KEKFingerprint: "fp", CreatedMs: 20}); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(store.SecretKey{KeyID: "k1", WrappedDEK: []byte{1}, KEKFingerprint: "fp", CreatedMs: 10}); err != nil {
+		t.Fatal(err)
+	}
+	// Retire and rewrap k1; its creation time must be kept.
+	if err := put(store.SecretKey{KeyID: "k1", WrappedDEK: []byte{9}, KEKFingerprint: "fp2", CreatedMs: 99, RetiredMs: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(store.SecretKey{KeyID: "k3"}); err == nil {
+		t.Error("incomplete key accepted")
+	}
+	keys, err := s.ListSecretKeys(ctx)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("keys = %+v, %v", keys, err)
+	}
+	if keys[0].KeyID != "k1" || keys[0].CreatedMs != 10 || keys[0].RetiredMs != 30 ||
+		keys[0].KEKFingerprint != "fp2" || keys[0].WrappedDEK[0] != 9 {
+		t.Errorf("k1 = %+v", keys[0])
+	}
+	if keys[1].KeyID != "k2" || keys[1].RetiredMs != 0 {
+		t.Errorf("k2 = %+v", keys[1])
 	}
 }
 

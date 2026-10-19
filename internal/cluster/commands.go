@@ -83,6 +83,14 @@ type TenantDocument struct {
 	Suspended    bool            `json:"suspended,omitempty"`
 }
 
+// SecretKeyDocument is a data encryption key wrapped with the master key
+// (ADR 0011). The leader generates and wraps it; the FSM only stores it.
+type SecretKeyDocument struct {
+	WrappedDEK     []byte `json:"wrappedDek"`
+	KEKFingerprint string `json:"kekFingerprint"`
+	RetiredMs      int64  `json:"retiredMs,omitempty"`
+}
+
 // PutResult is the result of a PutEntity command.
 type PutResult struct {
 	ID       string `json:"id"`
@@ -97,6 +105,11 @@ func NewPutTenant(requestID, tenantID string, doc TenantDocument) (*pb.Command, 
 // NewPutMonitor builds a command that creates (expectedRevision 0) or replaces a monitor.
 func NewPutMonitor(requestID, tenantID, monitorID string, doc MonitorDocument, expectedRevision uint64) (*pb.Command, error) {
 	return newPut(requestID, tenantID, pb.EntityKind_ENTITY_KIND_MONITOR, monitorID, doc, expectedRevision)
+}
+
+// NewPutSecretKey builds a platform-level command that stores a data key.
+func NewPutSecretKey(requestID, keyID string, doc SecretKeyDocument) (*pb.Command, error) {
+	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_SECRET_KEY, keyID, doc, 0)
 }
 
 // NewDeleteMonitor builds a command that deletes a monitor.

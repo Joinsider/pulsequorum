@@ -20,6 +20,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/node"
+	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/version"
@@ -98,6 +99,14 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	kek, err := secrets.LoadKEK(cfg.DataDir, cfg.MasterKey, cfg.MasterKeyFile)
+	if err != nil {
+		return fmt.Errorf("master key: %w", err)
+	}
+	log.Info("master key loaded", "source", kek.Source, "fingerprint", kek.Fingerprint)
+	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthZitadel {
+		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
+	}
 	// A halted FSM stops the whole process (FA-CLU-13).
 	ctx, stop := context.WithCancelCause(ctx)
 	defer stop(nil)
@@ -120,24 +129,47 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}()
 	log.Info("node ready", "node_id", nodeID, "advertise", cfg.ClusterAdvertise)
 
-	if cfg.AuthMode == config.AuthLocal {
-		go func() {
-			bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			if err := cluster.EnsureDefaultTenant(bootCtx, raftNode, state); err != nil && ctx.Err() == nil {
-				log.Error("could not create the default tenant", "err", err)
-			}
-		}()
-	}
+	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
+	go bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, stop)
+	go cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log)
 
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
 	}
 	err = server.New(cfg, log, webui.Handler()).WithReadiness(raftNode.Ready).Run(ctx)
-	if cause := context.Cause(ctx); errors.Is(cause, cluster.ErrFSMHalted) {
+	// A cause other than plain cancellation (signal, normal shutdown) is fatal.
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return cause
 	}
 	return err
+}
+
+// bootstrapCluster creates the default tenant and the first data key once a
+// leader exists, then loads the keyring. A master key that does not match the
+// cluster stops the node (ADR 0011).
+func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, n *cluster.Node,
+	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, stop context.CancelCauseFunc) {
+	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if cfg.AuthMode == config.AuthLocal {
+		if err := cluster.EnsureDefaultTenant(bootCtx, n, state); err != nil && ctx.Err() == nil {
+			log.Error("could not create the default tenant", "err", err)
+		}
+	}
+	if err := cluster.EnsureSecretKey(bootCtx, n, state, kek); err != nil && ctx.Err() == nil {
+		log.Error("could not create the data key", "err", err)
+	}
+	if err := keyring.Reload(bootCtx); err != nil {
+		if errors.Is(err, secrets.ErrKEKMismatch) {
+			stop(err)
+			return
+		}
+		if ctx.Err() == nil {
+			log.Error("could not load data keys", "err", err)
+		}
+		return
+	}
+	log.Info("data keys loaded", "active_key", keyring.ActiveKeyID())
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

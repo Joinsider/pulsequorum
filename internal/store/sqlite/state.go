@@ -153,6 +153,24 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 	return page, nil
 }
 
+// ListSecretKeys returns all data encryption keys ordered by creation.
+func (s *StateStore) ListSecretKeys(ctx context.Context) ([]store.SecretKey, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.q.ListSecretKeys(ctx)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.SecretKey, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.SecretKey{
+			KeyID: r.KeyID, WrappedDEK: r.WrappedDek, KEKFingerprint: r.KekFingerprint,
+			CreatedMs: r.CreatedMs, RetiredMs: r.RetiredMs,
+		})
+	}
+	return out, nil
+}
+
 // Update runs fn in a single immediate write transaction.
 func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error) error {
 	s.mu.RLock()
@@ -280,6 +298,19 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 		}
 	}
 	return nil
+}
+
+func (t *stateTx) PutSecretKey(ctx context.Context, k store.SecretKey) error {
+	if k.KeyID == "" || len(k.WrappedDEK) == 0 || k.KEKFingerprint == "" {
+		return errors.New("put secret key: key ID, wrapped DEK and KEK fingerprint are required")
+	}
+	return mapErr(t.q.UpsertSecretKey(ctx, statedb.UpsertSecretKeyParams{
+		KeyID:          k.KeyID,
+		WrappedDek:     k.WrappedDEK,
+		KekFingerprint: k.KEKFingerprint,
+		CreatedMs:      k.CreatedMs,
+		RetiredMs:      k.RetiredMs,
+	}))
 }
 
 func (t *stateTx) SetAppliedIndex(ctx context.Context, index uint64) error {

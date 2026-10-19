@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P1 – Kern (P0 abgeschlossen bis auf Läufe, die einen GitHub-Remote bzw. Docker-Daemon brauchen: AP-0.8–0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-1.3 Geheimnisverschlüsselung (ADR 0011) |
+| **Nächster Schritt (Claude)** | AP-1.4 Checker-Registry, zentraler Dialer, HTTP-Checker |
 
 ---
 
@@ -63,7 +63,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |----|--------|---------------|-----|--------|
 | AP-1.1 | Storage-Schicht: Repository-Interfaces mit Tenant-Scope, SQLite (Schreib-/Lese-Pool, Pragmas + Selbsttest), Migrationen (`auto_vacuum=INCREMENTAL`), Mandanten-Isolationstests | FA-TEN-01, FA-NODE-06, NFA-SEC-02, PF-22..24 | 0004, 0013 | ✅ Basis mit Tenants, Monitoren, Heartbeats; weitere Entitäten (Kanäle, Wartung, Nutzer, Incidents, Rollups) folgen in ihren APs. WAL-Alert → AP-3.6 |
 | AP-1.2 | Node-Identität (Node-ID, Inkarnation), Raft mit einem Mitglied, FSM-Befehle, Request-Dedup, Snapshots per Backup-API, Determinismus-Test | FA-NODE-03, FA-CLU-01/02/06/07/09/13 | 0005, 0012 | ✅ In-Memory-Transport auf der Advertise-Adresse bis zum mTLS-Transport (AP-2.1); FSM-Fingerprint-Vergleich zwischen Votern → AP-3.6 |
-| AP-1.3 | Geheimnisverschlüsselung (Envelope, KEK/DEK, Rotation) | FA-SEC-SEC | 0011 | ⬜ |
+| AP-1.3 | Geheimnisverschlüsselung (Envelope, KEK/DEK, Rotation) | FA-SEC-SEC | 0011 | ✅ KEK (Env/Datei/generiert), DEK-Rotation (jährlich automatisch), Keyring mit AAD-Bindung; Neuverschlüsselungs-Job und Stilllegung alter DEKs folgen mit den ersten verschlüsselten Objekten in AP-1.10; KEK-Rotation per Admin-CLI in P2 |
 | AP-1.4 | Checker-Registry, zentraler Dialer mit SSRF-Hook, HTTP-Checker (frische Verbindungen, Phasen-Timeouts, TLS-Prüfung, Fehlerklassen) | FA-CHK-01..04, 10..15 | – | ⬜ |
 | AP-1.5 | TCP-, DNS- (TC→TCP, Mengenvergleich; `miekg/dns` v1 – v2 auf Codeberg noch pre-1.0) und ICMP-Checker (Modi, Selbsttest) inkl. Container-Doku | FA-CHK-20, 30..32, 40/41 | – | ⬜ |
 | AP-1.6 | Scheduler: Jitter inkl. Erstlauf, keine Selbstüberlappung, Nebenläufigkeitslimit, Goroutine-Leak-Tests | FA-SCH-01/03/04/05/07 | – | ⬜ |

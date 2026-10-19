@@ -86,6 +86,9 @@ type State interface {
 	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
 
+	// ListSecretKeys returns all data encryption keys ordered by creation (ADR 0011).
+	ListSecretKeys(ctx context.Context) ([]SecretKey, error)
+
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
 
@@ -104,6 +107,10 @@ type StateTx interface {
 	PutMonitor(ctx context.Context, m Monitor, expectedRevision uint64) error
 	DeleteMonitor(ctx context.Context, tenantID, id string) error
 
+	// PutSecretKey creates a DEK or updates its wrapping or retirement; the
+	// creation time of an existing key is kept.
+	PutSecretKey(ctx context.Context, k SecretKey) error
+
 	// SetAppliedIndex records the Raft index applied by this transaction (ADR 0005).
 	SetAppliedIndex(ctx context.Context, index uint64) error
 	// GetDedup returns the stored outcome of a request ID or ErrNotFound.
@@ -111,6 +118,15 @@ type StateTx interface {
 	PutDedup(ctx context.Context, e DedupEntry) error
 	// PruneDedup removes entries issued before beforeMs (deterministic retention).
 	PruneDedup(ctx context.Context, beforeMs int64) error
+}
+
+// SecretKey is a data encryption key wrapped with the master key (ADR 0011).
+type SecretKey struct {
+	KeyID          string
+	WrappedDEK     []byte
+	KEKFingerprint string
+	CreatedMs      int64
+	RetiredMs      int64 // 0 = not retired
 }
 
 // DedupEntry is the stored outcome of an applied command, so that a retry with
