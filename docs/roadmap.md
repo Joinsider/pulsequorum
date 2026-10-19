@@ -49,7 +49,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.11 | Lizenz: `LICENSE` (AGPLv3), SPDX-Header, CLA-Einrichtung, `THIRD_PARTY_NOTICES` | RB-LIC-01..05 | ADR 0010 | ⛔ |
 | AP-0.12 | OpenAPI-Entwurf für alle P1-Endpunkte + Codegenerierung (Server/Client) | FA-API-01..07 | ADR 0003 | ⛔ |
 | AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ⛔ |
-| AP-0.14 | **Spike Raft** (`spikes/raft`): 3 Container, Konfiguration per Raft, Heartbeats per Replikation inkl. Inkarnation, Leader-Kill, Partition 2\|1, Bootstrap-Erkennung | FA-CLU-01..07, FA-REP-01..03 | – (Spike) | ⬜ |
+| AP-0.14 | **Spike Raft** (`spikes/raft`): 3 Container, Konfiguration per Raft, Heartbeats per Replikation inkl. Inkarnation, Leader-Kill, Partition 2\|1, Bootstrap-Erkennung. Ergebnisse und Empfehlungen zu ADR 0005/0006: [spikes/raft/README.md](../spikes/raft/README.md) | FA-CLU-01..07, FA-REP-01..03 | – (Spike) | ✅ |
 | AP-0.15 | **Spike SQLite**: Benchmark `modernc.org/sqlite` vs. `ncruces/go-sqlite3` mit Heartbeat-Last (Batch-Insert, Range-Query, Retention-Delete) | PF-22..24, O-07 | – (Spike) | ⬜ |
 
 **Hinweis zu AP-0.6–0.9:** Das Grundgerüst wird auf ausdrücklichen Wunsch bereits vor dem ADR-Review aufgesetzt. Es folgt den *vorgeschlagenen* ADRs und beschränkt sich auf Teile mit geringem Änderungsrisiko. Wird ein ADR abgelehnt oder geändert, wird das Gerüst angepasst.
