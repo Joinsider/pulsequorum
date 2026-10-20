@@ -4,6 +4,7 @@
 package uptime
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -40,9 +41,69 @@ func TestNodeUpDown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			u, d := nodeUpDown(tt.hbs, tt.start, tt.end, cover)
+			u, d, _ := nodeUpDown(tt.hbs, nil, tt.start, tt.end, cover)
 			if u != tt.wantUp || d != tt.wDwn {
 				t.Fatalf("up/down = %d/%d, want %d/%d", u, d, tt.wantUp, tt.wDwn)
+			}
+		})
+	}
+}
+
+// TestNodeUpDownMaintenance covers FA-UPT-01: time inside a consensus
+// MAINTENANCE span is maintenance for the node, whatever the node reported.
+func TestNodeUpDownMaintenance(t *testing.T) {
+	const cover = 120 // interval 60
+	tests := []struct {
+		name                   string
+		hbs                    []store.Heartbeat
+		maint                  []span
+		start, end             int64
+		wantUp, wantDn, wantMt int64
+	}{
+		{"down heartbeat fully inside maintenance",
+			[]store.Heartbeat{hb(0, down), hb(60, up)}, []span{{0, 60}}, 0, 120, 60, 0, 60},
+		{"down heartbeat partly inside maintenance",
+			[]store.Heartbeat{hb(0, down)}, []span{{60, 300}}, 0, 200, 0, 60, 140},
+		{"maintenance without heartbeats counts as maintenance",
+			[]store.Heartbeat{hb(0, up)}, []span{{300, 400}}, 0, 400, 120, 0, 100},
+		{"maintenance before the first heartbeat stays unknown",
+			[]store.Heartbeat{hb(200, up)}, []span{{0, 100}}, 0, 300, 100, 0, 0},
+		{"maintenance from a lookback heartbeat",
+			[]store.Heartbeat{hb(-30, down), hb(30, up)}, []span{{-100, 40}}, 0, 60, 20, 0, 40},
+		{"no maintenance",
+			[]store.Heartbeat{hb(0, down), hb(60, up)}, nil, 0, 120, 60, 60, 0},
+		{"no heartbeats", nil, []span{{0, 100}}, 0, 100, 0, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, d, m := nodeUpDown(tt.hbs, tt.maint, tt.start, tt.end, cover)
+			if u != tt.wantUp || d != tt.wantDn || m != tt.wantMt {
+				t.Fatalf("up/down/maint = %d/%d/%d, want %d/%d/%d", u, d, m, tt.wantUp, tt.wantDn, tt.wantMt)
+			}
+		})
+	}
+}
+
+func TestMaintenanceSpans(t *testing.T) {
+	tests := []struct {
+		name       string
+		changes    []store.StatusChange
+		start, end int64
+		want       []span
+	}{
+		{"no history", nil, 0, 100, nil},
+		{"lasts until the next change", []store.StatusChange{change(10, store.StatusMaintenance), change(30, store.StatusUp)}, 0, 100, []span{{10, 30}}},
+		{"last change lasts until end", []store.StatusChange{change(50, store.StatusMaintenance)}, 0, 100, []span{{50, 100}}},
+		{"clipped at start and end", []store.StatusChange{change(-20, store.StatusMaintenance), change(30, store.StatusUp), change(80, store.StatusMaintenance)}, 0, 100, []span{{0, 30}, {80, 100}}},
+		{"ended before start", []store.StatusChange{change(-50, store.StatusMaintenance), change(-10, store.StatusUp)}, 0, 100, nil},
+		{"other statuses are no maintenance", []store.StatusChange{change(0, store.StatusDown), change(40, store.StatusPending)}, 0, 100, nil},
+		{"consecutive maintenance changes", []store.StatusChange{change(0, store.StatusMaintenance), change(20, store.StatusMaintenance), change(40, store.StatusUp)}, 0, 100, []span{{0, 20}, {20, 40}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maintenanceSpans(tt.changes, tt.start, tt.end)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("spans = %v, want %v", got, tt.want)
 			}
 		})
 	}

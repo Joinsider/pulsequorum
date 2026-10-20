@@ -51,11 +51,17 @@ func (c *Calculator) Compute(ctx context.Context, m store.Monitor, start, end in
 		}
 	}
 
-	if opts.NodeID == "" {
-		changes, err := c.State.StatusHistory(ctx, m.TenantID, m.ID, start, end)
-		if err != nil {
+	// The status history is needed for the consensus and for the maintenance
+	// time of the node rollups.
+	var changes []store.StatusChange
+	if opts.NodeID == "" || !opts.ConsensusOnly {
+		var err error
+		if changes, err = c.State.StatusHistory(ctx, m.TenantID, m.ID, start, end); err != nil {
 			return nil, err
 		}
+	}
+
+	if opts.NodeID == "" {
 		r := bucket
 		r.UpMs, r.DownMs, r.MaintMs = consensusTimes(changes, start, end)
 		var all []int
@@ -74,11 +80,12 @@ func (c *Calculator) Compute(ctx context.Context, m store.Monitor, start, end in
 		nodes = append(nodes, n)
 	}
 	slices.Sort(nodes)
+	maint := maintenanceSpans(changes, start, end)
 	for _, n := range nodes {
 		hbs := byNode[n]
 		r := bucket
 		r.NodeID = n
-		r.UpMs, r.DownMs = nodeUpDown(hbs, start, end, coverMs(m))
+		r.UpMs, r.DownMs, r.MaintMs = nodeUpDown(hbs, maint, start, end, coverMs(m))
 		setLatency(&r, latencyOf(okLatencies(hbs, start, end)))
 		out = append(out, finish(r, end))
 	}

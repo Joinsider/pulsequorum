@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	// All voters evaluate maintenance time zones with the same embedded database.
+	_ "time/tzdata"
 
 	"github.com/joinsider/uptimecluster/internal/aggregator"
 	"github.com/joinsider/uptimecluster/internal/alert"
@@ -26,6 +28,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/node"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
@@ -183,12 +186,19 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
 		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log,
 	})
-	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID, Logger: log})
+	maint := maintenance.NewController(maintenance.ControllerOptions{
+		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log,
+	})
+	agg := aggregator.New(aggregator.Options{
+		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
+		Maintenance: maint.InMaintenance, Logger: log,
+	})
 	sink := scheduler.Sinks{heartbeats, agg}
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
+	bg.Go(func() { maint.Run(ctx) })
 	maintenance := uptime.NewJob(uptime.JobOptions{
 		State: state, Metrics: metrics, Logger: log, Compaction: cfg.RawCompaction,
 		Retention: uptime.Retention{Raw: cfg.RetentionRaw, Hourly: cfg.RetentionHourly, Daily: cfg.RetentionDaily},

@@ -30,6 +30,16 @@ type world struct {
 // UP from -49h, DOWN in [-10h, -9h30m), UP afterwards.
 func newWorld(t *testing.T) *world {
 	t.Helper()
+	return newWorldWith(t, []store.StatusChange{
+		{SinceMs: at(-49 * time.Hour), Status: store.StatusUp},
+		{SinceMs: at(-10 * time.Hour), Status: store.StatusDown},
+		{SinceMs: at(-570 * time.Minute), Status: store.StatusUp},
+	})
+}
+
+// newWorldWith creates the monitor with the given consensus history.
+func newWorldWith(t *testing.T, history []store.StatusChange) *world {
+	t.Helper()
 	ctx := context.Background()
 	state, err := sqlite.OpenState(ctx, t.TempDir())
 	if err != nil {
@@ -46,11 +56,7 @@ func newWorld(t *testing.T) *world {
 		if err := tx.PutMonitor(ctx, m, 0); err != nil {
 			return err
 		}
-		for _, c := range []store.StatusChange{
-			{SinceMs: at(-49 * time.Hour), Status: store.StatusUp},
-			{SinceMs: at(-10 * time.Hour), Status: store.StatusDown},
-			{SinceMs: at(-570 * time.Minute), Status: store.StatusUp},
-		} {
+		for _, c := range history {
 			if err := tx.PutMonitorState(ctx, "t", "m1", store.MonitorState{Status: c.Status, Confirmed: true, SinceMs: c.SinceMs}); err != nil {
 				return err
 			}
@@ -208,6 +214,80 @@ func TestRollups(t *testing.T) {
 	}
 	if len(month.Buckets) != 30 || month.Total.DownMs != 30*minute || month.Buckets[29].UpMs != 65*minute {
 		t.Fatalf("30d = %+v, last bucket %+v", month.Total, month.Buckets[29])
+	}
+}
+
+// TestMaintenanceNodeAttribution covers FA-UPT-01 for the per-node view: the
+// consensus is in MAINTENANCE in [-10h, -9h30m) while n1 reports DOWN there.
+// The node's 30 minutes are maintenance, not down.
+func TestMaintenanceNodeAttribution(t *testing.T) {
+	w := newWorldWith(t, []store.StatusChange{
+		{SinceMs: at(-49 * time.Hour), Status: store.StatusUp},
+		{SinceMs: at(-10 * time.Hour), Status: store.StatusMaintenance},
+		{SinceMs: at(-570 * time.Minute), Status: store.StatusUp},
+	})
+	metrics := w.newMetrics()
+	svc := &Service{State: w.state, Metrics: metrics}
+	now := t0.Add(65 * time.Minute)
+
+	live, err := svc.Stats(w.ctx, w.monitor, "n1", Range24h, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveCons, err := svc.Stats(w.ctx, w.monitor, "", Range24h, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	j := w.job(metrics, &now, DefaultRetention)
+	runUntilIdle(t, j, metrics)
+
+	c := rollup(t, metrics, "", hourMs, at(-10*time.Hour))
+	if c.UpMs != 30*minute || c.DownMs != 0 || c.MaintMs != 30*minute || c.UnknownMs != 0 {
+		t.Fatalf("consensus hour = %+v", c)
+	}
+	n := rollup(t, metrics, "n1", hourMs, at(-10*time.Hour))
+	if n.UpMs != 30*minute || n.DownMs != 0 || n.MaintMs != 30*minute || n.UnknownMs != 0 || n.LatencyCount != 30 {
+		t.Fatalf("node hour = %+v", n)
+	}
+	// Outside the maintenance the node's DOWN period in [-46h30m, -46h28m) is
+	// still down.
+	if d := rollup(t, metrics, "n1", hourMs, at(-47*time.Hour)); d.DownMs != 2*minute || d.MaintMs != 0 {
+		t.Fatalf("node hour with outage = %+v", d)
+	}
+
+	// Rolled-up buckets equal the live computation, consensus and node.
+	rolled, err := svc.Stats(w.ctx, w.monitor, "n1", Range24h, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(live, rolled) {
+		t.Fatalf("node stats differ:\nlive   %+v\nrolled %+v", live.Total, rolled.Total)
+	}
+	if rolled.Total.DownMs != 0 || rolled.Total.MaintMs != 30*minute {
+		t.Fatalf("node 24h total = %+v", rolled.Total)
+	}
+	rolledCons, err := svc.Stats(w.ctx, w.monitor, "", Range24h, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(liveCons, rolledCons) {
+		t.Fatalf("consensus stats differ:\nlive   %+v\nrolled %+v", liveCons.Total, rolledCons.Total)
+	}
+
+	// Compaction keeps the node's uptime, maintenance included.
+	now = t0.Add(3*time.Hour + 5*time.Minute)
+	before, err := svc.Stats(w.ctx, w.monitor, "n1", Range7d, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runUntilIdle(t, j, metrics)
+	after, err := svc.Stats(w.ctx, w.monitor, "n1", Range7d, now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Total, after.Total) {
+		t.Fatalf("uptime changed by compaction:\nbefore %+v\nafter  %+v", before.Total, after.Total)
 	}
 }
 

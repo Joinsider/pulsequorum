@@ -29,23 +29,71 @@ func overlap(a, b, start, end int64) int64 {
 	return max(0, min(b, end)-max(a, start))
 }
 
+// span is a half-open interval [from, to) in milliseconds.
+type span struct{ from, to int64 }
+
+// maintenanceSpans returns the MAINTENANCE periods of the consensus status
+// history, clipped to [start, end). A MAINTENANCE change lasts until the next
+// change, the last one until end. changes must be ordered by time.
+func maintenanceSpans(changes []store.StatusChange, start, end int64) []span {
+	var out []span
+	for i, c := range changes {
+		if c.Status != store.StatusMaintenance {
+			continue
+		}
+		until := end
+		if i+1 < len(changes) {
+			until = changes[i+1].SinceMs
+		}
+		from, to := max(c.SinceMs, start), min(until, end)
+		if from < to {
+			out = append(out, span{from, to})
+		}
+	}
+	return out
+}
+
+// spanOverlap returns the length of [a, b) that lies inside the spans. The
+// spans must not overlap each other.
+func spanOverlap(spans []span, a, b int64) int64 {
+	var sum int64
+	for _, s := range spans {
+		sum += overlap(s.from, s.to, a, b)
+	}
+	return sum
+}
+
 // nodeUpDown attributes [start, end) from one node's heartbeats, ordered by
 // time (FA-UPT-02: one stream, one clock). Heartbeats before start may be
 // passed; they count until the next heartbeat or until they expire.
-func nodeUpDown(hbs []store.Heartbeat, start, end, cover int64) (up, down int64) {
+//
+// Time inside a maintenance span (FA-UPT-01) is maintenance for the node, not
+// up or down, so a node that reports DOWN during maintenance is not penalised.
+// The choice for time without heartbeat coverage: a maintenance span counts as
+// maintenance for the node from its first heartbeat in the input on, even
+// where the node sent nothing, because the whole node was in maintenance. Time
+// before the node's first heartbeat stays unknown, since the node was not yet
+// part of the monitor then.
+func nodeUpDown(hbs []store.Heartbeat, maint []span, start, end, cover int64) (up, down, mt int64) {
+	if len(hbs) == 0 {
+		return 0, 0, 0
+	}
+	mt = spanOverlap(maint, max(start, hbs[0].TsMs), end)
 	for i, hb := range hbs {
 		until := hb.TsMs + cover
 		if i+1 < len(hbs) {
 			until = min(until, hbs[i+1].TsMs)
 		}
 		d := overlap(hb.TsMs, until, start, end)
+		// Maintenance inside this coverage is already part of mt.
+		d -= spanOverlap(maint, max(hb.TsMs, start), min(until, end))
 		if hb.Status == store.CheckDown {
 			down += d
 		} else {
 			up += d
 		}
 	}
-	return up, down
+	return up, down, mt
 }
 
 type kind int

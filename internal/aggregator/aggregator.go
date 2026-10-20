@@ -40,7 +40,10 @@ type Options struct {
 	Cluster Applier
 	// NodeID is this node; its heartbeats rebuild the retry count after a restart.
 	NodeID string
-	Logger *slog.Logger
+	// Maintenance reports whether m is in a maintenance window at the time of
+	// the outcome. Such outcomes are ignored (FA-MNT-02, FA-ALR-13). Nil means none.
+	Maintenance func(m store.Monitor, at time.Time) bool
+	Logger      *slog.Logger
 }
 
 // Aggregator evaluates outcomes in the order they arrive.
@@ -101,6 +104,15 @@ func (a *Aggregator) process(ctx context.Context, o scheduler.Outcome) {
 	m := o.Monitor
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// A check during maintenance says nothing about the monitor: it proposes
+	// nothing (FA-MNT-02). The cached tracker is dropped, so that the streaks
+	// of the time before the maintenance do not count afterwards; the next
+	// evaluation reloads the state and replays only results since its since.
+	if a.opts.Maintenance != nil && a.opts.Maintenance(m, o.Started) {
+		delete(a.trackers, m.ID)
+		return
+	}
 
 	t, err := a.tracker(ctx, m, o.Started)
 	if err != nil {

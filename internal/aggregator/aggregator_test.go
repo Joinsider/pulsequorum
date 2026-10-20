@@ -176,6 +176,50 @@ func TestRetryCountSurvivesRestart(t *testing.T) {
 	f.expect(store.StatusDown, b+70_000)
 }
 
+// TestMaintenanceIgnoresOutcomes checks that outcomes during maintenance change
+// neither the status nor the incidents, and that evaluation resumes afterwards
+// (FA-MNT-02).
+func TestMaintenanceIgnoresOutcomes(t *testing.T) {
+	f := newFixture(t)
+	m := f.putMonitor(doc(1, 1, false), 0)
+	b := m.CreatedMs
+	inMaintenance := false
+	a := f.aggregator()
+	a.opts.Maintenance = func(store.Monitor, time.Time) bool { return inMaintenance }
+	change := func(from, to store.MonitorStatus, sinceMs int64) {
+		t.Helper()
+		cmd := cluster.NewSetMonitorState(cluster.StateChange{TenantID: cluster.DefaultTenantID, MonitorID: "m1",
+			From: from, To: to, SinceMs: sinceMs})
+		if _, err := f.node.Apply(f.ctx, cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// One failure before the maintenance: with retries 1 it starts a streak.
+	a.process(f.ctx, outcome(m, b+10_000, checker.StatusDown))
+	f.expect(store.StatusPending, b)
+
+	// The controller enters MAINTENANCE; outcomes during it are ignored.
+	change(store.StatusPending, store.StatusMaintenance, b+20_000)
+	inMaintenance = true
+	a.process(f.ctx, outcome(m, b+25_000, checker.StatusDown))
+	a.process(f.ctx, outcome(m, b+30_000, checker.StatusDown))
+	f.expect(store.StatusMaintenance, b+20_000)
+	page, err := f.state.ListIncidents(f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
+	if err != nil || len(page.Items) != 0 {
+		t.Fatalf("open incidents during maintenance = %+v, %v", page.Items, err)
+	}
+
+	// The controller leaves MAINTENANCE at the window end. The failure before
+	// the maintenance must not count: the next failure starts a new streak.
+	inMaintenance = false
+	change(store.StatusMaintenance, store.StatusPending, b+40_000)
+	a.process(f.ctx, outcome(m, b+50_000, checker.StatusDown))
+	f.expect(store.StatusPending, b+40_000)
+	a.process(f.ctx, outcome(m, b+60_000, checker.StatusDown))
+	f.expect(store.StatusDown, b+50_000)
+}
+
 func TestRunAndSync(t *testing.T) {
 	f := newFixture(t)
 	// Only the aggregator's own goroutine is checked; the fixture stops in Cleanup.
