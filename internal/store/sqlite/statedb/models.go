@@ -39,6 +39,19 @@ type Incident struct {
 	Confirmed         int64
 }
 
+type MaintenanceWindow struct {
+	TenantID       string
+	ID             string
+	Name           string
+	Description    string
+	MonitorIdsJson string
+	ScheduleJson   string
+	Active         int64
+	Revision       int64
+	CreatedMs      int64
+	UpdatedMs      int64
+}
+
 type Monitor struct {
 	TenantID          string
 	ID                string

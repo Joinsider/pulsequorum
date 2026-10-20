@@ -259,3 +259,35 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: PruneAlerts :exec
 DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?;
+
+-- name: GetMaintenanceWindow :one
+SELECT * FROM maintenance_windows WHERE tenant_id = ? AND id = ?;
+
+-- name: ListMaintenanceWindows :many
+SELECT * FROM maintenance_windows WHERE tenant_id = ? ORDER BY name, id;
+
+-- name: ListAllMaintenanceWindows :many
+SELECT * FROM maintenance_windows ORDER BY tenant_id, id;
+
+-- name: InsertMaintenanceWindow :exec
+INSERT INTO maintenance_windows (
+    tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: UpdateMaintenanceWindow :execrows
+-- created_ms is kept: it is set once by the create.
+UPDATE maintenance_windows SET
+    name             = sqlc.arg(name),
+    description      = sqlc.arg(description),
+    monitor_ids_json = sqlc.arg(monitor_ids_json),
+    schedule_json    = sqlc.arg(schedule_json),
+    active           = sqlc.arg(active),
+    revision         = sqlc.arg(revision),
+    updated_ms       = sqlc.arg(updated_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id) AND revision = sqlc.arg(expected_revision);
+
+-- name: MaintenanceWindowRevision :one
+SELECT revision FROM maintenance_windows WHERE tenant_id = ? AND id = ?;
+
+-- name: DeleteMaintenanceWindow :execrows
+DELETE FROM maintenance_windows WHERE tenant_id = ? AND id = ?;

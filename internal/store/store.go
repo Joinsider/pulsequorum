@@ -174,6 +174,58 @@ type AlertDelivery struct {
 	UpdatedMs     int64
 }
 
+// Maintenance schedule kinds (FA-MNT-01).
+const (
+	ScheduleOnce      = "once"
+	ScheduleRecurring = "recurring"
+)
+
+// MaintenanceSchedule says when a maintenance window is active. "once" uses
+// StartsMs/EndsMs. "recurring" starts at every match of Cron (5 fields, wall
+// time in Timezone) and lasts DurationMinutes; StartsMs/EndsMs optionally
+// bound the starts (0 = open).
+type MaintenanceSchedule struct {
+	Kind            string `json:"kind"`
+	StartsMs        int64  `json:"startsMs,omitempty"`
+	EndsMs          int64  `json:"endsMs,omitempty"`
+	Cron            string `json:"cron,omitempty"`
+	DurationMinutes int    `json:"durationMinutes,omitempty"`
+	Timezone        string `json:"timezone,omitempty"`
+}
+
+// MaintenanceWindow suppresses alerts and uptime accounting for monitors of
+// its tenant while active (FA-MNT-01/02). Empty MonitorIDs = all monitors of
+// the tenant.
+type MaintenanceWindow struct {
+	TenantID    string
+	ID          string
+	Name        string
+	Description string
+	MonitorIDs  []string
+	Schedule    MaintenanceSchedule
+	Active      bool
+	Revision    uint64
+	CreatedMs   int64
+	UpdatedMs   int64
+}
+
+// Covers reports whether the window applies to the monitor. Windows never
+// apply across tenants.
+func (w MaintenanceWindow) Covers(m Monitor) bool {
+	if w.TenantID == "" || w.TenantID != m.TenantID {
+		return false
+	}
+	if len(w.MonitorIDs) == 0 {
+		return true
+	}
+	for _, id := range w.MonitorIDs {
+		if id == m.ID {
+			return true
+		}
+	}
+	return false
+}
+
 // StatusChange is one entry of the consensus status history.
 type StatusChange struct {
 	SinceMs int64
@@ -247,6 +299,11 @@ type State interface {
 	// DueAlerts returns pending deliveries of all tenants due at nowMs.
 	DueAlerts(ctx context.Context, nowMs int64, limit int) ([]AlertDelivery, error)
 	GetAlert(ctx context.Context, alertKey, channelID string) (AlertDelivery, error)
+	GetMaintenanceWindow(ctx context.Context, tenantID, id string) (MaintenanceWindow, error)
+	// ListMaintenanceWindows returns the tenant's windows ordered by name, ID.
+	ListMaintenanceWindows(ctx context.Context, tenantID string) ([]MaintenanceWindow, error)
+	// ListAllMaintenanceWindows returns the windows of all tenants ordered by tenant ID, ID.
+	ListAllMaintenanceWindows(ctx context.Context) ([]MaintenanceWindow, error)
 
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
@@ -287,6 +344,12 @@ type StateTx interface {
 	UpdateAlert(ctx context.Context, a AlertDelivery) error
 	// PruneAlerts deletes finished deliveries last updated before beforeMs.
 	PruneAlerts(ctx context.Context, beforeMs int64) error
+
+	// PutMaintenanceWindow creates the window if expectedRevision is 0, otherwise
+	// it replaces the window at that revision (ErrConflict on mismatch, ErrNotFound
+	// if missing). Monitor IDs are normalized; created time is kept on replace.
+	PutMaintenanceWindow(ctx context.Context, w MaintenanceWindow, expectedRevision uint64) error
+	DeleteMaintenanceWindow(ctx context.Context, tenantID, id string) error
 
 	// GetMonitorState returns the stored state or ErrNotFound.
 	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)

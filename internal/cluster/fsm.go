@@ -304,6 +304,20 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}
 		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
 
+	case pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW:
+		var doc MaintenanceDocument
+		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+			return nil, invalid("maintenance document: %v", err)
+		}
+		w, err := maintenanceFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.PutMaintenanceWindow(ctx, w, put.GetExpectedRevision()); err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+
 	case pb.EntityKind_ENTITY_KIND_SECRET_KEY:
 		var doc SecretKeyDocument
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
@@ -335,6 +349,11 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 		return json.Marshal(PutResult{ID: del.GetId()})
 	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
 		if err := tx.DeleteChannel(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: del.GetId()})
+	case pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW:
+		if err := tx.DeleteMaintenanceWindow(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
 			return nil, storeError(err)
 		}
 		return json.Marshal(PutResult{ID: del.GetId()})

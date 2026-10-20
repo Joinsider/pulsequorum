@@ -145,6 +145,18 @@ func NewPutMonitor(requestID, tenantID, monitorID string, doc MonitorDocument, e
 	return newPut(requestID, tenantID, pb.EntityKind_ENTITY_KIND_MONITOR, monitorID, doc, expectedRevision)
 }
 
+// MaintenanceDocument is the JSON document of a maintenance window inside
+// PutEntity (FA-MNT-01). Monitor IDs are normalized by the store; the FSM checks
+// only the structure of the schedule, time zones and cron expressions are
+// checked by the API before the command is proposed.
+type MaintenanceDocument struct {
+	Name        string                    `json:"name"`
+	Description string                    `json:"description,omitempty"`
+	MonitorIDs  []string                  `json:"monitorIds,omitempty"`
+	Schedule    store.MaintenanceSchedule `json:"schedule"`
+	Active      bool                      `json:"active"`
+}
+
 // NewPutSecretKey builds a platform-level command that stores a data key.
 func NewPutSecretKey(requestID, keyID string, doc SecretKeyDocument) (*pb.Command, error) {
 	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_SECRET_KEY, keyID, doc, 0)
@@ -160,6 +172,19 @@ func NewDeleteChannel(requestID, tenantID, channelID string) *pb.Command {
 	return &pb.Command{
 		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
 		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, Id: channelID}},
+	}
+}
+
+// NewPutMaintenanceWindow builds a command that creates (expectedRevision 0) or replaces a maintenance window.
+func NewPutMaintenanceWindow(requestID, tenantID, id string, doc MaintenanceDocument, expectedRevision uint64) (*pb.Command, error) {
+	return newPut(requestID, tenantID, pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW, id, doc, expectedRevision)
+}
+
+// NewDeleteMaintenanceWindow builds a command that deletes a maintenance window.
+func NewDeleteMaintenanceWindow(requestID, tenantID, id string) *pb.Command {
+	return &pb.Command{
+		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW, Id: id}},
 	}
 }
 

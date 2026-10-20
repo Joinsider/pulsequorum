@@ -47,6 +47,8 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"MonitorChannels", testMonitorChannels},
 		{"Outbox", testOutbox},
 		{"ChannelTenantIsolation", testChannelTenantIsolation},
+		{"MaintenanceWindows", testMaintenanceWindows},
+		{"MaintenanceTenantIsolation", testMaintenanceTenantIsolation},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -1097,6 +1099,191 @@ func testChannelTenantIsolation(t *testing.T, s store.State) {
 	got, err := s.GetChannel(ctx, tenantA, "ch-a")
 	if err != nil || got.Name != "Channel ch-a" || got.Revision != 1 {
 		t.Errorf("owner's channel changed by other tenant: %+v, %v", got, err)
+	}
+}
+
+// --- Maintenance windows (FA-MNT-01) ------------------------------------------
+
+func newWindow(tenantID, id string) store.MaintenanceWindow {
+	return store.MaintenanceWindow{
+		TenantID:    tenantID,
+		ID:          id,
+		Name:        "Window " + id,
+		Description: "weekly patch",
+		MonitorIDs:  []string{"m2", "m1"},
+		Schedule: store.MaintenanceSchedule{
+			Kind:            store.ScheduleRecurring,
+			Cron:            "0 2 * * 1",
+			DurationMinutes: 60,
+			Timezone:        "Europe/Berlin",
+		},
+		Active:    true,
+		CreatedMs: 1000,
+		UpdatedMs: 1000,
+	}
+}
+
+func putWindow(t *testing.T, s store.State, w store.MaintenanceWindow, expectedRevision uint64) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutMaintenanceWindow(ctx, w, expectedRevision)
+	})
+}
+
+func delWindow(t *testing.T, s store.State, tenantID, id string) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.DeleteMaintenanceWindow(ctx, tenantID, id)
+	})
+}
+
+func testMaintenanceWindows(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+
+	w := newWindow(tenantA, "mw-b")
+	if err := putWindow(t, s, w, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != tenantA || got.ID != "mw-b" || got.Name != w.Name || got.Description != "weekly patch" ||
+		!got.Active || got.Revision != 1 || got.CreatedMs != 1000 || got.UpdatedMs != 1000 {
+		t.Errorf("unexpected window: %+v", got)
+	}
+	if !slices.Equal(got.MonitorIDs, []string{"m1", "m2"}) {
+		t.Errorf("monitor IDs = %v, want normalized [m1 m2]", got.MonitorIDs)
+	}
+	if got.Schedule != w.Schedule {
+		t.Errorf("schedule = %+v, want %+v", got.Schedule, w.Schedule)
+	}
+
+	once := newWindow(tenantA, "mw-once")
+	once.Schedule = store.MaintenanceSchedule{Kind: store.ScheduleOnce, StartsMs: 5000, EndsMs: 9000}
+	once.MonitorIDs = []string{"", "m3", "m3", "m1"}
+	once.Active = false
+	if err := putWindow(t, s, once, 0); err != nil {
+		t.Fatalf("create once: %v", err)
+	}
+	got, err = s.GetMaintenanceWindow(ctx, tenantA, "mw-once")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Schedule != once.Schedule || got.Active || !slices.Equal(got.MonitorIDs, []string{"m1", "m3"}) {
+		t.Errorf("once window = %+v", got)
+	}
+
+	if err := putWindow(t, s, w, 0); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate create error = %v, want ErrConflict", err)
+	}
+
+	w.Name = "Beta"
+	w.Active = false
+	w.MonitorIDs = nil
+	w.UpdatedMs = 2000
+	w.CreatedMs = 9999 // must be ignored on update
+	if err := putWindow(t, s, w, 1); err != nil {
+		t.Fatalf("update at revision 1: %v", err)
+	}
+	got, err = s.GetMaintenanceWindow(ctx, tenantA, "mw-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 2 || got.Name != "Beta" || got.Active || len(got.MonitorIDs) != 0 ||
+		got.UpdatedMs != 2000 || got.CreatedMs != 1000 {
+		t.Errorf("after update: %+v", got)
+	}
+	if err := putWindow(t, s, w, 1); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("stale update error = %v, want ErrConflict", err)
+	}
+	if err := putWindow(t, s, newWindow(tenantA, "missing"), 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update of missing window error = %v, want ErrNotFound", err)
+	}
+
+	// The list is ordered by name, not by creation time.
+	gamma := newWindow(tenantA, "mw-c")
+	gamma.Name = "Gamma"
+	alpha := newWindow(tenantA, "mw-a")
+	alpha.Name = "Alpha"
+	for _, mw := range []store.MaintenanceWindow{gamma, alpha} {
+		if err := putWindow(t, s, mw, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := s.ListMaintenanceWindows(ctx, tenantA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, mw := range list {
+		names = append(names, mw.Name)
+	}
+	if !slices.Equal(names, []string{"Alpha", "Beta", "Gamma", "Window mw-once"}) {
+		t.Errorf("window names = %v, want ordered by name", names)
+	}
+
+	// ListAll returns windows of every tenant ordered by tenant ID and ID.
+	seedTenants(t, s, tenantB)
+	if err := putWindow(t, s, newWindow(tenantB, "mw-x"), 0); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.ListAllMaintenanceWindows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, mw := range all {
+		keys = append(keys, mw.TenantID+"/"+mw.ID)
+	}
+	want := []string{tenantA + "/mw-a", tenantA + "/mw-b", tenantA + "/mw-c", tenantA + "/mw-once", tenantB + "/mw-x"}
+	if !slices.Equal(keys, want) {
+		t.Errorf("ListAll = %v, want %v", keys, want)
+	}
+
+	if err := delWindow(t, s, tenantA, "mw-b"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+	}
+	if err := delWindow(t, s, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("second delete error = %v, want ErrNotFound", err)
+	}
+}
+
+func testMaintenanceTenantIsolation(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	if err := putWindow(t, s, newWindow(tenantA, "mw-a"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.GetMaintenanceWindow(ctx, tenantB, "mw-a"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetMaintenanceWindow across tenants error = %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListMaintenanceWindows(ctx, tenantB); err != nil || len(list) != 0 {
+		t.Errorf("ListMaintenanceWindows for other tenant = %d windows, %v", len(list), err)
+	}
+	if err := delWindow(t, s, tenantB, "mw-a"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-a"); err != nil {
+		t.Errorf("owner's window gone after foreign delete: %v", err)
+	}
+
+	if err := putWindow(t, s, newWindow(tenantB, "mw-a"), 0); err == nil {
+		t.Error("window ID of another tenant reused")
+	}
+	hijack := newWindow(tenantB, "mw-a")
+	hijack.Name = "hijacked"
+	if err := putWindow(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+	}
+	got, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-a")
+	if err != nil || got.Name != "Window mw-a" || got.Revision != 1 {
+		t.Errorf("owner's window changed by other tenant: %+v, %v", got, err)
 	}
 }
 

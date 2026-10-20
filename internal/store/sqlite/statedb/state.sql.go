@@ -43,6 +43,23 @@ func (q *Queries) DeleteChannel(ctx context.Context, arg DeleteChannelParams) (i
 	return result.RowsAffected()
 }
 
+const deleteMaintenanceWindow = `-- name: DeleteMaintenanceWindow :execrows
+DELETE FROM maintenance_windows WHERE tenant_id = ? AND id = ?
+`
+
+type DeleteMaintenanceWindowParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) DeleteMaintenanceWindow(ctx context.Context, arg DeleteMaintenanceWindowParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMaintenanceWindow, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteMonitor = `-- name: DeleteMonitor :execrows
 DELETE FROM monitors WHERE tenant_id = ? AND id = ?
 `
@@ -255,6 +272,33 @@ func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIn
 		&i.Incident.AffectedNodesJson,
 		&i.Incident.Confirmed,
 		&i.MonitorName,
+	)
+	return i, err
+}
+
+const getMaintenanceWindow = `-- name: GetMaintenanceWindow :one
+SELECT tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms FROM maintenance_windows WHERE tenant_id = ? AND id = ?
+`
+
+type GetMaintenanceWindowParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) GetMaintenanceWindow(ctx context.Context, arg GetMaintenanceWindowParams) (MaintenanceWindow, error) {
+	row := q.db.QueryRowContext(ctx, getMaintenanceWindow, arg.TenantID, arg.ID)
+	var i MaintenanceWindow
+	err := row.Scan(
+		&i.TenantID,
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.MonitorIdsJson,
+		&i.ScheduleJson,
+		&i.Active,
+		&i.Revision,
+		&i.CreatedMs,
+		&i.UpdatedMs,
 	)
 	return i, err
 }
@@ -491,6 +535,41 @@ func (q *Queries) InsertIncident(ctx context.Context, arg InsertIncidentParams) 
 	return err
 }
 
+const insertMaintenanceWindow = `-- name: InsertMaintenanceWindow :exec
+INSERT INTO maintenance_windows (
+    tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertMaintenanceWindowParams struct {
+	TenantID       string
+	ID             string
+	Name           string
+	Description    string
+	MonitorIdsJson string
+	ScheduleJson   string
+	Active         int64
+	Revision       int64
+	CreatedMs      int64
+	UpdatedMs      int64
+}
+
+func (q *Queries) InsertMaintenanceWindow(ctx context.Context, arg InsertMaintenanceWindowParams) error {
+	_, err := q.db.ExecContext(ctx, insertMaintenanceWindow,
+		arg.TenantID,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.MonitorIdsJson,
+		arg.ScheduleJson,
+		arg.Active,
+		arg.Revision,
+		arg.CreatedMs,
+		arg.UpdatedMs,
+	)
+	return err
+}
+
 const insertMonitor = `-- name: InsertMonitor :exec
 INSERT INTO monitors (
     tenant_id, id, name, description, type, config_json, interval_s, timeout_s, retries,
@@ -570,6 +649,44 @@ type InsertMonitorTagParams struct {
 func (q *Queries) InsertMonitorTag(ctx context.Context, arg InsertMonitorTagParams) error {
 	_, err := q.db.ExecContext(ctx, insertMonitorTag, arg.TenantID, arg.MonitorID, arg.Tag)
 	return err
+}
+
+const listAllMaintenanceWindows = `-- name: ListAllMaintenanceWindows :many
+SELECT tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms FROM maintenance_windows ORDER BY tenant_id, id
+`
+
+func (q *Queries) ListAllMaintenanceWindows(ctx context.Context) ([]MaintenanceWindow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllMaintenanceWindows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MaintenanceWindow{}
+	for rows.Next() {
+		var i MaintenanceWindow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.MonitorIdsJson,
+			&i.ScheduleJson,
+			&i.Active,
+			&i.Revision,
+			&i.CreatedMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listChannels = `-- name: ListChannels :many
@@ -677,6 +794,44 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			&i.Incident.AffectedNodesJson,
 			&i.Incident.Confirmed,
 			&i.MonitorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMaintenanceWindows = `-- name: ListMaintenanceWindows :many
+SELECT tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms FROM maintenance_windows WHERE tenant_id = ? ORDER BY name, id
+`
+
+func (q *Queries) ListMaintenanceWindows(ctx context.Context, tenantID string) ([]MaintenanceWindow, error) {
+	rows, err := q.db.QueryContext(ctx, listMaintenanceWindows, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MaintenanceWindow{}
+	for rows.Next() {
+		var i MaintenanceWindow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.MonitorIdsJson,
+			&i.ScheduleJson,
+			&i.Active,
+			&i.Revision,
+			&i.CreatedMs,
+			&i.UpdatedMs,
 		); err != nil {
 			return nil, err
 		}
@@ -907,6 +1062,22 @@ func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const maintenanceWindowRevision = `-- name: MaintenanceWindowRevision :one
+SELECT revision FROM maintenance_windows WHERE tenant_id = ? AND id = ?
+`
+
+type MaintenanceWindowRevisionParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) MaintenanceWindowRevision(ctx context.Context, arg MaintenanceWindowRevisionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, maintenanceWindowRevision, arg.TenantID, arg.ID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
 }
 
 const monitorRevision = `-- name: MonitorRevision :one
@@ -1149,6 +1320,51 @@ func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (i
 		arg.WebhookTemplate,
 		arg.EventsJson,
 		arg.IsDefault,
+		arg.Revision,
+		arg.UpdatedMs,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateMaintenanceWindow = `-- name: UpdateMaintenanceWindow :execrows
+UPDATE maintenance_windows SET
+    name             = ?1,
+    description      = ?2,
+    monitor_ids_json = ?3,
+    schedule_json    = ?4,
+    active           = ?5,
+    revision         = ?6,
+    updated_ms       = ?7
+WHERE tenant_id = ?8 AND id = ?9 AND revision = ?10
+`
+
+type UpdateMaintenanceWindowParams struct {
+	Name             string
+	Description      string
+	MonitorIdsJson   string
+	ScheduleJson     string
+	Active           int64
+	Revision         int64
+	UpdatedMs        int64
+	TenantID         string
+	ID               string
+	ExpectedRevision int64
+}
+
+// created_ms is kept: it is set once by the create.
+func (q *Queries) UpdateMaintenanceWindow(ctx context.Context, arg UpdateMaintenanceWindowParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateMaintenanceWindow,
+		arg.Name,
+		arg.Description,
+		arg.MonitorIdsJson,
+		arg.ScheduleJson,
+		arg.Active,
 		arg.Revision,
 		arg.UpdatedMs,
 		arg.TenantID,
