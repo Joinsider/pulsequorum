@@ -225,6 +225,12 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyEnqueueAlert(ctx, tx, cmd, p.EnqueueAlert)
 	case *pb.Command_AckAlertDelivery:
 		return applyAckAlertDelivery(ctx, tx, cmd, p.AckAlertDelivery)
+	case *pb.Command_CreateSession:
+		return applyCreateSession(ctx, tx, cmd, p.CreateSession)
+	case *pb.Command_RotateSession:
+		return applyRotateSession(ctx, tx, cmd, p.RotateSession)
+	case *pb.Command_RevokeSessions:
+		return applyRevokeSessions(ctx, tx, cmd, p.RevokeSessions)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -318,6 +324,12 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}
 		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
 
+	case pb.EntityKind_ENTITY_KIND_USER:
+		return applyPutUser(ctx, tx, cmd, put)
+
+	case pb.EntityKind_ENTITY_KIND_SIGNING_KEY:
+		return applyPutSigningKey(ctx, tx, cmd, put)
+
 	case pb.EntityKind_ENTITY_KIND_SECRET_KEY:
 		var doc SecretKeyDocument
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
@@ -344,6 +356,11 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 	switch del.GetKind() {
 	case pb.EntityKind_ENTITY_KIND_MONITOR:
 		if err := tx.DeleteMonitor(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
+			return nil, storeError(err)
+		}
+		return json.Marshal(PutResult{ID: del.GetId()})
+	case pb.EntityKind_ENTITY_KIND_USER:
+		if err := tx.DeleteUser(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
 			return nil, storeError(err)
 		}
 		return json.Marshal(PutResult{ID: del.GetId()})

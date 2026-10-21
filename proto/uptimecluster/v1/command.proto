@@ -38,6 +38,9 @@ message Command {
     AckAlertDelivery ack_alert_delivery = 16;
     RegisterNode register_node = 17;
     SetFeatureLevel set_feature_level = 18;
+    CreateSession create_session = 19;
+    RotateSession rotate_session = 20;
+    RevokeSessions revoke_sessions = 21;
   }
 }
 
@@ -136,6 +139,30 @@ message AckAlertDelivery {
   uint32 attempt = 7;
   // true if this was the last allowed attempt (ALERT_MAX_ATTEMPTS).
   bool give_up = 8;
+}
+
+// CreateSession starts a refresh token family after a successful login or
+// setup (ADR 0008). Only the token hash is replicated. Records the login time.
+message CreateSession {
+  string user_id = 1;
+  string token_hash = 2;
+  string family_id = 3;
+  int64 expires_ms = 4;
+}
+
+// RotateSession exchanges a refresh token for a new one (FA-AUTH-03). Using a
+// token twice revokes its whole family; the result says which case applied.
+message RotateSession {
+  string old_token_hash = 1;
+  string new_token_hash = 2;
+  int64 expires_ms = 3;
+}
+
+// RevokeSessions revokes one token family (logout) or all sessions of a user
+// (password change, disabling).
+message RevokeSessions {
+  string family_id = 1;
+  string user_id = 2;
 }
 
 // RegisterNode adds or updates a node in the cluster registry.

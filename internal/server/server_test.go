@@ -16,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/api/gen"
+	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/config"
 )
 
@@ -99,9 +101,18 @@ func TestProtectedOperationRequiresAuth(t *testing.T) {
 	}
 }
 
+// allowAll authenticates every request as a tenant admin.
+type allowAll struct{}
+
+func (allowAll) Authenticate(*http.Request) (auth.Principal, error) {
+	return auth.Principal{UserID: "u", TenantID: "default", Roles: []auth.Role{auth.RoleTenantAdmin}}, nil
+}
+
 func TestUnimplementedOperationIs501(t *testing.T) {
 	rec := httptest.NewRecorder()
-	testServer().Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"a","password":"b"}`)))
+	srv := testServer().WithAPI(api.Deps{Authenticator: allowAll{}})
+	// The stream ticket follows in AP-1.13.
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/stream/ticket", strings.NewReader(`{}`)))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rec.Code)
 	}

@@ -190,7 +190,7 @@ func (x NodeInfo_Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NodeInfo_Role.Descriptor instead.
 func (NodeInfo_Role) EnumDescriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10, 0}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{13, 0}
 }
 
 // Command is the envelope of every Raft log entry (ADR 0005). The leader fills
@@ -219,6 +219,9 @@ type Command struct {
 	//	*Command_AckAlertDelivery
 	//	*Command_RegisterNode
 	//	*Command_SetFeatureLevel
+	//	*Command_CreateSession
+	//	*Command_RotateSession
+	//	*Command_RevokeSessions
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -359,6 +362,33 @@ func (x *Command) GetSetFeatureLevel() *SetFeatureLevel {
 	return nil
 }
 
+func (x *Command) GetCreateSession() *CreateSession {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_CreateSession); ok {
+			return x.CreateSession
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRotateSession() *RotateSession {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RotateSession); ok {
+			return x.RotateSession
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRevokeSessions() *RevokeSessions {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RevokeSessions); ok {
+			return x.RevokeSessions
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -391,6 +421,18 @@ type Command_SetFeatureLevel struct {
 	SetFeatureLevel *SetFeatureLevel `protobuf:"bytes,18,opt,name=set_feature_level,json=setFeatureLevel,proto3,oneof"`
 }
 
+type Command_CreateSession struct {
+	CreateSession *CreateSession `protobuf:"bytes,19,opt,name=create_session,json=createSession,proto3,oneof"`
+}
+
+type Command_RotateSession struct {
+	RotateSession *RotateSession `protobuf:"bytes,20,opt,name=rotate_session,json=rotateSession,proto3,oneof"`
+}
+
+type Command_RevokeSessions struct {
+	RevokeSessions *RevokeSessions `protobuf:"bytes,21,opt,name=revoke_sessions,json=revokeSessions,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -404,6 +446,12 @@ func (*Command_AckAlertDelivery) isCommand_Payload() {}
 func (*Command_RegisterNode) isCommand_Payload() {}
 
 func (*Command_SetFeatureLevel) isCommand_Payload() {}
+
+func (*Command_CreateSession) isCommand_Payload() {}
+
+func (*Command_RotateSession) isCommand_Payload() {}
+
+func (*Command_RevokeSessions) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -915,6 +963,192 @@ func (x *AckAlertDelivery) GetGiveUp() bool {
 	return false
 }
 
+// CreateSession starts a refresh token family after a successful login or
+// setup (ADR 0008). Only the token hash is replicated. Records the login time.
+type CreateSession struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	TokenHash     string                 `protobuf:"bytes,2,opt,name=token_hash,json=tokenHash,proto3" json:"token_hash,omitempty"`
+	FamilyId      string                 `protobuf:"bytes,3,opt,name=family_id,json=familyId,proto3" json:"family_id,omitempty"`
+	ExpiresMs     int64                  `protobuf:"varint,4,opt,name=expires_ms,json=expiresMs,proto3" json:"expires_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateSession) Reset() {
+	*x = CreateSession{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSession) ProtoMessage() {}
+
+func (x *CreateSession) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSession.ProtoReflect.Descriptor instead.
+func (*CreateSession) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CreateSession) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CreateSession) GetTokenHash() string {
+	if x != nil {
+		return x.TokenHash
+	}
+	return ""
+}
+
+func (x *CreateSession) GetFamilyId() string {
+	if x != nil {
+		return x.FamilyId
+	}
+	return ""
+}
+
+func (x *CreateSession) GetExpiresMs() int64 {
+	if x != nil {
+		return x.ExpiresMs
+	}
+	return 0
+}
+
+// RotateSession exchanges a refresh token for a new one (FA-AUTH-03). Using a
+// token twice revokes its whole family; the result says which case applied.
+type RotateSession struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OldTokenHash  string                 `protobuf:"bytes,1,opt,name=old_token_hash,json=oldTokenHash,proto3" json:"old_token_hash,omitempty"`
+	NewTokenHash  string                 `protobuf:"bytes,2,opt,name=new_token_hash,json=newTokenHash,proto3" json:"new_token_hash,omitempty"`
+	ExpiresMs     int64                  `protobuf:"varint,3,opt,name=expires_ms,json=expiresMs,proto3" json:"expires_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateSession) Reset() {
+	*x = RotateSession{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateSession) ProtoMessage() {}
+
+func (x *RotateSession) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateSession.ProtoReflect.Descriptor instead.
+func (*RotateSession) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RotateSession) GetOldTokenHash() string {
+	if x != nil {
+		return x.OldTokenHash
+	}
+	return ""
+}
+
+func (x *RotateSession) GetNewTokenHash() string {
+	if x != nil {
+		return x.NewTokenHash
+	}
+	return ""
+}
+
+func (x *RotateSession) GetExpiresMs() int64 {
+	if x != nil {
+		return x.ExpiresMs
+	}
+	return 0
+}
+
+// RevokeSessions revokes one token family (logout) or all sessions of a user
+// (password change, disabling).
+type RevokeSessions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FamilyId      string                 `protobuf:"bytes,1,opt,name=family_id,json=familyId,proto3" json:"family_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessions) Reset() {
+	*x = RevokeSessions{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessions) ProtoMessage() {}
+
+func (x *RevokeSessions) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessions.ProtoReflect.Descriptor instead.
+func (*RevokeSessions) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RevokeSessions) GetFamilyId() string {
+	if x != nil {
+		return x.FamilyId
+	}
+	return ""
+}
+
+func (x *RevokeSessions) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
 // RegisterNode adds or updates a node in the cluster registry.
 type RegisterNode struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -925,7 +1159,7 @@ type RegisterNode struct {
 
 func (x *RegisterNode) Reset() {
 	*x = RegisterNode{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +1171,7 @@ func (x *RegisterNode) String() string {
 func (*RegisterNode) ProtoMessage() {}
 
 func (x *RegisterNode) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[8]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +1184,7 @@ func (x *RegisterNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNode.ProtoReflect.Descriptor instead.
 func (*RegisterNode) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{8}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RegisterNode) GetNode() *NodeInfo {
@@ -970,7 +1204,7 @@ type SetFeatureLevel struct {
 
 func (x *SetFeatureLevel) Reset() {
 	*x = SetFeatureLevel{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1216,7 @@ func (x *SetFeatureLevel) String() string {
 func (*SetFeatureLevel) ProtoMessage() {}
 
 func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[9]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1229,7 @@ func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFeatureLevel.ProtoReflect.Descriptor instead.
 func (*SetFeatureLevel) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{9}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SetFeatureLevel) GetLevel() uint32 {
@@ -1029,7 +1263,7 @@ type NodeInfo struct {
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1041,7 +1275,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[10]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1054,7 +1288,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{10}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *NodeInfo) GetId() string {
@@ -1138,7 +1372,7 @@ var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xd0\x05\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xb1\a\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -1155,7 +1389,10 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\renqueue_alert\x18\x0f \x01(\v2\x1e.uptimecluster.v1.EnqueueAlertH\x00R\fenqueueAlert\x12R\n" +
 	"\x12ack_alert_delivery\x18\x10 \x01(\v2\".uptimecluster.v1.AckAlertDeliveryH\x00R\x10ackAlertDelivery\x12E\n" +
 	"\rregister_node\x18\x11 \x01(\v2\x1e.uptimecluster.v1.RegisterNodeH\x00R\fregisterNode\x12O\n" +
-	"\x11set_feature_level\x18\x12 \x01(\v2!.uptimecluster.v1.SetFeatureLevelH\x00R\x0fsetFeatureLevelB\t\n" +
+	"\x11set_feature_level\x18\x12 \x01(\v2!.uptimecluster.v1.SetFeatureLevelH\x00R\x0fsetFeatureLevel\x12H\n" +
+	"\x0ecreate_session\x18\x13 \x01(\v2\x1f.uptimecluster.v1.CreateSessionH\x00R\rcreateSession\x12H\n" +
+	"\x0erotate_session\x18\x14 \x01(\v2\x1f.uptimecluster.v1.RotateSessionH\x00R\rrotateSession\x12K\n" +
+	"\x0frevoke_sessions\x18\x15 \x01(\v2 .uptimecluster.v1.RevokeSessionsH\x00R\x0erevokeSessionsB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -1202,7 +1439,22 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x05error\x18\x05 \x01(\tR\x05error\x12&\n" +
 	"\x0fnext_attempt_ms\x18\x06 \x01(\x03R\rnextAttemptMs\x12\x18\n" +
 	"\aattempt\x18\a \x01(\rR\aattempt\x12\x17\n" +
-	"\agive_up\x18\b \x01(\bR\x06giveUp\">\n" +
+	"\agive_up\x18\b \x01(\bR\x06giveUp\"\x83\x01\n" +
+	"\rCreateSession\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
+	"\n" +
+	"token_hash\x18\x02 \x01(\tR\ttokenHash\x12\x1b\n" +
+	"\tfamily_id\x18\x03 \x01(\tR\bfamilyId\x12\x1d\n" +
+	"\n" +
+	"expires_ms\x18\x04 \x01(\x03R\texpiresMs\"z\n" +
+	"\rRotateSession\x12$\n" +
+	"\x0eold_token_hash\x18\x01 \x01(\tR\foldTokenHash\x12$\n" +
+	"\x0enew_token_hash\x18\x02 \x01(\tR\fnewTokenHash\x12\x1d\n" +
+	"\n" +
+	"expires_ms\x18\x03 \x01(\x03R\texpiresMs\"F\n" +
+	"\x0eRevokeSessions\x12\x1b\n" +
+	"\tfamily_id\x18\x01 \x01(\tR\bfamilyId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\">\n" +
 	"\fRegisterNode\x12.\n" +
 	"\x04node\x18\x01 \x01(\v2\x1a.uptimecluster.v1.NodeInfoR\x04node\"'\n" +
 	"\x0fSetFeatureLevel\x12\x14\n" +
@@ -1254,7 +1506,7 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),          // 0: uptimecluster.v1.EntityKind
 	(Actor_Kind)(0),          // 1: uptimecluster.v1.Actor.Kind
@@ -1267,11 +1519,14 @@ var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(*IncidentStart)(nil),    // 8: uptimecluster.v1.IncidentStart
 	(*EnqueueAlert)(nil),     // 9: uptimecluster.v1.EnqueueAlert
 	(*AckAlertDelivery)(nil), // 10: uptimecluster.v1.AckAlertDelivery
-	(*RegisterNode)(nil),     // 11: uptimecluster.v1.RegisterNode
-	(*SetFeatureLevel)(nil),  // 12: uptimecluster.v1.SetFeatureLevel
-	(*NodeInfo)(nil),         // 13: uptimecluster.v1.NodeInfo
-	nil,                      // 14: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),          // 15: uptimecluster.v1.ErrorClass
+	(*CreateSession)(nil),    // 11: uptimecluster.v1.CreateSession
+	(*RotateSession)(nil),    // 12: uptimecluster.v1.RotateSession
+	(*RevokeSessions)(nil),   // 13: uptimecluster.v1.RevokeSessions
+	(*RegisterNode)(nil),     // 14: uptimecluster.v1.RegisterNode
+	(*SetFeatureLevel)(nil),  // 15: uptimecluster.v1.SetFeatureLevel
+	(*NodeInfo)(nil),         // 16: uptimecluster.v1.NodeInfo
+	nil,                      // 17: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),          // 18: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -1280,21 +1535,24 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	7,  // 3: uptimecluster.v1.Command.set_monitor_state:type_name -> uptimecluster.v1.SetMonitorState
 	9,  // 4: uptimecluster.v1.Command.enqueue_alert:type_name -> uptimecluster.v1.EnqueueAlert
 	10, // 5: uptimecluster.v1.Command.ack_alert_delivery:type_name -> uptimecluster.v1.AckAlertDelivery
-	11, // 6: uptimecluster.v1.Command.register_node:type_name -> uptimecluster.v1.RegisterNode
-	12, // 7: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
-	1,  // 8: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 9: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 10: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 11: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	15, // 12: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	13, // 13: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 14: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	14, // 15: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	14, // 6: uptimecluster.v1.Command.register_node:type_name -> uptimecluster.v1.RegisterNode
+	15, // 7: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
+	11, // 8: uptimecluster.v1.Command.create_session:type_name -> uptimecluster.v1.CreateSession
+	12, // 9: uptimecluster.v1.Command.rotate_session:type_name -> uptimecluster.v1.RotateSession
+	13, // 10: uptimecluster.v1.Command.revoke_sessions:type_name -> uptimecluster.v1.RevokeSessions
+	1,  // 11: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 12: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 13: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 14: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	18, // 15: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	16, // 16: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 17: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	17, // 18: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -1311,6 +1569,9 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_AckAlertDelivery)(nil),
 		(*Command_RegisterNode)(nil),
 		(*Command_SetFeatureLevel)(nil),
+		(*Command_CreateSession)(nil),
+		(*Command_RotateSession)(nil),
+		(*Command_RevokeSessions)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1318,7 +1579,7 @@ func file_uptimecluster_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

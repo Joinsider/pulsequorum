@@ -23,6 +23,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/aggregator"
 	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api"
+	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
@@ -164,7 +165,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bg.Go(func() { metrics.DB().RunCheckpointer(ctx, checkpointInterval, log) })
 
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
-	bg.Go(func() { bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, stop) })
+	var local *auth.Local
+	if cfg.AuthMode == config.AuthLocal {
+		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log})
+	}
+	bg.Go(func() { bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) })
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
 
 	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, metrics, nodeID, log)
@@ -211,11 +216,13 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
 	}
-	// Protected endpoints answer 401 until local authentication (AP-1.12).
 	apiDeps := api.Deps{
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
+	}
+	if local != nil {
+		apiDeps.Local, apiDeps.Authenticator = local, local
 	}
 	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(raftNode.Ready).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.
@@ -229,7 +236,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // leader exists, then loads the keyring. A master key that does not match the
 // cluster stops the node (ADR 0011).
 func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, n *cluster.Node,
-	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, stop context.CancelCauseFunc) {
+	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, local *auth.Local, stop context.CancelCauseFunc) {
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if cfg.AuthMode == config.AuthLocal {
@@ -251,6 +258,24 @@ func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, 
 		return
 	}
 	log.Info("data keys loaded", "active_key", keyring.ActiveKeyID())
+	if local == nil {
+		return
+	}
+	if err := local.EnsureSigningKey(bootCtx); err != nil && ctx.Err() == nil {
+		log.Error("could not create the access token signing key", "err", err)
+	}
+	// FA-AUTH-01: without any user, a one-time setup token is printed once.
+	// It is the only secret ever logged; it expires after one hour and only
+	// its hash is kept in memory.
+	token, ok, err := local.PrepareSetup(bootCtx)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		log.Error("could not prepare the setup", "err", err)
+	case ok:
+		log.Warn("no user exists yet: create the first admin within 1 hour via POST /api/v1/auth/setup (or the web UI) with this one-time token",
+			"setup_token", token)
+	}
+	local.RunKeyMaintenance(ctx, n.IsLeader, time.Hour)
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

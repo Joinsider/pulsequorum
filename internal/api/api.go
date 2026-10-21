@@ -59,6 +59,8 @@ type Deps struct {
 	Keyring alert.Keyring
 	// Alerts validates channels and sends test messages.
 	Alerts *alert.Sender
+	// Local is the local authentication (AUTH_MODE=local); nil otherwise.
+	Local *auth.Local
 }
 
 // Handlers implements gen.StrictServerInterface.

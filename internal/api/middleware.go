@@ -37,16 +37,36 @@ func publicOperations() (map[string]bool, error) {
 func authenticate(public map[string]bool, authn auth.Authenticator) gen.StrictMiddlewareFunc {
 	return func(next gen.StrictHandlerFunc, operationID string) gen.StrictHandlerFunc {
 		if public[lowerFirst(operationID)] {
-			return next
+			return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+				return next(withHTTP(ctx, w, r), w, r, request)
+			}
 		}
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 			p, err := authn.Authenticate(r)
 			if err != nil {
 				return nil, &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized", Detail: err.Error()}
 			}
-			return next(auth.WithPrincipal(ctx, p), w, r, request)
+			return next(withHTTP(auth.WithPrincipal(ctx, p), w, r), w, r, request)
 		}
 	}
+}
+
+type httpKey struct{}
+
+type httpPair struct {
+	w http.ResponseWriter
+	r *http.Request
+}
+
+// withHTTP gives handlers access to cookies, the client address and response
+// headers that the strict handler types do not model (auth endpoints).
+func withHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
+	return context.WithValue(ctx, httpKey{}, httpPair{w: w, r: r})
+}
+
+func httpFrom(ctx context.Context) (http.ResponseWriter, *http.Request, bool) {
+	p, ok := ctx.Value(httpKey{}).(httpPair)
+	return p.w, p.r, ok
 }
 
 func lowerFirst(s string) string {

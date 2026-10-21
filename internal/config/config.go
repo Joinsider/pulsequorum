@@ -63,6 +63,8 @@ type Config struct {
 	RetentionRaw    time.Duration
 	RetentionHourly time.Duration
 	RetentionDaily  time.Duration
+	// AuthCookieDomain is the Domain of the refresh cookie; empty = host-only cookie (ADR 0008).
+	AuthCookieDomain string
 	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
 	AlertMaxAttempts int
 	LogLevel         slog.Level
@@ -182,6 +184,11 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RetentionRaw = days("RETENTION_RAW_DAYS", "30", 3)
 	cfg.RetentionHourly = days("RETENTION_HOURLY_DAYS", "365", 1)
 	cfg.RetentionDaily = days("RETENTION_DAILY_DAYS", "0", 0)
+
+	cfg.AuthCookieDomain = get("AUTH_COOKIE_DOMAIN", "")
+	if strings.ContainsAny(cfg.AuthCookieDomain, " ;,/:") {
+		errs = append(errs, fmt.Errorf("AUTH_COOKIE_DOMAIN: must be a domain name, got %q", cfg.AuthCookieDomain))
+	}
 
 	attemptsRaw := get("ALERT_MAX_ATTEMPTS", "10")
 	attempts, err := strconv.Atoi(attemptsRaw)
