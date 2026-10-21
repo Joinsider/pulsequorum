@@ -1,0 +1,162 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<section class="dashboard" *transloco="let t">
+  <app-page-header [title]="t('dashboard.title')">
+    @if (canEdit()) {
+      <a mat-flat-button routerLink="/monitors/new">
+        <app-icon name="add" size="1.125rem" />
+        {{ t('dashboard.newMonitor') }}
+      </a>
+    }
+  </app-page-header>
+
+  <div class="toolbar">
+    <div class="chips" role="group" [attr.aria-label]="t('dashboard.filterByStatus')">
+      <button
+        type="button"
+        class="chip"
+        [attr.aria-pressed]="statusFilter() === null"
+        [class.chip--active]="statusFilter() === null"
+        (click)="setStatusFilter(null)"
+      >
+        {{ t('dashboard.all') }}
+        <span class="chip__count">{{ total() }}</span>
+      </button>
+      @for (status of statuses; track status) {
+        <button
+          type="button"
+          class="chip"
+          [style.--chip-color]="statusColor(status)"
+          [attr.aria-pressed]="statusFilter() === status"
+          [class.chip--active]="statusFilter() === status"
+          (click)="setStatusFilter(status)"
+        >
+          {{ t('status.' + status) }}
+          <span class="chip__count">{{ counts()[status] }}</span>
+        </button>
+      }
+    </div>
+
+    <input
+      class="search"
+      type="search"
+      [attr.aria-label]="t('dashboard.search')"
+      [placeholder]="t('dashboard.searchPlaceholder')"
+      [value]="query()"
+      (input)="onSearch($event)"
+    />
+  </div>
+
+  @if (actionFailed()) {
+    <p class="notice" role="alert">{{ t('dashboard.actionFailed') }}</p>
+  }
+
+  @if (loadState() === 'loading' && total() === 0) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadState() === 'error' && total() === 0) {
+    <div class="state" role="alert">
+      <p>{{ t('dashboard.loadFailed') }}</p>
+      <button mat-stroked-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (total() === 0) {
+    <div class="state">
+      <p>{{ t('dashboard.empty') }}</p>
+      @if (canEdit()) {
+        <a mat-flat-button routerLink="/monitors/new">{{ t('dashboard.newMonitor') }}</a>
+      }
+    </div>
+  } @else if (rows().length === 0) {
+    <p class="state">{{ t('dashboard.emptyFiltered') }}</p>
+  } @else {
+    <table class="monitors">
+      <caption class="sr-only">
+        {{
+          t('dashboard.title')
+        }}
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t('dashboard.columns.status') }}</th>
+          <th scope="col">{{ t('dashboard.columns.name') }}</th>
+          <th scope="col">{{ t('dashboard.columns.type') }}</th>
+          <th scope="col">{{ t('dashboard.columns.target') }}</th>
+          <th scope="col" class="num">{{ t('dashboard.columns.uptime') }}</th>
+          <th scope="col" class="num">{{ t('dashboard.columns.latency') }}</th>
+          <th scope="col">{{ t('dashboard.columns.lastCheck') }}</th>
+          @if (canEdit()) {
+            <th scope="col" class="actions">
+              <span class="sr-only">{{ t('dashboard.columns.actions') }}</span>
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.monitor.id) {
+          <tr>
+            <td class="cell cell--status" [attr.data-label]="t('dashboard.columns.status')">
+              <app-status-badge [status]="row.monitor.status" />
+            </td>
+            <th scope="row" class="cell cell--name">
+              <a class="name" [routerLink]="['/monitors', row.monitor.id]">{{
+                row.monitor.name
+              }}</a>
+            </th>
+            <td class="cell" [attr.data-label]="t('dashboard.columns.type')">
+              <code>{{ row.monitor.type }}</code>
+            </td>
+            <td class="cell cell--target" [attr.data-label]="t('dashboard.columns.target')">
+              {{ row.target ?? '–' }}
+            </td>
+            <td class="cell num" [attr.data-label]="t('dashboard.columns.uptime')">
+              {{ formatPercent(row.monitor.uptime24h) }}
+            </td>
+            <td class="cell num" [attr.data-label]="t('dashboard.columns.latency')">
+              {{ formatLatency(row.monitor.lastLatencyMs) }}
+            </td>
+            <td class="cell" [attr.data-label]="t('dashboard.columns.lastCheck')">
+              @if (row.monitor.lastCheckAt; as checkedAt) {
+                <time [attr.datetime]="checkedAt" [title]="checkedAt">
+                  {{ checkedAt | relativeTime }}
+                </time>
+              } @else {
+                <span class="muted">{{ t('dashboard.neverChecked') }}</span>
+              }
+            </td>
+            @if (canEdit()) {
+              <td class="cell actions" [attr.data-label]="t('dashboard.columns.actions')">
+                <a
+                  mat-icon-button
+                  [routerLink]="['/monitors', row.monitor.id]"
+                  [attr.aria-label]="t('dashboard.actions.open', { name: row.monitor.name })"
+                  [title]="t('dashboard.actions.open', { name: row.monitor.name })"
+                >
+                  <app-icon name="openInNew" />
+                </a>
+                <button
+                  mat-icon-button
+                  type="button"
+                  [disabled]="pending().has(row.monitor.id)"
+                  [attr.aria-label]="
+                    isPaused(row.monitor)
+                      ? t('dashboard.actions.resume', { name: row.monitor.name })
+                      : t('dashboard.actions.pause', { name: row.monitor.name })
+                  "
+                  (click)="togglePause(row.monitor)"
+                >
+                  <app-icon [name]="isPaused(row.monitor) ? 'playArrow' : 'pause'" />
+                </button>
+                <a
+                  mat-icon-button
+                  [routerLink]="['/monitors', row.monitor.id, 'edit']"
+                  [attr.aria-label]="t('dashboard.actions.edit', { name: row.monitor.name })"
+                  [title]="t('dashboard.actions.edit', { name: row.monitor.name })"
+                >
+                  <app-icon name="edit" />
+                </a>
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>

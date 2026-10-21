@@ -1,0 +1,29 @@
+{
+  "title": "Monitore",
+  "newMonitor": "Neuer Monitor",
+  "all": "Alle",
+  "filterByStatus": "Nach Status filtern",
+  "search": "Monitore nach Name suchen",
+  "searchPlaceholder": "Nach Name suchen",
+  "columns": {
+    "status": "Status",
+    "name": "Name",
+    "type": "Typ",
+    "target": "Ziel",
+    "uptime": "Verfügbarkeit 24 h",
+    "latency": "Latenz (ms)",
+    "lastCheck": "Letzte Prüfung",
+    "actions": "Aktionen"
+  },
+  "actions": {
+    "open": "{{ name }} öffnen",
+    "pause": "{{ name }} pausieren",
+    "resume": "{{ name }} fortsetzen",
+    "edit": "{{ name }} bearbeiten"
+  },
+  "neverChecked": "noch nie",
+  "empty": "Noch keine Monitore vorhanden. Lege den ersten an, um mit der Überwachung zu beginnen.",
+  "emptyFiltered": "Kein Monitor entspricht dem aktuellen Filter.",
+  "loadFailed": "Die Monitore konnten nicht geladen werden.",
+  "actionFailed": "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut."
+}

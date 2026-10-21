@@ -1,0 +1,29 @@
+{
+  "title": "Monitors",
+  "newMonitor": "New monitor",
+  "all": "All",
+  "filterByStatus": "Filter by status",
+  "search": "Search monitors by name",
+  "searchPlaceholder": "Search by name",
+  "columns": {
+    "status": "Status",
+    "name": "Name",
+    "type": "Type",
+    "target": "Target",
+    "uptime": "Uptime 24 h",
+    "latency": "Latency (ms)",
+    "lastCheck": "Last check",
+    "actions": "Actions"
+  },
+  "actions": {
+    "open": "Open {{ name }}",
+    "pause": "Pause {{ name }}",
+    "resume": "Resume {{ name }}",
+    "edit": "Edit {{ name }}"
+  },
+  "neverChecked": "never",
+  "empty": "No monitors yet. Create the first one to start monitoring.",
+  "emptyFiltered": "No monitors match the current filter.",
+  "loadFailed": "The monitors could not be loaded.",
+  "actionFailed": "The action could not be completed. Please try again."
+}
