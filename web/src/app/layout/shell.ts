@@ -100,8 +100,12 @@ export class Shell {
 
   protected readonly theme = signal<ThemeChoice>(readStoredTheme());
   protected readonly themeIcon = computed(() => THEME_ICON[this.theme()]);
+  /** Emits when the active language's translations are loaded, so labels built in code update too. */
+  private readonly translations = toSignal(this.transloco.selectTranslation(), {
+    initialValue: null,
+  });
   protected readonly themeLabel = computed(() => {
-    this.lang();
+    this.translations();
     return this.transloco.translate('shell.theme', {
       mode: this.transloco.translate(`shell.themes.${this.theme()}`),
     });
