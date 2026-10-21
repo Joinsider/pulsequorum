@@ -43,11 +43,22 @@ type env struct {
 	handler http.Handler
 	metrics *sqlite.MetricsStore
 	node    *cluster.Node
+	state   store.State
 	// now overrides the API clock when set.
 	now time.Time
+	// local and setupToken are set when the env uses real local authentication.
+	local      *auth.Local
+	setupToken string
 }
 
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWith(t, false)
+}
+
+// newEnvWith builds an env. With localAuth, the API uses real local
+// authentication (ADR 0008) instead of the X-Test-Principal header.
+func newEnvWith(t *testing.T, localAuth bool) *env {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
@@ -80,13 +91,14 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
-	e := &env{t: t, metrics: metrics, node: node}
-	mux := http.NewServeMux()
-	Register(mux, config.Config{NodeName: "n1", Role: config.RoleVoter}, log, Deps{
+	e := &env{t: t, metrics: metrics, node: node, state: state}
+	cfg := config.Config{NodeName: "n1", Role: config.RoleVoter}
+	kr := newTestKeyring(t)
+	deps := Deps{
 		State: state, Metrics: metrics, Cluster: node, Registry: checker.Default,
 		CheckEnv: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"}, NodeID: "n1",
 		Authenticator: headerAuth{},
-		Keyring:       newTestKeyring(t),
+		Keyring:       kr,
 		Alerts:        alert.NewSender(&checker.Dialer{}, log),
 		Now: func() time.Time {
 			if e.now.IsZero() {
@@ -94,7 +106,22 @@ func newEnv(t *testing.T) *env {
 			}
 			return e.now
 		},
-	})
+	}
+	if localAuth {
+		cfg.AuthMode = config.AuthLocal
+		local := auth.NewLocal(auth.LocalOptions{State: state, Cluster: node, Keyring: kr, Logger: log})
+		if err := local.EnsureSigningKey(ctx); err != nil {
+			t.Fatal(err)
+		}
+		token, ok, err := local.PrepareSetup(ctx)
+		if err != nil || !ok {
+			t.Fatalf("prepare setup: ok=%v err=%v", ok, err)
+		}
+		e.local, e.setupToken = local, token
+		deps.Local, deps.Authenticator = local, local
+	}
+	mux := http.NewServeMux()
+	Register(mux, cfg, log, deps)
 	e.handler = mux
 	return e
 }

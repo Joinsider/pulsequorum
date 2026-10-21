@@ -51,6 +51,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"MaintenanceTenantIsolation", testMaintenanceTenantIsolation},
 		{"Users", testUsers},
 		{"UserTenantIsolation", testUserTenantIsolation},
+		{"EnabledUsersWithRole", testEnabledUsersWithRole},
 		{"SigningKeys", testSigningKeys},
 		{"Sessions", testSessions},
 	}
@@ -1924,5 +1925,58 @@ func testCompaction(t *testing.T, m store.Metrics) {
 	}
 	if n, err := m.DeleteLatencyMinutesBefore(ctx, 1, 10); err != nil || n != 1 {
 		t.Fatalf("deleted minutes = %d, %v", n, err)
+	}
+}
+
+func testEnabledUsersWithRole(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	admin1 := newUser(tenantA, "a1", "admin1")
+	admin1.Role = "tenant-admin"
+	admin2 := newUser(tenantA, "a2", "admin2")
+	admin2.Role = "tenant-admin"
+	admin2.Disabled = true
+	editor := newUser(tenantA, "e1", "editor")
+	editor.Role = "tenant-editor"
+	other := newUser(tenantB, "b1", "other")
+	other.Role = "tenant-admin"
+	for _, u := range []store.User{admin1, admin2, editor, other} {
+		if err := putUser(t, s, u, 0); err != nil {
+			t.Fatalf("create %s: %v", u.ID, err)
+		}
+	}
+
+	count := func(tenantID, role, exclude string) int {
+		t.Helper()
+		var n int
+		err := s.Update(ctx, func(tx store.StateTx) error {
+			var err error
+			n, err = tx.CountEnabledUsersWithRole(ctx, tenantID, role, exclude)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("count(%s, %s, %q): %v", tenantID, role, exclude, err)
+		}
+		return n
+	}
+	tests := []struct {
+		name                    string
+		tenantID, role, exclude string
+		want                    int
+	}{
+		{"enabled admin counted, disabled one not", tenantA, "tenant-admin", "", 1},
+		{"excluded user not counted", tenantA, "tenant-admin", "a1", 0},
+		{"excluding a disabled user changes nothing", tenantA, "tenant-admin", "a2", 1},
+		{"other tenant not counted", tenantB, "tenant-admin", "", 1},
+		{"other role not counted", tenantA, "tenant-editor", "", 1},
+		{"role without users", tenantA, "tenant-viewer", "", 0},
+		{"unknown role", tenantA, "root", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := count(tt.tenantID, tt.role, tt.exclude); got != tt.want {
+				t.Errorf("count = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

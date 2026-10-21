@@ -636,6 +636,7 @@ Protobuf-Definitionen in `proto/`:
 | `CLUSTER_JOIN` / `CLUSTER_SEEDS` | – | Beitritt (Voter) / Seeds (Probe) |
 | `CLUSTER_JOIN_TOKEN` | – | Join-Token |
 | `AUTH_MODE` | `local` | `local` \| `zitadel` |
+| `AUTH_COOKIE_DOMAIN` | – | Domain des Refresh-Cookies (leer = nur dieser Host, ADR 0008) |
 | `ZITADEL_ISSUER` / `ZITADEL_AUDIENCE` | – | OIDC |
 | `STORAGE_BACKEND` | `embedded` | `embedded` \| `postgres` |
 | `DATABASE_URL` | – | PostgreSQL |

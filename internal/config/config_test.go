@@ -137,3 +137,22 @@ func TestSSRFProtectionEnabled(t *testing.T) {
 		}
 	}
 }
+
+// TestAuthCookieDomain covers ADR 0008: empty means a host-only refresh cookie,
+// a domain is accepted, anything that is not a bare domain name is rejected.
+func TestAuthCookieDomain(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil || cfg.AuthCookieDomain != "" {
+		t.Fatalf("default = %q, %v; want empty", cfg.AuthCookieDomain, err)
+	}
+	cfg, err = Load(env(map[string]string{"NODE_NAME": "n1", "AUTH_COOKIE_DOMAIN": "example.com"}))
+	if err != nil || cfg.AuthCookieDomain != "example.com" {
+		t.Fatalf("AUTH_COOKIE_DOMAIN = %q, %v; want example.com", cfg.AuthCookieDomain, err)
+	}
+	for _, v := range []string{"a b", "x;y", "http://x", "example.com/path", "a,b"} {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "AUTH_COOKIE_DOMAIN": v}))
+		if err == nil || !strings.Contains(err.Error(), "AUTH_COOKIE_DOMAIN") {
+			t.Errorf("AUTH_COOKIE_DOMAIN=%q: error = %v, want AUTH_COOKIE_DOMAIN error", v, err)
+		}
+	}
+}
