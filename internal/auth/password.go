@@ -95,7 +95,7 @@ func decodeHash(encoded string) (Argon2Params, []byte, []byte, error) {
 		return Argon2Params{}, nil, nil, ErrInvalidHash
 	}
 	// Bounds keep a corrupted hash from exhausting memory or CPU.
-	if p.MemoryKiB < 8 || p.MemoryKiB > 1<<20 || p.Time < 1 || p.Time > 16 || p.Threads < 1 || p.Threads > 16 {
+	if p.MemoryKiB < 8 || p.MemoryKiB > 256*1024 || p.Time < 1 || p.Time > 16 || p.Threads < 1 || p.Threads > 4 {
 		return Argon2Params{}, nil, nil, ErrInvalidHash
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])

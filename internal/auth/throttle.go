@@ -9,9 +9,11 @@ import (
 )
 
 // Throttle slows down password guessing per account and per IP (FA-AUTH-04,
-// PF-33). After Free failures each further failure doubles the wait, up to
-// Max. Entries expire after Max without failures. State is per node; in a
-// cluster an attacker gains at most a factor of the number of voters.
+// PF-33). From the Free-th failure on, every failure imposes a wait that
+// doubles from Base up to Max (ADR 0008: "5 Fehlversuche → progressive
+// Verzögerung"). Failures are forgotten after Max without a new failure.
+// State is per node; in a cluster an attacker gains at most a factor of the
+// number of voters.
 type Throttle struct {
 	Free  int           // failures without delay
 	Base  time.Duration // first delay
@@ -59,9 +61,12 @@ func (t *Throttle) Fail(key string, now time.Time) {
 		e = &throttleEntry{}
 		t.entries[key] = e
 	}
+	if !e.last.IsZero() && now.Sub(e.last) > t.Max && !now.Before(e.until) {
+		*e = throttleEntry{}
+	}
 	e.failures++
 	e.last = now
-	if over := e.failures - t.Free; over > 0 {
+	if over := e.failures - t.Free + 1; over > 0 {
 		d := t.Base
 		for i := 1; i < over && d < t.Max; i++ {
 			d *= 2

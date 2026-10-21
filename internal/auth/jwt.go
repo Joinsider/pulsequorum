@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -136,7 +137,8 @@ func strictUnmarshal(enc *base64.Encoding, segment string, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return err
 	}
-	if dec.More() {
+	// More() misses a stray '}' or ']'; only EOF is acceptable after the value.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("trailing data")
 	}
 	return nil

@@ -82,6 +82,16 @@ func (t *stateTx) CountUsers(ctx context.Context) (int, error) {
 	return countUsers(ctx, t.q)
 }
 
+func (t *stateTx) CountEnabledUsersWithRole(ctx context.Context, tenantID, role, excludeUserID string) (int, error) {
+	n, err := t.q.CountEnabledUsersWithRole(ctx, statedb.CountEnabledUsersWithRoleParams{
+		TenantID: tenantID, Role: role, ID: excludeUserID,
+	})
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	return int(n), nil
+}
+
 func (t *stateTx) GetUser(ctx context.Context, tenantID, id string) (store.User, error) {
 	return getUser(ctx, t.q, tenantID, id)
 }

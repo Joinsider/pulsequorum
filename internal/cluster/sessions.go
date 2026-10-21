@@ -53,7 +53,7 @@ type SessionResult struct {
 	TenantID string `json:"tenantId,omitempty"`
 }
 
-var validRoles = []string{"platform-admin", "tenant-admin", "tenant-editor", "tenant-viewer"}
+var validRoles = []string{platformAdmin, "tenant-admin", "tenant-editor", "tenant-viewer"}
 
 // NewPutUser builds a command that creates (expectedRevision 0) or replaces a user.
 func NewPutUser(requestID, tenantID, userID string, doc UserDocument, expectedRevision uint64) (*pb.Command, error) {
@@ -149,6 +149,9 @@ func applyPutUser(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *p
 			return nil, storeError(err)
 		}
 		revoke = doc.Disabled || cur.PasswordHash != doc.PasswordHash
+		if err := keepPlatformAdmin(ctx, tx, cur, doc.Role != platformAdmin || doc.Disabled); err != nil {
+			return nil, err
+		}
 	}
 	err := tx.PutUser(ctx, store.User{
 		TenantID: tenantID, ID: put.GetId(), Username: username, DisplayName: doc.DisplayName,
@@ -163,6 +166,40 @@ func applyPutUser(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *p
 		}
 	}
 	return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+}
+
+const platformAdmin = "platform-admin"
+
+// keepPlatformAdmin rejects removing the last enabled platform admin of a
+// tenant (demoting, disabling or deleting it). Checked at apply time, so
+// concurrent requests cannot both pass (FA-AUTH-09).
+func keepPlatformAdmin(ctx context.Context, tx store.StateTx, cur store.User, removes bool) error {
+	if !removes || cur.Role != platformAdmin || cur.Disabled {
+		return nil
+	}
+	n, err := tx.CountEnabledUsersWithRole(ctx, cur.TenantID, platformAdmin, cur.ID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return &CommandError{Code: CodeConflict, Message: "the last platform admin cannot be removed"}
+	}
+	return nil
+}
+
+// applyDeleteUser deletes a user and its sessions, keeping a platform admin.
+func applyDeleteUser(ctx context.Context, tx store.StateTx, cmd *pb.Command, id string) (json.RawMessage, error) {
+	cur, err := tx.GetUser(ctx, cmd.GetTenantId(), id)
+	if err != nil {
+		return nil, storeError(err)
+	}
+	if err := keepPlatformAdmin(ctx, tx, cur, true); err != nil {
+		return nil, err
+	}
+	if err := tx.DeleteUser(ctx, cur.TenantID, cur.ID); err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(PutResult{ID: id})
 }
 
 func applyPutSigningKey(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity) (json.RawMessage, error) {

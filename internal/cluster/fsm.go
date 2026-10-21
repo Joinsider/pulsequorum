@@ -360,10 +360,7 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 		}
 		return json.Marshal(PutResult{ID: del.GetId()})
 	case pb.EntityKind_ENTITY_KIND_USER:
-		if err := tx.DeleteUser(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
-			return nil, storeError(err)
-		}
-		return json.Marshal(PutResult{ID: del.GetId()})
+		return applyDeleteUser(ctx, tx, cmd, del.GetId())
 	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
 		if err := tx.DeleteChannel(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
 			return nil, storeError(err)

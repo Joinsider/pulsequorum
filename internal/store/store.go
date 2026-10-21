@@ -435,6 +435,9 @@ type StateTx interface {
 	DeleteUser(ctx context.Context, tenantID, id string) error
 	// SetLastLogin records the time of the last successful login.
 	SetLastLogin(ctx context.Context, tenantID, userID string, ms int64) error
+	// CountEnabledUsersWithRole returns how many enabled users of the tenant
+	// hold role, not counting excludeUserID.
+	CountEnabledUsersWithRole(ctx context.Context, tenantID, role, excludeUserID string) (int, error)
 
 	// PutSigningKey creates a signing key or updates its retirement and private
 	// key ciphertext; the creation time and public key of an existing key are kept.

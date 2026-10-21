@@ -304,6 +304,10 @@ SELECT * FROM users WHERE tenant_id = ? ORDER BY username, id;
 -- name: CountUsers :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users;
 
+-- name: CountEnabledUsersWithRole :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM users
+WHERE tenant_id = ? AND role = ? AND disabled = 0 AND id != ?;
+
 -- name: UserRevision :one
 SELECT revision FROM users WHERE tenant_id = ? AND id = ?;
 

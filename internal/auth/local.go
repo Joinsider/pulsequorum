@@ -339,7 +339,11 @@ func (l *Local) Login(ctx context.Context, username, password, clientIP string) 
 		return Tokens{}, &ThrottledError{RetryAfter: wait}
 	}
 	if len(password) > MaxPasswordLen {
-		password = password[:MaxPasswordLen] // bounds hashing cost; such a password never matches
+		// No stored password is that long. Hash a bounded prefix only to keep
+		// the timing of a normal failure, then fail.
+		DummyVerify(password[:MaxPasswordLen])
+		l.fail(accountKey, ipKey, now)
+		return Tokens{}, ErrInvalidCredentials
 	}
 	u, err := l.opts.State.GetUserByUsername(ctx, strings.TrimSpace(username))
 	switch {
@@ -458,9 +462,20 @@ func (l *Local) ChangePassword(ctx context.Context, p Principal, current, next s
 	if err != nil {
 		return Tokens{}, err
 	}
+	// A stolen access token must not allow unlimited guessing (FA-AUTH-04).
+	now := l.opts.Now()
+	accountKey := "u:" + strings.ToLower(u.Username)
+	if wait := l.accounts.Wait(accountKey, now); wait > 0 {
+		return Tokens{}, &ThrottledError{RetryAfter: wait}
+	}
+	if len(current) > MaxPasswordLen {
+		current = ""
+	}
 	if ok, _, err := VerifyPassword(current, u.PasswordHash); err != nil || !ok {
+		l.accounts.Fail(accountKey, now)
 		return Tokens{}, ErrInvalidCredentials
 	}
+	l.accounts.Succeed(accountKey)
 	if err := CheckPassword(next); err != nil {
 		return Tokens{}, err
 	}

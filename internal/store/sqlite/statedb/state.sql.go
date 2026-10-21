@@ -26,6 +26,24 @@ func (q *Queries) ChannelRevision(ctx context.Context, arg ChannelRevisionParams
 	return revision, err
 }
 
+const countEnabledUsersWithRole = `-- name: CountEnabledUsersWithRole :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM users
+WHERE tenant_id = ? AND role = ? AND disabled = 0 AND id != ?
+`
+
+type CountEnabledUsersWithRoleParams struct {
+	TenantID string
+	Role     string
+	ID       string
+}
+
+func (q *Queries) CountEnabledUsersWithRole(ctx context.Context, arg CountEnabledUsersWithRoleParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countEnabledUsersWithRole, arg.TenantID, arg.Role, arg.ID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users
 `
