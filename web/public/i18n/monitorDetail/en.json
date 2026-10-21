@@ -1,0 +1,88 @@
+{
+  "actions": {
+    "edit": "Edit",
+    "clone": "Clone",
+    "pause": "Pause",
+    "resume": "Resume",
+    "test": "Run test",
+    "delete": "Delete"
+  },
+  "meta": {
+    "title": "Monitor overview",
+    "status": "Status",
+    "statusSince": "Since {{ time }}",
+    "type": "Type",
+    "target": "Target",
+    "interval": "Interval"
+  },
+  "test": {
+    "title": "Test result",
+    "running": "Running the check …",
+    "failed": "The test could not be run.",
+    "latency": "Latency",
+    "node": "Node",
+    "errorClass": "Error class",
+    "message": "Message"
+  },
+  "uptime": {
+    "title": "Uptime",
+    "range": "Time range",
+    "view": "View",
+    "consensus": "Consensus (all nodes)",
+    "node": "Node {{ node }}"
+  },
+  "range": {
+    "24h": "24 h",
+    "7d": "7 days",
+    "30d": "30 days",
+    "365d": "365 days"
+  },
+  "stats": {
+    "uptime": "Uptime",
+    "avgLatency": "Average latency",
+    "p95Latency": "95th percentile latency",
+    "downTime": "Down time"
+  },
+  "chart": {
+    "title": "Latency",
+    "ariaLabel": "Latency over time per node, failed checks marked",
+    "bucketNote": "Averages per bucket. Per-node lines and failed checks are shown for the last 24 hours.",
+    "noData": "No latency data for this time range.",
+    "yAxis": "ms",
+    "failure": "Failed check",
+    "average": "Average latency"
+  },
+  "nodes": {
+    "title": "Status per node",
+    "node": "Node",
+    "status": "Status",
+    "latency": "Latency",
+    "checked": "Last check",
+    "error": "Error",
+    "empty": "No checks in the last 24 hours."
+  },
+  "incidents": {
+    "title": "Recent incidents",
+    "all": "All incidents",
+    "ongoing": "Ongoing",
+    "resolved": "Resolved",
+    "duration": "Duration {{ duration }}",
+    "empty": "No incidents for this monitor."
+  },
+  "delete": {
+    "title": "Delete monitor?",
+    "message": "The monitor and its measurement data will be removed. This cannot be undone."
+  },
+  "duration": {
+    "seconds": "{{ count }} s",
+    "minutes": "{{ count }} min",
+    "hours": "{{ count }} h",
+    "days": "{{ count }} d"
+  },
+  "errors": {
+    "load": "The monitor could not be loaded.",
+    "notFound": "This monitor does not exist or you have no access to it.",
+    "section": "This section could not be loaded.",
+    "action": "The action failed. Please try again."
+  }
+}

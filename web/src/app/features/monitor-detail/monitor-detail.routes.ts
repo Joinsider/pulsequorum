@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The UptimeCluster Authors
 
-import { Component } from '@angular/core';
 import { Routes } from '@angular/router';
+import { provideEchartsCore } from 'ngx-echarts';
 
-/** Placeholder until the feature is implemented (AP-1.14). */
-@Component({ template: '<p>monitor-detail</p>' })
-class Placeholder {}
-
-export const routes: Routes = [{ path: '', component: Placeholder }];
+export const routes: Routes = [
+  {
+    path: '',
+    providers: [
+      // ECharts is loaded on first use and tree-shaken to the parts we need.
+      provideEchartsCore({ echarts: () => import('./echarts-setup').then((m) => m.default) }),
+    ],
+    loadComponent: () => import('./monitor-detail-page').then((m) => m.MonitorDetailPage),
+  },
+];

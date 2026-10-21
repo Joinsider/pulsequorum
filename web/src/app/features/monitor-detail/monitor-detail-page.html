@@ -1,0 +1,294 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  @if (monitor(); as m) {
+    <app-page-header [title]="m.name">
+      @if (auth.canEdit()) {
+        <a mat-stroked-button [routerLink]="['/monitors', m.id, 'edit']">
+          <app-icon name="edit" size="1.1em" />
+          {{ t('monitorDetail.actions.edit') }}
+        </a>
+        <button mat-stroked-button type="button" [disabled]="busy()" (click)="clone()">
+          <app-icon name="contentCopy" size="1.1em" />
+          {{ t('monitorDetail.actions.clone') }}
+        </button>
+        <button mat-stroked-button type="button" [disabled]="busy()" (click)="togglePause()">
+          <app-icon [name]="isPaused() ? 'playArrow' : 'pause'" size="1.1em" />
+          {{ isPaused() ? t('monitorDetail.actions.resume') : t('monitorDetail.actions.pause') }}
+        </button>
+        <button mat-stroked-button type="button" [disabled]="testBusy()" (click)="runTest()">
+          <app-icon name="refresh" size="1.1em" />
+          {{ t('monitorDetail.actions.test') }}
+        </button>
+        <button
+          mat-stroked-button
+          type="button"
+          color="warn"
+          [disabled]="busy()"
+          (click)="remove()"
+        >
+          <app-icon name="delete" size="1.1em" />
+          {{ t('monitorDetail.actions.delete') }}
+        </button>
+      }
+    </app-page-header>
+
+    @if (actionFailed()) {
+      <p class="error" role="alert">{{ t('monitorDetail.errors.action') }}</p>
+    }
+
+    <section class="card" aria-label="{{ t('monitorDetail.meta.title') }}">
+      <dl class="facts">
+        <div>
+          <dt>{{ t('monitorDetail.meta.status') }}</dt>
+          <dd>
+            <app-status-badge [status]="m.status" />
+            <span class="muted">
+              {{
+                t('monitorDetail.meta.statusSince', {
+                  time: (m.statusSince | relativeTime: locale()),
+                })
+              }}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>{{ t('monitorDetail.meta.type') }}</dt>
+          <dd>{{ m.type }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('monitorDetail.meta.target') }}</dt>
+          <dd class="target">{{ target() }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('monitorDetail.meta.interval') }}</dt>
+          <dd>{{ duration(m.intervalSeconds * 1000) }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    @if (testBusy()) {
+      <p class="card muted" role="status">{{ t('monitorDetail.test.running') }}</p>
+    } @else if (testFailed()) {
+      <p class="card error" role="alert">{{ t('monitorDetail.test.failed') }}</p>
+    } @else if (testResult(); as r) {
+      <section class="card" aria-labelledby="test-title">
+        <div class="card-head">
+          <h2 id="test-title">{{ t('monitorDetail.test.title') }}</h2>
+          <button mat-button type="button" (click)="testResult.set(null)">
+            {{ t('common.close') }}
+          </button>
+        </div>
+        <dl class="facts">
+          <div>
+            <dt>{{ t('monitorDetail.meta.status') }}</dt>
+            <dd><app-status-badge [status]="r.status" /></dd>
+          </div>
+          <div>
+            <dt>{{ t('monitorDetail.test.latency') }}</dt>
+            <dd>{{ ms(r.latencyMs) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitorDetail.test.node') }}</dt>
+            <dd>{{ r.nodeId }}</dd>
+          </div>
+          @if (r.errorClass) {
+            <div>
+              <dt>{{ t('monitorDetail.test.errorClass') }}</dt>
+              <dd>{{ r.errorClass }}</dd>
+            </div>
+          }
+          @if (r.message) {
+            <div class="wide">
+              <dt>{{ t('monitorDetail.test.message') }}</dt>
+              <dd>{{ r.message }}</dd>
+            </div>
+          }
+        </dl>
+      </section>
+    }
+
+    <section class="card" aria-labelledby="uptime-title">
+      <div class="card-head">
+        <h2 id="uptime-title">{{ t('monitorDetail.uptime.title') }}</h2>
+        <mat-button-toggle-group
+          class="range"
+          hideSingleSelectionIndicator
+          [value]="range()"
+          [attr.aria-label]="t('monitorDetail.uptime.range')"
+          (change)="setRange($event.value)"
+        >
+          @for (r of ranges; track r) {
+            <mat-button-toggle [value]="r">{{ t('monitorDetail.range.' + r) }}</mat-button-toggle>
+          }
+        </mat-button-toggle-group>
+      </div>
+
+      @if (nodes().length > 0) {
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="node-select">
+          <mat-label>{{ t('monitorDetail.uptime.view') }}</mat-label>
+          <mat-select [value]="nodeFilter()" (valueChange)="nodeFilter.set($event)">
+            <mat-option [value]="null">{{ t('monitorDetail.uptime.consensus') }}</mat-option>
+            @for (n of nodes(); track n) {
+              <mat-option [value]="n">{{ t('monitorDetail.uptime.node', { node: n }) }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      }
+
+      @if (uptime(); as u) {
+        <dl class="stats">
+          <div>
+            <dt>{{ t('monitorDetail.stats.uptime') }}</dt>
+            <dd class="big">{{ percent(u.uptimePercent) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitorDetail.stats.avgLatency') }}</dt>
+            <dd>{{ ms(u.latencyAvgMs) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitorDetail.stats.p95Latency') }}</dt>
+            <dd>{{ ms(u.latencyP95Ms) }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitorDetail.stats.downTime') }}</dt>
+            <dd>{{ duration(u.downSeconds * 1000) }}</dd>
+          </div>
+        </dl>
+        <app-uptime-bar [buckets]="u.buckets" />
+      } @else if (uptimeRes.error()) {
+        <p class="error" role="alert">
+          {{ t('monitorDetail.errors.section') }}
+          <button mat-button type="button" (click)="uptimeRes.reload()">
+            {{ t('common.retry') }}
+          </button>
+        </p>
+      } @else {
+        <p class="muted" role="status">{{ t('common.loading') }}</p>
+      }
+    </section>
+
+    <section class="card" aria-labelledby="latency-title">
+      <h2 id="latency-title">{{ t('monitorDetail.chart.title') }}</h2>
+      @if (range() !== '24h') {
+        <p class="muted">{{ t('monitorDetail.chart.bucketNote') }}</p>
+      }
+      @if (hasChartData()) {
+        <div
+          class="chart"
+          echarts
+          [options]="chart()"
+          [autoResize]="true"
+          role="img"
+          [attr.aria-label]="t('monitorDetail.chart.ariaLabel')"
+        ></div>
+      } @else {
+        <p class="muted">{{ t('monitorDetail.chart.noData') }}</p>
+      }
+    </section>
+
+    <section class="card" aria-labelledby="nodes-title">
+      <h2 id="nodes-title">{{ t('monitorDetail.nodes.title') }}</h2>
+      @if (latest().length > 0) {
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{{ t('monitorDetail.nodes.node') }}</th>
+                <th scope="col">{{ t('monitorDetail.nodes.status') }}</th>
+                <th scope="col">{{ t('monitorDetail.nodes.latency') }}</th>
+                <th scope="col">{{ t('monitorDetail.nodes.checked') }}</th>
+                <th scope="col">{{ t('monitorDetail.nodes.error') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (h of latest(); track h.nodeId) {
+                <tr>
+                  <th scope="row">{{ h.nodeId }}</th>
+                  <td><app-status-badge [status]="h.status" /></td>
+                  <td>{{ ms(h.latencyMs) }}</td>
+                  <td>
+                    {{ formatTime(h.ts) }}
+                    <span class="muted">{{ h.ts | relativeTime: locale() }}</span>
+                  </td>
+                  <td>
+                    @if (h.errorClass) {
+                      <span>{{ h.errorClass }}</span>
+                    }
+                    @if (h.message) {
+                      <span class="muted message">{{ h.message }}</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (heartbeatsRes.error()) {
+        <p class="error" role="alert">
+          {{ t('monitorDetail.errors.section') }}
+          <button mat-button type="button" (click)="heartbeatsRes.reload()">
+            {{ t('common.retry') }}
+          </button>
+        </p>
+      } @else if (heartbeatsRes.isLoading()) {
+        <p class="muted" role="status">{{ t('common.loading') }}</p>
+      } @else {
+        <p class="muted">{{ t('monitorDetail.nodes.empty') }}</p>
+      }
+    </section>
+
+    <section class="card" aria-labelledby="incidents-title">
+      <div class="card-head">
+        <h2 id="incidents-title">{{ t('monitorDetail.incidents.title') }}</h2>
+        <a mat-button routerLink="/incidents">{{ t('monitorDetail.incidents.all') }}</a>
+      </div>
+      @if (incidents().length > 0) {
+        <ul class="list">
+          @for (i of incidents(); track i.id) {
+            <li>
+              <div class="row">
+                <span>{{ formatTime(i.startedAt) }}</span>
+                @if (i.resolvedAt) {
+                  <span class="state resolved">{{ t('monitorDetail.incidents.resolved') }}</span>
+                } @else {
+                  <span class="state ongoing">{{ t('monitorDetail.incidents.ongoing') }}</span>
+                }
+                <span class="muted">
+                  {{ t('monitorDetail.incidents.duration', { duration: duration(incidentMs(i)) }) }}
+                </span>
+              </div>
+              <div class="cause">{{ i.cause }}</div>
+            </li>
+          }
+        </ul>
+      } @else if (incidentsRes.error()) {
+        <p class="error" role="alert">
+          {{ t('monitorDetail.errors.section') }}
+          <button mat-button type="button" (click)="incidentsRes.reload()">
+            {{ t('common.retry') }}
+          </button>
+        </p>
+      } @else {
+        <p class="muted">{{ t('monitorDetail.incidents.empty') }}</p>
+      }
+    </section>
+  } @else if (monitorRes.error()) {
+    <p class="error" role="alert">
+      {{
+        isNotFound(monitorRes.error())
+          ? t('monitorDetail.errors.notFound')
+          : t('monitorDetail.errors.load')
+      }}
+    </p>
+    <p class="actions">
+      @if (!isNotFound(monitorRes.error())) {
+        <button mat-stroked-button type="button" (click)="monitorRes.reload()">
+          {{ t('common.retry') }}
+        </button>
+      }
+      <a mat-button routerLink="/">{{ t('common.back') }}</a>
+    </p>
+  } @else {
+    <p class="muted" role="status">{{ t('common.loading') }}</p>
+  }
+</ng-container>

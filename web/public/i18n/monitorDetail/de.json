@@ -1,0 +1,88 @@
+{
+  "actions": {
+    "edit": "Bearbeiten",
+    "clone": "Klonen",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "test": "Test ausführen",
+    "delete": "Löschen"
+  },
+  "meta": {
+    "title": "Überblick über den Monitor",
+    "status": "Status",
+    "statusSince": "Seit {{ time }}",
+    "type": "Typ",
+    "target": "Ziel",
+    "interval": "Intervall"
+  },
+  "test": {
+    "title": "Testergebnis",
+    "running": "Prüfung läuft …",
+    "failed": "Der Test konnte nicht ausgeführt werden.",
+    "latency": "Latenz",
+    "node": "Node",
+    "errorClass": "Fehlerklasse",
+    "message": "Meldung"
+  },
+  "uptime": {
+    "title": "Verfügbarkeit",
+    "range": "Zeitraum",
+    "view": "Ansicht",
+    "consensus": "Konsens (alle Nodes)",
+    "node": "Node {{ node }}"
+  },
+  "range": {
+    "24h": "24 Std.",
+    "7d": "7 Tage",
+    "30d": "30 Tage",
+    "365d": "365 Tage"
+  },
+  "stats": {
+    "uptime": "Verfügbarkeit",
+    "avgLatency": "Durchschnittliche Latenz",
+    "p95Latency": "Latenz (95. Perzentil)",
+    "downTime": "Ausfallzeit"
+  },
+  "chart": {
+    "title": "Latenz",
+    "ariaLabel": "Latenz über die Zeit je Node, fehlgeschlagene Prüfungen markiert",
+    "bucketNote": "Mittelwerte je Zeitabschnitt. Einzelne Node-Linien und fehlgeschlagene Prüfungen gibt es für die letzten 24 Stunden.",
+    "noData": "Keine Latenzdaten für diesen Zeitraum.",
+    "yAxis": "ms",
+    "failure": "Fehlgeschlagene Prüfung",
+    "average": "Durchschnittliche Latenz"
+  },
+  "nodes": {
+    "title": "Status je Node",
+    "node": "Node",
+    "status": "Status",
+    "latency": "Latenz",
+    "checked": "Letzte Prüfung",
+    "error": "Fehler",
+    "empty": "Keine Prüfungen in den letzten 24 Stunden."
+  },
+  "incidents": {
+    "title": "Letzte Vorfälle",
+    "all": "Alle Vorfälle",
+    "ongoing": "Laufend",
+    "resolved": "Behoben",
+    "duration": "Dauer {{ duration }}",
+    "empty": "Keine Vorfälle für diesen Monitor."
+  },
+  "delete": {
+    "title": "Monitor löschen?",
+    "message": "Der Monitor und seine Messdaten werden entfernt. Das kann nicht rückgängig gemacht werden."
+  },
+  "duration": {
+    "seconds": "{{ count }} Sek.",
+    "minutes": "{{ count }} Min.",
+    "hours": "{{ count }} Std.",
+    "days": "{{ count }} Tage"
+  },
+  "errors": {
+    "load": "Der Monitor konnte nicht geladen werden.",
+    "notFound": "Dieser Monitor existiert nicht oder du hast keinen Zugriff darauf.",
+    "section": "Dieser Bereich konnte nicht geladen werden.",
+    "action": "Die Aktion ist fehlgeschlagen. Bitte versuche es erneut."
+  }
+}
