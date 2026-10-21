@@ -1,0 +1,112 @@
+{
+  "title": "Notification channels",
+  "new": "New channel",
+  "empty": "No notification channels yet.",
+  "emptyHint": "Channels send alerts when a monitor changes its status.",
+  "chipsLabel": "Channel details",
+  "eventsLabel": "Events",
+  "kinds": {
+    "shoutrrr": "Shoutrrr",
+    "webhook": "Webhook"
+  },
+  "states": {
+    "ok": "OK",
+    "failing": "Failing",
+    "disabled": "Disabled"
+  },
+  "events": {
+    "down": "Down",
+    "up": "Up",
+    "degraded": "Degraded",
+    "partial": "Partial"
+  },
+  "default": "Default",
+  "lastError": "Last error",
+  "test": "Send test",
+  "testing": "Sending …",
+  "testOk": "Test delivered in {{ ms }} ms.",
+  "testFailed": "Test not delivered: {{ error }}",
+  "testRequestFailed": "The test could not be sent.",
+  "deleted": "Channel deleted.",
+  "deleteTitle": "Delete channel?",
+  "deleteText": "Monitors stop using this channel. Alerts that are still queued for it are not sent.",
+  "editor": {
+    "titleNew": "New notification channel",
+    "titleEdit": "Edit notification channel",
+    "readOnly": "Only tenant admins can change notification channels.",
+    "name": "Name",
+    "kind": "Type",
+    "target": "Destination",
+    "events": "Send for these events",
+    "eventsHint": "Pick at least one event.",
+    "isDefault": "Attach to new monitors by default",
+    "isDefaultHint": "New monitors get this channel automatically. Existing monitors are not changed.",
+    "services": {
+      "email": "E-mail (SMTP)",
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "ntfy": "ntfy",
+      "gotify": "Gotify",
+      "teams": "Microsoft Teams",
+      "matrix": "Matrix",
+      "pushover": "Pushover",
+      "expert": "Expert: enter URL"
+    },
+    "modes": {
+      "hook": "Webhook token",
+      "bot": "Bot token (xoxb)"
+    },
+    "shoutrrr": {
+      "service": "Service",
+      "keepHint": "The stored destination stays unchanged. Its secrets are never shown.",
+      "replace": "Replace destination",
+      "replaceHint": "Enter a new destination. The old one is replaced on save.",
+      "expertHint": "Full Shoutrrr URL, for example ntfy://ntfy.sh/topic. Secrets are not shown again after saving."
+    },
+    "fields": {
+      "url": "Shoutrrr URL",
+      "host": "Host",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "from": "Sender address",
+      "to": "Recipient addresses (comma-separated)",
+      "token": "Token",
+      "chats": "Chats or channels (comma-separated)",
+      "id": "Discord webhook ID",
+      "mode": "Token type",
+      "channel": "Channel",
+      "botname": "Bot name (optional)",
+      "topic": "Topic",
+      "webhookUrl": "Workflow URL",
+      "rooms": "Rooms (optional, comma-separated)",
+      "apiToken": "API token",
+      "userKey": "User key",
+      "devices": "Devices (optional, comma-separated)"
+    },
+    "webhook": {
+      "title": "Webhook",
+      "url": "URL",
+      "method": "Method",
+      "body": "Body template (optional)",
+      "bodyHint": "JSON with placeholders such as {{monitor.name}} and {{status}}.",
+      "headers": "Headers",
+      "headersHint": "Stored header values are hidden. Leave a value unchanged to keep it.",
+      "headerKey": "Name",
+      "headerValue": "Value",
+      "addHeader": "Add header",
+      "removeHeader": "Remove header"
+    },
+    "errors": {
+      "name": "Enter a name (at most 200 characters).",
+      "url": "Enter a valid http or https URL.",
+      "noEvent": "Pick at least one event.",
+      "missing": "Fill in: {{ field }}.",
+      "invalid": "Check the value of {{ field }}.",
+      "headerKey": "Every header with a value needs a name.",
+      "headerValue": "Enter a value for every new header.",
+      "headerDuplicate": "Each header name may appear only once."
+    }
+  }
+}

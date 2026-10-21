@@ -1,0 +1,112 @@
+{
+  "title": "Benachrichtigungskanäle",
+  "new": "Neuer Kanal",
+  "empty": "Noch keine Benachrichtigungskanäle.",
+  "emptyHint": "Kanäle senden Alarme, wenn ein Monitor seinen Status ändert.",
+  "chipsLabel": "Details des Kanals",
+  "eventsLabel": "Ereignisse",
+  "kinds": {
+    "shoutrrr": "Shoutrrr",
+    "webhook": "Webhook"
+  },
+  "states": {
+    "ok": "OK",
+    "failing": "Fehlerhaft",
+    "disabled": "Deaktiviert"
+  },
+  "events": {
+    "down": "Ausgefallen",
+    "up": "Wieder online",
+    "degraded": "Beeinträchtigt",
+    "partial": "Teilweise ausgefallen"
+  },
+  "default": "Standard",
+  "lastError": "Letzter Fehler",
+  "test": "Test senden",
+  "testing": "Wird gesendet …",
+  "testOk": "Test in {{ ms }} ms zugestellt.",
+  "testFailed": "Test nicht zugestellt: {{ error }}",
+  "testRequestFailed": "Der Test konnte nicht gesendet werden.",
+  "deleted": "Kanal gelöscht.",
+  "deleteTitle": "Kanal löschen?",
+  "deleteText": "Monitore verwenden diesen Kanal danach nicht mehr. Alarme, die noch für ihn anstehen, werden nicht gesendet.",
+  "editor": {
+    "titleNew": "Neuer Benachrichtigungskanal",
+    "titleEdit": "Benachrichtigungskanal bearbeiten",
+    "readOnly": "Nur Mandanten-Admins können Benachrichtigungskanäle ändern.",
+    "name": "Name",
+    "kind": "Typ",
+    "target": "Ziel",
+    "events": "Senden bei diesen Ereignissen",
+    "eventsHint": "Wähle mindestens ein Ereignis.",
+    "isDefault": "Standardmäßig neuen Monitoren zuordnen",
+    "isDefaultHint": "Neue Monitore erhalten diesen Kanal automatisch. Bestehende Monitore werden nicht geändert.",
+    "services": {
+      "email": "E-Mail (SMTP)",
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "ntfy": "ntfy",
+      "gotify": "Gotify",
+      "teams": "Microsoft Teams",
+      "matrix": "Matrix",
+      "pushover": "Pushover",
+      "expert": "Experte: URL eingeben"
+    },
+    "modes": {
+      "hook": "Webhook-Token",
+      "bot": "Bot-Token (xoxb)"
+    },
+    "shoutrrr": {
+      "service": "Dienst",
+      "keepHint": "Das gespeicherte Ziel bleibt unverändert. Seine Geheimnisse werden nie angezeigt.",
+      "replace": "Ziel ersetzen",
+      "replaceHint": "Gib ein neues Ziel ein. Das alte wird beim Speichern ersetzt.",
+      "expertHint": "Vollständige Shoutrrr-URL, zum Beispiel ntfy://ntfy.sh/thema. Geheimnisse werden nach dem Speichern nicht erneut angezeigt."
+    },
+    "fields": {
+      "url": "Shoutrrr-URL",
+      "host": "Host",
+      "port": "Port",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "from": "Absenderadresse",
+      "to": "Empfängeradressen (durch Komma getrennt)",
+      "token": "Token",
+      "chats": "Chats oder Kanäle (durch Komma getrennt)",
+      "id": "Discord-Webhook-ID",
+      "mode": "Token-Art",
+      "channel": "Kanal",
+      "botname": "Bot-Name (optional)",
+      "topic": "Thema",
+      "webhookUrl": "Workflow-URL",
+      "rooms": "Räume (optional, durch Komma getrennt)",
+      "apiToken": "API-Token",
+      "userKey": "User-Key",
+      "devices": "Geräte (optional, durch Komma getrennt)"
+    },
+    "webhook": {
+      "title": "Webhook",
+      "url": "URL",
+      "method": "Methode",
+      "body": "Body-Vorlage (optional)",
+      "bodyHint": "JSON mit Platzhaltern wie {{monitor.name}} und {{status}}.",
+      "headers": "Header",
+      "headersHint": "Gespeicherte Header-Werte sind verborgen. Lass einen Wert unverändert, um ihn zu behalten.",
+      "headerKey": "Name",
+      "headerValue": "Wert",
+      "addHeader": "Header hinzufügen",
+      "removeHeader": "Header entfernen"
+    },
+    "errors": {
+      "name": "Gib einen Namen ein (höchstens 200 Zeichen).",
+      "url": "Gib eine gültige http- oder https-URL ein.",
+      "noEvent": "Wähle mindestens ein Ereignis.",
+      "missing": "Bitte ausfüllen: {{ field }}.",
+      "invalid": "Prüfe den Wert von {{ field }}.",
+      "headerKey": "Jeder Header mit Wert braucht einen Namen.",
+      "headerValue": "Gib für jeden neuen Header einen Wert ein.",
+      "headerDuplicate": "Jeder Header-Name darf nur einmal vorkommen."
+    }
+  }
+}
