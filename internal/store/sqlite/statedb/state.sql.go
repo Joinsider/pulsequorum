@@ -26,6 +26,17 @@ func (q *Queries) ChannelRevision(ctx context.Context, arg ChannelRevisionParams
 	return revision, err
 }
 
+const countUsers = `-- name: CountUsers :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM users
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUsers)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteChannel = `-- name: DeleteChannel :execrows
 DELETE FROM notification_channels WHERE tenant_id = ? AND id = ?
 `
@@ -103,6 +114,23 @@ type DeleteMonitorTagsParams struct {
 func (q *Queries) DeleteMonitorTags(ctx context.Context, arg DeleteMonitorTagsParams) error {
 	_, err := q.db.ExecContext(ctx, deleteMonitorTags, arg.TenantID, arg.MonitorID)
 	return err
+}
+
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE tenant_id = ? AND id = ?
+`
+
+type DeleteUserParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) DeleteUser(ctx context.Context, arg DeleteUserParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUser, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const dueAlerts = `-- name: DueAlerts :many
@@ -377,6 +405,26 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 	return i, err
 }
 
+const getSession = `-- name: GetSession :one
+SELECT token_hash, family_id, tenant_id, user_id, created_ms, expires_ms, used_ms, revoked_ms FROM refresh_sessions WHERE token_hash = ?
+`
+
+func (q *Queries) GetSession(ctx context.Context, tokenHash string) (RefreshSession, error) {
+	row := q.db.QueryRowContext(ctx, getSession, tokenHash)
+	var i RefreshSession
+	err := row.Scan(
+		&i.TokenHash,
+		&i.FamilyID,
+		&i.TenantID,
+		&i.UserID,
+		&i.CreatedMs,
+		&i.ExpiresMs,
+		&i.UsedMs,
+		&i.RevokedMs,
+	)
+	return i, err
+}
+
 const getTenant = `-- name: GetTenant :one
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -400,6 +448,57 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 		&i.Suspended,
 		&i.CreatedMs,
 		&i.UpdatedMs,
+	)
+	return i, err
+}
+
+const getUser = `-- name: GetUser :one
+SELECT tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms FROM users WHERE tenant_id = ? AND id = ?
+`
+
+type GetUserParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUser, arg.TenantID, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.TenantID,
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Disabled,
+		&i.Revision,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+		&i.LastLoginMs,
+	)
+	return i, err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms FROM users WHERE username = ?
+`
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+	var i User
+	err := row.Scan(
+		&i.TenantID,
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Disabled,
+		&i.Revision,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+		&i.LastLoginMs,
 	)
 	return i, err
 }
@@ -648,6 +747,73 @@ type InsertMonitorTagParams struct {
 
 func (q *Queries) InsertMonitorTag(ctx context.Context, arg InsertMonitorTagParams) error {
 	_, err := q.db.ExecContext(ctx, insertMonitorTag, arg.TenantID, arg.MonitorID, arg.Tag)
+	return err
+}
+
+const insertSession = `-- name: InsertSession :exec
+INSERT INTO refresh_sessions (token_hash, family_id, tenant_id, user_id, created_ms, expires_ms, used_ms, revoked_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertSessionParams struct {
+	TokenHash string
+	FamilyID  string
+	TenantID  string
+	UserID    string
+	CreatedMs int64
+	ExpiresMs int64
+	UsedMs    int64
+	RevokedMs int64
+}
+
+func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) error {
+	_, err := q.db.ExecContext(ctx, insertSession,
+		arg.TokenHash,
+		arg.FamilyID,
+		arg.TenantID,
+		arg.UserID,
+		arg.CreatedMs,
+		arg.ExpiresMs,
+		arg.UsedMs,
+		arg.RevokedMs,
+	)
+	return err
+}
+
+const insertUser = `-- name: InsertUser :exec
+INSERT INTO users (
+    tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertUserParams struct {
+	TenantID     string
+	ID           string
+	Username     string
+	DisplayName  string
+	PasswordHash string
+	Role         string
+	Disabled     int64
+	Revision     int64
+	CreatedMs    int64
+	UpdatedMs    int64
+	LastLoginMs  int64
+}
+
+func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
+	_, err := q.db.ExecContext(ctx, insertUser,
+		arg.TenantID,
+		arg.ID,
+		arg.Username,
+		arg.DisplayName,
+		arg.PasswordHash,
+		arg.Role,
+		arg.Disabled,
+		arg.Revision,
+		arg.CreatedMs,
+		arg.UpdatedMs,
+		arg.LastLoginMs,
+	)
 	return err
 }
 
@@ -1028,6 +1194,40 @@ func (q *Queries) ListSecretKeys(ctx context.Context) ([]SecretKey, error) {
 	return items, nil
 }
 
+const listSigningKeys = `-- name: ListSigningKeys :many
+SELECT kid, alg, public_key, private_key_enc, created_ms, retired_ms FROM signing_keys ORDER BY created_ms, kid
+`
+
+func (q *Queries) ListSigningKeys(ctx context.Context) ([]SigningKey, error) {
+	rows, err := q.db.QueryContext(ctx, listSigningKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SigningKey{}
+	for rows.Next() {
+		var i SigningKey
+		if err := rows.Scan(
+			&i.Kid,
+			&i.Alg,
+			&i.PublicKey,
+			&i.PrivateKeyEnc,
+			&i.CreatedMs,
+			&i.RetiredMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTenants = `-- name: ListTenants :many
 SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants ORDER BY id
 `
@@ -1064,6 +1264,45 @@ func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
 	return items, nil
 }
 
+const listUsers = `-- name: ListUsers :many
+SELECT tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms FROM users WHERE tenant_id = ? ORDER BY username, id
+`
+
+func (q *Queries) ListUsers(ctx context.Context, tenantID string) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.PasswordHash,
+			&i.Role,
+			&i.Disabled,
+			&i.Revision,
+			&i.CreatedMs,
+			&i.UpdatedMs,
+			&i.LastLoginMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const maintenanceWindowRevision = `-- name: MaintenanceWindowRevision :one
 SELECT revision FROM maintenance_windows WHERE tenant_id = ? AND id = ?
 `
@@ -1078,6 +1317,24 @@ func (q *Queries) MaintenanceWindowRevision(ctx context.Context, arg Maintenance
 	var revision int64
 	err := row.Scan(&revision)
 	return revision, err
+}
+
+const markSessionUsed = `-- name: MarkSessionUsed :execrows
+UPDATE refresh_sessions SET used_ms = ? WHERE token_hash = ? AND used_ms = 0
+`
+
+type MarkSessionUsedParams struct {
+	UsedMs    int64
+	TokenHash string
+}
+
+// The first use is kept: a second use is detected by used_ms <> 0.
+func (q *Queries) MarkSessionUsed(ctx context.Context, arg MarkSessionUsedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markSessionUsed, arg.UsedMs, arg.TokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const monitorRevision = `-- name: MonitorRevision :one
@@ -1115,6 +1372,15 @@ func (q *Queries) PruneDedup(ctx context.Context, issuedAtMs int64) (int64, erro
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const pruneSessions = `-- name: PruneSessions :exec
+DELETE FROM refresh_sessions WHERE expires_ms < ?
+`
+
+func (q *Queries) PruneSessions(ctx context.Context, expiresMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneSessions, expiresMs)
+	return err
 }
 
 const pruneStatusHistory = `-- name: PruneStatusHistory :exec
@@ -1159,6 +1425,35 @@ func (q *Queries) ResolveIncident(ctx context.Context, arg ResolveIncidentParams
 	return result.RowsAffected()
 }
 
+const revokeSessionFamily = `-- name: RevokeSessionFamily :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE family_id = ? AND revoked_ms = 0
+`
+
+type RevokeSessionFamilyParams struct {
+	RevokedMs int64
+	FamilyID  string
+}
+
+func (q *Queries) RevokeSessionFamily(ctx context.Context, arg RevokeSessionFamilyParams) error {
+	_, err := q.db.ExecContext(ctx, revokeSessionFamily, arg.RevokedMs, arg.FamilyID)
+	return err
+}
+
+const revokeUserSessions = `-- name: RevokeUserSessions :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? AND revoked_ms = 0
+`
+
+type RevokeUserSessionsParams struct {
+	RevokedMs int64
+	TenantID  string
+	UserID    string
+}
+
+func (q *Queries) RevokeUserSessions(ctx context.Context, arg RevokeUserSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeUserSessions, arg.RevokedMs, arg.TenantID, arg.UserID)
+	return err
+}
+
 const setChannelState = `-- name: SetChannelState :exec
 UPDATE notification_channels SET state = ?, last_error = ?
 WHERE tenant_id = ? AND id = ?
@@ -1194,6 +1489,24 @@ type SetFSMMetaParams struct {
 func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
 	_, err := q.db.ExecContext(ctx, setFSMMeta, arg.Key, arg.Value)
 	return err
+}
+
+const setUserLastLogin = `-- name: SetUserLastLogin :execrows
+UPDATE users SET last_login_ms = ? WHERE tenant_id = ? AND id = ?
+`
+
+type SetUserLastLoginParams struct {
+	LastLoginMs int64
+	TenantID    string
+	ID          string
+}
+
+func (q *Queries) SetUserLastLogin(ctx context.Context, arg SetUserLastLoginParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setUserLastLogin, arg.LastLoginMs, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const statusHistory = `-- name: StatusHistory :many
@@ -1442,6 +1755,51 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (i
 	return result.RowsAffected()
 }
 
+const updateUser = `-- name: UpdateUser :execrows
+UPDATE users SET
+    username      = ?1,
+    display_name  = ?2,
+    password_hash = ?3,
+    role          = ?4,
+    disabled      = ?5,
+    revision      = ?6,
+    updated_ms    = ?7
+WHERE tenant_id = ?8 AND id = ?9 AND revision = ?10
+`
+
+type UpdateUserParams struct {
+	Username         string
+	DisplayName      string
+	PasswordHash     string
+	Role             string
+	Disabled         int64
+	Revision         int64
+	UpdatedMs        int64
+	TenantID         string
+	ID               string
+	ExpectedRevision int64
+}
+
+// created_ms and last_login_ms are kept: they are not part of the update.
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUser,
+		arg.Username,
+		arg.DisplayName,
+		arg.PasswordHash,
+		arg.Role,
+		arg.Disabled,
+		arg.Revision,
+		arg.UpdatedMs,
+		arg.TenantID,
+		arg.ID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertMonitorState = `-- name: UpsertMonitorState :exec
 INSERT INTO monitor_states (tenant_id, monitor_id, status, confirmed, since_ms)
 VALUES (?, ?, ?, ?, ?)
@@ -1493,6 +1851,36 @@ func (q *Queries) UpsertSecretKey(ctx context.Context, arg UpsertSecretKeyParams
 		arg.KeyID,
 		arg.WrappedDek,
 		arg.KekFingerprint,
+		arg.CreatedMs,
+		arg.RetiredMs,
+	)
+	return err
+}
+
+const upsertSigningKey = `-- name: UpsertSigningKey :exec
+INSERT INTO signing_keys (kid, alg, public_key, private_key_enc, created_ms, retired_ms)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (kid) DO UPDATE SET
+    private_key_enc = excluded.private_key_enc,
+    retired_ms      = excluded.retired_ms
+`
+
+type UpsertSigningKeyParams struct {
+	Kid           string
+	Alg           string
+	PublicKey     []byte
+	PrivateKeyEnc string
+	CreatedMs     int64
+	RetiredMs     int64
+}
+
+// The creation time and the public part of an existing key are kept.
+func (q *Queries) UpsertSigningKey(ctx context.Context, arg UpsertSigningKeyParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSigningKey,
+		arg.Kid,
+		arg.Alg,
+		arg.PublicKey,
+		arg.PrivateKeyEnc,
 		arg.CreatedMs,
 		arg.RetiredMs,
 	)
@@ -1559,4 +1947,20 @@ func (q *Queries) UpsertTenant(ctx context.Context, arg UpsertTenantParams) erro
 		arg.UpdatedMs,
 	)
 	return err
+}
+
+const userRevision = `-- name: UserRevision :one
+SELECT revision FROM users WHERE tenant_id = ? AND id = ?
+`
+
+type UserRevisionParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) UserRevision(ctx context.Context, arg UserRevisionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, userRevision, arg.TenantID, arg.ID)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
 }

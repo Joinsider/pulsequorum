@@ -117,6 +117,17 @@ type NotificationChannel struct {
 	UpdatedMs          int64
 }
 
+type RefreshSession struct {
+	TokenHash string
+	FamilyID  string
+	TenantID  string
+	UserID    string
+	CreatedMs int64
+	ExpiresMs int64
+	UsedMs    int64
+	RevokedMs int64
+}
+
 type RequestDedup struct {
 	RequestID    string
 	AppliedIndex int64
@@ -134,6 +145,15 @@ type SecretKey struct {
 	RetiredMs      int64
 }
 
+type SigningKey struct {
+	Kid           string
+	Alg           string
+	PublicKey     []byte
+	PrivateKeyEnc string
+	CreatedMs     int64
+	RetiredMs     int64
+}
+
 type Tenant struct {
 	ID           string
 	Name         string
@@ -143,4 +163,18 @@ type Tenant struct {
 	Suspended    int64
 	CreatedMs    int64
 	UpdatedMs    int64
+}
+
+type User struct {
+	TenantID     string
+	ID           string
+	Username     string
+	DisplayName  string
+	PasswordHash string
+	Role         string
+	Disabled     int64
+	Revision     int64
+	CreatedMs    int64
+	UpdatedMs    int64
+	LastLoginMs  int64
 }

@@ -49,6 +49,10 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"ChannelTenantIsolation", testChannelTenantIsolation},
 		{"MaintenanceWindows", testMaintenanceWindows},
 		{"MaintenanceTenantIsolation", testMaintenanceTenantIsolation},
+		{"Users", testUsers},
+		{"UserTenantIsolation", testUserTenantIsolation},
+		{"SigningKeys", testSigningKeys},
+		{"Sessions", testSessions},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -1284,6 +1288,378 @@ func testMaintenanceTenantIsolation(t *testing.T, s store.State) {
 	got, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-a")
 	if err != nil || got.Name != "Window mw-a" || got.Revision != 1 {
 		t.Errorf("owner's window changed by other tenant: %+v, %v", got, err)
+	}
+}
+
+// --- Authentication ---------------------------------------------------------
+
+func newUser(tenantID, id, username string) store.User {
+	return store.User{ //nolint:gosec // G101: fixture PHC string, not a secret
+		TenantID:     tenantID,
+		ID:           id,
+		Username:     username,
+		DisplayName:  "Display " + username,
+		PasswordHash: "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+		Role:         "viewer",
+		CreatedMs:    1000,
+		UpdatedMs:    1000,
+	}
+}
+
+func putUser(t *testing.T, s store.State, u store.User, expectedRevision uint64) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutUser(ctx, u, expectedRevision)
+	})
+}
+
+func delUser(t *testing.T, s store.State, tenantID, id string) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.DeleteUser(ctx, tenantID, id)
+	})
+}
+
+func testUsers(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+
+	u := newUser(tenantA, "u1", "alice")
+	u.Role = "platform-admin"
+	if err := putUser(t, s, u, 0); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetUser(ctx, tenantA, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != tenantA || got.ID != "u1" || got.Username != "alice" || got.DisplayName != "Display alice" ||
+		got.PasswordHash != u.PasswordHash || got.Role != "platform-admin" || got.Disabled ||
+		got.Revision != 1 || got.CreatedMs != 1000 || got.UpdatedMs != 1000 || got.LastLoginMs != 0 {
+		t.Errorf("unexpected user: %+v", got)
+	}
+
+	if err := putUser(t, s, newUser(tenantA, "u2", "ALICE"), 0); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate username (other case) error = %v, want ErrConflict", err)
+	}
+	if err := putUser(t, s, newUser(tenantA, "u1", "bob"), 0); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate ID error = %v, want ErrConflict", err)
+	}
+
+	byName, err := s.GetUserByUsername(ctx, "AlIcE")
+	if err != nil || byName.ID != "u1" || byName.TenantID != tenantA {
+		t.Errorf("GetUserByUsername(AlIcE) = %+v, %v", byName, err)
+	}
+	if _, err := s.GetUserByUsername(ctx, "nobody"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetUserByUsername(missing) error = %v, want ErrNotFound", err)
+	}
+
+	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantA, "u1", 5000) }); err != nil {
+		t.Fatalf("set last login: %v", err)
+	}
+	u.Role = "viewer"
+	u.Disabled = true
+	u.UpdatedMs = 2000
+	u.CreatedMs = 9999 // must be ignored on update
+	u.LastLoginMs = 0  // must be ignored on update
+	if err := putUser(t, s, u, 1); err != nil {
+		t.Fatalf("update at revision 1: %v", err)
+	}
+	got, err = s.GetUser(ctx, tenantA, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 2 || got.Role != "viewer" || !got.Disabled || got.UpdatedMs != 2000 ||
+		got.CreatedMs != 1000 || got.LastLoginMs != 5000 {
+		t.Errorf("after update: %+v", got)
+	}
+	if err := putUser(t, s, u, 1); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("stale update error = %v, want ErrConflict", err)
+	}
+	if err := putUser(t, s, newUser(tenantA, "missing", "nobody"), 3); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update of missing user error = %v, want ErrNotFound", err)
+	}
+	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantA, "missing", 1) }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("last login of missing user error = %v, want ErrNotFound", err)
+	}
+
+	// The list is ordered by username, not by creation time.
+	if err := putUser(t, s, newUser(tenantA, "u3", "carol"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := putUser(t, s, newUser(tenantA, "u4", "Bob"), 0); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListUsers(ctx, tenantA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, lu := range list {
+		names = append(names, lu.Username)
+	}
+	if !slices.Equal(names, []string{"alice", "Bob", "carol"}) {
+		t.Errorf("usernames = %v, want ordered by username", names)
+	}
+	if n, err := countUsers(t, s); err != nil || n != 3 {
+		t.Errorf("CountUsers = %d, %v; want 3", n, err)
+	}
+
+	if err := delUser(t, s, tenantA, "u4"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetUser(ctx, tenantA, "u4"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+	}
+	if err := delUser(t, s, tenantA, "u4"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("second delete error = %v, want ErrNotFound", err)
+	}
+	if n, err := countUsers(t, s); err != nil || n != 2 {
+		t.Errorf("CountUsers after delete = %d, %v; want 2", n, err)
+	}
+	// The deleted username is free again.
+	if err := putUser(t, s, newUser(tenantA, "u5", "Bob"), 0); err != nil {
+		t.Errorf("reuse of deleted username: %v", err)
+	}
+}
+
+func countUsers(t *testing.T, s store.State) (int, error) {
+	t.Helper()
+	return s.CountUsers(context.Background())
+}
+
+func testUserTenantIsolation(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	if err := putUser(t, s, newUser(tenantA, "u1", "alice"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.GetUser(ctx, tenantB, "u1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetUser across tenants error = %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListUsers(ctx, tenantB); err != nil || len(list) != 0 {
+		t.Errorf("ListUsers for other tenant = %d users, %v", len(list), err)
+	}
+	if err := delUser(t, s, tenantB, "u1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+	}
+	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantB, "u1", 1) }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("last login across tenants error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetUser(ctx, tenantA, "u1"); err != nil {
+		t.Errorf("owner's user gone after foreign operations: %v", err)
+	}
+
+	if err := putUser(t, s, newUser(tenantB, "u1", "bob"), 0); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("user ID of another tenant reused: error = %v, want ErrConflict", err)
+	}
+	hijack := newUser(tenantB, "u1", "hijacked")
+	if err := putUser(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+	}
+	got, err := s.GetUser(ctx, tenantA, "u1")
+	if err != nil || got.Username != "alice" || got.Revision != 1 {
+		t.Errorf("owner's user changed by other tenant: %+v, %v", got, err)
+	}
+}
+
+func newSigningKey(kid string, createdMs int64) store.SigningKey {
+	return store.SigningKey{
+		KID:           kid,
+		Alg:           "EdDSA",
+		PublicKey:     []byte("public-" + kid),
+		PrivateKeyEnc: "enc1-" + kid,
+		CreatedMs:     createdMs,
+	}
+}
+
+func putSigningKey(t *testing.T, s store.State, k store.SigningKey) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutSigningKey(ctx, k)
+	})
+}
+
+func testSigningKeys(t *testing.T, s store.State) {
+	ctx := context.Background()
+	if keys, err := s.ListSigningKeys(ctx); err != nil || len(keys) != 0 {
+		t.Fatalf("initial keys = %v, %v", keys, err)
+	}
+	if err := putSigningKey(t, s, newSigningKey("k2", 200)); err != nil {
+		t.Fatal(err)
+	}
+	if err := putSigningKey(t, s, newSigningKey("k1", 100)); err != nil {
+		t.Fatal(err)
+	}
+	// Retire k1 and replace its ciphertext; its creation time and public key are kept.
+	retired := newSigningKey("k1", 999)
+	retired.Alg = "other"
+	retired.PublicKey = []byte("changed")
+	retired.PrivateKeyEnc = "enc2-k1"
+	retired.RetiredMs = 300
+	if err := putSigningKey(t, s, retired); err != nil {
+		t.Fatalf("retire: %v", err)
+	}
+	if err := putSigningKey(t, s, store.SigningKey{KID: "k3"}); err == nil {
+		t.Error("incomplete signing key accepted")
+	}
+
+	keys, err := s.ListSigningKeys(ctx)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("keys = %+v, %v", keys, err)
+	}
+	k1 := keys[0]
+	if k1.KID != "k1" || k1.CreatedMs != 100 || k1.RetiredMs != 300 || k1.PrivateKeyEnc != "enc2-k1" ||
+		k1.Alg != "EdDSA" || string(k1.PublicKey) != "public-k1" {
+		t.Errorf("k1 = %+v", k1)
+	}
+	if keys[1].KID != "k2" || keys[1].RetiredMs != 0 || keys[1].CreatedMs != 200 {
+		t.Errorf("k2 = %+v", keys[1])
+	}
+}
+
+func putSession(t *testing.T, s store.State, sess store.Session) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.InsertSession(ctx, sess)
+	})
+}
+
+func newSession(hash, family, userID string, expiresMs int64) store.Session {
+	return store.Session{
+		TokenHash: hash,
+		FamilyID:  family,
+		TenantID:  tenantA,
+		UserID:    userID,
+		CreatedMs: 1000,
+		ExpiresMs: expiresMs,
+	}
+}
+
+func sessionRevoked(t *testing.T, s store.State, hash string) int64 {
+	t.Helper()
+	got, err := s.GetSession(context.Background(), hash)
+	if err != nil {
+		t.Fatalf("get session %s: %v", hash, err)
+	}
+	return got.RevokedMs
+}
+
+func testSessions(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+	if err := putUser(t, s, newUser(tenantA, "u1", "alice"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := putUser(t, s, newUser(tenantA, "u2", "bob"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	s1 := newSession("h1", "f1", "u1", 5000)
+	if err := putSession(t, s, s1); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	got, err := s.GetSession(ctx, "h1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != s1 {
+		t.Errorf("session = %+v, want %+v", got, s1)
+	}
+	if err := putSession(t, s, s1); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate hash error = %v, want ErrConflict", err)
+	}
+	if err := putSession(t, s, newSession("h9", "f9", "ghost", 5000)); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown user error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetSession(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetSession(missing) error = %v, want ErrNotFound", err)
+	}
+
+	for _, sess := range []store.Session{
+		newSession("h2", "f1", "u1", 6000),
+		newSession("h3", "f2", "u2", 4000),
+		newSession("h4", "f1", "u1", 7000),
+	} {
+		if err := putSession(t, s, sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The first use is kept; a missing token is ErrNotFound.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.MarkSessionUsed(ctx, "h1", 1500) }); err != nil {
+		t.Fatalf("mark used: %v", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.MarkSessionUsed(ctx, "h1", 1600) }); err != nil {
+		t.Fatalf("mark used again: %v", err)
+	}
+	if got, _ := s.GetSession(ctx, "h1"); got.UsedMs != 1500 {
+		t.Errorf("UsedMs = %d, want first use 1500", got.UsedMs)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.MarkSessionUsed(ctx, "missing", 1) }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("mark used of missing token error = %v, want ErrNotFound", err)
+	}
+
+	// Revoking a family leaves other families alone and keeps earlier revocations.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.RevokeSessionFamily(ctx, "f1", 2000) }); err != nil {
+		t.Fatalf("revoke family: %v", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.RevokeSessionFamily(ctx, "f1", 3000) }); err != nil {
+		t.Fatalf("revoke family again: %v", err)
+	}
+	for hash, want := range map[string]int64{"h1": 2000, "h2": 2000, "h4": 2000, "h3": 0} {
+		if got := sessionRevoked(t, s, hash); got != want {
+			t.Errorf("%s revoked = %d, want %d", hash, got, want)
+		}
+	}
+
+	// Revoking a user's sessions affects only that user.
+	if err := putSession(t, s, newSession("h5", "f3", "u1", 8000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.RevokeUserSessions(ctx, tenantA, "u2", 2500)
+	}); err != nil {
+		t.Fatalf("revoke user sessions: %v", err)
+	}
+	if got := sessionRevoked(t, s, "h3"); got != 2500 {
+		t.Errorf("h3 revoked = %d, want 2500", got)
+	}
+	if got := sessionRevoked(t, s, "h5"); got != 0 {
+		t.Errorf("h5 of other user revoked = %d, want 0", got)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.RevokeUserSessions(ctx, tenantA, "u1", 2600)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionRevoked(t, s, "h5"); got != 2600 {
+		t.Errorf("h5 revoked = %d, want 2600", got)
+	}
+	if got := sessionRevoked(t, s, "h2"); got != 2000 {
+		t.Errorf("h2 revoked = %d, want earlier 2000 kept", got)
+	}
+
+	// Pruning removes expired tokens only.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneSessions(ctx, 4500) }); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if _, err := s.GetSession(ctx, "h3"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expired session after prune error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetSession(ctx, "h1"); err != nil {
+		t.Errorf("unexpired session pruned: %v", err)
+	}
+
+	// Deleting a user deletes its sessions.
+	if err := delUser(t, s, tenantA, "u1"); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	for _, hash := range []string{"h1", "h2", "h4", "h5"} {
+		if _, err := s.GetSession(ctx, hash); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("session %s of deleted user error = %v, want ErrNotFound", hash, err)
+		}
 	}
 }
 

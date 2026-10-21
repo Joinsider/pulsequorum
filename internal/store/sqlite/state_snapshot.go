@@ -33,6 +33,9 @@ var fingerprintTables = []struct{ name, orderBy string }{
 	{"monitor_channels", "tenant_id, monitor_id, channel_id"},
 	{"alert_outbox", "alert_key, channel_id"},
 	{"maintenance_windows", "tenant_id, id"},
+	{"users", "tenant_id, id"},
+	{"signing_keys", "kid"},
+	{"refresh_sessions", "token_hash"},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.

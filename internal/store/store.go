@@ -226,6 +226,47 @@ func (w MaintenanceWindow) Covers(m Monitor) bool {
 	return false
 }
 
+// User is a local account (FA-AUTH-01). PasswordHash is an Argon2id PHC string.
+// Usernames are unique across all tenants, compared case-insensitively.
+type User struct {
+	TenantID     string
+	ID           string
+	Username     string
+	DisplayName  string
+	PasswordHash string
+	Role         string
+	Disabled     bool
+	// Revision starts at 1 and increases with every update (optimistic concurrency).
+	Revision    uint64
+	CreatedMs   int64
+	UpdatedMs   int64
+	LastLoginMs int64 // 0 = never logged in
+}
+
+// SigningKey signs access tokens (FA-AUTH-02). PrivateKeyEnc is ciphertext (ADR 0011).
+type SigningKey struct {
+	KID           string
+	Alg           string
+	PublicKey     []byte
+	PrivateKeyEnc string
+	CreatedMs     int64
+	RetiredMs     int64 // 0 = not retired
+}
+
+// Session is one refresh token of a token family (FA-AUTH-03). Only its hash
+// is stored. UsedMs is 0 until the token is exchanged, RevokedMs 0 while the
+// token is valid.
+type Session struct {
+	TokenHash string
+	FamilyID  string
+	TenantID  string
+	UserID    string
+	CreatedMs int64
+	ExpiresMs int64
+	UsedMs    int64
+	RevokedMs int64
+}
+
 // StatusChange is one entry of the consensus status history.
 type StatusChange struct {
 	SinceMs int64
@@ -305,6 +346,19 @@ type State interface {
 	// ListAllMaintenanceWindows returns the windows of all tenants ordered by tenant ID, ID.
 	ListAllMaintenanceWindows(ctx context.Context) ([]MaintenanceWindow, error)
 
+	// GetUser returns a user of the tenant.
+	GetUser(ctx context.Context, tenantID, id string) (User, error)
+	// GetUserByUsername returns the user with the username (case-insensitive, all tenants).
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	// ListUsers returns the tenant's users ordered by username.
+	ListUsers(ctx context.Context, tenantID string) ([]User, error)
+	// CountUsers returns the number of users of all tenants.
+	CountUsers(ctx context.Context) (int, error)
+	// ListSigningKeys returns all signing keys ordered by creation time and KID.
+	ListSigningKeys(ctx context.Context) ([]SigningKey, error)
+	// GetSession returns the refresh token with the hash or ErrNotFound.
+	GetSession(ctx context.Context, tokenHash string) (Session, error)
+
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
 	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
@@ -367,6 +421,39 @@ type StateTx interface {
 	// PutSecretKey creates a DEK or updates its wrapping or retirement; the
 	// creation time of an existing key is kept.
 	PutSecretKey(ctx context.Context, k SecretKey) error
+
+	// CountUsers returns the number of users of all tenants.
+	CountUsers(ctx context.Context) (int, error)
+	// GetUser returns a user of the tenant or ErrNotFound.
+	GetUser(ctx context.Context, tenantID, id string) (User, error)
+	// PutUser creates the user if expectedRevision is 0, otherwise it replaces
+	// the user at that revision (ErrConflict on mismatch, ErrNotFound if missing).
+	// A duplicate ID or username is ErrConflict. The creation time and the last
+	// login are kept on replace.
+	PutUser(ctx context.Context, u User, expectedRevision uint64) error
+	// DeleteUser deletes the user and, by cascade, its sessions.
+	DeleteUser(ctx context.Context, tenantID, id string) error
+	// SetLastLogin records the time of the last successful login.
+	SetLastLogin(ctx context.Context, tenantID, userID string, ms int64) error
+
+	// PutSigningKey creates a signing key or updates its retirement and private
+	// key ciphertext; the creation time and public key of an existing key are kept.
+	PutSigningKey(ctx context.Context, k SigningKey) error
+
+	// GetSession returns the refresh token with the hash or ErrNotFound.
+	GetSession(ctx context.Context, tokenHash string) (Session, error)
+	// InsertSession stores a refresh token: a duplicate hash is ErrConflict, an
+	// unknown user ErrNotFound.
+	InsertSession(ctx context.Context, s Session) error
+	// MarkSessionUsed records the first exchange of a refresh token; later calls
+	// keep the first time. ErrNotFound if the token does not exist.
+	MarkSessionUsed(ctx context.Context, tokenHash string, ms int64) error
+	// RevokeSessionFamily revokes all tokens of the family that are not revoked yet.
+	RevokeSessionFamily(ctx context.Context, familyID string, ms int64) error
+	// RevokeUserSessions revokes all tokens of the user that are not revoked yet.
+	RevokeUserSessions(ctx context.Context, tenantID, userID string, ms int64) error
+	// PruneSessions deletes the tokens that expired before beforeMs.
+	PruneSessions(ctx context.Context, beforeMs int64) error
 
 	// SetAppliedIndex records the Raft index applied by this transaction (ADR 0005).
 	SetAppliedIndex(ctx context.Context, index uint64) error

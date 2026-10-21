@@ -291,3 +291,72 @@ SELECT revision FROM maintenance_windows WHERE tenant_id = ? AND id = ?;
 
 -- name: DeleteMaintenanceWindow :execrows
 DELETE FROM maintenance_windows WHERE tenant_id = ? AND id = ?;
+
+-- name: GetUser :one
+SELECT * FROM users WHERE tenant_id = ? AND id = ?;
+
+-- name: GetUserByUsername :one
+SELECT * FROM users WHERE username = ?;
+
+-- name: ListUsers :many
+SELECT * FROM users WHERE tenant_id = ? ORDER BY username, id;
+
+-- name: CountUsers :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM users;
+
+-- name: UserRevision :one
+SELECT revision FROM users WHERE tenant_id = ? AND id = ?;
+
+-- name: InsertUser :exec
+INSERT INTO users (
+    tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: UpdateUser :execrows
+-- created_ms and last_login_ms are kept: they are not part of the update.
+UPDATE users SET
+    username      = sqlc.arg(username),
+    display_name  = sqlc.arg(display_name),
+    password_hash = sqlc.arg(password_hash),
+    role          = sqlc.arg(role),
+    disabled      = sqlc.arg(disabled),
+    revision      = sqlc.arg(revision),
+    updated_ms    = sqlc.arg(updated_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND id = sqlc.arg(id) AND revision = sqlc.arg(expected_revision);
+
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE tenant_id = ? AND id = ?;
+
+-- name: SetUserLastLogin :execrows
+UPDATE users SET last_login_ms = ? WHERE tenant_id = ? AND id = ?;
+
+-- name: UpsertSigningKey :exec
+-- The creation time and the public part of an existing key are kept.
+INSERT INTO signing_keys (kid, alg, public_key, private_key_enc, created_ms, retired_ms)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (kid) DO UPDATE SET
+    private_key_enc = excluded.private_key_enc,
+    retired_ms      = excluded.retired_ms;
+
+-- name: ListSigningKeys :many
+SELECT * FROM signing_keys ORDER BY created_ms, kid;
+
+-- name: GetSession :one
+SELECT * FROM refresh_sessions WHERE token_hash = ?;
+
+-- name: InsertSession :exec
+INSERT INTO refresh_sessions (token_hash, family_id, tenant_id, user_id, created_ms, expires_ms, used_ms, revoked_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: MarkSessionUsed :execrows
+-- The first use is kept: a second use is detected by used_ms <> 0.
+UPDATE refresh_sessions SET used_ms = ? WHERE token_hash = ? AND used_ms = 0;
+
+-- name: RevokeSessionFamily :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE family_id = ? AND revoked_ms = 0;
+
+-- name: RevokeUserSessions :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? AND revoked_ms = 0;
+
+-- name: PruneSessions :exec
+DELETE FROM refresh_sessions WHERE expires_ms < ?;
