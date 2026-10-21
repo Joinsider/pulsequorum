@@ -3,6 +3,7 @@ module github.com/joinsider/uptimecluster
 go 1.27.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/getkin/kin-openapi v0.151.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3

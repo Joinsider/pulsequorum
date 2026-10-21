@@ -65,6 +65,8 @@ type FSM struct {
 	// changes signals (coalesced) that state.db changed; it is a notification
 	// outside the replicated state and does not affect determinism.
 	changes chan struct{}
+	// observer receives the StateEvents of committed transactions (see OnStateChange).
+	observer atomic.Pointer[func(StateEvent)]
 }
 
 var _ raft.FSM = (*FSM)(nil)
@@ -137,7 +139,10 @@ func (f *FSM) Apply(l *raft.Log) any {
 	}
 
 	var res ApplyResult
+	var collected stateEventCollector
 	err := f.state.Update(ctx, func(tx store.StateTx) error {
+		collected.events = nil
+		txCtx := withStateEvents(ctx, &collected)
 		if id := cmd.GetRequestId(); id != "" {
 			e, err := tx.GetDedup(ctx, id)
 			switch {
@@ -148,7 +153,7 @@ func (f *FSM) Apply(l *raft.Log) any {
 				return err
 			}
 		}
-		result, err := applyPayload(ctx, tx, &cmd)
+		result, err := applyPayload(txCtx, tx, &cmd)
 		if err != nil {
 			return err
 		}
@@ -169,6 +174,7 @@ func (f *FSM) Apply(l *raft.Log) any {
 	f.applied.Store(l.Index)
 	if !res.Duplicate {
 		f.notify()
+		f.emit(collected.events)
 	}
 	return res
 }
@@ -384,6 +390,7 @@ func syncPausedState(ctx context.Context, tx store.StateTx, tenantID, monitorID 
 	if paused {
 		next.Status = store.StatusPaused
 	}
+	resolved := false
 	if !create {
 		cur, err := tx.GetMonitorState(ctx, tenantID, monitorID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -396,11 +403,14 @@ func syncPausedState(ctx context.Context, tx store.StateTx, tenantID, monitorID 
 			if err := tx.ResolveIncident(ctx, tenantID, monitorID, nowMs); err != nil {
 				return err
 			}
+			resolved = true
 		}
 	}
 	if err := tx.PutMonitorState(ctx, tenantID, monitorID, next); err != nil {
 		return err
 	}
+	recordStateEvent(ctx, StateEvent{TenantID: tenantID, MonitorID: monitorID, Status: next.Status,
+		Confirmed: next.Confirmed, SinceMs: next.SinceMs, IncidentResolved: resolved})
 	return tx.PruneStatusHistory(ctx, tenantID, monitorID, nowMs-statusHistoryRetention.Milliseconds())
 }
 
@@ -459,6 +469,12 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 	if err != nil {
 		return nil, storeError(err)
 	}
+	ev := StateEvent{TenantID: tenantID, MonitorID: monitorID, Status: to, Confirmed: set.GetConfirmed(),
+		SinceMs: since, IncidentResolved: cur.Status == store.StatusDown}
+	if to == store.StatusDown {
+		ev.IncidentOpened = set.GetIncident().GetIncidentId()
+	}
+	recordStateEvent(ctx, ev)
 	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
 		return nil, err
 	}

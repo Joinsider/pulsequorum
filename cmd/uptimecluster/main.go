@@ -35,6 +35,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/uptimecluster/internal/stream"
 	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
@@ -153,6 +154,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}()
 	log.Info("node ready", "node_id", nodeID, "advertise", cfg.ClusterAdvertise)
 
+	// Live stream (FA-API-04): committed status changes reach the hub through
+	// the bridge, which the FSM calls after each commit without blocking.
+	hub := stream.NewHub(0)
+	bridge := stream.NewStateBridge(hub, state, log)
+	raftNode.FSM().OnStateChange(bridge.Handle)
+
 	// Background work stops and finishes before Raft and the stores close
 	// (deferred calls run in reverse order).
 	var bg sync.WaitGroup
@@ -171,6 +178,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	bg.Go(func() { bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) })
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
+	bg.Go(func() { bridge.Run(ctx) })
 
 	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, metrics, nodeID, log)
 	if err != nil {
@@ -198,7 +206,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
 		Maintenance: maint.InMaintenance, Logger: log,
 	})
-	sink := scheduler.Sinks{heartbeats, agg}
+	sink := scheduler.Sinks{heartbeats, agg, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
@@ -220,6 +228,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
+		Stream: hub, Tickets: auth.NewTickets(),
 	}
 	if local != nil {
 		apiDeps.Local, apiDeps.Authenticator = local, local

@@ -516,7 +516,8 @@ func (l *Local) Authenticate(r *http.Request) (Principal, error) {
 	if err != nil || u.Disabled || !ValidRole(Role(u.Role)) {
 		return Principal{}, ErrUnauthenticated
 	}
-	return Principal{UserID: u.ID, Username: u.Username, TenantID: u.TenantID, Roles: []Role{Role(u.Role)}}, nil
+	return Principal{UserID: u.ID, Username: u.Username, TenantID: u.TenantID, Roles: []Role{Role(u.Role)},
+		ExpiresAt: time.Unix(c.ExpiresAt, 0)}, nil
 }
 
 func (l *Local) apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error) {

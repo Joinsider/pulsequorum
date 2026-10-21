@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,12 +30,17 @@ type Server struct {
 	// readiness, if set, is consulted by /readyz in addition to the listener state.
 	readiness func() error
 	api       api.Deps
+	limits    *limits
+	// closing is closed when shutdown starts, so WebSocket streams end;
+	// http.Server.Shutdown does not wait for hijacked connections.
+	closing     chan struct{}
+	closingOnce sync.Once
 }
 
 // New creates a server. ui serves the single-page application for all
 // non-API paths.
 func New(cfg config.Config, log *slog.Logger, ui http.Handler) *Server {
-	return &Server{cfg: cfg, log: log, ui: ui}
+	return &Server{cfg: cfg, log: log, ui: ui, limits: newLimits(), closing: make(chan struct{})}
 }
 
 // WithAPI provides the services behind the REST API. It must be called before Run.
@@ -56,13 +62,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleLiveness)
 	mux.HandleFunc("GET /readyz", s.handleReadiness)
 	mux.HandleFunc("GET /config.json", s.handleFrontendConfig)
-	api.Register(mux, s.cfg, s.log, s.api)
+	deps := s.api
+	deps.StreamClosing = s.closing
+	api.Register(mux, s.cfg, s.log, deps)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		api.WriteProblem(w, http.StatusNotFound, "Not Found", "no API endpoint "+r.Method+" "+r.URL.Path)
 	})
 	mux.Handle("/", s.ui)
 
-	return s.recoverPanics(securityHeaders(mux))
+	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.limits.middleware(mux))))
 }
 
 // Run serves HTTP on cfg.HTTPAddr until ctx is cancelled, then shuts down
@@ -81,11 +89,13 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		// WriteTimeout must be lifted per request for WebSocket streams (P1).
+		// The stream handler lifts the deadlines of WebSocket connections.
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 		ErrorLog:     slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
+
+	srv.RegisterOnShutdown(s.closeStreams)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
@@ -112,6 +122,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	return nil
 }
 
+func (s *Server) closeStreams() {
+	s.closingOnce.Do(func() { close(s.closing) })
+}
+
 func (s *Server) recoverPanics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -123,18 +137,6 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 				api.WriteProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
 			}
 		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// securityHeaders sets headers that are safe for every response. A full CSP
-// follows with NFA-SEC-05 in phase 1.
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }

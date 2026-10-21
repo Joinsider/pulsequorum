@@ -156,3 +156,24 @@ func TestAuthCookieDomain(t *testing.T) {
 		}
 	}
 }
+
+func TestCORSOrigins(t *testing.T) {
+	cfg, err := Load(env(map[string]string{
+		"NODE_NAME":    "n1",
+		"PUBLIC_URL":   "https://Mon1.example.com/ui",
+		"CORS_ORIGINS": " https://status.example.com , http://localhost:4200/,https://mon1.example.com",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"https://mon1.example.com", "https://status.example.com", "http://localhost:4200"}
+	if strings.Join(cfg.CORSOrigins, " ") != strings.Join(want, " ") {
+		t.Errorf("CORSOrigins = %v, want %v", cfg.CORSOrigins, want)
+	}
+
+	for _, bad := range []string{"*", "example.com", "ftp://example.com", "https://example.com/app", "https://u:p@example.com", "https://example.com?x=1"} {
+		if _, err := Load(env(map[string]string{"NODE_NAME": "n1", "CORS_ORIGINS": bad})); err == nil || !strings.Contains(err.Error(), "CORS_ORIGINS") {
+			t.Errorf("CORS_ORIGINS=%q: want error, got %v", bad, err)
+		}
+	}
+}
