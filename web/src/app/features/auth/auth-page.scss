@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+.auth-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 1rem;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: min(100%, 24rem);
+  padding: 2rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.auth-card__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.auth-card__subtitle {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.auth-card__hint {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.auth-card__notice,
+.auth-card__error {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.auth-card__notice {
+  background: var(--success-bg);
+}
+
+.auth-card__error {
+  color: var(--danger);
+  border: 1px solid currentColor;
+}
+
+.auth-card__link {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: inherit;
+}

@@ -1,0 +1,33 @@
+{
+  "username": "Username",
+  "password": "Password",
+  "login": {
+    "title": "Sign in",
+    "submit": "Sign in",
+    "expired": "Your session has ended. Please sign in again.",
+    "toSetup": "First start? Create the administrator"
+  },
+  "setup": {
+    "title": "Create the first administrator",
+    "hint": "The one-time setup token is printed in the server log at first start and is valid for one hour.",
+    "token": "Setup token",
+    "displayName": "Display name (optional)",
+    "passwordRepeat": "Repeat password",
+    "usernameRule": "3 to 64 characters",
+    "passwordRule": "At least {{ min }} characters",
+    "mismatch": "The passwords do not match.",
+    "submit": "Create administrator",
+    "toLogin": "Back to sign in"
+  },
+  "error": {
+    "invalidCredentials": "Invalid username or password.",
+    "throttled": "Too many attempts. Try again in {{ seconds }} seconds.",
+    "setupToken": "The setup token is invalid or has expired. Restart the node to get a new one.",
+    "setupDone": "Setup is already complete. Please sign in.",
+    "weakPassword": "The password does not meet the requirements.",
+    "localDisabled": "Local sign-in is not enabled on this cluster.",
+    "unavailable": "The cluster is not ready (no leader). Try again shortly.",
+    "offline": "The server cannot be reached.",
+    "unexpected": "Something went wrong. Please try again."
+  }
+}

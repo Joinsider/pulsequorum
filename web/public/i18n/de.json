@@ -1,0 +1,59 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "incidents": "Vorfälle",
+    "channels": "Benachrichtigungskanäle",
+    "maintenance": "Wartung",
+    "users": "Benutzer",
+    "account": "Konto"
+  },
+  "shell": {
+    "theme": "Design: {{ mode }}",
+    "themes": {
+      "system": "System",
+      "light": "Hell",
+      "dark": "Dunkel"
+    },
+    "language": "Sprache",
+    "signOut": "Abmelden",
+    "sourceCode": "Quellcode",
+    "license": "Lizenz: AGPL-3.0-only",
+    "version": "Version {{ version }}",
+    "liveDisconnected": "Live-Updates sind pausiert. Die Verbindung wird wiederhergestellt …",
+    "toggleNavigation": "Navigation ein- oder ausblenden",
+    "navigation": "Hauptnavigation",
+    "skipToContent": "Zum Inhalt springen"
+  },
+  "status": {
+    "UP": "Erreichbar",
+    "DOWN": "Ausgefallen",
+    "DEGRADED": "Eingeschränkt",
+    "PARTIAL": "Teilweise",
+    "PENDING": "Ausstehend",
+    "MAINTENANCE": "Wartung",
+    "PAUSED": "Pausiert",
+    "UNKNOWN": "Unbekannt"
+  },
+  "uptimeBar": {
+    "label": "Verfügbarkeitsverlauf",
+    "tooltip": "{{ time }}: {{ detail }}",
+    "percent": "{{ value }} % Verfügbarkeit",
+    "noData": "Keine Daten"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "confirm": "Bestätigen",
+    "retry": "Erneut versuchen",
+    "loading": "Lädt …",
+    "empty": "Hier ist noch nichts.",
+    "error": "Da ist etwas schiefgelaufen.",
+    "yes": "Ja",
+    "no": "Nein",
+    "back": "Zurück",
+    "create": "Anlegen",
+    "close": "Schließen"
+  }
+}

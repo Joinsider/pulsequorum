@@ -1,0 +1,33 @@
+{
+  "username": "Benutzername",
+  "password": "Passwort",
+  "login": {
+    "title": "Anmelden",
+    "submit": "Anmelden",
+    "expired": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+    "toSetup": "Erster Start? Administrator anlegen"
+  },
+  "setup": {
+    "title": "Ersten Administrator anlegen",
+    "hint": "Das einmalige Setup-Token steht beim ersten Start im Server-Log und ist eine Stunde gültig.",
+    "token": "Setup-Token",
+    "displayName": "Anzeigename (optional)",
+    "passwordRepeat": "Passwort wiederholen",
+    "usernameRule": "3 bis 64 Zeichen",
+    "passwordRule": "Mindestens {{ min }} Zeichen",
+    "mismatch": "Die Passwörter stimmen nicht überein.",
+    "submit": "Administrator anlegen",
+    "toLogin": "Zurück zur Anmeldung"
+  },
+  "error": {
+    "invalidCredentials": "Benutzername oder Passwort ist falsch.",
+    "throttled": "Zu viele Versuche. Bitte in {{ seconds }} Sekunden erneut versuchen.",
+    "setupToken": "Das Setup-Token ist ungültig oder abgelaufen. Starte den Node neu, um ein neues zu erhalten.",
+    "setupDone": "Die Einrichtung ist bereits abgeschlossen. Bitte melde dich an.",
+    "weakPassword": "Das Passwort erfüllt die Anforderungen nicht.",
+    "localDisabled": "Die lokale Anmeldung ist in diesem Cluster nicht aktiviert.",
+    "unavailable": "Der Cluster ist nicht bereit (kein Leader). Bitte gleich erneut versuchen.",
+    "offline": "Der Server ist nicht erreichbar.",
+    "unexpected": "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+  }
+}

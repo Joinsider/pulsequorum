@@ -1,0 +1,126 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<a class="skip-link" href="#main">{{ 'shell.skipToContent' | transloco }}</a>
+
+<mat-toolbar class="toolbar" color="primary">
+  <button
+    mat-icon-button
+    type="button"
+    class="nav-toggle"
+    [attr.aria-label]="'shell.toggleNavigation' | transloco"
+    [attr.aria-expanded]="navOpened()"
+    aria-controls="app-navigation"
+    (click)="toggleNav()"
+  >
+    <app-icon name="menu" />
+  </button>
+  <span class="brand">UptimeCluster</span>
+
+  <span class="spacer"></span>
+
+  @if (liveState() !== 'open') {
+    <span
+      class="live-indicator"
+      role="status"
+      [matTooltip]="'shell.liveDisconnected' | transloco"
+      [attr.aria-label]="'shell.liveDisconnected' | transloco"
+    >
+      <app-icon name="wifiOff" size="1.25rem" />
+    </span>
+  }
+
+  <button
+    mat-icon-button
+    type="button"
+    class="theme-toggle"
+    [matTooltip]="themeLabel()"
+    [attr.aria-label]="themeLabel()"
+    (click)="cycleTheme()"
+  >
+    <app-icon [name]="themeIcon()" size="1.25rem" />
+  </button>
+
+  <button
+    mat-icon-button
+    type="button"
+    [matMenuTriggerFor]="langMenu"
+    [matTooltip]="'shell.language' | transloco"
+    [attr.aria-label]="'shell.language' | transloco"
+  >
+    <app-icon name="translate" size="1.25rem" />
+  </button>
+  <mat-menu #langMenu="matMenu">
+    @for (code of languages; track code) {
+      <button mat-menu-item type="button" (click)="setLanguage(code)">
+        @if (code === lang()) {
+          <app-icon name="checkCircle" size="1.125rem" />
+        } @else {
+          <span class="menu-spacer"></span>
+        }
+        <span>{{ code === 'de' ? 'Deutsch' : 'English' }}</span>
+      </button>
+    }
+  </mat-menu>
+
+  <button mat-button type="button" class="user-button" [matMenuTriggerFor]="userMenu">
+    <app-icon name="person" size="1.25rem" />
+    <span class="user-name">{{ auth.me()?.displayName || auth.me()?.username }}</span>
+  </button>
+  <mat-menu #userMenu="matMenu">
+    <div class="user-info" role="presentation">
+      <div class="user-info__name">{{ auth.me()?.displayName || auth.me()?.username }}</div>
+      @if (auth.me()?.tenantName) {
+        <div class="user-info__tenant">{{ auth.me()?.tenantName }}</div>
+      }
+    </div>
+    <button mat-menu-item type="button" (click)="auth.logout()">
+      <app-icon name="logout" size="1.125rem" />
+      <span>{{ 'shell.signOut' | transloco }}</span>
+    </button>
+  </mat-menu>
+</mat-toolbar>
+
+<mat-sidenav-container class="container">
+  <mat-sidenav
+    id="app-navigation"
+    class="sidenav"
+    [mode]="sidenavMode()"
+    [opened]="navOpened()"
+    (openedChange)="onOpenedChange($event)"
+    [attr.aria-label]="'shell.navigation' | transloco"
+  >
+    <mat-nav-list class="nav">
+      @for (item of navItems; track item.path) {
+        @if (!item.adminOnly || auth.canAdmin()) {
+          <a
+            mat-list-item
+            [routerLink]="item.path"
+            routerLinkActive="nav-active"
+            [routerLinkActiveOptions]="{ exact: item.path === '/' }"
+            (click)="onNavigate()"
+          >
+            <app-icon matListItemIcon [name]="item.icon" />
+            <span matListItemTitle>{{ item.labelKey | transloco }}</span>
+          </a>
+        }
+      }
+    </mat-nav-list>
+
+    <footer class="sidenav-footer">
+      <a class="source-link" [href]="sourceUrl" target="_blank" rel="noopener">
+        <app-icon name="code" size="1.125rem" />
+        <span>{{ 'shell.sourceCode' | transloco }}</span>
+        <app-icon name="openInNew" size="1rem" />
+      </a>
+      <span class="license">{{ 'shell.license' | transloco }}</span>
+      @if (version(); as v) {
+        <span class="version">{{ 'shell.version' | transloco: { version: v } }}</span>
+      }
+    </footer>
+  </mat-sidenav>
+
+  <mat-sidenav-content class="content">
+    <main id="main" class="page" tabindex="-1">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

@@ -82,10 +82,13 @@ web-lint: web/node_modules ## Prettier check
 
 # Dual-licensed EPL-2.0 OR EDL-1.0; used under EDL-1.0 (BSD-3-Clause), see ADR 0014.
 LICENSE_EXCEPTIONS := --ignore github.com/eclipse/paho.golang
+# Python-2.0 (PSF, permissive); only used by transloco's build-time config loader
+# (transloco-utils -> cosmiconfig -> js-yaml), not part of the browser bundle.
+NPM_LICENSE_EXCEPTIONS := --excludePackages "argparse@2.0.1"
 
 licenses: web/node_modules ## Check Go and npm production licenses against the ADR 0010 allow-list
 	go run github.com/google/go-licenses/v2@v2.0.1 check ./cmd/uptimecluster --ignore $(MODULE) $(LICENSE_EXCEPTIONS) --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,MPL-2.0,0BSD,Unlicense
-	cd web && npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --onlyAllow "MIT;BSD-2-Clause;BSD-3-Clause;Apache-2.0;ISC;MPL-2.0;0BSD;Unlicense"
+	cd web && npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages $(NPM_LICENSE_EXCEPTIONS) --onlyAllow "MIT;BSD-2-Clause;BSD-3-Clause;Apache-2.0;ISC;MPL-2.0;0BSD;Unlicense"
 
 notices: web/node_modules ## Generate THIRD_PARTY_NOTICES.md (Go and npm production dependencies)
 	@{ \

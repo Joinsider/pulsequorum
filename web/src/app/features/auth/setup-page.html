@@ -1,0 +1,64 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<main class="auth-page" *transloco="let t">
+  <form class="auth-card" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <h1 class="auth-card__title">UptimeCluster</h1>
+    <p class="auth-card__subtitle">{{ t('auth.setup.title') }}</p>
+    <p class="auth-card__hint">{{ t('auth.setup.hint') }}</p>
+
+    @if (error(); as e) {
+      <p class="auth-card__error" role="alert">{{ t(e.key, { seconds: e.retryAfter ?? '' }) }}</p>
+    }
+
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('auth.setup.token') }}</mat-label>
+      <input matInput formControlName="setupToken" autocomplete="off" spellcheck="false" required />
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('auth.username') }}</mat-label>
+      <input
+        matInput
+        formControlName="username"
+        autocomplete="username"
+        autocapitalize="none"
+        required
+      />
+      @if (form.controls.username.invalid) {
+        <mat-error>{{ t('auth.setup.usernameRule') }}</mat-error>
+      }
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('auth.setup.displayName') }}</mat-label>
+      <input matInput formControlName="displayName" autocomplete="name" />
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('auth.password') }}</mat-label>
+      <input
+        matInput
+        type="password"
+        formControlName="password"
+        autocomplete="new-password"
+        required
+      />
+      <mat-hint>{{ t('auth.setup.passwordRule', { min: minLength }) }}</mat-hint>
+      @if (form.controls.password.invalid) {
+        <mat-error>{{ t('auth.setup.passwordRule', { min: minLength }) }}</mat-error>
+      }
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('auth.setup.passwordRepeat') }}</mat-label>
+      <input
+        matInput
+        type="password"
+        formControlName="passwordRepeat"
+        autocomplete="new-password"
+        required
+      />
+    </mat-form-field>
+    @if (form.hasError('mismatch') && form.controls.passwordRepeat.touched) {
+      <p class="auth-card__error" role="alert">{{ t('auth.setup.mismatch') }}</p>
+    }
+
+    <button mat-flat-button type="submit" [disabled]="busy()">{{ t('auth.setup.submit') }}</button>
+    <a class="auth-card__link" routerLink="/login">{{ t('auth.setup.toLogin') }}</a>
+  </form>
+</main>

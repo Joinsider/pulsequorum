@@ -1,0 +1,59 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "incidents": "Incidents",
+    "channels": "Notification channels",
+    "maintenance": "Maintenance",
+    "users": "Users",
+    "account": "Account"
+  },
+  "shell": {
+    "theme": "Theme: {{ mode }}",
+    "themes": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "language": "Language",
+    "signOut": "Sign out",
+    "sourceCode": "Source code",
+    "license": "Licence: AGPL-3.0-only",
+    "version": "Version {{ version }}",
+    "liveDisconnected": "Live updates are paused. Reconnecting …",
+    "toggleNavigation": "Toggle navigation",
+    "navigation": "Main navigation",
+    "skipToContent": "Skip to content"
+  },
+  "status": {
+    "UP": "Up",
+    "DOWN": "Down",
+    "DEGRADED": "Degraded",
+    "PARTIAL": "Partial",
+    "PENDING": "Pending",
+    "MAINTENANCE": "Maintenance",
+    "PAUSED": "Paused",
+    "UNKNOWN": "Unknown"
+  },
+  "uptimeBar": {
+    "label": "Uptime history",
+    "tooltip": "{{ time }}: {{ detail }}",
+    "percent": "{{ value }}% uptime",
+    "noData": "No data"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "retry": "Retry",
+    "loading": "Loading …",
+    "empty": "Nothing here yet.",
+    "error": "Something went wrong.",
+    "yes": "Yes",
+    "no": "No",
+    "back": "Back",
+    "create": "Create",
+    "close": "Close"
+  }
+}
