@@ -25,6 +25,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/config"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/stream"
 	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 )
@@ -61,6 +62,11 @@ type Deps struct {
 	Alerts *alert.Sender
 	// Local is the local authentication (AUTH_MODE=local); nil otherwise.
 	Local *auth.Local
+	// Stream and Tickets serve the live WebSocket stream; nil disables it.
+	Stream  *stream.Hub
+	Tickets *auth.Tickets
+	// StreamClosing is closed when the server shuts down; open streams end then.
+	StreamClosing <-chan struct{}
 }
 
 // Handlers implements gen.StrictServerInterface.
@@ -116,6 +122,8 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 			}
 		},
 	})
+	// The WebSocket upgrade is not part of the OpenAPI contract.
+	mux.HandleFunc("GET "+streamPath, h.serveStream)
 	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
 		BaseURL:    BaseURL,
 		BaseRouter: mux,

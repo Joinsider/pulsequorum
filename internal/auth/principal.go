@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 )
 
 // Role is a role from the role model.
@@ -33,6 +34,8 @@ type Principal struct {
 	Username string
 	TenantID string
 	Roles    []Role
+	// ExpiresAt is when the presented credentials expire; zero if unknown.
+	ExpiresAt time.Time
 }
 
 // Has reports whether the principal holds one of the roles.

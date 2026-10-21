@@ -108,13 +108,12 @@ func (allowAll) Authenticate(*http.Request) (auth.Principal, error) {
 	return auth.Principal{UserID: "u", TenantID: "default", Roles: []auth.Role{auth.RoleTenantAdmin}}, nil
 }
 
-func TestUnimplementedOperationIs501(t *testing.T) {
+func TestStreamTicketWithoutStreamIs503(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv := testServer().WithAPI(api.Deps{Authenticator: allowAll{}})
-	// The stream ticket follows in AP-1.13.
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/stream/ticket", strings.NewReader(`{}`)))
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want 501", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
 		t.Errorf("Content-Type = %q", ct)
