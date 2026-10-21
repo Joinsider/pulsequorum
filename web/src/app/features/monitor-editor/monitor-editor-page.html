@@ -1,0 +1,246 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <app-page-header
+    [title]="isEdit ? t('monitorEditor.title.edit') : t('monitorEditor.title.create')"
+  />
+
+  @switch (loadState()) {
+    @case ('loading') {
+      <p class="state" role="status">{{ t('common.loading') }}</p>
+    }
+    @case ('error') {
+      <div class="state" role="alert">
+        <p class="error-text">{{ t('monitorEditor.errors.load') }}</p>
+        <button mat-stroked-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+      </div>
+    }
+    @default {
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        @if (summary(); as s) {
+          <div class="summary" role="alert">
+            <p>{{ t(s.key) }}</p>
+            @if (s.messages.length > 0) {
+              <ul>
+                @for (message of s.messages; track $index) {
+                  <li>{{ message }}</li>
+                }
+              </ul>
+            }
+          </div>
+        }
+
+        <section class="card">
+          <h2>{{ t('monitorEditor.sections.general') }}</h2>
+          <div class="grid">
+            <mat-form-field appearance="outline" class="span-all">
+              <mat-label>{{ t('monitorEditor.fields.name') }}</mat-label>
+              <input matInput formControlName="name" required autocomplete="off" />
+              <mat-error>{{ messageOf('name') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="span-all">
+              <mat-label>{{ t('monitorEditor.fields.description') }}</mat-label>
+              <textarea matInput formControlName="description" rows="2"></textarea>
+              <mat-error>{{ messageOf('description') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.type') }}</mat-label>
+              <mat-select
+                formControlName="type"
+                required
+                (selectionChange)="selectType($event.value)"
+              >
+                @for (type of types(); track type.type) {
+                  <mat-option [value]="type.type">{{ type.name }}</mat-option>
+                }
+              </mat-select>
+              @if (capability(); as capability) {
+                <mat-hint>{{
+                  t('monitorEditor.fields.requiresCapability', { capability })
+                }}</mat-hint>
+              }
+              <mat-error>{{ messageOf('type') }}</mat-error>
+            </mat-form-field>
+
+            <mat-slide-toggle class="toggle span-all" formControlName="paused">
+              {{ t('monitorEditor.fields.paused') }}
+            </mat-slide-toggle>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>{{ t('monitorEditor.sections.check') }}</h2>
+          @if (typeSchema(); as schema) {
+            <app-schema-field
+              [schema]="schema"
+              [control]="form.controls['config']"
+              [required]="true"
+            />
+          } @else {
+            <p class="error-text" role="alert">{{ t('monitorEditor.errors.unknownType') }}</p>
+          }
+        </section>
+
+        <section class="card">
+          <h2>{{ t('monitorEditor.sections.schedule') }}</h2>
+          <div class="grid">
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.interval') }}</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                formControlName="intervalSeconds"
+                required
+                min="20"
+                max="86400"
+              />
+              <mat-hint>{{ t('monitorEditor.fields.intervalHint') }}</mat-hint>
+              <mat-error>{{ messageOf('intervalSeconds') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.timeout') }}</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                formControlName="timeoutSeconds"
+                min="1"
+              />
+              <mat-hint>{{ t('monitorEditor.fields.timeoutHint') }}</mat-hint>
+              <mat-error>{{ messageOf('timeoutSeconds') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.retries') }}</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                formControlName="retries"
+                min="0"
+                max="10"
+              />
+              <mat-hint>{{ t('monitorEditor.fields.retriesHint') }}</mat-hint>
+              <mat-error>{{ messageOf('retries') }}</mat-error>
+            </mat-form-field>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>{{ t('monitorEditor.sections.notifications') }}</h2>
+          @if (channels().length === 0) {
+            <p class="hint">{{ t('monitorEditor.fields.noChannels') }}</p>
+          }
+          <mat-form-field appearance="outline" class="full">
+            <mat-label>{{ t('monitorEditor.fields.channels') }}</mat-label>
+            <mat-select formControlName="notificationChannelIds" multiple>
+              @for (channel of channels(); track channel.id) {
+                <mat-option [value]="channel.id">{{ channel.name }}</mat-option>
+              }
+            </mat-select>
+            <mat-hint>{{ t('monitorEditor.fields.channelsHint') }}</mat-hint>
+          </mat-form-field>
+        </section>
+
+        <mat-expansion-panel [expanded]="advancedOpen()">
+          <mat-expansion-panel-header>
+            <mat-panel-title>{{ t('monitorEditor.sections.advanced') }}</mat-panel-title>
+          </mat-expansion-panel-header>
+          <div class="grid">
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.recovery') }}</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                formControlName="recoveryThreshold"
+                min="1"
+                max="10"
+              />
+              <mat-hint>{{ t('monitorEditor.fields.recoveryHint') }}</mat-hint>
+              <mat-error>{{ messageOf('recoveryThreshold') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.resend') }}</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                formControlName="resendIntervalMinutes"
+                min="0"
+              />
+              <mat-hint>{{ t('monitorEditor.fields.resendHint') }}</mat-hint>
+              <mat-error>{{ messageOf('resendIntervalMinutes') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="span-all">
+              <mat-label>{{ t('monitorEditor.fields.tags') }}</mat-label>
+              <input matInput formControlName="tags" autocomplete="off" />
+              <mat-hint>{{ t('monitorEditor.fields.tagsHint') }}</mat-hint>
+              <mat-error>{{ messageOf('tags') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.consensus') }}</mat-label>
+              <mat-select formControlName="consensusPolicy">
+                @for (policy of consensusPolicies; track policy) {
+                  <mat-option [value]="policy">{{
+                    t('monitorEditor.consensus.' + policy)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t('monitorEditor.fields.assignment') }}</mat-label>
+              <mat-select formControlName="assignmentMode">
+                @for (mode of assignmentModes; track mode) {
+                  <mat-option [value]="mode">{{
+                    t('monitorEditor.assignment.' + mode)
+                  }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+
+            @if (form.controls['assignmentMode'].value === 'count') {
+              <mat-form-field appearance="outline">
+                <mat-label>{{ t('monitorEditor.fields.assignmentCount') }}</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  inputmode="numeric"
+                  formControlName="assignmentCount"
+                  min="1"
+                />
+                <mat-error>{{ messageOf('assignmentCount') }}</mat-error>
+              </mat-form-field>
+            }
+
+            @if (form.controls['assignmentMode'].value === 'nodes') {
+              <mat-form-field appearance="outline" class="span-all">
+                <mat-label>{{ t('monitorEditor.fields.assignmentNodes') }}</mat-label>
+                <input matInput formControlName="assignmentNodes" autocomplete="off" />
+                <mat-hint>{{ t('monitorEditor.fields.assignmentNodesHint') }}</mat-hint>
+                <mat-error>{{ messageOf('assignmentNodes') }}</mat-error>
+              </mat-form-field>
+            }
+          </div>
+        </mat-expansion-panel>
+
+        @if (!canEdit()) {
+          <p class="hint" role="status">{{ t('monitorEditor.errors.readOnly') }}</p>
+        }
+        <div class="actions">
+          <button mat-button type="button" (click)="cancel()">{{ t('common.cancel') }}</button>
+          <button mat-flat-button type="submit" [disabled]="busy() || !canEdit()">
+            {{ busy() ? t('monitorEditor.saving') : t('common.save') }}
+          </button>
+        </div>
+      </form>
+    }
+  }
+</ng-container>

@@ -1,12 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The UptimeCluster Authors
 
-import { Component } from '@angular/core';
 import { Routes } from '@angular/router';
 
-/** Placeholder until the feature is implemented (AP-1.14). */
-@Component({ template: '<p>monitor-editor</p>' })
-class Placeholder {}
+/** Create mode: mounted at `/monitors/new`. */
+export const createRoutes: Routes = [
+  {
+    path: '',
+    data: { mode: 'create' },
+    loadComponent: () => import('./monitor-editor-page').then((m) => m.MonitorEditorPage),
+  },
+];
 
-export const createRoutes: Routes = [{ path: '', component: Placeholder }];
-export const editRoutes: Routes = [{ path: '', component: Placeholder }];
+/** Edit mode: mounted at `/monitors/:id/edit`; the id is read from the parent route. */
+export const editRoutes: Routes = [
+  {
+    path: '',
+    data: { mode: 'edit' },
+    loadComponent: () => import('./monitor-editor-page').then((m) => m.MonitorEditorPage),
+  },
+];

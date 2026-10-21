@@ -1,0 +1,252 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+@switch (kind()) {
+  @case ('boolean') {
+    <div class="toggle">
+      <mat-slide-toggle [formControl]="leaf()">{{ title() }}</mat-slide-toggle>
+      @if (description()) {
+        <p class="hint">{{ description() }}</p>
+      }
+    </div>
+  }
+
+  @case ('enum') {
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>{{ title() }}</mat-label>
+      <mat-select [formControl]="leaf()" [required]="required()">
+        @if (!required()) {
+          <mat-option [value]="null">{{ 'monitorEditor.fields.none' | transloco }}</mat-option>
+        }
+        @for (option of options(); track option) {
+          <mat-option [value]="option">{{ option }}</mat-option>
+        }
+      </mat-select>
+      @if (description()) {
+        <mat-hint>{{ description() }}</mat-hint>
+      }
+      @if (error(); as msg) {
+        <mat-error>
+          @if (msg.text) {
+            {{ msg.text }}
+          } @else {
+            {{ msg.key! | transloco: msg.params }}
+          }
+        </mat-error>
+      }
+    </mat-form-field>
+  }
+
+  @case ('number') {
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>{{ title() }}</mat-label>
+      <input
+        matInput
+        type="number"
+        inputmode="decimal"
+        [formControl]="leaf()"
+        [required]="required()"
+        [attr.min]="schema().minimum ?? null"
+        [attr.max]="schema().maximum ?? null"
+      />
+      @if (description()) {
+        <mat-hint>{{ description() }}</mat-hint>
+      }
+      @if (error(); as msg) {
+        <mat-error>
+          @if (msg.text) {
+            {{ msg.text }}
+          } @else {
+            {{ msg.key! | transloco: msg.params }}
+          }
+        </mat-error>
+      }
+    </mat-form-field>
+  }
+
+  @case ('string') {
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>{{ title() }}</mat-label>
+      <input
+        matInput
+        [attr.type]="isUri() ? 'url' : 'text'"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        [formControl]="leaf()"
+        [required]="required()"
+      />
+      @if (description()) {
+        <mat-hint>{{ description() }}</mat-hint>
+      }
+      @if (error(); as msg) {
+        <mat-error>
+          @if (msg.text) {
+            {{ msg.text }}
+          } @else {
+            {{ msg.key! | transloco: msg.params }}
+          }
+        </mat-error>
+      }
+    </mat-form-field>
+  }
+
+  @case ('secret') {
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>{{ title() }}</mat-label>
+      <input
+        matInput
+        type="password"
+        autocomplete="new-password"
+        autocapitalize="none"
+        spellcheck="false"
+        [formControl]="leaf()"
+        [required]="required()"
+      />
+      @if (description()) {
+        <mat-hint>{{ description() }}</mat-hint>
+      }
+      @if (error(); as msg) {
+        <mat-error>
+          @if (msg.text) {
+            {{ msg.text }}
+          } @else {
+            {{ msg.key! | transloco: msg.params }}
+          }
+        </mat-error>
+      }
+    </mat-form-field>
+  }
+
+  @case ('json') {
+    <mat-form-field appearance="outline" class="full">
+      <mat-label>{{ title() }}</mat-label>
+      <textarea
+        matInput
+        rows="5"
+        spellcheck="false"
+        class="mono"
+        [formControl]="leaf()"
+        [required]="required()"
+      ></textarea>
+      <mat-hint>{{ description() || ('monitorEditor.fields.jsonHint' | transloco) }}</mat-hint>
+      @if (error(); as msg) {
+        <mat-error>
+          @if (msg.text) {
+            {{ msg.text }}
+          } @else {
+            {{ msg.key! | transloco: msg.params }}
+          }
+        </mat-error>
+      }
+    </mat-form-field>
+  }
+
+  @case ('object') {
+    <fieldset class="group">
+      <legend>{{ title() }}</legend>
+      @if (!required()) {
+        <mat-slide-toggle
+          class="toggle"
+          [checked]="group().enabled"
+          (change)="toggleGroup($event.checked)"
+        >
+          {{ 'monitorEditor.fields.enable' | transloco }}
+        </mat-slide-toggle>
+      }
+      @if (description()) {
+        <p class="hint">{{ description() }}</p>
+      }
+      @if (group().enabled) {
+        @for (prop of properties(); track prop.key) {
+          <app-schema-field
+            [schema]="prop.schema"
+            [control]="group().controls[prop.key]"
+            [label]="prop.schema.title ?? prop.key"
+            [required]="prop.required"
+          />
+        }
+      }
+    </fieldset>
+  }
+
+  @case ('map') {
+    <div class="list" role="group" [attr.aria-label]="title() || null">
+      @if (title()) {
+        <span class="list-title">{{ title() }}</span>
+      }
+      @if (description()) {
+        <p class="hint">{{ description() }}</p>
+      }
+      @for (entry of array().controls; track entry) {
+        <div class="row">
+          <mat-form-field appearance="outline" class="entry-key">
+            <mat-label>{{ 'monitorEditor.fields.key' | transloco }}</mat-label>
+            <input
+              matInput
+              autocomplete="off"
+              spellcheck="false"
+              [formControl]="entryKey(entry)"
+              required
+            />
+          </mat-form-field>
+          <app-schema-field
+            class="fill"
+            [schema]="valueSchema()"
+            [control]="entryValue(entry)"
+            [label]="'monitorEditor.fields.value' | transloco"
+            [required]="true"
+          />
+          <button
+            mat-icon-button
+            type="button"
+            [attr.aria-label]="'monitorEditor.fields.remove' | transloco"
+            (click)="removeAt($index)"
+          >
+            <app-icon name="close" size="1.25rem" />
+          </button>
+        </div>
+      }
+      <div>
+        <button mat-stroked-button type="button" (click)="addEntry()">
+          <app-icon name="add" size="1.125rem" />
+          {{ 'monitorEditor.fields.addEntry' | transloco }}
+        </button>
+      </div>
+    </div>
+  }
+
+  @case ('array') {
+    <div class="list" role="group" [attr.aria-label]="title() || null">
+      @if (title()) {
+        <span class="list-title">{{ title() }}</span>
+      }
+      @if (description()) {
+        <p class="hint">{{ description() }}</p>
+      }
+      @for (item of array().controls; track item; let i = $index) {
+        <div class="row">
+          <app-schema-field
+            class="fill"
+            [schema]="itemSchema()"
+            [control]="item"
+            [label]="itemSchema().title || '#' + (i + 1)"
+            [required]="true"
+          />
+          <button
+            mat-icon-button
+            type="button"
+            [attr.aria-label]="'monitorEditor.fields.remove' | transloco"
+            (click)="removeAt(i)"
+          >
+            <app-icon name="delete" size="1.25rem" />
+          </button>
+        </div>
+      }
+      <div>
+        <button mat-stroked-button type="button" (click)="addItem()">
+          <app-icon name="add" size="1.125rem" />
+          {{ 'monitorEditor.fields.addItem' | transloco }}
+        </button>
+      </div>
+    </div>
+  }
+}
