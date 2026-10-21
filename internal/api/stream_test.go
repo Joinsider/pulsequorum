@@ -82,9 +82,23 @@ func (e *streamEnv) dial(query, origin string) (*websocket.Conn, *http.Response,
 	return websocket.Dial(ctx, "ws"+strings.TrimPrefix(e.srv.URL, "http")+"/api/v1/stream?"+query, opts)
 }
 
+// dialStatus dials and returns only the HTTP status of a failed handshake
+// (0 if there was no response). The response body is closed here.
+func (e *streamEnv) dialStatus(query, origin string) (int, error) {
+	_, res, err := e.dial(query, origin)
+	if res == nil {
+		return 0, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	return res.StatusCode, err
+}
+
 func (e *streamEnv) connect(principal, extra string) *websocket.Conn {
 	e.t.Helper()
-	conn, _, err := e.dial("ticket="+e.ticket(principal)+extra, "")
+	conn, res, err := e.dial("ticket="+e.ticket(principal)+extra, "")
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -206,33 +220,36 @@ func TestStreamMonitorFilter(t *testing.T) {
 func TestStreamTicketRules(t *testing.T) {
 	e := newStreamEnv(t, time.Time{})
 
-	if _, res, err := e.dial("", ""); err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+	if status, err := e.dialStatus("", ""); err == nil || status != http.StatusUnauthorized {
 		t.Errorf("without ticket: %v", err)
 	}
-	if _, res, err := e.dial("ticket=forged", ""); err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+	if status, err := e.dialStatus("ticket=forged", ""); err == nil || status != http.StatusUnauthorized {
 		t.Errorf("forged ticket: %v", err)
 	}
 
 	tk := e.ticket(viewer)
-	if _, res, err := e.dial("ticket="+tk, "https://evil.example.net"); err == nil || res == nil || res.StatusCode != http.StatusForbidden {
+	if status, err := e.dialStatus("ticket="+tk, "https://evil.example.net"); err == nil || status != http.StatusForbidden {
 		t.Errorf("foreign origin: %v", err)
 	}
-	conn, _, err := e.dial("ticket="+tk, "https://ui.example.com")
+	conn, res, err := e.dial("ticket="+tk, "https://ui.example.com")
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
 	if err != nil {
 		t.Fatalf("allowed origin: %v", err)
 	}
 	_ = conn.CloseNow()
-	if _, res, err := e.dial("ticket="+tk, ""); err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+	if status, err := e.dialStatus("ticket="+tk, ""); err == nil || status != http.StatusUnauthorized {
 		t.Errorf("reused ticket: %v", err)
 	}
 
 	tk = e.ticket(viewer)
-	if _, res, err := e.dial("ticket="+tk+"&monitorId=nope", ""); err == nil || res == nil || res.StatusCode != http.StatusBadRequest {
+	if status, err := e.dialStatus("ticket="+tk+"&monitorId=nope", ""); err == nil || status != http.StatusBadRequest {
 		t.Errorf("invalid monitor filter: %v", err)
 	}
 
 	// Anonymous callers get no ticket.
-	res, err := http.Post(e.srv.URL+"/api/v1/stream/ticket", "application/json", nil)
+	res, err = http.Post(e.srv.URL+"/api/v1/stream/ticket", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
