@@ -1,0 +1,53 @@
+{
+  "title": "Benutzer",
+  "new": "Neuer Benutzer",
+  "listLabel": "Benutzer dieses Mandanten",
+  "you": "du",
+  "enabled": "Aktiv",
+  "disabled": "Deaktiviert",
+  "createdAt": "Angelegt {{ when }}",
+  "roles": {
+    "platform-admin": "Plattform-Admin",
+    "tenant-admin": "Mandanten-Admin",
+    "tenant-editor": "Bearbeiter",
+    "tenant-viewer": "Betrachter"
+  },
+  "lock": {
+    "self": "Du kannst dich nicht selbst herabstufen, deaktivieren oder löschen. Bitte einen anderen Admin.",
+    "lastPlatformAdmin": "Der letzte aktive Plattform-Admin kann nicht herabgestuft, deaktiviert oder gelöscht werden.",
+    "platformTarget": "Nur Plattform-Admins können Plattform-Admins ändern."
+  },
+  "createTitle": "Neuer Benutzer",
+  "editTitle": "Benutzer bearbeiten",
+  "username": "Benutzername",
+  "usernameRule": "3 bis 64 Zeichen. Kann später nicht geändert werden.",
+  "displayName": "Anzeigename",
+  "displayNameRule": "Höchstens 128 Zeichen.",
+  "role": "Rolle",
+  "disabledToggle": "Deaktiviert",
+  "disabledHint": "Deaktivierte Benutzer können sich nicht anmelden.",
+  "password": "Anfangspasswort",
+  "newPasswordOptional": "Neues Passwort (optional)",
+  "passwordRepeat": "Passwort wiederholen",
+  "passwordRule": "Mindestens {{ min }} Zeichen.",
+  "passwordTooLong": "Höchstens {{ max }} Zeichen.",
+  "passwordMismatch": "Die Passwörter stimmen nicht überein.",
+  "passwordResetHint": "Leer lassen, um das Passwort zu behalten. Ein neues Passwort meldet den Benutzer überall ab.",
+  "submitCreate": "Benutzer anlegen",
+  "deleteTitle": "Benutzer löschen?",
+  "deleteText": "Der Benutzer verliert den Zugang zu diesem Mandanten. Das lässt sich nicht rückgängig machen.",
+  "saved": {
+    "created": "Benutzer angelegt.",
+    "updated": "Benutzer gespeichert.",
+    "deleted": "Benutzer gelöscht."
+  },
+  "error": {
+    "required": "Dieses Feld ist erforderlich.",
+    "offline": "Der Server ist nicht erreichbar.",
+    "forbidden": "Deine Rolle erlaubt diese Aktion nicht.",
+    "notFound": "Dieser Benutzer existiert nicht mehr.",
+    "conflict": "Diese Änderung steht im Widerspruch zum aktuellen Stand. Prüfe die Liste und versuche es erneut.",
+    "invalid": "Bitte prüfe die markierten Felder.",
+    "unexpected": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+  }
+}

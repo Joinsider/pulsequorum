@@ -1,0 +1,44 @@
+{
+  "title": "Konto",
+  "profile": {
+    "title": "Profil",
+    "username": "Benutzername",
+    "displayName": "Anzeigename",
+    "none": "—",
+    "tenant": "Mandant",
+    "roles": "Rollen",
+    "authMode": "Anmeldeart"
+  },
+  "roles": {
+    "platform-admin": "Plattform-Admin",
+    "tenant-admin": "Mandanten-Admin",
+    "tenant-editor": "Bearbeiter",
+    "tenant-viewer": "Betrachter"
+  },
+  "authModes": {
+    "local": "Lokales Konto",
+    "zitadel": "Identity Provider (Zitadel)"
+  },
+  "password": {
+    "title": "Passwort ändern",
+    "hint": "Verwende mindestens {{ min }} Zeichen. Nach der Änderung werden deine anderen Sitzungen abgemeldet.",
+    "external": "Dein Passwort wird von deinem Identity Provider verwaltet. Ändere es dort.",
+    "current": "Aktuelles Passwort",
+    "new": "Neues Passwort",
+    "repeat": "Neues Passwort wiederholen",
+    "required": "Dieses Feld ist erforderlich.",
+    "rule": "Mindestens {{ min }} Zeichen.",
+    "tooLong": "Höchstens {{ max }} Zeichen.",
+    "mismatch": "Die Passwörter stimmen nicht überein.",
+    "submit": "Passwort ändern",
+    "changed": "Passwort geändert. Deine anderen Sitzungen wurden abgemeldet.",
+    "error": {
+      "currentWrong": "Das aktuelle Passwort ist falsch.",
+      "invalid": "Das neue Passwort erfüllt die Anforderungen nicht.",
+      "throttled": "Zu viele Versuche. Versuche es in {{ seconds }} Sekunden erneut.",
+      "throttledGeneric": "Zu viele Versuche. Versuche es später erneut.",
+      "offline": "Der Server ist nicht erreichbar.",
+      "unexpected": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+    }
+  }
+}

@@ -1,0 +1,105 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('account.title')" />
+
+  @if (me(); as m) {
+    <section class="card" aria-labelledby="profile-heading">
+      <h2 id="profile-heading" class="card__title">{{ t('account.profile.title') }}</h2>
+      <dl class="profile">
+        <dt>{{ t('account.profile.username') }}</dt>
+        <dd>{{ m.username }}</dd>
+        <dt>{{ t('account.profile.displayName') }}</dt>
+        <dd>{{ m.displayName || t('account.profile.none') }}</dd>
+        <dt>{{ t('account.profile.tenant') }}</dt>
+        <dd>{{ m.tenantName || m.tenantId }}</dd>
+        <dt>{{ t('account.profile.roles') }}</dt>
+        <dd class="chips">
+          @for (role of m.roles; track role) {
+            <span class="chip">{{ t('account.roles.' + role) }}</span>
+          }
+        </dd>
+        <dt>{{ t('account.profile.authMode') }}</dt>
+        <dd>{{ t('account.authModes.' + m.authMode) }}</dd>
+      </dl>
+    </section>
+  }
+
+  @if (localAuth()) {
+    <section class="card" aria-labelledby="password-heading">
+      <h2 id="password-heading" class="card__title">{{ t('account.password.title') }}</h2>
+      <p class="hint">{{ t('account.password.hint', { min: minLength }) }}</p>
+
+      @if (changed()) {
+        <p class="notice" role="status">
+          <app-icon name="checkCircle" size="1.125rem" />
+          {{ t('account.password.changed') }}
+        </p>
+      }
+      @if (failure(); as f) {
+        <p class="error" role="alert">{{ t(f.key, { seconds: f.retryAfter ?? '' }) }}</p>
+      }
+
+      <form class="form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('account.password.current') }}</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="currentPassword"
+            autocomplete="current-password"
+            required
+          />
+          @if (form.controls.currentPassword.hasError('required')) {
+            <mat-error>{{ t('account.password.required') }}</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('account.password.new') }}</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="newPassword"
+            autocomplete="new-password"
+            required
+          />
+          @if (form.controls.newPassword.hasError('required')) {
+            <mat-error>{{ t('account.password.required') }}</mat-error>
+          } @else if (form.controls.newPassword.hasError('minlength')) {
+            <mat-error>{{ t('account.password.rule', { min: minLength }) }}</mat-error>
+          } @else if (form.controls.newPassword.hasError('maxlength')) {
+            <mat-error>{{ t('account.password.tooLong', { max: maxLength }) }}</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('account.password.repeat') }}</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="repeatPassword"
+            autocomplete="new-password"
+            required
+          />
+          @if (form.controls.repeatPassword.hasError('required')) {
+            <mat-error>{{ t('account.password.required') }}</mat-error>
+          }
+        </mat-form-field>
+        @if (form.hasError('mismatch') && form.controls.repeatPassword.touched) {
+          <p class="field-error">{{ t('account.password.mismatch') }}</p>
+        }
+
+        <div class="actions">
+          <button mat-flat-button type="submit" [disabled]="busy()">
+            {{ t('account.password.submit') }}
+          </button>
+        </div>
+      </form>
+    </section>
+  } @else {
+    <section class="card" aria-labelledby="external-heading">
+      <h2 id="external-heading" class="card__title">{{ t('account.password.title') }}</h2>
+      <p class="hint">{{ t('account.password.external') }}</p>
+    </section>
+  }
+</div>

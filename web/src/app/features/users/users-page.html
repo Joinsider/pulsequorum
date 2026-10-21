@@ -1,0 +1,77 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('users.title')">
+    <button mat-flat-button type="button" (click)="create()">
+      <app-icon name="add" size="1.125rem" />
+      {{ t('users.new') }}
+    </button>
+  </app-page-header>
+
+  @if (loading()) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError(); as key) {
+    <p class="state state--error" role="alert">
+      {{ t(key) }}
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </p>
+  } @else if (rows().length === 0) {
+    <p class="state">{{ t('common.empty') }}</p>
+  } @else {
+    <ul class="list" [attr.aria-label]="t('users.listLabel')">
+      @for (row of rows(); track row.user.id) {
+        <li class="row">
+          <div class="row__who">
+            <span class="row__name">{{ row.user.displayName || row.user.username }}</span>
+            <span class="row__meta">
+              {{ row.user.username }}
+              @if (row.self) {
+                <span class="you">· {{ t('users.you') }}</span>
+              }
+            </span>
+          </div>
+
+          <div class="row__actions">
+            <span
+              [matTooltip]="!row.rights.editable && row.rights.lockKey ? t(row.rights.lockKey) : ''"
+            >
+              <button
+                mat-icon-button
+                type="button"
+                [disabled]="!row.rights.editable"
+                [attr.aria-label]="t('common.edit') + ': ' + row.user.username"
+                (click)="edit(row)"
+              >
+                <app-icon name="edit" size="1.25rem" />
+              </button>
+            </span>
+            <span
+              [matTooltip]="
+                !row.rights.canDelete && row.rights.lockKey ? t(row.rights.lockKey) : ''
+              "
+            >
+              <button
+                mat-icon-button
+                type="button"
+                [disabled]="!row.rights.canDelete"
+                [attr.aria-label]="t('common.delete') + ': ' + row.user.username"
+                (click)="remove(row)"
+              >
+                <app-icon name="delete" size="1.25rem" />
+              </button>
+            </span>
+          </div>
+
+          <div class="row__facts">
+            <span class="chip">{{ t('users.roles.' + row.user.role) }}</span>
+            <span class="badge" [class.badge--off]="row.user.disabled">
+              {{ row.user.disabled ? t('users.disabled') : t('users.enabled') }}
+            </span>
+            <time class="muted" [attr.datetime]="row.user.createdAt">
+              {{ t('users.createdAt', { when: row.user.createdAt | relativeTime }) }}
+            </time>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>

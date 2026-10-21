@@ -1,0 +1,109 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <h2 mat-dialog-title>{{ create ? t('users.createTitle') : t('users.editTitle') }}</h2>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-dialog-content class="content">
+      @if (error(); as key) {
+        <p class="error" role="alert">{{ t(key) }}</p>
+      }
+      @if (!create && lockKey) {
+        <p class="hint">{{ t(lockKey) }}</p>
+      }
+
+      @if (create) {
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('users.username') }}</mat-label>
+          <input
+            matInput
+            formControlName="username"
+            autocomplete="off"
+            autocapitalize="none"
+            required
+          />
+          <mat-hint>{{ t('users.usernameRule') }}</mat-hint>
+          @if (form.controls.username.hasError('server')) {
+            <mat-error>{{ form.controls.username.getError('server') }}</mat-error>
+          } @else if (form.controls.username.hasError('required')) {
+            <mat-error>{{ t('users.error.required') }}</mat-error>
+          } @else if (form.controls.username.invalid) {
+            <mat-error>{{ t('users.usernameRule') }}</mat-error>
+          }
+        </mat-form-field>
+      } @else {
+        <p class="readonly">
+          <span class="readonly__label">{{ t('users.username') }}</span>
+          <span>{{ user?.username }}</span>
+        </p>
+      }
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('users.displayName') }}</mat-label>
+        <input matInput formControlName="displayName" autocomplete="off" />
+        @if (form.controls.displayName.hasError('maxlength')) {
+          <mat-error>{{ t('users.displayNameRule') }}</mat-error>
+        } @else if (form.controls.displayName.hasError('server')) {
+          <mat-error>{{ form.controls.displayName.getError('server') }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('users.role') }}</mat-label>
+        <mat-select formControlName="role">
+          @for (role of roleOptions; track role) {
+            <mat-option [value]="role">{{ t('users.roles.' + role) }}</mat-option>
+          }
+        </mat-select>
+        @if (form.controls.role.hasError('server')) {
+          <mat-error>{{ form.controls.role.getError('server') }}</mat-error>
+        }
+      </mat-form-field>
+
+      @if (!create) {
+        <mat-slide-toggle class="toggle" formControlName="disabled">
+          {{ t('users.disabledToggle') }}
+        </mat-slide-toggle>
+        <p class="hint">{{ t('users.disabledHint') }}</p>
+      }
+
+      @if (create || rights?.canResetPassword) {
+        <mat-form-field appearance="outline">
+          <mat-label>{{ create ? t('users.password') : t('users.newPasswordOptional') }}</mat-label>
+          <input matInput type="password" formControlName="password" autocomplete="new-password" />
+          @if (form.controls.password.hasError('required')) {
+            <mat-error>{{ t('users.error.required') }}</mat-error>
+          } @else if (form.controls.password.hasError('minlength')) {
+            <mat-error>{{ t('users.passwordRule', { min: minLength }) }}</mat-error>
+          } @else if (form.controls.password.hasError('maxlength')) {
+            <mat-error>{{ t('users.passwordTooLong', { max: maxLength }) }}</mat-error>
+          } @else if (form.controls.password.hasError('server')) {
+            <mat-error>{{ form.controls.password.getError('server') }}</mat-error>
+          }
+          @if (!create) {
+            <mat-hint>{{ t('users.passwordResetHint') }}</mat-hint>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('users.passwordRepeat') }}</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="passwordRepeat"
+            autocomplete="new-password"
+          />
+        </mat-form-field>
+        @if (form.hasError('mismatch') && form.controls.passwordRepeat.touched) {
+          <p class="field-error">{{ t('users.passwordMismatch') }}</p>
+        }
+      }
+    </mat-dialog-content>
+
+    <mat-dialog-actions align="end">
+      <button mat-button type="button" [mat-dialog-close]="false">{{ t('common.cancel') }}</button>
+      <button mat-flat-button type="submit" [disabled]="busy()">
+        {{ create ? t('users.submitCreate') : t('common.save') }}
+      </button>
+    </mat-dialog-actions>
+  </form>
+</ng-container>

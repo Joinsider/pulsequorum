@@ -1,0 +1,44 @@
+{
+  "title": "Account",
+  "profile": {
+    "title": "Profile",
+    "username": "Username",
+    "displayName": "Display name",
+    "none": "—",
+    "tenant": "Tenant",
+    "roles": "Roles",
+    "authMode": "Sign-in method"
+  },
+  "roles": {
+    "platform-admin": "Platform admin",
+    "tenant-admin": "Tenant admin",
+    "tenant-editor": "Editor",
+    "tenant-viewer": "Viewer"
+  },
+  "authModes": {
+    "local": "Local account",
+    "zitadel": "Identity provider (Zitadel)"
+  },
+  "password": {
+    "title": "Change password",
+    "hint": "Use at least {{ min }} characters. Changing the password signs out your other sessions.",
+    "external": "Your password is managed by your identity provider. Change it there.",
+    "current": "Current password",
+    "new": "New password",
+    "repeat": "Repeat new password",
+    "required": "This field is required.",
+    "rule": "At least {{ min }} characters.",
+    "tooLong": "At most {{ max }} characters.",
+    "mismatch": "The passwords do not match.",
+    "submit": "Change password",
+    "changed": "Password changed. Your other sessions were signed out.",
+    "error": {
+      "currentWrong": "The current password is wrong.",
+      "invalid": "The new password does not meet the requirements.",
+      "throttled": "Too many attempts. Try again in {{ seconds }} seconds.",
+      "throttledGeneric": "Too many attempts. Try again later.",
+      "offline": "The server cannot be reached.",
+      "unexpected": "Something went wrong. Please try again."
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "title": "Users",
+  "new": "New user",
+  "listLabel": "Users of this tenant",
+  "you": "you",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "createdAt": "Created {{ when }}",
+  "roles": {
+    "platform-admin": "Platform admin",
+    "tenant-admin": "Tenant admin",
+    "tenant-editor": "Editor",
+    "tenant-viewer": "Viewer"
+  },
+  "lock": {
+    "self": "You cannot demote, disable or delete yourself. Ask another admin.",
+    "lastPlatformAdmin": "The last enabled platform admin cannot be demoted, disabled or deleted.",
+    "platformTarget": "Only platform admins can change platform admins."
+  },
+  "createTitle": "New user",
+  "editTitle": "Edit user",
+  "username": "Username",
+  "usernameRule": "3 to 64 characters. Cannot be changed later.",
+  "displayName": "Display name",
+  "displayNameRule": "At most 128 characters.",
+  "role": "Role",
+  "disabledToggle": "Disabled",
+  "disabledHint": "Disabled users cannot sign in.",
+  "password": "Initial password",
+  "newPasswordOptional": "New password (optional)",
+  "passwordRepeat": "Repeat password",
+  "passwordRule": "At least {{ min }} characters.",
+  "passwordTooLong": "At most {{ max }} characters.",
+  "passwordMismatch": "The passwords do not match.",
+  "passwordResetHint": "Leave empty to keep the password. A new password signs the user out everywhere.",
+  "submitCreate": "Create user",
+  "deleteTitle": "Delete user?",
+  "deleteText": "The user loses access to this tenant. This cannot be undone.",
+  "saved": {
+    "created": "User created.",
+    "updated": "User saved.",
+    "deleted": "User deleted."
+  },
+  "error": {
+    "required": "This field is required.",
+    "offline": "The server cannot be reached.",
+    "forbidden": "Your role does not allow this action.",
+    "notFound": "This user no longer exists.",
+    "conflict": "This change conflicts with the current state. Check the list and try again.",
+    "invalid": "Please check the highlighted fields.",
+    "unexpected": "Something went wrong. Please try again."
+  }
+}
