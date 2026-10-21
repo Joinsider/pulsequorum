@@ -20,3 +20,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0012](0012-praezisierungen-aus-spikes.md) | Präzisierungen aus den Spikes (Raft, SQLite) | Accepted | 2026-10-19 |
 | [0013](0013-persistenz-ergebnisse-sqlite-spike.md) | Persistenz: Ergebnisse des SQLite-Spikes | Accepted | 2026-10-19 |
 | [0014](0014-benachrichtigungen.md) | Benachrichtigungen: Kanäle, Outbox und Versand (Shoutrrr) | Accepted | 2026-10-19 |
+| [0015](0015-geheimnisse-in-monitor-konfigurationen.md) | Geheimnisse in Monitor-Konfigurationen | Proposed | 2026-10-21 |
