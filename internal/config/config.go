@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +49,10 @@ type Config struct {
 	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
 	RaftTimeout time.Duration
 	PublicURL   string
+	// CORSOrigins are the origins (scheme://host[:port]) of external frontends
+	// allowed to call the API from a browser (FA-API-05). The origin of
+	// PublicURL is always included.
+	CORSOrigins []string
 	// MasterKey (base64) or MasterKeyFile provide the KEK (ADR 0011). Never log them.
 	MasterKey     string
 	MasterKeyFile string
@@ -130,6 +135,28 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	if cfg.PublicURL != "" {
+		if o, err := ParseOrigin(cfg.PublicURL); err == nil {
+			cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+		}
+	}
+	for _, raw := range strings.Split(get("CORS_ORIGINS", ""), ",") {
+		if raw = strings.TrimSpace(raw); raw == "" {
+			continue
+		}
+		o, err := ParseOrigin(raw)
+		if u, _ := url.Parse(raw); err == nil && u.Path != "" && u.Path != "/" {
+			err = fmt.Errorf("must be an origin without path, got %q", raw)
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("CORS_ORIGINS: %w", err))
+			continue
+		}
+		if !slices.Contains(cfg.CORSOrigins, o) {
+			cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+		}
+	}
+
 	cfg.MasterKey = getenv("MASTER_KEY")
 	cfg.MasterKeyFile = get("MASTER_KEY_FILE", "")
 	if cfg.MasterKey != "" && cfg.MasterKeyFile != "" {
@@ -204,6 +231,17 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.ShutdownTimeout = timeout
 
 	return cfg, errors.Join(errs...)
+}
+
+// ParseOrigin returns the canonical origin (lower-case scheme://host[:port])
+// of an absolute http(s) URL. URLs with a path, query or user info are
+// rejected for CORS_ORIGINS; PUBLIC_URL may carry a path, which is dropped.
+func ParseOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an absolute http(s) origin, got %q", raw)
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host), nil
 }
 
 // SSRFProtectionEnabled reports whether check and notification targets in

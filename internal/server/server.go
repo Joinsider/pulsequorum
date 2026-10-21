@@ -62,7 +62,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("/", s.ui)
 
-	return s.recoverPanics(securityHeaders(mux))
+	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, mux)))
 }
 
 // Run serves HTTP on cfg.HTTPAddr until ctx is cancelled, then shuts down
@@ -123,18 +123,6 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 				api.WriteProblem(w, http.StatusInternalServerError, "Internal Server Error", "")
 			}
 		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// securityHeaders sets headers that are safe for every response. A full CSP
-// follows with NFA-SEC-05 in phase 1.
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }
