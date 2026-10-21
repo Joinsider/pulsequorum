@@ -29,12 +29,13 @@ type Server struct {
 	// readiness, if set, is consulted by /readyz in addition to the listener state.
 	readiness func() error
 	api       api.Deps
+	limits    *limits
 }
 
 // New creates a server. ui serves the single-page application for all
 // non-API paths.
 func New(cfg config.Config, log *slog.Logger, ui http.Handler) *Server {
-	return &Server{cfg: cfg, log: log, ui: ui}
+	return &Server{cfg: cfg, log: log, ui: ui, limits: newLimits()}
 }
 
 // WithAPI provides the services behind the REST API. It must be called before Run.
@@ -62,7 +63,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("/", s.ui)
 
-	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, mux)))
+	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.limits.middleware(mux))))
 }
 
 // Run serves HTTP on cfg.HTTPAddr until ctx is cancelled, then shuts down
