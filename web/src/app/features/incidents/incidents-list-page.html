@@ -1,0 +1,155 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <app-page-header [title]="t('incidents.title')" />
+
+  <section class="filters" [attr.aria-label]="t('incidents.filters.label')">
+    <div class="filter">
+      <span class="filter__label" id="incidents-state-label">{{
+        t('incidents.filters.state')
+      }}</span>
+      <mat-button-toggle-group
+        aria-labelledby="incidents-state-label"
+        [value]="filters().state"
+        (change)="setState($event.value)"
+      >
+        @for (s of states; track s) {
+          <mat-button-toggle [value]="s">{{ t('incidents.state.' + s) }}</mat-button-toggle>
+        }
+      </mat-button-toggle-group>
+    </div>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter filter--select">
+      <mat-label>{{ t('incidents.filters.monitor') }}</mat-label>
+      <mat-select [value]="filters().monitorId" (selectionChange)="setMonitor($event.value)">
+        <mat-option [value]="null">{{ t('incidents.filters.allMonitors') }}</mat-option>
+        @for (m of monitors(); track m.id) {
+          <mat-option [value]="m.id">{{ m.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter filter--select">
+      <mat-label>{{ t('incidents.filters.range') }}</mat-label>
+      <mat-select [value]="filters().range" (selectionChange)="setRange($event.value)">
+        @for (r of ranges; track r) {
+          <mat-option [value]="r">{{ t('incidents.range.' + r) }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    @if (monitorsState() === 'error') {
+      <p class="hint" role="alert">
+        {{ t('incidents.filters.monitorsError') }}
+        <button mat-button type="button" (click)="loadMonitors()">{{ t('common.retry') }}</button>
+      </p>
+    }
+  </section>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="status" role="status">{{ t('common.loading') }}</p>
+    }
+    @case ('error') {
+      <div class="status status--error" role="alert">
+        <p>{{ t('incidents.list.loadError') }}</p>
+        <button mat-stroked-button type="button" (click)="retry()">{{ t('common.retry') }}</button>
+      </div>
+    }
+    @default {
+      @if (incidents().length === 0) {
+        <p class="status">{{ t('incidents.list.empty') }}</p>
+      } @else {
+        <ul class="list">
+          @for (incident of incidents(); track incident.id) {
+            <li class="row" [class.row--ongoing]="!incident.resolvedAt">
+              <div class="row__head">
+                <a
+                  class="row__cause"
+                  [routerLink]="['/incidents', incident.id]"
+                  [queryParamsHandling]="'preserve'"
+                  >{{ incident.cause }}</a
+                >
+                <div class="chips">
+                  @if (incident.resolvedAt) {
+                    <span class="chip chip--resolved">{{ t('incidents.chip.resolved') }}</span>
+                  } @else {
+                    <span class="chip chip--ongoing">{{ t('incidents.chip.ongoing') }}</span>
+                  }
+                  @if (incident.confirmed === false) {
+                    <span
+                      class="chip chip--unconfirmed"
+                      [attr.title]="t('incidents.chip.unconfirmedHint')"
+                    >
+                      <app-icon name="warning" size="1em" />
+                      {{ t('incidents.chip.unconfirmed') }}
+                    </span>
+                  }
+                </div>
+              </div>
+
+              <dl class="row__meta">
+                <div>
+                  <dt>{{ t('incidents.list.monitor') }}</dt>
+                  <dd>
+                    <a [routerLink]="['/monitors', incident.monitorId]">{{
+                      incident.monitorName
+                    }}</a>
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('incidents.list.started') }}</dt>
+                  <dd>
+                    <time [attr.datetime]="incident.startedAt">{{
+                      formatAbsolute(incident.startedAt, lang())
+                    }}</time>
+                    <span class="muted">{{ incident.startedAt | relativeTime: lang() }}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('incidents.list.duration') }}</dt>
+                  <dd><app-incident-duration [ms]="durationOf(incident, now())" /></dd>
+                </div>
+                <div>
+                  <dt>{{ t('incidents.list.errorClass') }}</dt>
+                  <dd>
+                    @if (incident.errorClass) {
+                      {{ t('incidents.errorClass.' + incident.errorClass) }}
+                    } @else {
+                      <span class="muted">{{ t('incidents.list.none') }}</span>
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('incidents.list.affectedNodes') }}</dt>
+                  <dd>
+                    @if (incident.affectedNodes?.length) {
+                      {{ incident.affectedNodes?.join(', ') }}
+                    } @else {
+                      <span class="muted">{{ t('incidents.list.none') }}</span>
+                    }
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          }
+        </ul>
+
+        @if (nextCursor()) {
+          <div class="more">
+            @if (loadMoreFailed()) {
+              <p class="hint" role="alert">{{ t('incidents.list.loadMoreError') }}</p>
+            }
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="loadingMore()"
+              (click)="loadMore()"
+            >
+              {{ loadingMore() ? t('common.loading') : t('incidents.list.loadMore') }}
+            </button>
+          </div>
+        }
+      }
+    }
+  }
+</ng-container>

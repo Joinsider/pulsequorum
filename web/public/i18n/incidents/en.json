@@ -1,0 +1,75 @@
+{
+  "title": "Incidents",
+  "filters": {
+    "label": "Filter incidents",
+    "state": "Status",
+    "monitor": "Monitor",
+    "allMonitors": "All monitors",
+    "range": "Time range",
+    "monitorsError": "The monitor list could not be loaded."
+  },
+  "state": {
+    "all": "All",
+    "ongoing": "Ongoing",
+    "resolved": "Resolved"
+  },
+  "range": {
+    "all": "All time",
+    "24h": "Last 24 hours",
+    "7d": "Last 7 days",
+    "30d": "Last 30 days"
+  },
+  "units": {
+    "d": "{{ value }} d",
+    "h": "{{ value }} h",
+    "min": "{{ value }} min",
+    "s": "{{ value }} s"
+  },
+  "errorClass": {
+    "dns": "DNS",
+    "connect": "Connection",
+    "tls": "TLS",
+    "timeout": "Timeout",
+    "http_status": "HTTP status",
+    "assertion": "Assertion",
+    "ssrf_blocked": "Blocked (SSRF protection)",
+    "internal": "Internal"
+  },
+  "chip": {
+    "ongoing": "Ongoing",
+    "resolved": "Resolved",
+    "unconfirmed": "Unconfirmed",
+    "unconfirmedHint": "Raised in degraded mode without quorum and not yet confirmed."
+  },
+  "list": {
+    "monitor": "Monitor",
+    "started": "Started",
+    "duration": "Duration",
+    "errorClass": "Error class",
+    "affectedNodes": "Affected nodes",
+    "none": "–",
+    "empty": "No incidents match these filters.",
+    "loadError": "Incidents could not be loaded.",
+    "loadMore": "Load more",
+    "loadMoreError": "More incidents could not be loaded. Try again."
+  },
+  "detail": {
+    "title": "Incident",
+    "back": "Back to incidents",
+    "notFound": "This incident does not exist or you cannot see it.",
+    "loadError": "The incident could not be loaded.",
+    "monitor": "Monitor",
+    "started": "Started",
+    "resolved": "Resolved",
+    "ongoing": "Still ongoing",
+    "duration": "Duration",
+    "errorClass": "Error class",
+    "confirmed": "Confirmed",
+    "confirmedYes": "Yes",
+    "unconfirmed": "No, raised in degraded mode",
+    "affectedNodes": "Affected nodes",
+    "noNodes": "No nodes recorded.",
+    "id": "Incident ID",
+    "none": "–"
+  }
+}

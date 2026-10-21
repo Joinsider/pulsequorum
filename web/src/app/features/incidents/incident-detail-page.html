@@ -1,0 +1,124 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <p class="back">
+    <a mat-button [routerLink]="['/incidents']" [queryParamsHandling]="'preserve'">
+      <app-icon name="arrowBack" size="1.125em" />
+      {{ t('incidents.detail.back') }}
+    </a>
+  </p>
+
+  <app-page-header [title]="t('incidents.detail.title')" />
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="status" role="status">{{ t('common.loading') }}</p>
+    }
+    @case ('notFound') {
+      <p class="status" role="alert">{{ t('incidents.detail.notFound') }}</p>
+    }
+    @case ('error') {
+      <div class="status status--error" role="alert">
+        <p>{{ t('incidents.detail.loadError') }}</p>
+        <button mat-stroked-button type="button" (click)="retry()">{{ t('common.retry') }}</button>
+      </div>
+    }
+    @default {
+      @if (incident(); as incident) {
+        <article class="card">
+          <div class="head">
+            <h2 class="cause">{{ incident.cause }}</h2>
+            <div class="chips">
+              @if (incident.resolvedAt) {
+                <span class="chip chip--resolved">{{ t('incidents.chip.resolved') }}</span>
+              } @else {
+                <span class="chip chip--ongoing">{{ t('incidents.chip.ongoing') }}</span>
+              }
+              @if (incident.confirmed === false) {
+                <span
+                  class="chip chip--unconfirmed"
+                  [attr.title]="t('incidents.chip.unconfirmedHint')"
+                >
+                  <app-icon name="warning" size="1em" />
+                  {{ t('incidents.chip.unconfirmed') }}
+                </span>
+              }
+            </div>
+          </div>
+
+          <dl class="fields">
+            <div>
+              <dt>{{ t('incidents.detail.monitor') }}</dt>
+              <dd>
+                <a [routerLink]="['/monitors', incident.monitorId]">{{ incident.monitorName }}</a>
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('incidents.detail.started') }}</dt>
+              <dd>
+                <time [attr.datetime]="incident.startedAt">{{
+                  formatAbsolute(incident.startedAt, lang())
+                }}</time>
+                <span class="muted">{{ incident.startedAt | relativeTime: lang() }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('incidents.detail.resolved') }}</dt>
+              <dd>
+                @if (incident.resolvedAt; as resolvedAt) {
+                  <time [attr.datetime]="resolvedAt">{{ formatAbsolute(resolvedAt, lang()) }}</time>
+                  <span class="muted">{{ resolvedAt | relativeTime: lang() }}</span>
+                } @else {
+                  <span class="muted">{{ t('incidents.detail.ongoing') }}</span>
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('incidents.detail.duration') }}</dt>
+              <dd><app-incident-duration [ms]="durationOf(incident, now())" /></dd>
+            </div>
+            <div>
+              <dt>{{ t('incidents.detail.errorClass') }}</dt>
+              <dd>
+                @if (incident.errorClass) {
+                  {{ t('incidents.errorClass.' + incident.errorClass) }}
+                } @else {
+                  <span class="muted">{{ t('incidents.detail.none') }}</span>
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('incidents.detail.confirmed') }}</dt>
+              <dd>
+                {{
+                  incident.confirmed === false
+                    ? t('incidents.detail.unconfirmed')
+                    : t('incidents.detail.confirmedYes')
+                }}
+              </dd>
+            </div>
+            <div class="fields__wide">
+              <dt>{{ t('incidents.detail.affectedNodes') }}</dt>
+              <dd>
+                @if (incident.affectedNodes?.length) {
+                  <ul class="nodes">
+                    @for (node of incident.affectedNodes; track node) {
+                      <li>{{ node }}</li>
+                    }
+                  </ul>
+                } @else {
+                  <span class="muted">{{ t('incidents.detail.noNodes') }}</span>
+                }
+              </dd>
+            </div>
+            <div class="fields__wide">
+              <dt>{{ t('incidents.detail.id') }}</dt>
+              <dd>
+                <code>{{ incident.id }}</code>
+              </dd>
+            </div>
+          </dl>
+        </article>
+      }
+    }
+  }
+</ng-container>

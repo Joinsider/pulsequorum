@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+:host {
+  display: block;
+}
+
+.back {
+  margin: 0 0 0.25rem;
+}
+
+.status {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.status--error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-color: var(--danger);
+  color: var(--danger);
+
+  p {
+    margin: 0;
+  }
+}
+
+.card {
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.cause {
+  margin: 0;
+  font-size: 1.125rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.chip--ongoing {
+  color: var(--status-down);
+}
+
+.chip--resolved {
+  color: var(--status-up);
+}
+
+.chip--unconfirmed {
+  color: var(--status-degraded);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+
+  div {
+    min-width: 0;
+  }
+
+  dt {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.fields__wide {
+  grid-column: 1 / -1;
+}
+
+.nodes {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+code {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,75 @@
+{
+  "title": "Vorfälle",
+  "filters": {
+    "label": "Vorfälle filtern",
+    "state": "Status",
+    "monitor": "Monitor",
+    "allMonitors": "Alle Monitore",
+    "range": "Zeitraum",
+    "monitorsError": "Die Monitorliste konnte nicht geladen werden."
+  },
+  "state": {
+    "all": "Alle",
+    "ongoing": "Laufend",
+    "resolved": "Behoben"
+  },
+  "range": {
+    "all": "Gesamter Zeitraum",
+    "24h": "Letzte 24 Stunden",
+    "7d": "Letzte 7 Tage",
+    "30d": "Letzte 30 Tage"
+  },
+  "units": {
+    "d": "{{ value }} T",
+    "h": "{{ value }} h",
+    "min": "{{ value }} min",
+    "s": "{{ value }} s"
+  },
+  "errorClass": {
+    "dns": "DNS",
+    "connect": "Verbindung",
+    "tls": "TLS",
+    "timeout": "Zeitüberschreitung",
+    "http_status": "HTTP-Status",
+    "assertion": "Prüfbedingung",
+    "ssrf_blocked": "Blockiert (SSRF-Schutz)",
+    "internal": "Intern"
+  },
+  "chip": {
+    "ongoing": "Laufend",
+    "resolved": "Behoben",
+    "unconfirmed": "Unbestätigt",
+    "unconfirmedHint": "Im Degraded-Modus ohne Quorum ausgelöst und noch nicht bestätigt."
+  },
+  "list": {
+    "monitor": "Monitor",
+    "started": "Begonnen",
+    "duration": "Dauer",
+    "errorClass": "Fehlerklasse",
+    "affectedNodes": "Betroffene Knoten",
+    "none": "–",
+    "empty": "Keine Vorfälle passen zu diesen Filtern.",
+    "loadError": "Vorfälle konnten nicht geladen werden.",
+    "loadMore": "Mehr laden",
+    "loadMoreError": "Weitere Vorfälle konnten nicht geladen werden. Versuche es erneut."
+  },
+  "detail": {
+    "title": "Vorfall",
+    "back": "Zurück zu den Vorfällen",
+    "notFound": "Dieser Vorfall existiert nicht oder du kannst ihn nicht sehen.",
+    "loadError": "Der Vorfall konnte nicht geladen werden.",
+    "monitor": "Monitor",
+    "started": "Begonnen",
+    "resolved": "Behoben",
+    "ongoing": "Noch laufend",
+    "duration": "Dauer",
+    "errorClass": "Fehlerklasse",
+    "confirmed": "Bestätigt",
+    "confirmedYes": "Ja",
+    "unconfirmed": "Nein, im Degraded-Modus ausgelöst",
+    "affectedNodes": "Betroffene Knoten",
+    "noNodes": "Keine Knoten erfasst.",
+    "id": "Vorfall-ID",
+    "none": "–"
+  }
+}
