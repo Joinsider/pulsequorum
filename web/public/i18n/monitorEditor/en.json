@@ -45,6 +45,14 @@
     "addItem": "Add item",
     "jsonHint": "JSON value"
   },
+  "secret": {
+    "stored": "Stored – hidden",
+    "replace": "Replace",
+    "remove": "Remove",
+    "keep": "Keep",
+    "removed": "Will be removed when you save.",
+    "hint": "Secrets are stored encrypted and never shown again."
+  },
   "consensus": {
     "majority": "Majority of the nodes",
     "any": "Any node",

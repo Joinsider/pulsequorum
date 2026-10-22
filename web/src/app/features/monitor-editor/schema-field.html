@@ -90,30 +90,79 @@
   }
 
   @case ('secret') {
-    <mat-form-field appearance="outline" class="full">
-      <mat-label>{{ title() }}</mat-label>
-      <input
-        matInput
-        type="password"
-        autocomplete="new-password"
-        autocapitalize="none"
-        spellcheck="false"
-        [formControl]="leaf()"
-        [required]="required()"
-      />
-      @if (description()) {
-        <mat-hint>{{ description() }}</mat-hint>
-      }
-      @if (error(); as msg) {
-        <mat-error>
-          @if (msg.text) {
-            {{ msg.text }}
-          } @else {
-            {{ msg.key! | transloco: msg.params }}
+    @if (secret(); as sc) {
+      @if (secretMode() === 'stored') {
+        <div class="secret" role="group" [attr.aria-label]="title() || null">
+          <span class="secret-title">{{ title() }}</span>
+          <div class="secret-state">
+            <span>{{ 'monitorEditor.secret.stored' | transloco }}</span>
+            <button mat-stroked-button type="button" (click)="sc.reveal()">
+              {{ 'monitorEditor.secret.replace' | transloco }}
+            </button>
+            @if (!required()) {
+              <button mat-stroked-button type="button" (click)="sc.remove()">
+                {{ 'monitorEditor.secret.remove' | transloco }}
+              </button>
+            }
+          </div>
+          <p class="hint">{{ 'monitorEditor.secret.hint' | transloco }}</p>
+          @if (error(); as msg) {
+            <p class="error-text" role="alert">
+              @if (msg.text) {
+                {{ msg.text }}
+              } @else {
+                {{ msg.key! | transloco: msg.params }}
+              }
+            </p>
           }
-        </mat-error>
+        </div>
+      } @else if (secretMode() === 'removed') {
+        <div class="secret" role="group" [attr.aria-label]="title() || null">
+          <span class="secret-title">{{ title() }}</span>
+          <div class="secret-state">
+            <span>{{ 'monitorEditor.secret.removed' | transloco }}</span>
+            <button mat-stroked-button type="button" (click)="sc.restore()">
+              {{ 'monitorEditor.secret.keep' | transloco }}
+            </button>
+          </div>
+        </div>
       }
-    </mat-form-field>
+    }
+    @if (secretMode() !== 'stored' && secretMode() !== 'removed') {
+      <mat-form-field appearance="outline" class="full">
+        <mat-label>{{ title() }}</mat-label>
+        <input
+          matInput
+          type="password"
+          autocomplete="new-password"
+          autocapitalize="none"
+          spellcheck="false"
+          [formControl]="leaf()"
+          [required]="required()"
+        />
+        @if (description()) {
+          <mat-hint>{{ description() }}</mat-hint>
+        }
+        @if (error(); as msg) {
+          <mat-error>
+            @if (msg.text) {
+              {{ msg.text }}
+            } @else {
+              {{ msg.key! | transloco: msg.params }}
+            }
+          </mat-error>
+        }
+      </mat-form-field>
+      @if (secret(); as sc) {
+        @if (sc.stored) {
+          <div class="secret-actions">
+            <button mat-button type="button" (click)="sc.restore()">
+              {{ 'common.cancel' | transloco }}
+            </button>
+          </div>
+        }
+      }
+    }
   }
 
   @case ('json') {
@@ -185,6 +234,7 @@
               autocomplete="off"
               spellcheck="false"
               [formControl]="entryKey(entry)"
+              [readonly]="lockedKey(entry)"
               required
             />
           </mat-form-field>

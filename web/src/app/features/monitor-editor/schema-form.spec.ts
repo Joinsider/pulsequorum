@@ -5,10 +5,16 @@ import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { describe, expect, it } from 'vitest';
 import {
   JsonSchema,
+  MapEntry,
   OMITTED,
+  SECRET_MASK,
+  SecretControl,
   buildControl,
   controlToValue,
   fieldKind,
+  isLockedKey,
+  isSecretSchema,
+  isStoredSecret,
   newArrayItem,
   newMapEntry,
   parseList,
@@ -42,6 +48,205 @@ const HTTP_SCHEMA: JsonSchema = {
     expected: { type: 'array', items: { type: 'string', maxLength: 8 }, maxItems: 3 },
   },
 };
+
+/** Shaped like the HTTP checker after ADR 0015: header values and auth secrets are writeOnly. */
+const SECRET_SCHEMA: JsonSchema = {
+  type: 'object',
+  required: ['url'],
+  properties: {
+    url: { type: 'string', format: 'uri' },
+    headers: {
+      type: 'object',
+      additionalProperties: { type: 'string', maxLength: 4096, writeOnly: true },
+    },
+    tokens: { type: 'array', items: { type: 'string', writeOnly: true } },
+    auth: {
+      type: 'object',
+      required: ['type'],
+      properties: {
+        type: { type: 'string', enum: ['basic', 'bearer'] },
+        username: { type: 'string' },
+        password: { type: 'string', writeOnly: true },
+      },
+    },
+  },
+};
+
+describe('secrets (ADR 0015)', () => {
+  it('recognises the mask and nothing else', () => {
+    expect(isStoredSecret('***')).toBe(true);
+    expect(isStoredSecret(SECRET_MASK)).toBe(true);
+    expect(isStoredSecret('**')).toBe(false);
+    expect(isStoredSecret('')).toBe(false);
+    expect(isStoredSecret(undefined)).toBe(false);
+  });
+
+  it('detects writeOnly fixed names, map values and array items', () => {
+    const headers = SECRET_SCHEMA.properties?.['headers'] ?? {};
+    const tokens = SECRET_SCHEMA.properties?.['tokens'] ?? {};
+    const password = SECRET_SCHEMA.properties?.['auth']?.properties?.['password'] ?? {};
+    const url = SECRET_SCHEMA.properties?.['url'] ?? {};
+
+    expect(isSecretSchema(password)).toBe(true);
+    expect(isSecretSchema(headers.additionalProperties as JsonSchema)).toBe(true);
+    expect(isSecretSchema(tokens.items as JsonSchema)).toBe(true);
+    expect(isSecretSchema(url)).toBe(false);
+  });
+
+  it('builds a stored control for the mask and an entered one otherwise', () => {
+    const stored = buildControl({ type: 'string', writeOnly: true }, '***', true);
+    const typed = buildControl({ type: 'string', writeOnly: true }, '', false);
+
+    expect(stored).toBeInstanceOf(SecretControl);
+    expect((stored as SecretControl).mode).toBe('stored');
+    expect(stored.value).toBe('***');
+    expect((typed as SecretControl).mode).toBe('entered');
+    expect(typed.value).toBe('');
+  });
+
+  it('submits the mask for an untouched stored secret, also in map and array rows', () => {
+    const group = buildControl(
+      SECRET_SCHEMA,
+      {
+        url: 'https://a.example',
+        headers: { 'X-Api-Key': '***' },
+        tokens: ['***'],
+        auth: { type: 'basic', username: 'bob', password: '***' },
+      },
+      true,
+    ) as FormGroup;
+
+    expect(controlToValue(SECRET_SCHEMA, group, true)).toEqual({
+      url: 'https://a.example',
+      headers: { 'X-Api-Key': '***' },
+      tokens: ['***'],
+      auth: { type: 'basic', username: 'bob', password: '***' },
+    });
+  });
+
+  it('sends a replaced secret as typed and keeps the other stored ones', () => {
+    const group = buildControl(
+      SECRET_SCHEMA,
+      {
+        url: 'https://a.example',
+        headers: { 'X-Api-Key': '***' },
+        auth: { type: 'basic', password: '***' },
+      },
+      true,
+    ) as FormGroup;
+    const password = group.get('auth')?.get('password') as SecretControl;
+
+    password.reveal();
+    expect(password.mode).toBe('entered');
+    expect(password.value).toBe('');
+    password.setValue('n3w');
+
+    const value = controlToValue(SECRET_SCHEMA, group, true) as Record<string, any>;
+    expect(value['auth']['password']).toBe('n3w');
+    expect(value['headers']).toEqual({ 'X-Api-Key': '***' });
+  });
+
+  it('sends an empty string for a removed optional secret and restores the mask on cancel', () => {
+    const group = buildControl(
+      SECRET_SCHEMA,
+      { url: 'https://a.example', auth: { type: 'basic', password: '***' } },
+      true,
+    ) as FormGroup;
+    const password = group.get('auth')?.get('password') as SecretControl;
+
+    password.remove();
+    expect(password.mode).toBe('removed');
+    expect(controlToValue(SECRET_SCHEMA, group, true)).toMatchObject({
+      auth: { type: 'basic', password: '' },
+    });
+
+    password.restore();
+    expect(password.mode).toBe('stored');
+    expect(controlToValue(SECRET_SCHEMA, group, true)).toMatchObject({
+      auth: { password: '***' },
+    });
+  });
+
+  it('does not offer removal for required secrets, map values or array items', () => {
+    const group = buildControl(
+      SECRET_SCHEMA,
+      { url: 'https://a.example', headers: { 'X-Api-Key': '***' } },
+      true,
+    ) as FormGroup;
+    const value = (group.get('headers') as FormArray).at(0).get('value') as SecretControl;
+
+    value.remove();
+    expect(value.mode).toBe('stored');
+    expect(controlToValue(SECRET_SCHEMA, group, true)).toMatchObject({
+      headers: { 'X-Api-Key': '***' },
+    });
+  });
+
+  it('never restores a mask on a control that was not stored', () => {
+    const control = buildControl({ type: 'string', writeOnly: true }, '', false) as SecretControl;
+    control.restore();
+    control.remove();
+    expect(control.mode).toBe('entered');
+    expect(control.value).toBe('');
+
+    const stored = buildControl({ type: 'string', writeOnly: true }, '***', true) as SecretControl;
+    stored.remove();
+    expect(stored.mode).toBe('stored');
+  });
+
+  it('omits an empty optional replacement and rejects an empty required one', () => {
+    const form = buildControl(SECRET_SCHEMA, { url: 'https://a.example' }, true) as FormGroup;
+    const auth = form.get('auth') as FormGroup;
+    auth.enable();
+    auth.get('type')?.setValue('basic');
+    (auth.get('password') as SecretControl).reveal();
+    expect(controlToValue(SECRET_SCHEMA, form, true)).not.toHaveProperty('auth.password');
+
+    const entry = newMapEntry(SECRET_SCHEMA.properties?.['headers'] ?? {});
+    entry.get('key')?.setValue('X-Api-Key');
+    expect(entry.get('value')?.hasError('required')).toBe(true);
+  });
+
+  it('applies the text rules only while a secret is typed', () => {
+    const control = buildControl(
+      { type: 'string', writeOnly: true, maxLength: 4 },
+      '***',
+      true,
+    ) as SecretControl;
+    expect(control.valid).toBe(true);
+
+    control.reveal();
+    control.setValue('too long');
+    expect(control.hasError('maxlength')).toBe(true);
+  });
+
+  it('locks the keys of stored secret entries only', () => {
+    const headers = buildControl(
+      SECRET_SCHEMA,
+      { url: 'https://a.example', headers: { 'X-Api-Key': '***' } },
+      true,
+    ) as FormGroup;
+    const stored = (headers.get('headers') as FormArray).at(0) as MapEntry;
+    expect(stored).toBeInstanceOf(MapEntry);
+    expect(isLockedKey(stored)).toBe(true);
+
+    const added = newMapEntry(SECRET_SCHEMA.properties?.['headers'] ?? {});
+    expect(isLockedKey(added)).toBe(false);
+
+    const plain = buildControl(
+      HTTP_SCHEMA,
+      { url: 'https://a.example', headers: { 'X-A': '1' } },
+      true,
+    ) as FormGroup;
+    expect(isLockedKey((plain.get('headers') as FormArray).at(0))).toBe(false);
+  });
+
+  it('builds new secret array items as typed values', () => {
+    const item = newArrayItem(SECRET_SCHEMA.properties?.['tokens'] ?? {});
+    expect(item).toBeInstanceOf(SecretControl);
+    expect((item as SecretControl).mode).toBe('entered');
+  });
+});
 
 describe('fieldKind', () => {
   it.each<[string, JsonSchema, string]>([

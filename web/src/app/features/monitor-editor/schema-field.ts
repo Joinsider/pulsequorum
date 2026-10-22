@@ -20,8 +20,10 @@ import { switchMap } from 'rxjs';
 import { Icon } from '../../shared/icon/icon';
 import {
   JsonSchema,
+  SecretControl,
   asSchema,
   fieldKind,
+  isLockedKey,
   newArrayItem,
   newMapEntry,
   validationMessage,
@@ -103,6 +105,32 @@ import {
     .toggle {
       margin: 0.25rem 0;
     }
+    .secret {
+      display: grid;
+      gap: 0.25rem;
+      padding: 0.25rem 0 0.5rem;
+      min-width: 0;
+    }
+    .secret-title {
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .secret-state {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .secret-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .error-text {
+      color: var(--danger);
+      margin: 0;
+      font-size: 0.8125rem;
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -143,6 +171,20 @@ export class SchemaField {
     return validationMessage(this.control().errors);
   });
 
+  /** The secret control, or null for ordinary leaves. Re-evaluated on every change. */
+  protected readonly secret = computed(() => {
+    this.changes();
+    const control = this.control();
+    return control instanceof SecretControl ? control : null;
+  });
+
+  /** Mode of the secret (stored, entered, removed); null for ordinary leaves. */
+  protected readonly secretMode = computed(() => {
+    this.changes();
+    const control = this.control();
+    return control instanceof SecretControl ? control.mode : null;
+  });
+
   protected toggleGroup(enabled: boolean): void {
     if (enabled) {
       this.control().enable();
@@ -169,5 +211,9 @@ export class SchemaField {
 
   protected entryValue(entry: AbstractControl): AbstractControl {
     return entry.get('value') ?? entry;
+  }
+
+  protected lockedKey(entry: AbstractControl): boolean {
+    return isLockedKey(entry);
   }
 }

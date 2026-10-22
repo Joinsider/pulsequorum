@@ -5,6 +5,7 @@ import {
   AbstractControl,
   FormArray,
   FormControl,
+  FormControlOptions,
   FormGroup,
   ValidationErrors,
   ValidatorFn,
@@ -49,6 +50,96 @@ export type FieldKind =
 
 /** Marks a value that must not be sent because it is an empty optional value. */
 export const OMITTED: unique symbol = Symbol('omitted');
+
+/** Placeholder the API returns in place of a stored secret (ADR 0015). */
+export const SECRET_MASK = '***';
+
+/** True for the placeholder that stands for a secret the server keeps. */
+export function isStoredSecret(value: unknown): boolean {
+  return value === SECRET_MASK;
+}
+
+/** Whether a schema node is a secret (`writeOnly`), including map values and array items. */
+export function isSecretSchema(schema: JsonSchema): boolean {
+  return fieldKind(schema) === 'secret';
+}
+
+/**
+ * - stored: the server holds the secret; it is shown as hidden and sent as the mask.
+ * - entered: the user types a value (new monitors, or after "Replace").
+ * - removed: sent as "" so the server deletes the secret (optional fields only).
+ */
+export type SecretMode = 'stored' | 'entered' | 'removed';
+
+/**
+ * Control of a secret leaf. Keeps the secret state next to the value: a stored
+ * secret is never prefilled into an input, and only `entered` values are typed.
+ */
+export class SecretControl extends (FormControl as new (
+  value: string,
+  options: FormControlOptions & { nonNullable: true },
+) => FormControl<string>) {
+  mode: SecretMode;
+  /** Loaded from the server with a stored secret, so {@link restore} can bring it back. */
+  readonly stored: boolean;
+
+  /**
+   * @param removable false for required secrets and for map values and array items,
+   *   which are removed with their entry or item instead.
+   */
+  constructor(
+    initial: string,
+    rules: ValidatorFn[],
+    readonly removable: boolean,
+  ) {
+    super(initial, { nonNullable: true, validators: [secretRules(rules)] });
+    this.stored = isStoredSecret(initial);
+    this.mode = this.stored ? 'stored' : 'entered';
+    this.updateValueAndValidity({ emitEvent: false });
+  }
+
+  /** "Replace": the stored secret is dropped from the view and a new value is typed. */
+  reveal(): void {
+    this.mode = 'entered';
+    this.setValue('');
+  }
+
+  /** "Remove": the secret is deleted on save. Only for stored, optional secrets. */
+  remove(): void {
+    if (this.mode === 'stored' && this.removable) {
+      this.mode = 'removed';
+      this.setValue('');
+    }
+  }
+
+  /** Undoes "Replace" or "Remove" of a stored secret. */
+  restore(): void {
+    if (this.stored) {
+      this.mode = 'stored';
+      this.setValue(SECRET_MASK);
+    }
+  }
+}
+
+/** Form row of a map entry. Entries loaded with a secret value keep their key (ADR 0015). */
+export class MapEntry extends FormGroup {
+  constructor(
+    key: string,
+    value: AbstractControl,
+    /** Stored entries cannot be renamed; the user deletes the entry and adds a new one. */
+    readonly keyLocked: boolean,
+  ) {
+    super({
+      key: new FormControl(key, { nonNullable: true, validators: [Validators.required] }),
+      value,
+    });
+  }
+}
+
+/** Whether the key of a map entry is read-only. */
+export function isLockedKey(entry: AbstractControl): boolean {
+  return entry instanceof MapEntry && entry.keyLocked;
+}
 
 /** Message of a validation error, ready for a translation lookup. */
 export interface ValidationMessage {
@@ -126,6 +217,12 @@ export function buildControl(
       return buildArray(schema, initial, required);
     case 'boolean':
       return new FormControl<boolean>(initial === true, { nonNullable: true });
+    case 'secret':
+      return new SecretControl(
+        typeof initial === 'string' ? initial : '',
+        stringValidators(schema, required),
+        !required,
+      );
     case 'number':
       return new FormControl<number | null>(
         typeof initial === 'number' ? initial : null,
@@ -152,8 +249,8 @@ export function newArrayItem(schema: JsonSchema): AbstractControl {
 }
 
 /** A new, empty key/value entry for a map schema. */
-export function newMapEntry(schema: JsonSchema): FormGroup {
-  return mapEntry('', buildControl(asSchema(schema.additionalProperties), undefined, true));
+export function newMapEntry(schema: JsonSchema): MapEntry {
+  return mapEntry('', buildControl(asSchema(schema.additionalProperties), undefined, true), false);
 }
 
 /**
@@ -183,6 +280,11 @@ export function controlToValue(
     }
     case 'boolean':
       return control.value === true;
+    case 'secret':
+      if (control instanceof SecretControl) {
+        return secretToValue(control, required);
+      }
+      return plainToValue(control, required);
     case 'number': {
       const v = control.value;
       return v === null || v === undefined || v === '' ? OMITTED : Number(v);
@@ -198,13 +300,8 @@ export function controlToValue(
         return OMITTED;
       }
     }
-    default: {
-      const v = control.value;
-      if (v === null || v === undefined || v === '') {
-        return required ? '' : OMITTED;
-      }
-      return v;
-    }
+    default:
+      return plainToValue(control, required);
   }
 }
 
@@ -272,8 +369,10 @@ function buildObject(schema: JsonSchema, initial: unknown, required: boolean): F
 function buildMap(schema: JsonSchema, initial: unknown): FormArray {
   const valueSchema = asSchema(schema.additionalProperties);
   const entries = isRecord(initial) ? Object.entries(initial) : [];
+  // Entries loaded from the server with secret values are stored: their keys stay fixed.
+  const locked = isSecretSchema(valueSchema);
   return new FormArray(
-    entries.map(([key, value]) => mapEntry(key, buildControl(valueSchema, value, true))),
+    entries.map(([key, value]) => mapEntry(key, buildControl(valueSchema, value, true), locked)),
   );
 }
 
@@ -286,11 +385,44 @@ function buildArray(schema: JsonSchema, initial: unknown, required: boolean): Fo
   );
 }
 
-function mapEntry(key: string, value: AbstractControl): FormGroup {
-  return new FormGroup({
-    key: new FormControl(key, { nonNullable: true, validators: [Validators.required] }),
-    value,
-  });
+function mapEntry(key: string, value: AbstractControl, keyLocked: boolean): MapEntry {
+  return new MapEntry(key, value, keyLocked);
+}
+
+/** Submitted value of a secret: the mask keeps it, "" removes it, typed text replaces it. */
+function secretToValue(control: SecretControl, required: boolean): unknown {
+  switch (control.mode) {
+    case 'stored':
+      return SECRET_MASK;
+    case 'removed':
+      return '';
+    default:
+      return control.value === '' && !required ? OMITTED : control.value;
+  }
+}
+
+/** Submitted value of an ordinary leaf: empty required values are "", empty optional ones are omitted. */
+function plainToValue(control: AbstractControl, required: boolean): unknown {
+  const v = control.value;
+  if (v === null || v === undefined || v === '') {
+    return required ? '' : OMITTED;
+  }
+  return v;
+}
+
+/**
+ * Validators of a secret while it is typed. A stored or removed secret holds the
+ * mask or "" by design and skips the text rules.
+ */
+function secretRules(rules: ValidatorFn[]): ValidatorFn {
+  const composed = Validators.compose(rules);
+  return (control: AbstractControl) => {
+    const mode = control instanceof SecretControl ? control.mode : undefined;
+    if (mode === 'stored' || mode === 'removed') {
+      return null;
+    }
+    return composed ? composed(control) : null;
+  };
 }
 
 function objectToValue(schema: JsonSchema, group: FormGroup, required: boolean): unknown {

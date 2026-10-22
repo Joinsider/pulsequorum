@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormArray } from '@angular/forms';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { Observable, of, throwError } from 'rxjs';
@@ -38,6 +39,35 @@ const TCP_TYPE: MonitorType = {
     properties: {
       host: { type: 'string' },
       port: { type: 'integer', minimum: 1, maximum: 65535 },
+    },
+  },
+};
+
+/** HTTP type after ADR 0015: header values and the basic-auth password are secrets. */
+const HTTP_SECRET_TYPE: MonitorType = {
+  type: 'http',
+  name: 'HTTP(S)',
+  configSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['url'],
+    properties: {
+      url: { type: 'string', title: 'URL', format: 'uri' },
+      method: { type: 'string', enum: ['GET', 'POST'], default: 'GET' },
+      headers: {
+        type: 'object',
+        additionalProperties: { type: 'string', writeOnly: true },
+      },
+      auth: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: ['basic', 'bearer'] },
+          username: { type: 'string' },
+          password: { type: 'string', writeOnly: true },
+        },
+      },
     },
   },
 };
@@ -80,6 +110,16 @@ const MONITOR: Monitor = {
   updatedAt: '2026-10-01T10:00:00Z',
 };
 
+/** A stored monitor whose secrets come back masked, as the API returns them. */
+const SECRET_MONITOR: Monitor = {
+  ...MONITOR,
+  config: {
+    url: 'https://shop.example',
+    headers: { 'X-Api-Key': '***' },
+    auth: { type: 'basic', username: 'bob', password: '***' },
+  },
+};
+
 interface Setup {
   fixture: ComponentFixture<MonitorEditorPage>;
   monitors: {
@@ -96,10 +136,11 @@ function setup(options: {
   create?: () => Observable<Monitor>;
   update?: () => Observable<Monitor>;
   types?: MonitorType[];
+  monitor?: Monitor;
 }): Setup {
   const monitors = {
     listMonitorTypes: vi.fn(() => of(options.types ?? [HTTP_TYPE, TCP_TYPE])),
-    getMonitor: vi.fn(() => of(MONITOR)),
+    getMonitor: vi.fn(() => of(options.monitor ?? MONITOR)),
     createMonitor: vi.fn(options.create ?? (() => of({ ...MONITOR, id: 'new-id' }))),
     updateMonitor: vi.fn(options.update ?? (() => of(MONITOR))),
   };
@@ -314,5 +355,105 @@ describe('MonitorEditorPage', () => {
     expect(page(fixture)['loadState']()).toBe('error');
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text).toContain('monitorEditor.errors.load');
+  });
+
+  describe('stored secrets (ADR 0015)', () => {
+    /** The config part of the body of the last PUT. */
+    function sentConfig(monitors: Setup['monitors']): Record<string, any> {
+      const [, input] = monitors.updateMonitor.mock.calls[0] as [
+        string,
+        { config: Record<string, any> },
+      ];
+      return input.config;
+    }
+
+    /** Clicks the button with the given (translation) text inside a scope. */
+    function clickIn(scope: Element, text: string): void {
+      const button = Array.from(scope.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === text,
+      );
+      if (!button) {
+        throw new Error(`no button "${text}"`);
+      }
+      button.click();
+    }
+
+    it('sends the masks back unchanged when the stored secrets are not touched', async () => {
+      const { fixture, monitors } = setup({
+        mode: 'edit',
+        types: [HTTP_SECRET_TYPE, TCP_TYPE],
+        monitor: SECRET_MONITOR,
+      });
+
+      await page(fixture)['submit']();
+
+      expect(monitors.updateMonitor).toHaveBeenCalledOnce();
+      expect(sentConfig(monitors)).toMatchObject({
+        headers: { 'X-Api-Key': '***' },
+        auth: { type: 'basic', username: 'bob', password: '***' },
+      });
+    });
+
+    it('shows stored secrets as hidden and sends only the replaced one', async () => {
+      const { fixture, monitors } = setup({
+        mode: 'edit',
+        types: [HTTP_SECRET_TYPE, TCP_TYPE],
+        monitor: SECRET_MONITOR,
+      });
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(root.textContent).toContain('monitorEditor.secret.stored');
+      expect(root.textContent).not.toContain('***');
+      expect(root.querySelector('input[value="***"]')).toBeNull();
+
+      const password = root.querySelector('div.secret[aria-label="password"]');
+      expect(password).not.toBeNull();
+      clickIn(password as Element, 'monitorEditor.secret.replace');
+      fixture.detectChanges();
+
+      const input = root.querySelector('input[type="password"]') as HTMLInputElement;
+      expect(input.value).toBe('');
+      input.value = 'new-pass';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      await page(fixture)['submit']();
+
+      expect(sentConfig(monitors)).toMatchObject({
+        headers: { 'X-Api-Key': '***' },
+        auth: { type: 'basic', username: 'bob', password: 'new-pass' },
+      });
+    });
+
+    it('keeps the key of a stored header read-only', () => {
+      const { fixture } = setup({
+        mode: 'edit',
+        types: [HTTP_SECRET_TYPE, TCP_TYPE],
+        monitor: SECRET_MONITOR,
+      });
+      const keyInput = (fixture.nativeElement as HTMLElement).querySelector(
+        'input[readonly]',
+      ) as HTMLInputElement | null;
+
+      expect(keyInput?.value).toBe('X-Api-Key');
+    });
+
+    it('drops the stored secrets when the type changes', () => {
+      const { fixture } = setup({
+        mode: 'edit',
+        types: [HTTP_SECRET_TYPE, TCP_TYPE],
+        monitor: SECRET_MONITOR,
+      });
+      const p = page(fixture);
+
+      p['selectType']('tcp');
+      p['selectType']('http');
+      fixture.detectChanges();
+
+      const config = p['form'].get('config');
+      expect(JSON.stringify(config.getRawValue())).not.toContain('***');
+      expect((config.get('headers') as FormArray).length).toBe(0);
+      expect(config.get('auth')?.disabled).toBe(true);
+    });
   });
 });

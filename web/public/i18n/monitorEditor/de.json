@@ -45,6 +45,14 @@
     "addItem": "Eintrag hinzufügen",
     "jsonHint": "JSON-Wert"
   },
+  "secret": {
+    "stored": "Gespeichert – verborgen",
+    "replace": "Ersetzen",
+    "remove": "Entfernen",
+    "keep": "Behalten",
+    "removed": "Wird beim Speichern entfernt.",
+    "hint": "Geheimnisse werden verschlüsselt gespeichert und nie wieder angezeigt."
+  },
   "consensus": {
     "majority": "Mehrheit der Nodes",
     "any": "Ein beliebiger Node",
