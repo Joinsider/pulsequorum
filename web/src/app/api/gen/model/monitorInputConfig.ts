@@ -12,6 +12,10 @@
  */
 
 /**
- * Type-specific configuration, validated against the type's JSON schema
+ * Type-specific configuration, validated against the type's JSON schema.
+ * Fields marked `writeOnly` in that schema are secrets (ADR 0015): they are
+ * stored encrypted and returned as `***`. On update, `***` or an omitted
+ * field keeps the stored secret (same type only), a new value replaces it
+ * and an empty string removes it. `***` without a stored secret is a 422.
  */
 export type MonitorInputConfig = { [key: string]: unknown };
