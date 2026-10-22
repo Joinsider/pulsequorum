@@ -6,7 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "e2e": "playwright test"
   },
   "private": true,
   "packageManager": "npm@12.2.0",
@@ -30,6 +31,7 @@
     "@angular/cli": "^22.2.3",
     "@angular/compiler-cli": "^22.2.0",
     "@material-symbols/svg-400": "^0.48.1",
+    "@playwright/test": "1.64.0",
     "@redocly/cli": "2.64.1",
     "jsdom": "^30.0.0",
     "orval": "8.43.0",

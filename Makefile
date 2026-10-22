@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build web-install web-build web-embed test go-test web-test lint go-lint golangci web-lint licenses notices run web-dev docker clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker clean
 
 MODULE    := github.com/joinsider/uptimecluster
 GO_PKGS   := ./cmd/... ./internal/...
@@ -18,7 +18,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 generate: api-gen proto-gen sqlc-gen ## Regenerate all generated code (OpenAPI, protobuf, sqlc)
 
@@ -67,6 +67,9 @@ go-test: ## Run Go tests with race detector
 
 web-test: web/node_modules ## Run frontend unit tests
 	cd web && npx ng test --watch=false
+
+web-e2e: build web/node_modules ## Run Playwright E2E smoke tests against the built binary (runs make build first)
+	cd web && npx playwright test
 
 lint: go-lint golangci web-lint api-lint proto-lint ## Run all linters
 
