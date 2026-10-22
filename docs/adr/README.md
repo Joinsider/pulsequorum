@@ -21,3 +21,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0013](0013-persistenz-ergebnisse-sqlite-spike.md) | Persistenz: Ergebnisse des SQLite-Spikes | Accepted | 2026-10-19 |
 | [0014](0014-benachrichtigungen.md) | Benachrichtigungen: Kanäle, Outbox und Versand (Shoutrrr) | Accepted | 2026-10-19 |
 | [0015](0015-geheimnisse-in-monitor-konfigurationen.md) | Geheimnisse in Monitor-Konfigurationen | Accepted | 2026-10-22 |
+| [0016](0016-kompaktes-metrik-schema.md) | Kompaktes Schema für Latenz-Minuten und Rollups | Proposed | 2026-10-22 |
