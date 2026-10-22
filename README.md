@@ -23,6 +23,7 @@ Danach `http://localhost:8080/setup` öffnen und den ersten Administrator anlege
 | [Pflichtenheft](docs/pflichtenheft.md) | Verbindliche Anforderungen, Pitfalls, Abnahmekriterien |
 | [Roadmap](docs/roadmap.md) | Phasen und Arbeitspakete |
 | [ADRs](docs/adr/README.md) | Architekturentscheidungen |
+| [Cluster erweitern und verkleinern](docs/betrieb/cluster.md) | Voter hinzufügen, entfernen und ersetzen; Zertifikate und Fehlerbilder |
 
 ## Entwicklung
 

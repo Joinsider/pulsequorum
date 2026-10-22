@@ -177,3 +177,58 @@ func TestCORSOrigins(t *testing.T) {
 		}
 	}
 }
+
+// TestClusterJoin covers CLUSTER_JOIN (FA-CLU-03): a comma-separated list of
+// host:port seeds; empty entries are skipped, anything else must be host:port.
+func TestClusterJoin(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    []string
+		wantErr string
+	}{
+		{name: "unset", value: "", want: nil},
+		{name: "two seeds with spaces", value: "a:1, b:2", want: []string{"a:1", "b:2"}},
+		{name: "empty entries skipped", value: " ,, a:1 ,,", want: []string{"a:1"}},
+		{name: "only separators", value: ",,", want: nil},
+		{name: "no port", value: "nohostport", wantErr: "CLUSTER_JOIN"},
+		{name: "one bad entry", value: "a:1,nohostport", wantErr: "CLUSTER_JOIN"},
+		{name: "empty host", value: ":9443", wantErr: "CLUSTER_JOIN"},
+		{name: "empty port", value: "voter1:", wantErr: "CLUSTER_JOIN"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "CLUSTER_JOIN": tt.value}))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if strings.Join(cfg.ClusterJoin, " ") != strings.Join(tt.want, " ") || len(cfg.ClusterJoin) != len(tt.want) {
+				t.Errorf("ClusterJoin = %q, want %q", cfg.ClusterJoin, tt.want)
+			}
+		})
+	}
+}
+
+// TestJoinTokenSources checks that the join token comes from one source only.
+func TestJoinTokenSources(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "JOIN_TOKEN": "uc1.x"}))
+	if err != nil || cfg.JoinToken != "uc1.x" || cfg.JoinTokenFile != "" {
+		t.Errorf("JOIN_TOKEN only: token %q, file %q, err %v", cfg.JoinToken, cfg.JoinTokenFile, err)
+	}
+
+	cfg, err = Load(env(map[string]string{"NODE_NAME": "n1", "JOIN_TOKEN_FILE": "/run/secrets/join"}))
+	if err != nil || cfg.JoinTokenFile != "/run/secrets/join" || cfg.JoinToken != "" {
+		t.Errorf("JOIN_TOKEN_FILE only: token %q, file %q, err %v", cfg.JoinToken, cfg.JoinTokenFile, err)
+	}
+
+	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "JOIN_TOKEN": "uc1.x", "JOIN_TOKEN_FILE": "/run/secrets/join"}))
+	if err == nil || !strings.Contains(err.Error(), "JOIN_TOKEN") {
+		t.Errorf("both sources: error = %v, want a JOIN_TOKEN error", err)
+	}
+}
