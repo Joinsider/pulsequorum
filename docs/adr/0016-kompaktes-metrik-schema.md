@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-22 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | AS-10, FA-UPT-03..06, NFA-PERF-03, PF-23, ADR 0004, ADR 0013 |
@@ -74,3 +74,4 @@ Nicht Teil dieses ADR: das Schema von `heartbeats`. Es trägt den Replikationssc
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-22 | Proposed | Claude | |
+| 2026-10-22 | Accepted | Projektinhaber | im Chat bestätigt |
