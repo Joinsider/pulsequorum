@@ -46,6 +46,14 @@ type Config struct {
 	// ClusterAdvertise is the stable host:port other nodes use to reach this
 	// node; it becomes the Raft server address (ADR 0005, FA-CLU-10).
 	ClusterAdvertise string
+	// ClusterJoin lists host:port of existing voters to join (FA-CLU-03). A
+	// node with existing Raft state ignores it; without state and without
+	// ClusterJoin it bootstraps a new cluster (FA-CLU-02).
+	ClusterJoin []string
+	// JoinToken or JoinTokenFile holds the one-time join token (FA-PKI-02).
+	// Never log it.
+	JoinToken     string
+	JoinTokenFile string
 	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
 	RaftTimeout time.Duration
 	PublicURL   string
@@ -184,6 +192,23 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if host, port, err := net.SplitHostPort(cfg.ClusterAdvertise); err != nil || host == "" || port == "" {
 		errs = append(errs, fmt.Errorf("CLUSTER_ADVERTISE: must be host:port, got %q", cfg.ClusterAdvertise))
+	}
+
+	for _, seed := range strings.Split(getenv("CLUSTER_JOIN"), ",") {
+		seed = strings.TrimSpace(seed)
+		if seed == "" {
+			continue
+		}
+		if host, port, err := net.SplitHostPort(seed); err != nil || host == "" || port == "" {
+			errs = append(errs, fmt.Errorf("CLUSTER_JOIN: entries must be host:port, got %q", seed))
+			continue
+		}
+		cfg.ClusterJoin = append(cfg.ClusterJoin, seed)
+	}
+	cfg.JoinToken = getenv("JOIN_TOKEN")
+	cfg.JoinTokenFile = getenv("JOIN_TOKEN_FILE")
+	if cfg.JoinToken != "" && cfg.JoinTokenFile != "" {
+		errs = append(errs, errors.New("set either JOIN_TOKEN or JOIN_TOKEN_FILE, not both"))
 	}
 
 	raftTimeout, err := time.ParseDuration(get("RAFT_TIMEOUT", "1s"))
