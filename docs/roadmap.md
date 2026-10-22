@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P2 – Cluster (P1 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
 | **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | P2 – AP-2.1 Cluster-PKI |
+| **Nächster Schritt (Claude)** | AP-2.2 Join/Leave inkl. mTLS-Transport und Join-RPC |
 
 ---
 
@@ -83,7 +83,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
-| AP-2.1 | Cluster-PKI: CA beim Bootstrap, Join-Tokens mit CA-Fingerprint, Zertifikatsrotation, Sperrliste | FA-PKI-01..04 | 0006 | ⬜ |
+| AP-2.1 | Cluster-PKI: CA beim Bootstrap, Join-Tokens mit CA-Fingerprint, Zertifikatsrotation, Sperrliste | FA-PKI-01..04 | 0006 | ✅ Paket `internal/pki`: ECDSA-P-256-CA, Blattzertifikate 90 Tage (−5 min, Erneuerung bei 2/3) mit Identität als URI-SAN `uc://<cluster>/<rolle>/<node>[?tenant=]`, CSR liefert nur den Schlüssel; Prüfung von Kette, Verwendung, Ablauf, Sperrliste, Cluster und Rolle in `VerifyConnection` (TLS 1.3, Session-Tickets aus); Join-Token `uc1.<id>.<secret>.<ca-fingerprint>` (SHA-256 des Geheimnisses, Pinning vor dem ersten Byte). Raft-Zustand: CA (Schlüssel verschlüsselt), Join-Tokens (≤ 24 h, einmalig, Rolle, Mandant nur für Probes und nur existierend), Sperrliste mit Pruning. `internal/clusterpki`: CA beim Bootstrap, Token-Ausgabe und -Einlösung, Node-Zertifikat in `DATA_DIR/tls` mit Erneuerung, Sperrliste alle 10 s neu geladen. Offen → AP-2.2: Raft-Transport auf mTLS (ALPN-Mux), gRPC `Join`/`RenewCertificate`, Erneuerung von Followern über den Leader, Widerruf aller Zertifikate eines entfernten Nodes (Serien beim Ausstellen erfassen) |
 | AP-2.2 | Join/Leave: Nicht-Voter → Voter, serialisierte Mitgliedschaftsänderungen, manuelles Entfernen, Adresswechsel | FA-CLU-03/04/08/10/11 | 0005 | ⬜ |
 | AP-2.3 | Write-Forwarding zum Leader mit Request-ID | FA-CLU-05/06 | 0006 | ⬜ |
 | AP-2.4 | Heartbeat-Replikation, Anti-Entropie, Backpressure, Rückstandsmessung | FA-REP-01..05 | 0006 | ⬜ |
