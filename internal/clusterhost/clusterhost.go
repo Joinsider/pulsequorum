@@ -138,11 +138,12 @@ type Host struct {
 	Revocations *clusterpki.Revocations
 	Manager     *membership.Manager
 
-	mux  *clusternet.Mux
-	grpc *grpc.Server
-	sec  clusternet.Security
-	log  *slog.Logger
-	wg   sync.WaitGroup
+	mux       *clusternet.Mux
+	grpc      *grpc.Server
+	advertise string
+	sec       clusternet.Security
+	log       *slog.Logger
+	wg        sync.WaitGroup
 }
 
 // Start opens the cluster port and starts Raft on it with mTLS.
@@ -152,6 +153,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Revocations: &clusterpki.Revocations{},
 		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring},
 		log:         opts.Log,
+		advertise:   opts.Advertise,
 	}
 	if err := h.Revocations.Reload(ctx, opts.State); err != nil {
 		return nil, err
@@ -226,7 +228,88 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.Revocations.Run(ctx, h.Authority.State, RevocationReload, h.log) })
 	wg.Go(func() { h.Cert.RunRenewal(ctx, h.issuer, renewalCheck, h.log) })
 	wg.Go(func() { h.Manager.Run(ctx, leaderWatch) })
+	wg.Go(func() { h.announceAddress(ctx) })
 	wg.Wait()
+}
+
+// announceAddress reports a changed CLUSTER_ADVERTISE to the leader
+// (FA-CLU-10): the node's entry in the Raft configuration still has the old
+// address, so the leader cannot reach it. The node authenticates with its
+// certificate and calls the leader directly; voters keep their vote.
+func (h *Host) announceAddress(ctx context.Context) {
+	backoff := time.Second
+	for {
+		done, err := h.tryAnnounce(ctx)
+		if done {
+			return
+		}
+		if err != nil {
+			h.log.Warn("announcing the new cluster address failed, retrying", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, 30*time.Second)
+	}
+}
+
+func (h *Host) tryAnnounce(ctx context.Context) (bool, error) {
+	members, _, err := h.Node.Members()
+	if err != nil {
+		return false, err
+	}
+	var self *cluster.Member
+	for i, m := range members {
+		if m.ID == h.Node.ID() {
+			self = &members[i]
+		}
+	}
+	if self == nil || self.Address == h.advertise || h.Cert.Leaf() == nil {
+		return true, nil // not a member yet, unchanged, or no certificate
+	}
+	// Ask the other voters who leads, then call the leader directly.
+	addrByID := map[string]string{}
+	for _, m := range members {
+		addrByID[m.ID] = m.Address
+	}
+	var lastErr error
+	for _, m := range members {
+		if m.ID == h.Node.ID() || !m.Voter {
+			continue
+		}
+		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		st, err := h.status(callCtx, m.Address)
+		cancel()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		leader := addrByID[st.GetLeaderId()]
+		if leader == "" {
+			lastErr = errors.New("no leader known")
+			continue
+		}
+		client, closeConn, err := h.dial(leader)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		callCtx, cancel = context.WithTimeout(ctx, 15*time.Second)
+		_, err = client.Join(callCtx, &pb.JoinRequest{Node: &pb.NodeInfo{
+			Id: h.Node.ID(), Role: pb.NodeInfo_ROLE_VOTER, AdvertiseAddr: h.advertise,
+		}})
+		cancel()
+		closeConn()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		h.log.Info("cluster address updated", "from", self.Address, "to", h.advertise)
+		return true, nil
+	}
+	return false, lastErr
 }
 
 // issuer renews on the leader directly, on followers through the leader.

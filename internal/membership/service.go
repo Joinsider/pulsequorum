@@ -66,10 +66,20 @@ var _ pb.ClusterServiceServer = (*Service)(nil)
 
 // Join enrolls a node with a join token (FA-CLU-03, FA-PKI-02).
 func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinResponse, error) {
+	info := req.GetNode()
+	// A member with a valid certificate may move its own address without a
+	// token (FA-CLU-10). Never forwarded: the leader must see the moving
+	// node's own certificate, so it calls the leader directly.
+	if peer, ok := clusternet.Peer(ctx); ok && req.GetTokenId() == "" {
+		if !s.Node.IsLeader() {
+			_, leaderID := s.Node.Leader()
+			return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+		}
+		return s.updateAddress(ctx, peer, info)
+	}
 	if !s.Node.IsLeader() {
 		return s.forwardJoin(ctx, req)
 	}
-	info := req.GetNode()
 	if _, err := uuid.Parse(info.GetId()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, "node ID must be a UUID")
 	}
@@ -130,6 +140,28 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	}
 	s.Log.Info("node joined", "node_id", info.GetId(), "role", role, "address", info.GetAdvertiseAddr())
 	return resp, nil
+}
+
+// updateAddress changes the address of the calling voter in the Raft
+// configuration; voters keep their vote (Manager.AddVoter).
+func (s *Service) updateAddress(ctx context.Context, peer pki.Identity, info *pb.NodeInfo) (*pb.JoinResponse, error) {
+	if peer.Role != pki.RoleVoter || peer.NodeID != info.GetId() {
+		return nil, status.Error(codes.PermissionDenied, "a node can only change its own address")
+	}
+	if err := s.stillMember(ctx, peer); err != nil {
+		return nil, err
+	}
+	if host, port, err := net.SplitHostPort(info.GetAdvertiseAddr()); err != nil || host == "" || port == "" {
+		return nil, status.Error(codes.InvalidArgument, "voter address must be host:port")
+	}
+	if err := s.Manager.AddVoter(ctx, peer.NodeID, info.GetAdvertiseAddr()); err != nil {
+		var inUse *AddressInUseError
+		if errors.As(err, &inUse) {
+			return nil, status.Error(codes.AlreadyExists, inUse.Error())
+		}
+		return nil, status.Errorf(codes.Unavailable, "update address: %v", err)
+	}
+	return &pb.JoinResponse{ClusterId: peer.ClusterID}, nil
 }
 
 func (s *Service) forwardJoin(ctx context.Context, req *pb.JoinRequest) (*pb.JoinResponse, error) {

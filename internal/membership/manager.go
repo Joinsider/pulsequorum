@@ -194,7 +194,7 @@ func (m *Manager) tryPromote(ctx context.Context, nodeID, address string, joinIn
 		return fmt.Errorf("%w: %s answers as %s", errStatusPending, address, st.GetNodeId())
 	}
 	last := m.Raft.Status().LastLogIndex
-	if st.GetAppliedIndex() < joinIndex || last > st.GetAppliedIndex()+MaxLag {
+	if st.GetAppliedIndex() < joinIndex || last >= st.GetAppliedIndex()+MaxLag {
 		return errStatusPending
 	}
 

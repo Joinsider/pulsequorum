@@ -47,8 +47,32 @@ func freeAddr(t *testing.T) string {
 // startNode assembles a voter like the binary does (cmd/uptimecluster).
 func startNode(ctx context.Context, t *testing.T, seeds []string, token string) (*testNode, error) {
 	t.Helper()
-	n := &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir()}
+	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir()}, seeds, token)
+}
+
+// restart stops n and starts it again from the same data directory under a
+// new address (FA-CLU-10).
+func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
+	t.Helper()
+	n.cancel()
+	if err := n.host.Close(); err != nil {
+		t.Logf("close: %v", err)
+	}
+	_ = n.state.Close()
+	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return moved
+}
+
+func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, token string) (*testNode, error) {
+	t.Helper()
 	log := slog.New(slog.DiscardHandler)
+	existing, err := cluster.HasState(n.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token}, log)
 	if err != nil {
 		return nil, err
@@ -79,7 +103,7 @@ func startNode(ctx context.Context, t *testing.T, seeds []string, token string) 
 		_ = n.host.Close()
 		_ = n.state.Close()
 	})
-	if !prepared.Joining {
+	if !prepared.Joining && !existing {
 		if err := cluster.EnsureDefaultTenant(ctx, n.host.Node, n.state); err != nil {
 			t.Fatal(err)
 		}
@@ -182,6 +206,26 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 		})
 		eventually(t, "data keys replicated", 10*time.Second, func() bool { return n.keyring.Reload(ctx) == nil && n.keyring.ActiveKeyID() != "" })
 	}
+
+	// n2 moves to a new address; the cluster follows and n2 stays a voter.
+	n2 = restart(ctx, t, n2)
+	eventually(t, "n2 address updated", 30*time.Second, func() bool {
+		members, _, _ := n1.host.Node.Members()
+		for _, m := range members {
+			if m.ID == n2.id {
+				return m.Address == n2.addr && m.Voter
+			}
+		}
+		return false
+	})
+	cmd2, _ := cluster.NewPutTenant("t-moved", "moved", cluster.TenantDocument{Name: "Moved", Plan: "default"})
+	if _, err := n1.host.Node.Apply(ctx, cmd2); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "replication after the move", 15*time.Second, func() bool {
+		_, err := n2.state.GetTenant(ctx, "moved")
+		return err == nil
+	})
 
 	// A follower renews its certificate through the leader (FA-PKI-03).
 	first := pki.SerialString(n2.host.Cert.Leaf())
