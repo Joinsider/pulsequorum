@@ -272,6 +272,10 @@ WHERE tenant_id = ?1
   AND monitor_id = ?2
   AND (CAST(?3 AS TEXT) = '' OR node_id = ?3)
   AND ts_ms <= ?4
+  -- Redundant lower bound: every row matched by the keyset chain below has
+  -- ts_ms >= after_ts. Without it SQLite cannot range-scan ts_ms behind the ORs
+  -- and reads every retained row of the monitor (see the plan test).
+  AND ts_ms >= ?5
   AND (
         ts_ms > ?5
      OR (ts_ms = ?5 AND node_id > ?6)

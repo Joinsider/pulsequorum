@@ -70,6 +70,7 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"Incarnation", testIncarnation},
 		{"InsertIsIdempotent", testInsertIdempotent},
 		{"ListPagingAndFilters", testHeartbeatList},
+		{"ListPagingMatchesFullRead", testHeartbeatPagingMatchesFullRead},
 		{"DeleteBefore", testDeleteBefore},
 		{"TenantIsolation", testMetricsTenantIsolation},
 		{"LatestHeartbeats", testLatestHeartbeats},
@@ -1772,6 +1773,60 @@ func testHeartbeatList(t *testing.T, m store.Metrics) {
 			t.Fatalf("node filter returned %+v", hb)
 		}
 	}
+}
+
+// testHeartbeatPagingMatchesFullRead pages through a tie-heavy range with several
+// page sizes and checks that the concatenated pages equal one unpaged read, so
+// the keyset cursor neither skips nor repeats rows when ts_ms values collide.
+func testHeartbeatPagingMatchesFullRead(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	hbs := heartbeats(tenantA, "mon", "n1", 1, 8, 0)
+	hbs = append(hbs, heartbeats(tenantA, "mon", "n2", 1, 8, 0)...)
+	for i := range 4 { // second incarnation of n1 reusing the same timestamps
+		hbs = append(hbs, store.Heartbeat{
+			NodeID: "n1", Incarnation: "inc-n1-new", Seq: uint64(i + 1),
+			TenantID: tenantA, MonitorID: "mon", TsMs: int64(i) * 1000, Status: store.CheckUp,
+		})
+	}
+	insert(t, m, hbs)
+
+	base := store.HeartbeatQuery{MonitorID: "mon", FromMs: 1000, ToMs: 6000}
+	full, err := m.ListHeartbeats(ctx, tenantA, withLimit(base, 5000))
+	if err != nil || len(full.Items) == 0 || full.Next != nil {
+		t.Fatalf("full read = %d items, next=%v, %v", len(full.Items), full.Next, err)
+	}
+	for _, limit := range []int{1, 2, 3, 5, 7} {
+		var got []store.Heartbeat
+		q := withLimit(base, limit)
+		for pages := 0; ; pages++ {
+			page, err := m.ListHeartbeats(ctx, tenantA, q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, page.Items...)
+			if page.Next == nil {
+				break
+			}
+			if pages > len(full.Items) {
+				t.Fatalf("limit %d: paging does not terminate", limit)
+			}
+			q.After = page.Next
+		}
+		if len(got) != len(full.Items) {
+			t.Fatalf("limit %d: %d items, full read has %d", limit, len(got), len(full.Items))
+		}
+		for i := range got {
+			a, b := got[i], full.Items[i]
+			if a.NodeID != b.NodeID || a.Incarnation != b.Incarnation || a.Seq != b.Seq || a.TsMs != b.TsMs {
+				t.Fatalf("limit %d: item %d = %+v, full read has %+v", limit, i, a, b)
+			}
+		}
+	}
+}
+
+func withLimit(q store.HeartbeatQuery, limit int) store.HeartbeatQuery {
+	q.Limit = limit
+	return q
 }
 
 func testDeleteBefore(t *testing.T, m store.Metrics) {

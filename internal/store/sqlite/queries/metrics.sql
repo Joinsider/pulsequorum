@@ -29,6 +29,10 @@ WHERE tenant_id = sqlc.arg(tenant_id)
   AND monitor_id = sqlc.arg(monitor_id)
   AND (CAST(sqlc.arg(node_id) AS TEXT) = '' OR node_id = sqlc.arg(node_id))
   AND ts_ms <= sqlc.arg(to_ms)
+  -- Redundant lower bound: every row matched by the keyset chain below has
+  -- ts_ms >= after_ts. Without it SQLite cannot range-scan ts_ms behind the ORs
+  -- and reads every retained row of the monitor (see the plan test).
+  AND ts_ms >= sqlc.arg(after_ts)
   AND (
         ts_ms > sqlc.arg(after_ts)
      OR (ts_ms = sqlc.arg(after_ts) AND node_id > sqlc.arg(after_node))

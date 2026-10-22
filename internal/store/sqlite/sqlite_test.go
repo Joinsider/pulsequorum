@@ -382,3 +382,63 @@ func TestMonitorSecretsRoundTrip(t *testing.T) {
 		t.Fatalf("after clear: secrets = %v, %v", got.Secrets, err)
 	}
 }
+
+// listHeartbeatsSQL returns the SQL of the generated ListHeartbeats query. The
+// constant is unexported in metricsdb, so it is read from the sqlc output, which
+// is exactly the text the store executes.
+func listHeartbeatsSQL(t *testing.T) string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("metricsdb", "metrics.sql.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const start = "const listHeartbeats = `"
+	body := string(src)
+	i := strings.Index(body, start)
+	if i < 0 {
+		t.Fatal("const listHeartbeats not found in generated code")
+	}
+	body = body[i+len(start):]
+	j := strings.Index(body, "`")
+	if j < 0 {
+		t.Fatal("unterminated listHeartbeats constant")
+	}
+	return body[:j]
+}
+
+// TestListHeartbeatsPlanUsesTsRange guards FA-UPT-06 performance: the keyset
+// condition must give the planner a ts_ms range on both sides so that the
+// monitor_ts index only visits the requested window, not every retained row.
+func TestListHeartbeatsPlanUsesTsRange(t *testing.T) {
+	m := openMetrics(t, t.TempDir())
+	ctx := context.Background()
+	// Parameter order: tenant, monitor, node, to_ms, after_ts, after_node, after_inc, after_seq, row_limit.
+	rows, err := m.db.reader.QueryContext(ctx, "EXPLAIN QUERY PLAN "+listHeartbeatsSQL(t),
+		"t", "m", "", int64(2_000_000), int64(1_000_000), "", "", int64(0), int64(1001))
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(plan, "\n")
+	t.Logf("query plan:\n%s", joined)
+	if strings.Contains(joined, "SCAN heartbeats") {
+		t.Errorf("plan scans all heartbeats:\n%s", joined)
+	}
+	for _, want := range []string{"ts_ms>?", "ts_ms<?"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("plan lacks range %q on ts_ms:\n%s", want, joined)
+		}
+	}
+}
