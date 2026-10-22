@@ -365,3 +365,18 @@ UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? A
 
 -- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?;
+
+-- name: StatusHistoryBatch :many
+-- StatusHistory of several monitors at once: per monitor, the changes in
+-- [from_ms, to_ms) plus the last change before from_ms, as StatusHistory.
+SELECT h.monitor_id, h.since_ms, h.status FROM monitor_status_history h
+-- The slice comes last in the WHERE clause: sqlc numbers the named parameters
+-- before the slice's placeholders only if it does.
+WHERE h.tenant_id = sqlc.arg(tenant_id)
+  AND h.since_ms < sqlc.arg(to_ms)
+  AND h.since_ms >= COALESCE((
+        SELECT MAX(p.since_ms) FROM monitor_status_history p
+        WHERE p.tenant_id = h.tenant_id AND p.monitor_id = h.monitor_id
+          AND p.since_ms <= sqlc.arg(from_ms)), sqlc.arg(from_ms))
+  AND h.monitor_id IN (sqlc.slice(monitor_ids))
+ORDER BY h.monitor_id, h.since_ms;

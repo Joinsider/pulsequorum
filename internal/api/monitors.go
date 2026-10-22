@@ -134,14 +134,11 @@ func (h *Handlers) ListMonitors(ctx context.Context, req gen.ListMonitorsRequest
 	if err != nil {
 		return nil, err
 	}
-	out := gen.MonitorPage{Items: make([]gen.Monitor, 0, len(page.Items))}
-	for _, m := range page.Items {
-		api, err := h.apiMonitor(ctx, m)
-		if err != nil {
-			return nil, err
-		}
-		out.Items = append(out.Items, api)
+	items, err := h.apiMonitors(ctx, page.Items)
+	if err != nil {
+		return nil, err
 	}
+	out := gen.MonitorPage{Items: items}
 	if page.NextAfterID != "" {
 		c := encodeCursor("m", page.NextAfterID)
 		out.NextCursor = &c
@@ -620,33 +617,58 @@ func (h *Handlers) monitorChannels(ctx context.Context, tenantID string, ids *[]
 	return out, nil
 }
 
-// apiMonitor converts a monitor and adds the newest heartbeat of any node.
+// apiMonitor converts one monitor and adds the newest heartbeat of any node and
+// the 24 h uptime.
 func (h *Handlers) apiMonitor(ctx context.Context, m store.Monitor) (gen.Monitor, error) {
-	// Stored configurations hold the mask already; masking again also covers
-	// monitors written before ADR 0015 that are not migrated yet.
-	paths, err := h.schemas.Paths(m.Type)
+	out, err := h.apiMonitors(ctx, []store.Monitor{m})
 	if err != nil {
 		return gen.Monitor{}, err
 	}
-	if m.Config, err = configsecret.MaskConfig(paths, m.Config); err != nil {
-		return gen.Monitor{}, err
+	return out[0], nil
+}
+
+// apiMonitors converts monitors of one tenant. Each monitor gets the newest
+// heartbeat of any node and its 24 h uptime. Both are loaded for all monitors
+// with one query each, so a page costs a constant number of queries (NFA-PERF-03).
+func (h *Handlers) apiMonitors(ctx context.Context, ms []store.Monitor) ([]gen.Monitor, error) {
+	out := make([]gen.Monitor, 0, len(ms))
+	if len(ms) == 0 {
+		return out, nil
 	}
-	out := toAPIMonitor(m)
-	last, err := h.deps.Metrics.LatestHeartbeats(ctx, m.TenantID, m.ID, "", 1)
+	tenantID := ms[0].TenantID
+	ids := make([]string, 0, len(ms))
+	for _, m := range ms {
+		ids = append(ids, m.ID)
+	}
+	last, err := h.deps.Metrics.LatestHeartbeatsByMonitor(ctx, tenantID, ids)
 	if err != nil {
-		return gen.Monitor{}, err
+		return nil, err
 	}
-	if len(last) > 0 {
-		at := time.UnixMilli(last[0].TsMs).UTC()
-		out.LastCheckAt = &at
-		out.LastLatencyMs = &last[0].LatencyMs
-	}
-	stats, err := h.uptime.Stats(ctx, m, "", uptime.Range24h, h.deps.Now(), false)
+	totals, err := h.uptime.ConsensusTotals(ctx, tenantID, ms, uptime.Range24h, h.deps.Now())
 	if err != nil {
-		return gen.Monitor{}, err
+		return nil, err
 	}
-	if pct, ok := uptime.Percent(stats.Total); ok {
-		out.Uptime24h = &pct
+	for _, m := range ms {
+		// Stored configurations hold the mask already; masking again also covers
+		// monitors written before ADR 0015 that are not migrated yet.
+		paths, err := h.schemas.Paths(m.Type)
+		if err != nil {
+			return nil, err
+		}
+		if m.Config, err = configsecret.MaskConfig(paths, m.Config); err != nil {
+			return nil, err
+		}
+		api := toAPIMonitor(m)
+		if hb, ok := last[m.ID]; ok {
+			at := time.UnixMilli(hb.TsMs).UTC()
+			latency := hb.LatencyMs
+			api.LastCheckAt = &at
+			api.LastLatencyMs = &latency
+		}
+		if pct, ok := uptime.Percent(totals[m.ID]); ok {
+			api.Uptime24h = &pct
+		}
+		out = append(out, api)
 	}
 	return out, nil
 }

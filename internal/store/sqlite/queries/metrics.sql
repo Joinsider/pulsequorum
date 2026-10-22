@@ -100,3 +100,15 @@ DELETE FROM heartbeats WHERE node_id = ? AND incarnation = ? AND seq = ?;
 -- name: DeleteLatencyMinutesBefore :execrows
 DELETE FROM latency_minutes
 WHERE rowid IN (SELECT l.rowid FROM latency_minutes AS l WHERE l.minute_ms < sqlc.arg(before_ms) LIMIT sqlc.arg(batch_size));
+
+-- name: ListRollupsBatch :many
+-- Rollups of several monitors of one node (node_id '' is the consensus) and
+-- bucket size. Explicit node_id, unlike ListRollups, keeps the primary key usable.
+SELECT * FROM uptime_rollups
+-- The slice comes last in the WHERE clause: sqlc numbers the named parameters
+-- before the slice's placeholders only if it does.
+WHERE tenant_id = sqlc.arg(tenant_id)
+  AND node_id = sqlc.arg(node_id) AND bucket_ms = sqlc.arg(bucket_ms)
+  AND start_ms >= sqlc.arg(from_ms) AND start_ms < sqlc.arg(to_ms)
+  AND monitor_id IN (sqlc.slice(monitor_ids))
+ORDER BY monitor_id, start_ms;

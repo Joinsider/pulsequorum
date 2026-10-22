@@ -40,7 +40,7 @@ func (headerAuth) Authenticate(r *http.Request) (auth.Principal, error) {
 }
 
 type env struct {
-	t       *testing.T
+	t       testing.TB
 	handler http.Handler
 	metrics *sqlite.MetricsStore
 	node    *cluster.Node
@@ -53,14 +53,14 @@ type env struct {
 	keyring    *secrets.Keyring
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t testing.TB) *env {
 	t.Helper()
 	return newEnvWith(t, false)
 }
 
 // newEnvWith builds an env. With localAuth, the API uses real local
 // authentication (ADR 0008) instead of the X-Test-Principal header.
-func newEnvWith(t *testing.T, localAuth bool) *env {
+func newEnvWith(t testing.TB, localAuth bool) *env {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
@@ -158,7 +158,7 @@ func (e *env) do(method, path, principal string, body any, headers ...string) re
 	return response{code: rec.Code, body: rec.Body.Bytes(), hdr: rec.Header()}
 }
 
-func decode[T any](t *testing.T, r response) T {
+func decode[T any](t testing.TB, r response) T {
 	t.Helper()
 	var v T
 	if err := json.Unmarshal(r.body, &v); err != nil {

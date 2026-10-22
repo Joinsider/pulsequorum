@@ -28,7 +28,7 @@ const (
 )
 
 // newTestKeyring returns a keyring with one data key, as in internal/alert.
-func newTestKeyring(t *testing.T) *secrets.Keyring {
+func newTestKeyring(t testing.TB) *secrets.Keyring {
 	t.Helper()
 	kek, err := secrets.LoadKEK("", base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))), "")
 	if err != nil {

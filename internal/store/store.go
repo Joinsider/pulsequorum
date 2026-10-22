@@ -365,6 +365,9 @@ type State interface {
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
 	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
+	// StatusHistoryBatch returns StatusHistory for each listed monitor of the
+	// tenant, in one query. Monitors without changes are absent from the map.
+	StatusHistoryBatch(ctx context.Context, tenantID string, monitorIDs []string, fromMs, toMs int64) (map[string][]StatusChange, error)
 
 	// ListSecretKeys returns all data encryption keys ordered by creation (ADR 0011).
 	ListSecretKeys(ctx context.Context) ([]SecretKey, error)
@@ -575,6 +578,16 @@ type RollupQuery struct {
 	ToMs     int64
 }
 
+// RollupBatchQuery selects the rollups of several monitors of one node and
+// bucket size with StartMs in [FromMs, ToMs).
+type RollupBatchQuery struct {
+	MonitorIDs []string
+	NodeID     string // "" is the consensus view
+	BucketMs   int64
+	FromMs     int64
+	ToMs       int64
+}
+
 // LatencyMinute aggregates one node's results of a monitor in one minute (FA-UPT-04).
 type LatencyMinute struct {
 	TenantID  string
@@ -609,6 +622,10 @@ type Metrics interface {
 	// LatestHeartbeats returns up to limit of the newest heartbeats of a
 	// monitor, newest first; nodeID empty = all nodes.
 	LatestHeartbeats(ctx context.Context, tenantID, monitorID, nodeID string, limit int) ([]Heartbeat, error)
+	// LatestHeartbeatsByMonitor returns the newest heartbeat of each listed
+	// monitor of the tenant over all nodes, as LatestHeartbeats with limit 1 does
+	// for one monitor. Monitors without heartbeats are absent from the map.
+	LatestHeartbeatsByMonitor(ctx context.Context, tenantID string, monitorIDs []string) (map[string]Heartbeat, error)
 	// DeleteHeartbeatsBefore deletes at most batchSize heartbeats older than
 	// beforeMs and returns the number deleted (FA-UPT-06). Callers loop until 0.
 	DeleteHeartbeatsBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
@@ -618,6 +635,9 @@ type Metrics interface {
 	PutRollups(ctx context.Context, rollups []Rollup, watermarks map[string]int64) error
 	// ListRollups returns a monitor's rollups ordered by node and time.
 	ListRollups(ctx context.Context, tenantID string, q RollupQuery) ([]Rollup, error)
+	// ListRollupsBatch returns the rollups of several monitors for one node
+	// ("" = consensus), ordered by monitor and time.
+	ListRollupsBatch(ctx context.Context, tenantID string, q RollupBatchQuery) ([]Rollup, error)
 	DeleteRollupsBefore(ctx context.Context, bucketMs, beforeMs int64, batchSize int) (int64, error)
 
 	// Watermark returns a stored watermark, 0 if unset.

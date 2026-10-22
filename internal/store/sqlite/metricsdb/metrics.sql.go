@@ -7,6 +7,7 @@ package metricsdb
 
 import (
 	"context"
+	"strings"
 )
 
 const deleteHeartbeat = `-- name: DeleteHeartbeat :exec
@@ -373,6 +374,79 @@ func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]Upt
 		arg.FromMs,
 		arg.ToMs,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UptimeRollup{}
+	for rows.Next() {
+		var i UptimeRollup
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.MonitorID,
+			&i.NodeID,
+			&i.BucketMs,
+			&i.StartMs,
+			&i.UpMs,
+			&i.DownMs,
+			&i.MaintMs,
+			&i.UnknownMs,
+			&i.LatencyCount,
+			&i.LatencyAvg,
+			&i.LatencyP95,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRollupsBatch = `-- name: ListRollupsBatch :many
+SELECT tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms, latency_count, latency_avg, latency_p95 FROM uptime_rollups
+WHERE tenant_id = ?1
+  AND node_id = ?2 AND bucket_ms = ?3
+  AND start_ms >= ?4 AND start_ms < ?5
+  AND monitor_id IN (/*SLICE:monitor_ids*/?)
+ORDER BY monitor_id, start_ms
+`
+
+type ListRollupsBatchParams struct {
+	TenantID   string
+	NodeID     string
+	BucketMs   int64
+	FromMs     int64
+	ToMs       int64
+	MonitorIds []string
+}
+
+// Rollups of several monitors of one node (node_id ” is the consensus) and
+// bucket size. Explicit node_id, unlike ListRollups, keeps the primary key usable.
+// The slice comes last in the WHERE clause: sqlc numbers the named parameters
+// before the slice's placeholders only if it does.
+func (q *Queries) ListRollupsBatch(ctx context.Context, arg ListRollupsBatchParams) ([]UptimeRollup, error) {
+	query := listRollupsBatch
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.TenantID)
+	queryParams = append(queryParams, arg.NodeID)
+	queryParams = append(queryParams, arg.BucketMs)
+	queryParams = append(queryParams, arg.FromMs)
+	queryParams = append(queryParams, arg.ToMs)
+	if len(arg.MonitorIds) > 0 {
+		for _, v := range arg.MonitorIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:monitor_ids*/?", strings.Repeat(",?", len(arg.MonitorIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:monitor_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

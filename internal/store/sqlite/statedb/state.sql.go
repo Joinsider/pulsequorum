@@ -8,6 +8,7 @@ package statedb
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const channelRevision = `-- name: ChannelRevision :one
@@ -1570,6 +1571,71 @@ func (q *Queries) StatusHistory(ctx context.Context, arg StatusHistoryParams) ([
 	for rows.Next() {
 		var i StatusHistoryRow
 		if err := rows.Scan(&i.SinceMs, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statusHistoryBatch = `-- name: StatusHistoryBatch :many
+SELECT h.monitor_id, h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = ?1
+  AND h.since_ms < ?2
+  AND h.since_ms >= COALESCE((
+        SELECT MAX(p.since_ms) FROM monitor_status_history p
+        WHERE p.tenant_id = h.tenant_id AND p.monitor_id = h.monitor_id
+          AND p.since_ms <= ?3), ?3)
+  AND h.monitor_id IN (/*SLICE:monitor_ids*/?)
+ORDER BY h.monitor_id, h.since_ms
+`
+
+type StatusHistoryBatchParams struct {
+	TenantID   string
+	ToMs       int64
+	FromMs     int64
+	MonitorIds []string
+}
+
+type StatusHistoryBatchRow struct {
+	MonitorID string
+	SinceMs   int64
+	Status    string
+}
+
+// StatusHistory of several monitors at once: per monitor, the changes in
+// [from_ms, to_ms) plus the last change before from_ms, as StatusHistory.
+// The slice comes last in the WHERE clause: sqlc numbers the named parameters
+// before the slice's placeholders only if it does.
+func (q *Queries) StatusHistoryBatch(ctx context.Context, arg StatusHistoryBatchParams) ([]StatusHistoryBatchRow, error) {
+	query := statusHistoryBatch
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.TenantID)
+	queryParams = append(queryParams, arg.ToMs)
+	queryParams = append(queryParams, arg.FromMs)
+	if len(arg.MonitorIds) > 0 {
+		for _, v := range arg.MonitorIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:monitor_ids*/?", strings.Repeat(",?", len(arg.MonitorIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:monitor_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatusHistoryBatchRow{}
+	for rows.Next() {
+		var i StatusHistoryBatchRow
+		if err := rows.Scan(&i.MonitorID, &i.SinceMs, &i.Status); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

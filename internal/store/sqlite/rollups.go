@@ -58,6 +58,30 @@ func (m *MetricsStore) ListRollups(ctx context.Context, tenantID string, q store
 	return out, nil
 }
 
+// ListRollupsBatch returns the rollups of several monitors for one node, ordered
+// by monitor and time.
+func (m *MetricsStore) ListRollupsBatch(ctx context.Context, tenantID string, q store.RollupBatchQuery) ([]store.Rollup, error) {
+	if len(q.MonitorIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := m.q.ListRollupsBatch(ctx, metricsdb.ListRollupsBatchParams{
+		TenantID: tenantID, MonitorIds: q.MonitorIDs, NodeID: q.NodeID,
+		BucketMs: q.BucketMs, FromMs: q.FromMs, ToMs: q.ToMs,
+	})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.Rollup, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.Rollup{
+			TenantID: r.TenantID, MonitorID: r.MonitorID, NodeID: r.NodeID, BucketMs: r.BucketMs, StartMs: r.StartMs,
+			UpMs: r.UpMs, DownMs: r.DownMs, MaintMs: r.MaintMs, UnknownMs: r.UnknownMs,
+			LatencyCount: r.LatencyCount, LatencyAvg: r.LatencyAvg, LatencyP95: r.LatencyP95,
+		})
+	}
+	return out, nil
+}
+
 // DeleteRollupsBefore deletes one batch of rollups of a bucket size.
 func (m *MetricsStore) DeleteRollupsBefore(ctx context.Context, bucketMs, beforeMs int64, batchSize int) (int64, error) {
 	if batchSize <= 0 {

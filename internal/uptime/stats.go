@@ -123,24 +123,66 @@ func (q *query) hours(ctx context.Context, from, to int64) ([]store.Rollup, erro
 	if err != nil {
 		return nil, err
 	}
+	return q.assemble(from, to, stored, func(start, end int64) (store.Rollup, error) {
+		return q.live(ctx, start, end)
+	})
+}
+
+// hourKind says how an hour of a monitor is filled.
+type hourKind int
+
+const (
+	hourStored hourKind = iota // rolled up: the stored rollup
+	hourEmpty                  // unknown: rolled up without data, or before the monitor or the raw data
+	hourLive                   // rolled up later: computed from the raw data
+)
+
+// kindOf decides how the hour [h, end) is filled; stored tells whether a
+// rollup of the hour exists.
+func (q *query) kindOf(h, end int64, stored bool) hourKind {
 	rawFrom := q.now - CompactAfter.Milliseconds()
-	var out []store.Rollup
+	switch {
+	case stored && h+hourMs <= q.hourWM:
+		return hourStored
+	case h+hourMs <= q.hourWM || h < rawFrom || q.m.CreatedMs >= end:
+		return hourEmpty
+	}
+	return hourLive
+}
+
+// eachHour calls fn for every hour of [from, to) that starts before now, with
+// the end of the hour cut at now.
+func (q *query) eachHour(from, to int64, fn func(h, end int64) error) error {
 	for h := from; h < to && h < q.now; h += hourMs {
-		end := min(h+hourMs, q.now)
-		switch r, ok := stored[h]; {
-		case ok && h+hourMs <= q.hourWM:
-			out = append(out, r)
-		case h+hourMs <= q.hourWM || h < rawFrom || q.m.CreatedMs >= end:
-			out = append(out, q.empty(hourMs, h, end))
-		default:
-			live, err := q.live(ctx, h, end)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, live)
+		if err := fn(h, min(h+hourMs, q.now)); err != nil {
+			return err
 		}
 	}
-	return out, nil
+	return nil
+}
+
+// assemble returns the hourly buckets of [from, to) up to now: the stored
+// rollups where they are final, empty buckets where there is no data, and
+// the buckets that live computes from the raw data.
+func (q *query) assemble(from, to int64, stored map[int64]store.Rollup, live func(start, end int64) (store.Rollup, error)) ([]store.Rollup, error) {
+	var out []store.Rollup
+	err := q.eachHour(from, to, func(h, end int64) error {
+		r, ok := stored[h]
+		switch q.kindOf(h, end, ok) {
+		case hourStored:
+			out = append(out, r)
+		case hourEmpty:
+			out = append(out, q.empty(hourMs, h, end))
+		default:
+			computed, err := live(h, end)
+			if err != nil {
+				return err
+			}
+			out = append(out, computed)
+		}
+		return nil
+	})
+	return out, err
 }
 
 func (q *query) live(ctx context.Context, start, end int64) (store.Rollup, error) {

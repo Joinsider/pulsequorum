@@ -226,6 +226,24 @@ func (s *StateStore) StatusHistory(ctx context.Context, tenantID, monitorID stri
 	return out, nil
 }
 
+// StatusHistoryBatch returns StatusHistory for each listed monitor of the tenant.
+func (s *StateStore) StatusHistoryBatch(ctx context.Context, tenantID string, monitorIDs []string, fromMs, toMs int64) (map[string][]store.StatusChange, error) {
+	out := make(map[string][]store.StatusChange, len(monitorIDs))
+	if len(monitorIDs) == 0 {
+		return out, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.q.StatusHistoryBatch(ctx, statedb.StatusHistoryBatchParams{TenantID: tenantID, MonitorIds: monitorIDs, FromMs: fromMs, ToMs: toMs})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	for _, r := range rows {
+		out[r.MonitorID] = append(out[r.MonitorID], store.StatusChange{SinceMs: r.SinceMs, Status: store.MonitorStatus(r.Status)})
+	}
+	return out, nil
+}
+
 // ListSecretKeys returns all data encryption keys ordered by creation.
 func (s *StateStore) ListSecretKeys(ctx context.Context) ([]store.SecretKey, error) {
 	s.mu.RLock()

@@ -54,6 +54,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"EnabledUsersWithRole", testEnabledUsersWithRole},
 		{"SigningKeys", testSigningKeys},
 		{"Sessions", testSessions},
+		{"StatusHistoryBatch", testStatusHistoryBatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -76,6 +77,8 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"LatestHeartbeats", testLatestHeartbeats},
 		{"Rollups", testRollups},
 		{"Compaction", testCompaction},
+		{"LatestHeartbeatsByMonitor", testLatestHeartbeatsByMonitor},
+		{"ListRollupsBatch", testListRollupsBatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -2033,5 +2036,126 @@ func testEnabledUsersWithRole(t *testing.T, s store.State) {
 				t.Errorf("count = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// --- Batch reads ------------------------------------------------------------
+
+func testStatusHistoryBatch(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	for _, id := range []string{"m1", "m2", "m3"} {
+		if err := put(t, s, newMonitor(tenantA, id), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := put(t, s, newMonitor(tenantB, "mb1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	setState(t, s, tenantA, "m1", store.StatusUp, 1000)
+	setState(t, s, tenantA, "m1", store.StatusDown, 5000)
+	setState(t, s, tenantA, "m1", store.StatusUp, 9000)
+	setState(t, s, tenantA, "m2", store.StatusMaintenance, 2000)
+	setState(t, s, tenantB, "mb1", store.StatusDown, 3000)
+
+	ids := []string{"m1", "m2", "m3"}
+	for _, r := range [][2]int64{{0, 100_000}, {0, 3_000}, {4_000, 6_000}, {5_000, 5_000}, {6_000, 10_000}, {9_500, 20_000}, {10_000, 20_000}} {
+		got, err := s.StatusHistoryBatch(ctx, tenantA, ids, r[0], r[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			want, err := s.StatusHistory(ctx, tenantA, id, r[0], r[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got[id], want) {
+				t.Errorf("[%d, %d) %s: batch = %+v, single = %+v", r[0], r[1], id, got[id], want)
+			}
+		}
+	}
+	if got, err := s.StatusHistoryBatch(ctx, tenantB, []string{"m2", "m3"}, 0, 100_000); err != nil || len(got) != 0 {
+		t.Errorf("tenant B sees tenant A's changes: %+v, %v", got, err)
+	}
+	if got, err := s.StatusHistoryBatch(ctx, tenantB, []string{"mb1"}, 0, 100_000); err != nil || len(got["mb1"]) != 1 || got["mb1"][0].Status != store.StatusDown {
+		t.Errorf("tenant B's own changes = %+v, %v", got, err)
+	}
+	if got, err := s.StatusHistoryBatch(ctx, tenantA, nil, 0, 100_000); err != nil || len(got) != 0 {
+		t.Errorf("no IDs = %+v, %v", got, err)
+	}
+}
+
+func testLatestHeartbeatsByMonitor(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 5, 10_000))   // 10000 .. 14000
+	insert(t, m, heartbeats(tenantA, "m1", "n2", 1, 2, 12_500))   // 12500, 13500
+	insert(t, m, heartbeats(tenantA, "m2", "n1", 10, 3, 20_000))  // 20000 .. 22000
+	insert(t, m, heartbeats(tenantB, "m1", "n1", 20, 3, 30_000))  // same ID, other tenant
+	insert(t, m, heartbeats(tenantB, "m9", "n1", 100, 1, 90_000)) // only tenant B; seq must not clash with A
+	// A tie at the newest instant: the higher seq is the latest.
+	insert(t, m, []store.Heartbeat{
+		{NodeID: "n1", Incarnation: "inc-n1", Seq: 40, TenantID: tenantA, MonitorID: "m4", TsMs: 50_000, Status: store.CheckUp},
+		{NodeID: "n2", Incarnation: "inc-n2", Seq: 7, TenantID: tenantA, MonitorID: "m4", TsMs: 50_000, Status: store.CheckUp},
+	})
+
+	got, err := m.LatestHeartbeatsByMonitor(ctx, tenantA, []string{"m1", "m2", "m3", "m4", "m9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got["m1"].TsMs != 14_000 || got["m2"].TsMs != 22_000 || got["m4"].Seq != 40 || got["m4"].NodeID != "n1" {
+		t.Fatalf("latest by monitor = %+v", got)
+	}
+	for _, id := range []string{"m3", "m9"} {
+		if _, ok := got[id]; ok {
+			t.Errorf("%s listed without tenant A heartbeats", id)
+		}
+	}
+	for id, hb := range got {
+		one, err := m.LatestHeartbeats(ctx, tenantA, id, "", 1)
+		if err != nil || len(one) != 1 || one[0].NodeID != hb.NodeID || one[0].Seq != hb.Seq || one[0].TsMs != hb.TsMs {
+			t.Errorf("%s: batch %+v, single %+v, %v", id, hb, one, err)
+		}
+	}
+	if got, err := m.LatestHeartbeatsByMonitor(ctx, tenantB, []string{"m1", "m2", "m9"}); err != nil || len(got) != 2 ||
+		got["m1"].TsMs != 32_000 || got["m9"].TsMs != 90_000 {
+		t.Errorf("tenant B = %+v, %v", got, err)
+	}
+	if got, err := m.LatestHeartbeatsByMonitor(ctx, tenantA, nil); err != nil || len(got) != 0 {
+		t.Errorf("no IDs = %+v, %v", got, err)
+	}
+}
+
+func testListRollupsBatch(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	r := func(tenant, monitor, node string, start, up int64) store.Rollup {
+		return store.Rollup{TenantID: tenant, MonitorID: monitor, NodeID: node, BucketMs: store.BucketHour, StartMs: start,
+			UpMs: up, UnknownMs: store.BucketHour - up}
+	}
+	err := m.PutRollups(ctx, []store.Rollup{
+		r(tenantA, "m1", "", 0, 10), r(tenantA, "m1", "", store.BucketHour, 20), r(tenantA, "m1", "n1", 0, 30),
+		r(tenantA, "m2", "", 0, 40), r(tenantB, "mb1", "", 0, 50),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := store.RollupBatchQuery{MonitorIDs: []string{"m1", "m2", "m3"}, BucketMs: store.BucketHour, ToMs: 1 << 62}
+	got, err := m.ListRollupsBatch(ctx, tenantA, q)
+	if err != nil || len(got) != 3 || got[0].MonitorID != "m1" || got[0].StartMs != 0 || got[0].UpMs != 10 ||
+		got[1].StartMs != store.BucketHour || got[2].MonitorID != "m2" || got[2].UpMs != 40 {
+		t.Fatalf("consensus rollups = %+v, %v", got, err)
+	}
+	q.NodeID = "n1"
+	if got, err := m.ListRollupsBatch(ctx, tenantA, q); err != nil || len(got) != 1 || got[0].UpMs != 30 {
+		t.Fatalf("node n1 rollups = %+v, %v", got, err)
+	}
+	q.NodeID, q.ToMs = "", store.BucketHour
+	if got, err := m.ListRollupsBatch(ctx, tenantA, q); err != nil || len(got) != 2 {
+		t.Fatalf("range [0, 1h) = %+v, %v", got, err)
+	}
+	if got, err := m.ListRollupsBatch(ctx, tenantB, store.RollupBatchQuery{MonitorIDs: []string{"m1", "mb1"}, BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 1 || got[0].MonitorID != "mb1" || got[0].UpMs != 50 {
+		t.Fatalf("tenant B rollups = %+v, %v", got, err)
+	}
+	if got, err := m.ListRollupsBatch(ctx, tenantA, store.RollupBatchQuery{BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
+		t.Fatalf("no IDs = %+v, %v", got, err)
 	}
 }

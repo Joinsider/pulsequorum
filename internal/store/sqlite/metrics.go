@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -235,6 +236,59 @@ func (m *MetricsStore) LatestHeartbeats(ctx context.Context, tenantID, monitorID
 	out := make([]store.Heartbeat, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, heartbeatFromRow(r))
+	}
+	return out, nil
+}
+
+// latestHeartbeatsByMonitorSQL is LatestHeartbeatsByMonitor's query. It is
+// written by hand because sqlc cannot type json_each or recursive CTEs. The ids
+// drive one seek each on heartbeats_monitor_ts: the correlated MAX reads a
+// single index entry, and the join then reads only the rows at that instant.
+// TestLatestHeartbeatsByMonitorPlan guards this plan.
+const latestHeartbeatsByMonitorSQL = `
+WITH ids AS (SELECT value AS monitor_id FROM json_each(?)),
+newest AS (
+    SELECT ids.monitor_id AS monitor_id,
+           (SELECT MAX(l.ts_ms) FROM heartbeats AS l
+            WHERE l.monitor_id = ids.monitor_id AND l.tenant_id = ?) AS ts_ms
+    FROM ids
+)
+SELECT h.node_id, h.incarnation, h.seq, h.tenant_id, h.monitor_id, h.ts_ms, h.status,
+       h.latency_ms, h.error_class, h.message, h.details_json
+FROM newest AS n
+JOIN heartbeats AS h ON h.monitor_id = n.monitor_id AND h.ts_ms = n.ts_ms
+WHERE h.tenant_id = ?`
+
+// LatestHeartbeatsByMonitor returns the newest heartbeat of each listed monitor
+// over all nodes, in one query. Rows that share the newest instant are resolved
+// by the highest seq, as LatestHeartbeats orders them.
+func (m *MetricsStore) LatestHeartbeatsByMonitor(ctx context.Context, tenantID string, monitorIDs []string) (map[string]store.Heartbeat, error) {
+	out := make(map[string]store.Heartbeat, len(monitorIDs))
+	if len(monitorIDs) == 0 {
+		return out, nil
+	}
+	ids, err := json.Marshal(monitorIDs)
+	if err != nil {
+		return nil, fmt.Errorf("latest heartbeats: monitor IDs: %w", err)
+	}
+	rows, err := m.db.reader.QueryContext(ctx, latestHeartbeatsByMonitorSQL, string(ids), tenantID, tenantID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var r metricsdb.Heartbeat
+		if err := rows.Scan(&r.NodeID, &r.Incarnation, &r.Seq, &r.TenantID, &r.MonitorID, &r.TsMs, &r.Status,
+			&r.LatencyMs, &r.ErrorClass, &r.Message, &r.DetailsJson); err != nil {
+			return nil, mapErr(err)
+		}
+		hb := heartbeatFromRow(r)
+		if cur, ok := out[hb.MonitorID]; !ok || hb.TsMs > cur.TsMs || (hb.TsMs == cur.TsMs && hb.Seq > cur.Seq) {
+			out[hb.MonitorID] = hb
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapErr(err)
 	}
 	return out, nil
 }
