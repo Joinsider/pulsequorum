@@ -4,6 +4,17 @@ Hochverfügbarer, mandantenfähiger, selbst hostbarer Uptime-Monitor. Läuft als
 
 > **Status:** Phase 0 – Fundament. Noch nicht einsatzbereit. Stand und nächste Schritte: [docs/roadmap.md](docs/roadmap.md).
 
+## Schnellstart
+
+Ein Knoten mit Docker oder Podman Compose, Anleitung in [docs/betrieb/compose.md](docs/betrieb/compose.md):
+
+```bash
+docker compose -f deploy/compose.single.yaml up -d --build
+docker compose -f deploy/compose.single.yaml logs uptime | grep setup_token
+```
+
+Danach `http://localhost:8080/setup` öffnen und den ersten Administrator anlegen.
+
 ## Dokumentation
 
 | Dokument | Inhalt |
