@@ -45,6 +45,7 @@ type MetricsStore struct {
 	db          *DB
 	q           *metricsdb.Queries // bound to the read pool
 	incarnation string
+	series      seriesCache
 }
 
 var _ store.Metrics = (*MetricsStore)(nil)

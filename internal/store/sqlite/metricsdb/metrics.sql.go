@@ -44,39 +44,57 @@ func (q *Queries) DeleteHeartbeatsBefore(ctx context.Context, arg DeleteHeartbea
 	return result.RowsAffected()
 }
 
-const deleteLatencyMinutesBefore = `-- name: DeleteLatencyMinutesBefore :execrows
-DELETE FROM latency_minutes
-WHERE rowid IN (SELECT l.rowid FROM latency_minutes AS l WHERE l.minute_ms < ?1 LIMIT ?2)
+const deleteMinutesOfSeriesBefore = `-- name: DeleteMinutesOfSeriesBefore :execrows
+DELETE FROM minutes
+WHERE minutes.series_id = ?1
+  AND minutes.minute_ms IN (SELECT m.minute_ms FROM minutes AS m
+                    WHERE m.series_id = ?1 AND m.minute_ms < ?2
+                    ORDER BY m.minute_ms
+                    LIMIT ?3)
 `
 
-type DeleteLatencyMinutesBeforeParams struct {
-	BeforeMs  int64
-	BatchSize int64
+type DeleteMinutesOfSeriesBeforeParams struct {
+	SeriesID int64
+	BeforeMs int64
+	RowLimit int64
 }
 
-func (q *Queries) DeleteLatencyMinutesBefore(ctx context.Context, arg DeleteLatencyMinutesBeforeParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteLatencyMinutesBefore, arg.BeforeMs, arg.BatchSize)
+// One series: the primary key prefix series_id drives the subquery and the delete.
+func (q *Queries) DeleteMinutesOfSeriesBefore(ctx context.Context, arg DeleteMinutesOfSeriesBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMinutesOfSeriesBefore, arg.SeriesID, arg.BeforeMs, arg.RowLimit)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
 }
 
-const deleteRollupsBefore = `-- name: DeleteRollupsBefore :execrows
-DELETE FROM uptime_rollups
-WHERE rowid IN (SELECT r.rowid FROM uptime_rollups AS r
-                WHERE r.bucket_ms = ?1 AND r.start_ms < ?2
-                LIMIT ?3)
+const deleteRollupsOfSeriesBefore = `-- name: DeleteRollupsOfSeriesBefore :execrows
+DELETE FROM rollups
+WHERE rollups.series_id = ?1 AND rollups.bucket_ms = ?2
+  AND rollups.start_ms IN (SELECT r.start_ms FROM rollups AS r
+                   WHERE r.series_id = ?1 AND r.bucket_ms = ?2
+                     AND r.start_ms < ?3
+                   ORDER BY r.start_ms
+                   LIMIT ?4)
 `
 
-type DeleteRollupsBeforeParams struct {
-	BucketMs  int64
-	BeforeMs  int64
-	BatchSize int64
+type DeleteRollupsOfSeriesBeforeParams struct {
+	SeriesID int64
+	BucketMs int64
+	BeforeMs int64
+	RowLimit int64
 }
 
-func (q *Queries) DeleteRollupsBefore(ctx context.Context, arg DeleteRollupsBeforeParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteRollupsBefore, arg.BucketMs, arg.BeforeMs, arg.BatchSize)
+// One series, one bucket size: the primary key prefix (series_id, bucket_ms)
+// drives both the subquery and the delete, so no statement scans the table.
+// The subquery bounds the batch to row_limit rows.
+func (q *Queries) DeleteRollupsOfSeriesBefore(ctx context.Context, arg DeleteRollupsOfSeriesBeforeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteRollupsOfSeriesBefore,
+		arg.SeriesID,
+		arg.BucketMs,
+		arg.BeforeMs,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -99,6 +117,25 @@ func (q *Queries) GetMeta(ctx context.Context, key string) (string, error) {
 	var value string
 	err := row.Scan(&value)
 	return value, err
+}
+
+const getSeries = `-- name: GetSeries :one
+SELECT id FROM series WHERE tenant_id = ? AND monitor_id = ? AND node_id = ?
+`
+
+type GetSeriesParams struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+}
+
+// Series are resolved with the tenant: a monitor and node of another tenant
+// never match (ADR 0016).
+func (q *Queries) GetSeries(ctx context.Context, arg GetSeriesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSeries, arg.TenantID, arg.MonitorID, arg.NodeID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertHeartbeat = `-- name: InsertHeartbeat :execrows
@@ -144,35 +181,35 @@ func (q *Queries) InsertHeartbeat(ctx context.Context, arg InsertHeartbeatParams
 }
 
 const insertLatencyMinute = `-- name: InsertLatencyMinute :exec
-INSERT INTO latency_minutes (
-    tenant_id, monitor_id, node_id, minute_ms, min_ms, max_ms, avg_ms, p95_ms, ok_count, err_count
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (monitor_id, node_id, minute_ms) DO NOTHING
+INSERT INTO minutes (
+    series_id, minute_ms, min_ms, max_ms, avg_us, p95_us, ok_count, err_count
+) VALUES (
+    ?1, ?2, ?3, ?4,
+    ?5, ?6, ?7, ?8
+)
+ON CONFLICT (series_id, minute_ms) DO NOTHING
 `
 
 type InsertLatencyMinuteParams struct {
-	TenantID  string
-	MonitorID string
-	NodeID    string
-	MinuteMs  int64
-	MinMs     int64
-	MaxMs     int64
-	AvgMs     float64
-	P95Ms     float64
-	OkCount   int64
-	ErrCount  int64
+	SeriesID int64
+	MinuteMs int64
+	MinMs    int64
+	MaxMs    int64
+	AvgUs    int64
+	P95Us    int64
+	OkCount  int64
+	ErrCount int64
 }
 
+// Latencies are microseconds. Existing minutes are kept (FA-UPT-04).
 func (q *Queries) InsertLatencyMinute(ctx context.Context, arg InsertLatencyMinuteParams) error {
 	_, err := q.db.ExecContext(ctx, insertLatencyMinute,
-		arg.TenantID,
-		arg.MonitorID,
-		arg.NodeID,
+		arg.SeriesID,
 		arg.MinuteMs,
 		arg.MinMs,
 		arg.MaxMs,
-		arg.AvgMs,
-		arg.P95Ms,
+		arg.AvgUs,
+		arg.P95Us,
 		arg.OkCount,
 		arg.ErrCount,
 	)
@@ -191,6 +228,23 @@ type InsertMetaParams struct {
 func (q *Queries) InsertMeta(ctx context.Context, arg InsertMetaParams) error {
 	_, err := q.db.ExecContext(ctx, insertMeta, arg.Key, arg.Value)
 	return err
+}
+
+const insertSeries = `-- name: InsertSeries :one
+INSERT INTO series (tenant_id, monitor_id, node_id) VALUES (?, ?, ?) RETURNING id
+`
+
+type InsertSeriesParams struct {
+	TenantID  string
+	MonitorID string
+	NodeID    string
+}
+
+func (q *Queries) InsertSeries(ctx context.Context, arg InsertSeriesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertSeries, arg.TenantID, arg.MonitorID, arg.NodeID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const lastSeq = `-- name: LastSeq :one
@@ -346,12 +400,16 @@ func (q *Queries) ListHeartbeats(ctx context.Context, arg ListHeartbeatsParams) 
 }
 
 const listRollups = `-- name: ListRollups :many
-SELECT tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms, latency_count, latency_avg, latency_p95 FROM uptime_rollups
-WHERE tenant_id = ?1 AND monitor_id = ?2
-  AND (CAST(?3 AS INTEGER) = 1 OR node_id = ?4)
-  AND bucket_ms = ?5
-  AND start_ms >= ?6 AND start_ms < ?7
-ORDER BY node_id, start_ms
+SELECT s.tenant_id, s.monitor_id, s.node_id, r.bucket_ms, r.start_ms,
+       r.up_ms, r.down_ms, r.maint_ms, r.unknown_ms,
+       r.latency_count, r.latency_avg_us, r.latency_p95_us
+FROM rollups AS r
+JOIN series AS s ON s.id = r.series_id
+WHERE s.tenant_id = ?1 AND s.monitor_id = ?2
+  AND (CAST(?3 AS INTEGER) = 1 OR s.node_id = ?4)
+  AND r.bucket_ms = ?5
+  AND r.start_ms >= ?6 AND r.start_ms < ?7
+ORDER BY s.node_id, r.start_ms
 `
 
 type ListRollupsParams struct {
@@ -364,7 +422,24 @@ type ListRollupsParams struct {
 	ToMs      int64
 }
 
-func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]UptimeRollup, error) {
+type ListRollupsRow struct {
+	TenantID     string
+	MonitorID    string
+	NodeID       string
+	BucketMs     int64
+	StartMs      int64
+	UpMs         int64
+	DownMs       int64
+	MaintMs      int64
+	UnknownMs    int64
+	LatencyCount int64
+	LatencyAvgUs int64
+	LatencyP95Us int64
+}
+
+// Joins series and filters by tenant in SQL: the tenant boundary never depends
+// on the series cache (ADR 0016, FA-TEN-01).
+func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]ListRollupsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRollups,
 		arg.TenantID,
 		arg.MonitorID,
@@ -378,9 +453,9 @@ func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]Upt
 		return nil, err
 	}
 	defer rows.Close()
-	items := []UptimeRollup{}
+	items := []ListRollupsRow{}
 	for rows.Next() {
-		var i UptimeRollup
+		var i ListRollupsRow
 		if err := rows.Scan(
 			&i.TenantID,
 			&i.MonitorID,
@@ -392,8 +467,8 @@ func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]Upt
 			&i.MaintMs,
 			&i.UnknownMs,
 			&i.LatencyCount,
-			&i.LatencyAvg,
-			&i.LatencyP95,
+			&i.LatencyAvgUs,
+			&i.LatencyP95Us,
 		); err != nil {
 			return nil, err
 		}
@@ -409,12 +484,18 @@ func (q *Queries) ListRollups(ctx context.Context, arg ListRollupsParams) ([]Upt
 }
 
 const listRollupsBatch = `-- name: ListRollupsBatch :many
-SELECT tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms, latency_count, latency_avg, latency_p95 FROM uptime_rollups
-WHERE tenant_id = ?1
-  AND node_id = ?2 AND bucket_ms = ?3
-  AND start_ms >= ?4 AND start_ms < ?5
-  AND monitor_id IN (/*SLICE:monitor_ids*/?)
-ORDER BY monitor_id, start_ms
+SELECT s.tenant_id, s.monitor_id, s.node_id, r.bucket_ms, r.start_ms,
+       r.up_ms, r.down_ms, r.maint_ms, r.unknown_ms,
+       r.latency_count, r.latency_avg_us, r.latency_p95_us
+FROM rollups AS r
+JOIN series AS s ON s.id = r.series_id
+WHERE s.tenant_id = ?1
+  AND s.node_id = ?2 AND r.bucket_ms = ?3
+  AND r.start_ms >= ?4 AND r.start_ms < ?5
+  -- The slice comes last in the WHERE clause: sqlc numbers the named parameters
+  -- before the slice's placeholders only if it does.
+  AND s.monitor_id IN (/*SLICE:monitor_ids*/?)
+ORDER BY s.monitor_id, r.start_ms
 `
 
 type ListRollupsBatchParams struct {
@@ -426,11 +507,24 @@ type ListRollupsBatchParams struct {
 	MonitorIds []string
 }
 
+type ListRollupsBatchRow struct {
+	TenantID     string
+	MonitorID    string
+	NodeID       string
+	BucketMs     int64
+	StartMs      int64
+	UpMs         int64
+	DownMs       int64
+	MaintMs      int64
+	UnknownMs    int64
+	LatencyCount int64
+	LatencyAvgUs int64
+	LatencyP95Us int64
+}
+
 // Rollups of several monitors of one node (node_id ” is the consensus) and
-// bucket size. Explicit node_id, unlike ListRollups, keeps the primary key usable.
-// The slice comes last in the WHERE clause: sqlc numbers the named parameters
-// before the slice's placeholders only if it does.
-func (q *Queries) ListRollupsBatch(ctx context.Context, arg ListRollupsBatchParams) ([]UptimeRollup, error) {
+// bucket size. Joins series and filters by tenant in SQL (ADR 0016).
+func (q *Queries) ListRollupsBatch(ctx context.Context, arg ListRollupsBatchParams) ([]ListRollupsBatchRow, error) {
 	query := listRollupsBatch
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.TenantID)
@@ -451,9 +545,9 @@ func (q *Queries) ListRollupsBatch(ctx context.Context, arg ListRollupsBatchPara
 		return nil, err
 	}
 	defer rows.Close()
-	items := []UptimeRollup{}
+	items := []ListRollupsBatchRow{}
 	for rows.Next() {
-		var i UptimeRollup
+		var i ListRollupsBatchRow
 		if err := rows.Scan(
 			&i.TenantID,
 			&i.MonitorID,
@@ -465,12 +559,45 @@ func (q *Queries) ListRollupsBatch(ctx context.Context, arg ListRollupsBatchPara
 			&i.MaintMs,
 			&i.UnknownMs,
 			&i.LatencyCount,
-			&i.LatencyAvg,
-			&i.LatencyP95,
+			&i.LatencyAvgUs,
+			&i.LatencyP95Us,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSeriesIDsAfter = `-- name: ListSeriesIDsAfter :many
+SELECT id FROM series WHERE id > ?1 ORDER BY id LIMIT ?2
+`
+
+type ListSeriesIDsAfterParams struct {
+	AfterID  int64
+	RowLimit int64
+}
+
+// Pages through the series in ID order for the per-series retention batches.
+func (q *Queries) ListSeriesIDsAfter(ctx context.Context, arg ListSeriesIDsAfterParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listSeriesIDsAfter, arg.AfterID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -497,24 +624,25 @@ func (q *Queries) UpsertMeta(ctx context.Context, arg UpsertMetaParams) error {
 }
 
 const upsertRollup = `-- name: UpsertRollup :exec
-INSERT INTO uptime_rollups (
-    tenant_id, monitor_id, node_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms,
-    latency_count, latency_avg, latency_p95
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (monitor_id, node_id, bucket_ms, start_ms) DO UPDATE SET
-    up_ms         = excluded.up_ms,
-    down_ms       = excluded.down_ms,
-    maint_ms      = excluded.maint_ms,
-    unknown_ms    = excluded.unknown_ms,
-    latency_count = excluded.latency_count,
-    latency_avg   = excluded.latency_avg,
-    latency_p95   = excluded.latency_p95
+INSERT INTO rollups (
+    series_id, bucket_ms, start_ms, up_ms, down_ms, maint_ms, unknown_ms,
+    latency_count, latency_avg_us, latency_p95_us
+) VALUES (
+    ?1, ?2, ?3, ?4, ?5,
+    ?6, ?7, ?8, ?9, ?10
+)
+ON CONFLICT (series_id, bucket_ms, start_ms) DO UPDATE SET
+    up_ms          = excluded.up_ms,
+    down_ms        = excluded.down_ms,
+    maint_ms       = excluded.maint_ms,
+    unknown_ms     = excluded.unknown_ms,
+    latency_count  = excluded.latency_count,
+    latency_avg_us = excluded.latency_avg_us,
+    latency_p95_us = excluded.latency_p95_us
 `
 
 type UpsertRollupParams struct {
-	TenantID     string
-	MonitorID    string
-	NodeID       string
+	SeriesID     int64
 	BucketMs     int64
 	StartMs      int64
 	UpMs         int64
@@ -522,15 +650,15 @@ type UpsertRollupParams struct {
 	MaintMs      int64
 	UnknownMs    int64
 	LatencyCount int64
-	LatencyAvg   float64
-	LatencyP95   float64
+	LatencyAvgUs int64
+	LatencyP95Us int64
 }
 
+// Values are written by series ID; the caller resolves it inside the write
+// transaction (ADR 0016). Latencies are microseconds.
 func (q *Queries) UpsertRollup(ctx context.Context, arg UpsertRollupParams) error {
 	_, err := q.db.ExecContext(ctx, upsertRollup,
-		arg.TenantID,
-		arg.MonitorID,
-		arg.NodeID,
+		arg.SeriesID,
 		arg.BucketMs,
 		arg.StartMs,
 		arg.UpMs,
@@ -538,8 +666,8 @@ func (q *Queries) UpsertRollup(ctx context.Context, arg UpsertRollupParams) erro
 		arg.MaintMs,
 		arg.UnknownMs,
 		arg.LatencyCount,
-		arg.LatencyAvg,
-		arg.LatencyP95,
+		arg.LatencyAvgUs,
+		arg.LatencyP95Us,
 	)
 	return err
 }

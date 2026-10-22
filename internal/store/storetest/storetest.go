@@ -79,6 +79,9 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"Compaction", testCompaction},
 		{"LatestHeartbeatsByMonitor", testLatestHeartbeatsByMonitor},
 		{"ListRollupsBatch", testListRollupsBatch},
+		{"RollupLatencyPrecision", testRollupLatencyPrecision},
+		{"SeriesTenantIsolation", testSeriesTenantIsolation},
+		{"RetentionInBatches", testRetentionInBatches},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -2157,5 +2160,166 @@ func testListRollupsBatch(t *testing.T, m store.Metrics) {
 	}
 	if got, err := m.ListRollupsBatch(ctx, tenantA, store.RollupBatchQuery{BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
 		t.Fatalf("no IDs = %+v, %v", got, err)
+	}
+}
+
+// hourRollup returns a consensus or per-node hourly rollup with 1 h of data.
+func hourRollup(tenant, monitor, node string, start, up int64) store.Rollup {
+	return store.Rollup{TenantID: tenant, MonitorID: monitor, NodeID: node, BucketMs: store.BucketHour, StartMs: start,
+		UpMs: up, UnknownMs: store.BucketHour - up}
+}
+
+// testRollupLatencyPrecision checks that latencies survive the store's
+// microsecond integers within 0.001 ms (ADR 0016).
+func testRollupLatencyPrecision(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	in := store.Rollup{TenantID: tenantA, MonitorID: "m1", BucketMs: store.BucketHour, UpMs: 1,
+		LatencyCount: 3, LatencyAvg: 11.333333333, LatencyP95: 0.0004}
+	if err := m.PutRollups(ctx, []store.Rollup{in}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", BucketMs: store.BucketHour, ToMs: 1 << 62})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("rollups = %+v, %v", got, err)
+	}
+	if d := got[0].LatencyAvg - in.LatencyAvg; d > 0.001 || d < -0.001 {
+		t.Errorf("avg = %v, want %v", got[0].LatencyAvg, in.LatencyAvg)
+	}
+	if d := got[0].LatencyP95 - in.LatencyP95; d > 0.001 || d < -0.001 {
+		t.Errorf("p95 = %v, want %v", got[0].LatencyP95, in.LatencyP95)
+	}
+	if got[0].LatencyCount != 3 {
+		t.Errorf("latency count = %d", got[0].LatencyCount)
+	}
+}
+
+// testSeriesTenantIsolation stores the same monitor ID and node in two tenants.
+// Each tenant must read only its own values, in every read path (FA-TEN-01).
+func testSeriesTenantIsolation(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	a := hourRollup(tenantA, "m1", "n1", 0, 10)
+	a.LatencyCount, a.LatencyAvg, a.LatencyP95 = 1, 1.5, 2
+	b := hourRollup(tenantB, "m1", "n1", 0, 20)
+	b.LatencyCount, b.LatencyAvg, b.LatencyP95 = 1, 7.25, 9
+	if err := m.PutRollups(ctx, []store.Rollup{a, b}, nil); err != nil {
+		t.Fatal(err)
+	}
+	minutes := func(tenant string, ok int) []store.LatencyMinute {
+		return []store.LatencyMinute{{TenantID: tenant, MonitorID: "m1", NodeID: "n1", MinuteMs: 0, Min: 1, Max: 2, Avg: 1.5, P95: 2, OKCount: ok}}
+	}
+	if err := m.CompactHeartbeats(ctx, minutes(tenantA, 1), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CompactHeartbeats(ctx, minutes(tenantB, 2), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	q := store.RollupQuery{MonitorID: "m1", NodeID: "n1", BucketMs: store.BucketHour, ToMs: 1 << 62}
+	for _, tc := range []struct {
+		tenant string
+		up     int64
+		avg    float64
+	}{{tenantA, 10, 1.5}, {tenantB, 20, 7.25}} {
+		got, err := m.ListRollups(ctx, tc.tenant, q)
+		if err != nil || len(got) != 1 || got[0].TenantID != tc.tenant || got[0].UpMs != tc.up || got[0].LatencyAvg != tc.avg {
+			t.Errorf("ListRollups(%s) = %+v, %v", tc.tenant, got, err)
+		}
+		batch, err := m.ListRollupsBatch(ctx, tc.tenant, store.RollupBatchQuery{MonitorIDs: []string{"m1"}, NodeID: "n1", BucketMs: store.BucketHour, ToMs: 1 << 62})
+		if err != nil || len(batch) != 1 || batch[0].TenantID != tc.tenant || batch[0].UpMs != tc.up {
+			t.Errorf("ListRollupsBatch(%s) = %+v, %v", tc.tenant, batch, err)
+		}
+	}
+	if got, err := m.ListRollups(ctx, "tenant-c", q); err != nil || len(got) != 0 {
+		t.Errorf("unknown tenant sees %+v, %v", got, err)
+	}
+	if got, err := m.ListRollupsBatch(ctx, "tenant-c", store.RollupBatchQuery{MonitorIDs: []string{"m1"}, NodeID: "n1", BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
+		t.Errorf("unknown tenant batch sees %+v, %v", got, err)
+	}
+	// Both tenants' minutes exist: retention visits both series.
+	if n, err := m.DeleteLatencyMinutesBefore(ctx, 1, 10); err != nil || n != 2 {
+		t.Errorf("minutes of both tenants deleted = %d, %v", n, err)
+	}
+}
+
+// testRetentionInBatches deletes old rows of several series in batches smaller
+// than the rows of one series. Every batch stays within the limit, the batches
+// add up to all old rows, and rows at or after the cutoff and other bucket
+// sizes survive (FA-UPT-05/06).
+func testRetentionInBatches(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	const oldPerSeries, batch = 5, 3
+	var rollups []store.Rollup
+	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
+		for _, node := range []string{"", "n1"} {
+			for h := int64(0); h < 7; h++ {
+				rollups = append(rollups, hourRollup(tenantA, mon, node, h*store.BucketHour, 10))
+			}
+		}
+	}
+	rollups = append(rollups, store.Rollup{TenantID: tenantA, MonitorID: "m1", BucketMs: store.BucketDay, StartMs: 0, UpMs: 1})
+	if err := m.PutRollups(ctx, rollups, nil); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := oldPerSeries * store.BucketHour
+	var minutes []store.LatencyMinute
+	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
+		for i := int64(0); i < 7; i++ {
+			minutes = append(minutes, store.LatencyMinute{TenantID: tenantA, MonitorID: mon, NodeID: "n1", MinuteMs: i * 60_000, Min: 1, Max: 2, Avg: 1.5, P95: 2, OKCount: 1})
+		}
+	}
+	if err := m.CompactHeartbeats(ctx, minutes, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hourly: 4 monitors x 2 nodes x 5 old hours. Minutes: 4 monitors x 5 old minutes.
+	for _, tc := range []struct {
+		name  string
+		total int
+		del   func() (int64, error)
+	}{
+		{"hourly", 4 * 2 * oldPerSeries, func() (int64, error) { return m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch) }},
+		{"minutes", 4 * oldPerSeries, func() (int64, error) {
+			return m.DeleteLatencyMinutesBefore(ctx, oldPerSeries*60_000, batch)
+		}},
+	} {
+		sum, calls := 0, 0
+		for {
+			n, err := tc.del()
+			if err != nil {
+				t.Fatalf("%s batch: %v", tc.name, err)
+			}
+			if n > batch {
+				t.Fatalf("%s batch deleted %d rows, limit %d", tc.name, n, batch)
+			}
+			sum += int(n)
+			calls++
+			if n < batch || calls > 100 {
+				break
+			}
+		}
+		if sum != tc.total {
+			t.Errorf("%s: deleted %d rows in %d batches, want %d", tc.name, sum, calls, tc.total)
+		}
+	}
+
+	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
+		got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: mon, AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62})
+		if err != nil || len(got) != 2*2 {
+			t.Fatalf("%s: remaining hourly rollups = %d, %v", mon, len(got), err)
+		}
+		for _, r := range got {
+			if r.StartMs < cutoff {
+				t.Errorf("%s: old rollup %+v survived", mon, r)
+			}
+		}
+	}
+	if got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", BucketMs: store.BucketDay, ToMs: 1 << 62}); err != nil || len(got) != 1 {
+		t.Errorf("daily rollups touched by hourly retention: %+v, %v", got, err)
+	}
+	if n, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch); err != nil || n != 0 {
+		t.Errorf("finished retention deleted %d, %v", n, err)
+	}
+	if _, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, 0); err == nil {
+		t.Error("batch size 0 accepted")
 	}
 }

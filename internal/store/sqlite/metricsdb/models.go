@@ -18,28 +18,24 @@ type Heartbeat struct {
 	DetailsJson string
 }
 
-type LatencyMinute struct {
-	TenantID  string
-	MonitorID string
-	NodeID    string
-	MinuteMs  int64
-	MinMs     int64
-	MaxMs     int64
-	AvgMs     float64
-	P95Ms     float64
-	OkCount   int64
-	ErrCount  int64
-}
-
 type Meta struct {
 	Key   string
 	Value string
 }
 
-type UptimeRollup struct {
-	TenantID     string
-	MonitorID    string
-	NodeID       string
+type Minute struct {
+	SeriesID int64
+	MinuteMs int64
+	MinMs    int64
+	MaxMs    int64
+	AvgUs    int64
+	P95Us    int64
+	OkCount  int64
+	ErrCount int64
+}
+
+type Rollup struct {
+	SeriesID     int64
 	BucketMs     int64
 	StartMs      int64
 	UpMs         int64
@@ -47,6 +43,13 @@ type UptimeRollup struct {
 	MaintMs      int64
 	UnknownMs    int64
 	LatencyCount int64
-	LatencyAvg   float64
-	LatencyP95   float64
+	LatencyAvgUs int64
+	LatencyP95Us int64
+}
+
+type Series struct {
+	ID        int64
+	TenantID  string
+	MonitorID string
+	NodeID    string
 }

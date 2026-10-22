@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -16,14 +17,25 @@ import (
 
 const watermarkPrefix = "watermark:"
 
+// microsOf converts a latency in milliseconds to the integer microseconds
+// stored in metrics.db (ADR 0016). The rounding error is at most 0.0005 ms.
+func microsOf(ms float64) int64 { return int64(math.Round(ms * 1000)) }
+
+// millisOf converts stored microseconds back to milliseconds.
+func millisOf(us int64) float64 { return float64(us) / 1000 }
+
 // PutRollups stores rollups and watermarks in one transaction.
 func (m *MetricsStore) PutRollups(ctx context.Context, rollups []store.Rollup, watermarks map[string]int64) error {
-	return m.write(ctx, "store rollups", func(q *metricsdb.Queries) error {
+	return m.writeSeries(ctx, "store rollups", func(q *metricsdb.Queries, series *seriesResolver) error {
 		for _, r := range rollups {
-			err := q.UpsertRollup(ctx, metricsdb.UpsertRollupParams{
-				TenantID: r.TenantID, MonitorID: r.MonitorID, NodeID: r.NodeID, BucketMs: r.BucketMs, StartMs: r.StartMs,
+			seriesID, err := series.id(ctx, r.TenantID, r.MonitorID, r.NodeID)
+			if err != nil {
+				return err
+			}
+			err = q.UpsertRollup(ctx, metricsdb.UpsertRollupParams{
+				SeriesID: seriesID, BucketMs: r.BucketMs, StartMs: r.StartMs,
 				UpMs: r.UpMs, DownMs: r.DownMs, MaintMs: r.MaintMs, UnknownMs: r.UnknownMs,
-				LatencyCount: r.LatencyCount, LatencyAvg: r.LatencyAvg, LatencyP95: r.LatencyP95,
+				LatencyCount: r.LatencyCount, LatencyAvgUs: microsOf(r.LatencyAvg), LatencyP95Us: microsOf(r.LatencyP95),
 			})
 			if err != nil {
 				return mapErr(err)
@@ -52,7 +64,7 @@ func (m *MetricsStore) ListRollups(ctx context.Context, tenantID string, q store
 		out = append(out, store.Rollup{
 			TenantID: r.TenantID, MonitorID: r.MonitorID, NodeID: r.NodeID, BucketMs: r.BucketMs, StartMs: r.StartMs,
 			UpMs: r.UpMs, DownMs: r.DownMs, MaintMs: r.MaintMs, UnknownMs: r.UnknownMs,
-			LatencyCount: r.LatencyCount, LatencyAvg: r.LatencyAvg, LatencyP95: r.LatencyP95,
+			LatencyCount: r.LatencyCount, LatencyAvg: millisOf(r.LatencyAvgUs), LatencyP95: millisOf(r.LatencyP95Us),
 		})
 	}
 	return out, nil
@@ -76,22 +88,23 @@ func (m *MetricsStore) ListRollupsBatch(ctx context.Context, tenantID string, q 
 		out = append(out, store.Rollup{
 			TenantID: r.TenantID, MonitorID: r.MonitorID, NodeID: r.NodeID, BucketMs: r.BucketMs, StartMs: r.StartMs,
 			UpMs: r.UpMs, DownMs: r.DownMs, MaintMs: r.MaintMs, UnknownMs: r.UnknownMs,
-			LatencyCount: r.LatencyCount, LatencyAvg: r.LatencyAvg, LatencyP95: r.LatencyP95,
+			LatencyCount: r.LatencyCount, LatencyAvg: millisOf(r.LatencyAvgUs), LatencyP95: millisOf(r.LatencyP95Us),
 		})
 	}
 	return out, nil
 }
 
-// DeleteRollupsBefore deletes one batch of rollups of a bucket size.
+// DeleteRollupsBefore deletes one batch of rollups of a bucket size. The batch
+// holds at most batchSize rows in one transaction (FA-UPT-06).
 func (m *MetricsStore) DeleteRollupsBefore(ctx context.Context, bucketMs, beforeMs int64, batchSize int) (int64, error) {
-	if batchSize <= 0 {
-		return 0, errors.New("delete rollups: batch size must be positive")
-	}
-	n, err := metricsdb.New(m.db.writer).DeleteRollupsBefore(ctx, metricsdb.DeleteRollupsBeforeParams{
-		BucketMs: bucketMs, BeforeMs: beforeMs, BatchSize: int64(batchSize),
-	})
+	n, err := m.retainPerSeries(ctx, "delete rollups", batchSize,
+		func(ctx context.Context, q *metricsdb.Queries, seriesID, limit int64) (int64, error) {
+			return q.DeleteRollupsOfSeriesBefore(ctx, metricsdb.DeleteRollupsOfSeriesBeforeParams{
+				SeriesID: seriesID, BucketMs: bucketMs, BeforeMs: beforeMs, RowLimit: limit,
+			})
+		})
 	if err != nil {
-		return 0, fmt.Errorf("delete rollups: %w", mapErr(err))
+		return 0, fmt.Errorf("delete rollups: %w", err)
 	}
 	return n, nil
 }
@@ -121,11 +134,15 @@ func (m *MetricsStore) SetWatermark(ctx context.Context, name string, value int6
 
 // CompactHeartbeats stores latency minutes and deletes heartbeats atomically.
 func (m *MetricsStore) CompactHeartbeats(ctx context.Context, minutes []store.LatencyMinute, deleted []store.HeartbeatKey) error {
-	return m.write(ctx, "compact heartbeats", func(q *metricsdb.Queries) error {
+	return m.writeSeries(ctx, "compact heartbeats", func(q *metricsdb.Queries, series *seriesResolver) error {
 		for _, l := range minutes {
-			err := q.InsertLatencyMinute(ctx, metricsdb.InsertLatencyMinuteParams{
-				TenantID: l.TenantID, MonitorID: l.MonitorID, NodeID: l.NodeID, MinuteMs: l.MinuteMs,
-				MinMs: int64(l.Min), MaxMs: int64(l.Max), AvgMs: l.Avg, P95Ms: l.P95,
+			seriesID, err := series.id(ctx, l.TenantID, l.MonitorID, l.NodeID)
+			if err != nil {
+				return err
+			}
+			err = q.InsertLatencyMinute(ctx, metricsdb.InsertLatencyMinuteParams{
+				SeriesID: seriesID, MinuteMs: l.MinuteMs,
+				MinMs: int64(l.Min), MaxMs: int64(l.Max), AvgUs: microsOf(l.Avg), P95Us: microsOf(l.P95),
 				OkCount: int64(l.OKCount), ErrCount: int64(l.ErrCount),
 			})
 			if err != nil {
@@ -145,16 +162,17 @@ func (m *MetricsStore) CompactHeartbeats(ctx context.Context, minutes []store.La
 	})
 }
 
-// DeleteLatencyMinutesBefore deletes one batch of latency minutes.
+// DeleteLatencyMinutesBefore deletes one batch of latency minutes, at most
+// batchSize rows in one transaction (FA-UPT-06).
 func (m *MetricsStore) DeleteLatencyMinutesBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error) {
-	if batchSize <= 0 {
-		return 0, errors.New("delete latency minutes: batch size must be positive")
-	}
-	n, err := metricsdb.New(m.db.writer).DeleteLatencyMinutesBefore(ctx, metricsdb.DeleteLatencyMinutesBeforeParams{
-		BeforeMs: beforeMs, BatchSize: int64(batchSize),
-	})
+	n, err := m.retainPerSeries(ctx, "delete latency minutes", batchSize,
+		func(ctx context.Context, q *metricsdb.Queries, seriesID, limit int64) (int64, error) {
+			return q.DeleteMinutesOfSeriesBefore(ctx, metricsdb.DeleteMinutesOfSeriesBeforeParams{
+				SeriesID: seriesID, BeforeMs: beforeMs, RowLimit: limit,
+			})
+		})
 	if err != nil {
-		return 0, fmt.Errorf("delete latency minutes: %w", mapErr(err))
+		return 0, fmt.Errorf("delete latency minutes: %w", err)
 	}
 	return n, nil
 }
