@@ -34,7 +34,9 @@ import (
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
+	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/node"
+	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
@@ -266,6 +268,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
 		Stream: hub, Tickets: auth.NewTickets(),
+		ClusterAdmin: clusterAdmin{host: host},
 	}
 	if local != nil {
 		apiDeps.Local, apiDeps.Authenticator = local, local
@@ -375,3 +378,23 @@ func readJoinToken(cfg config.Config) (string, error) {
 	}
 	return strings.TrimSpace(string(raw)), nil
 }
+
+// clusterAdmin serves the cluster administration endpoints from the cluster
+// host (api.ClusterAdmin).
+type clusterAdmin struct {
+	host *clusterhost.Host
+}
+
+func (a clusterAdmin) CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error) {
+	return a.host.Authority.CreateJoinToken(ctx, role, tenantID, ttl)
+}
+
+func (a clusterAdmin) Remove(ctx context.Context, nodeID string) (membership.Removal, error) {
+	return a.host.Manager.Remove(ctx, nodeID)
+}
+
+func (a clusterAdmin) Members() ([]cluster.Member, uint64, error) { return a.host.Node.Members() }
+
+func (a clusterAdmin) Leader() (address, id string) { return a.host.Node.Leader() }
+
+func (a clusterAdmin) ID() string { return a.host.Node.ID() }

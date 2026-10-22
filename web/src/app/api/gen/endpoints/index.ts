@@ -1,4 +1,5 @@
 export * from './auth/auth.service';
+export * from './cluster/cluster.service';
 export * from './incidents/incidents.service';
 export * from './maintenance/maintenance.service';
 export * from './monitors/monitors.service';

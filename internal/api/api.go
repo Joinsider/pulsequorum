@@ -45,10 +45,12 @@ type Applier interface {
 // Deps are the services the handlers use. Fields may be nil in tests that do
 // not exercise the corresponding endpoints.
 type Deps struct {
-	State    store.State
-	Metrics  store.Metrics
-	Cluster  Applier
-	Registry *checker.Registry
+	State   store.State
+	Metrics store.Metrics
+	Cluster Applier
+	// ClusterAdmin serves the cluster administration (FA-CLU-08); nil answers 503.
+	ClusterAdmin ClusterAdmin
+	Registry     *checker.Registry
 	// CheckEnv runs on-demand checks (POST /monitors/{id}/test).
 	CheckEnv *checker.Env
 	NodeID   string

@@ -62,6 +62,13 @@ func newEnv(t testing.TB) *env {
 // authentication (ADR 0008) instead of the X-Test-Principal header.
 func newEnvWith(t testing.TB, localAuth bool) *env {
 	t.Helper()
+	return newEnvTweaked(t, localAuth, nil)
+}
+
+// newEnvTweaked is newEnvWith with a hook that adjusts the dependencies before
+// the routes are registered.
+func newEnvTweaked(t testing.TB, localAuth bool, tweak func(*Deps)) *env {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 	dir := t.TempDir()
@@ -122,6 +129,9 @@ func newEnvWith(t testing.TB, localAuth bool) *env {
 		}
 		e.local, e.setupToken = local, token
 		deps.Local, deps.Authenticator = local, local
+	}
+	if tweak != nil {
+		tweak(&deps)
 	}
 	mux := http.NewServeMux()
 	Register(mux, cfg, log, deps)

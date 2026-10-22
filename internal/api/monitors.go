@@ -44,6 +44,9 @@ const (
 	readAccess access = iota
 	editAccess
 	adminAccess
+	// platformAccess is cluster administration (nodes, join tokens): only
+	// platform admins, never tenant admins (FA-CLU-08).
+	platformAccess
 )
 
 // principal returns the caller and checks the role (FA-AUTH-09).
@@ -58,6 +61,8 @@ func principal(ctx context.Context, need access) (auth.Principal, error) {
 		allowed = p.CanEdit()
 	case adminAccess:
 		allowed = p.CanAdmin()
+	case platformAccess:
+		allowed = p.Has(auth.RolePlatformAdmin)
 	}
 	if !allowed {
 		return auth.Principal{}, &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: "your role does not allow this action"}

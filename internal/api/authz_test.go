@@ -14,9 +14,10 @@ import (
 type accessLevel int
 
 const (
-	needRead  accessLevel = iota // any authenticated role
-	needEdit                     // editor and above
-	needAdmin                    // tenant-admin and above
+	needRead     accessLevel = iota // any authenticated role
+	needEdit                        // editor and above
+	needAdmin                       // tenant-admin and above
+	needPlatform                    // platform-admin only (cluster administration)
 )
 
 // roleLevel orders the roles; anonymous callers are handled separately.
@@ -24,7 +25,7 @@ var roleLevel = map[string]accessLevel{
 	"tenant-viewer":  needRead,
 	"tenant-editor":  needEdit,
 	"tenant-admin":   needAdmin,
-	"platform-admin": needAdmin,
+	"platform-admin": needPlatform,
 }
 
 // TestPermissionMatrix checks every role against representative operations of
@@ -87,6 +88,12 @@ func TestPermissionMatrix(t *testing.T) {
 			map[string]any{"username": "matrix-created", "password": testPassword, "role": "tenant-viewer"}, needAdmin},
 		{"update user", "PUT", "/api/v1/users/" + missing, map[string]any{"displayName": "x"}, needAdmin},
 		{"delete user", "DELETE", "/api/v1/users/" + missing, nil, needAdmin},
+
+		// Cluster administration: platform admins only (FA-CLU-08). The
+		// matrix env has no cluster host, so platform admins get 503.
+		{"create join token", "POST", "/api/v1/admin/join-tokens", map[string]any{"role": "probe"}, needPlatform},
+		{"list cluster nodes", "GET", "/api/v1/admin/nodes", nil, needPlatform},
+		{"remove cluster node", "DELETE", "/api/v1/admin/nodes/" + missing, nil, needPlatform},
 	}
 
 	for _, o := range ops {

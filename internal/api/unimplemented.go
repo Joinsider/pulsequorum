@@ -15,6 +15,21 @@ import (
 // embeds it, so an operation goes live once Handlers defines the method.
 type Unimplemented struct{}
 
+// CreateJoinToken is not implemented yet.
+func (Unimplemented) CreateJoinToken(context.Context, gen.CreateJoinTokenRequestObject) (gen.CreateJoinTokenResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListClusterNodes is not implemented yet.
+func (Unimplemented) ListClusterNodes(context.Context, gen.ListClusterNodesRequestObject) (gen.ListClusterNodesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RemoveClusterNode is not implemented yet.
+func (Unimplemented) RemoveClusterNode(context.Context, gen.RemoveClusterNodeRequestObject) (gen.RemoveClusterNodeResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // Login is not implemented yet.
 func (Unimplemented) Login(context.Context, gen.LoginRequestObject) (gen.LoginResponseObject, error) {
 	return nil, ErrNotImplemented

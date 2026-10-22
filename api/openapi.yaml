@@ -37,6 +37,8 @@ tags:
     description: Incidents
   - name: stream
     description: Live updates over WebSocket
+  - name: cluster
+    description: Cluster administration (platform admins only, FA-CLU-08)
 
 paths:
   /health:
@@ -668,6 +670,77 @@ paths:
               schema: { $ref: "#/components/schemas/StreamTicket" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  # --- Cluster administration (FA-CLU-08, FA-PKI-02) ----------------------------
+  /admin/join-tokens:
+    post:
+      tags: [cluster]
+      operationId: createJoinToken
+      summary: Create a one-time join token for a new voter or probe
+      description: |
+        Platform admins only. The token is returned exactly once and is never
+        stored or shown again; it contains the fingerprint of the cluster CA,
+        so a joining node can verify the CA it trusts. A token is single use
+        and expires after `ttlMinutes`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JoinTokenRequest" }
+      responses:
+        "201":
+          description: Join token (sent with Cache-Control no-store)
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JoinToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/nodes:
+    get:
+      tags: [cluster]
+      operationId: listClusterNodes
+      summary: List the cluster members
+      description: |
+        Platform admins only. `warnings` names quorum risks: an even number of
+        voters (2, 4, ...) or more than five voters (FA-CLU-11).
+      responses:
+        "200":
+          description: Members of the Raft configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClusterNodeList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/nodes/{nodeId}:
+    parameters:
+      - name: nodeId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [cluster]
+      operationId: removeClusterNode
+      summary: Remove a node from the cluster and revoke its certificates
+      description: |
+        Platform admins only. Nodes are never removed automatically. The
+        leader must be asked to do this: a node cannot remove itself while it
+        leads, so transfer leadership first. The last voter cannot be removed.
+      responses:
+        "200":
+          description: Node removed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeRemoval" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -764,6 +837,14 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     ValidationError:
       description: Request body failed validation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ServiceUnavailable:
+      description: No leader or this node is not the leader; retry after the Retry-After seconds
+      headers:
+        Retry-After:
+          schema: { type: integer }
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -1218,3 +1299,54 @@ components:
         heartbeat: { $ref: "#/components/schemas/Heartbeat" }
         status: { $ref: "#/components/schemas/MonitorStatus" }
         incident: { $ref: "#/components/schemas/Incident" }
+
+    # --- Cluster administration -----------------------------------------------
+    JoinTokenRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [voter, probe] }
+        tenantId:
+          type: string
+          description: Only for probes; binds the probe to one tenant (FA-PRB-05)
+        ttlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 60
+    JoinToken:
+      type: object
+      required: [token, expiresAt, role]
+      properties:
+        token:
+          type: string
+          description: One-time secret, shown only in this response
+        expiresAt: { type: string, format: date-time }
+        role: { type: string, enum: [voter, probe] }
+        tenantId: { type: string }
+    ClusterNode:
+      type: object
+      required: [id, address, voter, leader, self]
+      properties:
+        id: { type: string }
+        address: { type: string }
+        voter: { type: boolean }
+        leader: { type: boolean }
+        self: { type: boolean, description: "True for the node that answered the request" }
+    ClusterNodeList:
+      type: object
+      required: [nodes, leaderId, warnings]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/ClusterNode" }
+        leaderId: { type: string, description: "Empty while no leader is known" }
+        warnings:
+          type: array
+          items: { type: string }
+    NodeRemoval:
+      type: object
+      required: [votersLeft]
+      properties:
+        votersLeft: { type: integer, minimum: 0 }
+        warning: { type: string }
