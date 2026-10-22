@@ -4,9 +4,9 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | UptimeCluster (Arbeitstitel, E20) |
-| **Version** | 1.1 |
-| **Status** | Freigegeben (ADRs 0001–0013 Accepted) |
-| **Datum** | 2026-10-19 |
+| **Version** | 1.2 |
+| **Status** | Freigegeben (ADRs 0001–0015 Accepted) |
+| **Datum** | 2026-10-22 |
 | **Grundlage** | [Konzept v0.3](../uptime-cluster-konzept.md), Recherche zu Pitfalls (Kap. 12) |
 | **Auftraggeber / Product Owner** | Projektinhaber |
 | **Verfasser** | Claude (Opus 5.5) |
@@ -17,6 +17,7 @@
 |---------|-------|----------|
 | 1.0-draft | 2026-10-19 | Erstfassung aus Konzept v0.3 und Pitfall-Recherche |
 | 1.1 | 2026-10-19 | Präzisierungen aus den Spikes gemäß ADR 0012 und 0013 (FA-NODE-03/05/06, FA-CLU-03/06/08/09/10/13, FA-REP-01/03/07, PF-24) |
+| 1.2 | 2026-10-22 | Geheimnisse in Monitor-Konfigurationen gemäß ADR 0015 (FA-SEC-SEC, FA-API-06) |
 
 ---
 
@@ -445,7 +446,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-API-03 | Paginierung (Cursor) für Listen; Zeitbereichsabfragen für Heartbeats mit Obergrenze der Ergebnismenge. | M | P1 | Test. |
 | FA-API-04 | WebSocket `/api/v1/stream`: Heartbeats, Statuswechsel, Node-Status; Client kann auf Monitore filtern. | M | P1 | Test. |
 | FA-API-05 | CORS mit Allow-List der Frontend-Origins (exakte Origin-Reflexion, `Vary: Origin`, nie `*` bei Credentials). | M | P1 | Test. (PF-34) |
-| FA-API-06 | Monitor-Typen inkl. JSON-Schema über `GET /api/v1/monitor-types`. | M | P1 | Test. |
+| FA-API-06 | Monitor-Typen inkl. JSON-Schema über `GET /api/v1/monitor-types`. Felder mit `writeOnly` sind Geheimnisse: Antworten enthalten `***`; bei Updates behält `***` oder ein weggelassenes Feld den gespeicherten Wert (gleicher Typ), ein leerer String entfernt ihn (ADR 0015). | M | P1 | Test. |
 | FA-API-07 | Rate-Limiting auf Login- und öffentlichen Endpunkten. | M | P1 | Test. |
 
 ### 6.17 Frontend (FA-UI)
@@ -553,7 +554,7 @@ Basierend auf Konzept 6.5, mit folgenden **Präzisierungen**:
 | NFA-SEC-01 | mTLS für sämtliche Inter-Node-Kommunikation (FA-PKI); TLS ≥ 1.2, bevorzugt 1.3. | M | P2 |
 | NFA-SEC-02 | Strikte Mandantentrennung (FA-TEN-01/02), abgesichert durch automatisierte Isolationstests in CI. | M | P1 |
 | **FA-SEC-SSRF** **[präzisiert]** | SSRF-Schutz für Checks, DNS-Resolver und Benachrichtigungsziele: Prüfung der **tatsächlich verbundenen IP zum Dial-Zeitpunkt** (`net.Dialer.Control`), damit DNS-Rebinding und Redirects abgedeckt sind. Gesperrte Bereiche (konfigurierbar, im Mehrmandantenbetrieb auf öffentlichen Nodes Standard an): Loopback, RFC 1918, Link-Local inkl. Cloud-Metadaten (169.254.169.254), CGNAT 100.64/10, ULA fc00::/7, Unspecified, Multicast, Broadcast, sowie IPv6-Einbettungen von IPv4 (`::ffff:0:0/96`, `64:ff9b::/96`, `2002::/16`, `::/96`). Nicht-kanonische IP-Schreibweisen (oktal, hex, dezimal) werden abgelehnt. Private Probes eines Mandanten sind ausgenommen. | M | P4 (Durchsetzung), P1 (Hook) |
-| **FA-SEC-SEC** **[präzisiert]** | Geheimnisse (Kanal-URLs, Webhook-Header, Signaturschlüssel) werden mit **Envelope Encryption** gespeichert: AES-256-GCM mit zufälligem Nonce, Datenschlüssel (DEK) je Rotationsepoche, gewrappt mit einem Master-Key (KEK), der **nicht** in der Datenbank liegt (Env/Datei/KMS). Jede Chiffre trägt `key_id`; Kontext (Tabelle + Objekt-ID) als Additional Data. Rotation über Raft mit Hintergrund-Neuverschlüsselung. | M | P1 |
+| **FA-SEC-SEC** **[präzisiert]** | Geheimnisse (Kanal-URLs, Webhook-Header, Signaturschlüssel, Zugangsdaten in Monitor-Konfigurationen = Felder mit `writeOnly` im Typ-Schema, ADR 0015) werden mit **Envelope Encryption** gespeichert: AES-256-GCM mit zufälligem Nonce, Datenschlüssel (DEK) je Rotationsepoche, gewrappt mit einem Master-Key (KEK), der **nicht** in der Datenbank liegt (Env/Datei/KMS). Jede Chiffre trägt `key_id`; Kontext (Tabelle + Objekt-ID) als Additional Data. Rotation über Raft mit Hintergrund-Neuverschlüsselung. | M | P1 |
 | NFA-SEC-03 | Passwörter: Argon2id gemäß OWASP; kein Passwort im Klartext in Logs, API-Antworten oder Raft-Log. | M | P1 |
 | NFA-SEC-04 | Tokens in der SPA **nur im Speicher**, nicht in `localStorage`; Refresh-Mechanismus gemäß ADR. | M | P1 |
 | NFA-SEC-05 | Security-Header: CSP ohne `unsafe-eval`, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`. | M | P1 |
