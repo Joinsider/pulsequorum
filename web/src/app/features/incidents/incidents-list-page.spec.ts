@@ -14,13 +14,21 @@ import { LiveStreamService } from '../../core/stream/live-stream.service';
 import { IncidentsListPage } from './incidents-list-page';
 
 const MON = '11111111-1111-4111-8111-111111111111';
+/**
+ * Fixed start time for fixtures. The list is sorted newest first by startedAt
+ * (ties by id), so per-call Date.now() values would make the expected row order
+ * depend on whether two calls fall into the same millisecond.
+ */
+const STARTED_AT = '2026-10-01T12:00:00.000Z';
+/** Strictly later than STARTED_AT, used for the live-inserted incident. */
+const LIVE_STARTED_AT = '2026-10-02T12:00:00.000Z';
 
 function incident(id: string, overrides: Partial<Incident> = {}): Incident {
   return {
     id,
     monitorId: MON,
     monitorName: `monitor-${id}`,
-    startedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    startedAt: STARTED_AT,
     cause: `cause-${id}`,
     ...overrides,
   };
@@ -131,7 +139,7 @@ describe('IncidentsListPage', () => {
     events.next({
       type: 'incident',
       ts: new Date().toISOString(),
-      incident: incident('live', { startedAt: new Date().toISOString() }),
+      incident: incident('live', { startedAt: LIVE_STARTED_AT }),
     });
     fixture.detectChanges();
     expect(rowIds(fixture)).toEqual(['cause-live', 'cause-a']);
