@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-21 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-SEC-SEC, NFA-SEC-02, FA-API-06, FA-MON-*, FA-PRB-01, ADR 0004, ADR 0011, ADR 0014 |
@@ -71,3 +71,4 @@ Jedes Feld, das im Schema des Typs als `writeOnly: true` markiert ist, gilt als 
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-21 | Proposed | Claude | |
+| 2026-10-22 | Accepted | Projektinhaber | im Chat bestätigt |
