@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -273,6 +276,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("monitor document: %v", err)
 		}
+		if err := checkMonitorSecrets(doc.Secrets); err != nil {
+			return nil, err
+		}
 		create := put.GetExpectedRevision() == 0
 		err := tx.PutMonitor(ctx, store.Monitor{
 			TenantID:              cmd.GetTenantId(),
@@ -290,6 +296,7 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 			ConsensusPolicy:       doc.ConsensusPolicy,
 			Tags:                  doc.Tags,
 			ChannelIDs:            doc.NotificationChannelIDs,
+			Secrets:               doc.Secrets,
 			Paused:                doc.Paused,
 			CreatedMs:             issuedAt,
 			UpdatedMs:             issuedAt,
@@ -542,3 +549,23 @@ func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 }
 
 func (s *fsmSnapshot) Release() {}
+
+// checkMonitorSecrets rejects secrets whose pointer is not a JSON pointer into
+// Config or whose value is not a ciphertext (ADR 0015). Keys are visited in
+// sorted order so that the error is deterministic.
+func checkMonitorSecrets(fields map[string]string) error {
+	pointers := make([]string, 0, len(fields))
+	for p := range fields {
+		pointers = append(pointers, p)
+	}
+	sort.Strings(pointers)
+	for _, p := range pointers {
+		if !strings.HasPrefix(p, "/") {
+			return invalid("monitor secret pointer %q is invalid", p)
+		}
+		if !secrets.IsEncrypted(fields[p]) {
+			return invalid("monitor secret %s is not encrypted", p)
+		}
+	}
+	return nil
+}

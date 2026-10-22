@@ -52,10 +52,10 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: InsertMonitor :exec
 INSERT INTO monitors (
-    tenant_id, id, name, description, type, config_json, interval_s, timeout_s, retries,
+    tenant_id, id, name, description, type, config_json, secrets_json, interval_s, timeout_s, retries,
     recovery_threshold, resend_interval_min, assignment_json, consensus_policy, paused,
     revision, created_ms, updated_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateMonitor :execrows
 UPDATE monitors SET
@@ -63,6 +63,7 @@ UPDATE monitors SET
     description         = sqlc.arg(description),
     type                = sqlc.arg(type),
     config_json         = sqlc.arg(config_json),
+    secrets_json        = sqlc.arg(secrets_json),
     interval_s          = sqlc.arg(interval_s),
     timeout_s           = sqlc.arg(timeout_s),
     retries             = sqlc.arg(retries),

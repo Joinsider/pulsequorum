@@ -299,6 +299,10 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 	if config == "" {
 		config = "{}"
 	}
+	secretsJSON, err := json.Marshal(nonNilMap(m.Secrets))
+	if err != nil {
+		return fmt.Errorf("put monitor: secrets: %w", err)
+	}
 	newRevision, err := toInt64(expectedRevision + 1)
 	if err != nil {
 		return err
@@ -312,6 +316,7 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 			Description:       m.Description,
 			Type:              m.Type,
 			ConfigJson:        config,
+			SecretsJson:       string(secretsJSON),
 			IntervalS:         int64(m.IntervalSeconds),
 			TimeoutS:          int64(m.TimeoutSeconds),
 			Retries:           int64(m.Retries),
@@ -337,6 +342,7 @@ func (t *stateTx) PutMonitor(ctx context.Context, m store.Monitor, expectedRevis
 			Description:       m.Description,
 			Type:              m.Type,
 			ConfigJson:        config,
+			SecretsJson:       string(secretsJSON),
 			IntervalS:         int64(m.IntervalSeconds),
 			TimeoutS:          int64(m.TimeoutSeconds),
 			Retries:           int64(m.Retries),
@@ -544,6 +550,13 @@ func monitorWithTags(ctx context.Context, q *statedb.Queries, r statedb.Monitor)
 	if err := json.Unmarshal([]byte(r.AssignmentJson), &assignment); err != nil {
 		return store.Monitor{}, fmt.Errorf("monitor %s: assignment: %w", r.ID, err)
 	}
+	var secrets map[string]string
+	if err := json.Unmarshal([]byte(r.SecretsJson), &secrets); err != nil {
+		return store.Monitor{}, fmt.Errorf("monitor %s: secrets: %w", r.ID, err)
+	}
+	if len(secrets) == 0 {
+		secrets = nil
+	}
 	return store.Monitor{
 		TenantID:              r.TenantID,
 		ID:                    r.ID,
@@ -551,6 +564,7 @@ func monitorWithTags(ctx context.Context, q *statedb.Queries, r statedb.Monitor)
 		Description:           r.Description,
 		Type:                  r.Type,
 		Config:                json.RawMessage(r.ConfigJson),
+		Secrets:               secrets,
 		IntervalSeconds:       int(r.IntervalS),
 		TimeoutSeconds:        int(r.TimeoutS),
 		Retries:               int(r.Retries),
@@ -591,4 +605,12 @@ func normalizeTags(tags []string) []string {
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// nonNilMap returns m, or an empty map for nil, so that it marshals to "{}".
+func nonNilMap(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/checker"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/configsecret"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/stream"
@@ -76,6 +77,8 @@ type Handlers struct {
 	deps   Deps
 	log    *slog.Logger
 	uptime *uptime.Service
+	// schemas caches the secret paths of each monitor type (ADR 0015).
+	schemas *configsecret.Schemas
 }
 
 var _ gen.StrictServerInterface = (*Handlers)(nil)
@@ -104,7 +107,8 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 	if err != nil {
 		panic(err)
 	}
-	h := &Handlers{cfg: cfg, deps: deps, log: log, uptime: &uptime.Service{State: deps.State, Metrics: deps.Metrics}}
+	h := &Handlers{cfg: cfg, deps: deps, log: log, uptime: &uptime.Service{State: deps.State, Metrics: deps.Metrics},
+		schemas: &configsecret.Schemas{Registry: deps.Registry}}
 	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, deps.Authenticator)}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())

@@ -43,12 +43,15 @@ type Assignment struct {
 
 // Monitor is a configured check.
 type Monitor struct {
-	TenantID              string
-	ID                    string
-	Name                  string
-	Description           string
-	Type                  string
-	Config                json.RawMessage
+	TenantID    string
+	ID          string
+	Name        string
+	Description string
+	Type        string
+	Config      json.RawMessage
+	// Secrets maps JSON pointers into Config to ciphertexts (ADR 0015); Config
+	// holds the mask at these positions. Values are never plaintext.
+	Secrets               map[string]string
 	IntervalSeconds       int
 	TimeoutSeconds        int
 	Retries               int

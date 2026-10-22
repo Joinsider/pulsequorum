@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	"github.com/joinsider/uptimecluster/internal/configsecret"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/uptime"
@@ -176,7 +176,9 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	if err != nil {
 		return nil, err
 	}
-	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), doc)
+	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
+		return h.sealSecrets(doc, id, nil)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +189,15 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	return gen.CreateMonitor201JSONResponse(out), nil
 }
 
-func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID string, doc cluster.MonitorDocument) (store.Monitor, error) {
+// create proposes a new monitor. prepare builds its document for the new ID,
+// because secrets are encrypted for that ID (ADR 0015).
+func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID string,
+	prepare func(id string) (cluster.MonitorDocument, error)) (store.Monitor, error) {
 	id, err := uuid.NewV7()
+	if err != nil {
+		return store.Monitor{}, err
+	}
+	doc, err := prepare(id.String())
 	if err != nil {
 		return store.Monitor{}, err
 	}
@@ -220,6 +229,13 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	}
 	doc, err := h.monitorDocument(ctx, p.TenantID, req.Body, false)
 	if err != nil {
+		return nil, err
+	}
+	var previous configsecret.Secrets
+	if current.Type == doc.Type {
+		previous = current.Secrets // a type change drops all stored secrets
+	}
+	if doc, err = h.sealSecrets(doc, current.ID, previous); err != nil {
 		return nil, err
 	}
 	m, err := h.replace(ctx, p, current, doc)
@@ -298,7 +314,7 @@ func (h *Handlers) setPaused(ctx context.Context, id uuid.UUID, paused bool) (st
 	if current.Paused == paused {
 		return current, nil
 	}
-	doc := documentFromMonitor(current)
+	doc := cluster.MonitorDocumentFrom(current)
 	doc.Paused = paused
 	return h.replace(ctx, p, current, doc)
 }
@@ -313,10 +329,14 @@ func (h *Handlers) CloneMonitor(ctx context.Context, req gen.CloneMonitorRequest
 	if err != nil {
 		return nil, err
 	}
-	doc := documentFromMonitor(src)
+	doc := cluster.MonitorDocumentFrom(src)
 	doc.Name = truncateRunes(src.Name, maxNameLength-len(" (copy)")) + " (copy)"
 	doc.Paused = true
-	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), doc)
+	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
+		var err error
+		doc.Secrets, err = configsecret.Reencrypt(ctx, h.keyring(), src.ID, id, src.Secrets)
+		return doc, err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -343,8 +363,12 @@ func (h *Handlers) TestMonitor(ctx context.Context, req gen.TestMonitorRequestOb
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, time.Duration(m.TimeoutSeconds)*time.Second)
 	defer cancel()
+	cfg, err := configsecret.ResolveMonitor(ctx, h.keyring(), m)
+	if err != nil {
+		return nil, fmt.Errorf("resolve secrets of monitor %s: %w", m.ID, err)
+	}
 	started := time.Now()
-	res := c.Check(checkCtx, h.deps.CheckEnv, m.Config)
+	res := c.Check(checkCtx, h.deps.CheckEnv, cfg)
 	return gen.TestMonitor200JSONResponse(toAPICheckResult(res, h.deps.NodeID, started)), nil
 }
 
@@ -596,18 +620,17 @@ func (h *Handlers) monitorChannels(ctx context.Context, tenantID string, ids *[]
 	return out, nil
 }
 
-func documentFromMonitor(m store.Monitor) cluster.MonitorDocument {
-	return cluster.MonitorDocument{
-		Name: m.Name, Description: m.Description, Type: m.Type, Config: m.Config,
-		IntervalSeconds: m.IntervalSeconds, TimeoutSeconds: m.TimeoutSeconds, Retries: m.Retries,
-		RecoveryThreshold: m.RecoveryThreshold, ResendIntervalMinutes: m.ResendIntervalMinutes,
-		Assignment: m.Assignment, ConsensusPolicy: m.ConsensusPolicy, Tags: m.Tags, Paused: m.Paused,
-		NotificationChannelIDs: slices.Clone(m.ChannelIDs),
-	}
-}
-
 // apiMonitor converts a monitor and adds the newest heartbeat of any node.
 func (h *Handlers) apiMonitor(ctx context.Context, m store.Monitor) (gen.Monitor, error) {
+	// Stored configurations hold the mask already; masking again also covers
+	// monitors written before ADR 0015 that are not migrated yet.
+	paths, err := h.schemas.Paths(m.Type)
+	if err != nil {
+		return gen.Monitor{}, err
+	}
+	if m.Config, err = configsecret.MaskConfig(paths, m.Config); err != nil {
+		return gen.Monitor{}, err
+	}
 	out := toAPIMonitor(m)
 	last, err := h.deps.Metrics.LatestHeartbeats(ctx, m.TenantID, m.ID, "", 1)
 	if err != nil {

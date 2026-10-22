@@ -6,8 +6,10 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -314,4 +316,69 @@ func TestRestoreRejectsGarbageAndKeepsState(t *testing.T) {
 		t.Fatalf("state changed by a rejected restore: %v", err)
 	}
 	seedForSnapshot(t, s, "b", 5) // still writable
+}
+
+// TestMonitorSecretsRoundTrip covers ADR 0015: the secret map survives insert,
+// update and clearing, and it is read back only for the monitor's own tenant.
+func TestMonitorSecretsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := openState(t, t.TempDir())
+	secretsA := map[string]string{"/auth/password": "enc:v1:key:AAAA", "/headers/X-Api-Key": "enc:v1:key:BBBB"} //nolint:gosec // G101: fake ciphertexts
+	mon := func(tenant, id string, sec map[string]string) store.Monitor {
+		return store.Monitor{
+			TenantID: tenant, ID: id, Name: id, Type: "http",
+			Config:          json.RawMessage(`{"url":"https://example.test","auth":{"password":"***"}}`),
+			IntervalSeconds: 60, TimeoutSeconds: 10, Assignment: store.Assignment{Mode: "all"},
+			ConsensusPolicy: "majority", Secrets: sec,
+		}
+	}
+	err := s.Update(ctx, func(tx store.StateTx) error {
+		for _, tn := range []string{"a", "b"} {
+			if err := tx.PutTenant(ctx, store.Tenant{ID: tn, Name: tn, Plan: "default", CreatedMs: 1, UpdatedMs: 1}); err != nil {
+				return err
+			}
+		}
+		if err := tx.PutMonitor(ctx, mon("a", "m1", secretsA), 0); err != nil {
+			return err
+		}
+		// Another tenant's monitor without secrets; IDs are unique across tenants.
+		return tx.PutMonitor(ctx, mon("b", "m2", nil), 0)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetMonitor(ctx, "a", "m1")
+	if err != nil || !maps.Equal(got.Secrets, secretsA) {
+		t.Fatalf("GetMonitor(a) secrets = %v, %v; want %v", got.Secrets, err, secretsA)
+	}
+	if string(got.Config) != `{"url":"https://example.test","auth":{"password":"***"}}` {
+		t.Errorf("config = %s", got.Config)
+	}
+	other, err := s.GetMonitor(ctx, "b", "m2")
+	if err != nil || len(other.Secrets) != 0 {
+		t.Errorf("GetMonitor(b) secrets leaked: %v, %v", other.Secrets, err)
+	}
+	page, err := s.ListMonitors(ctx, "a", store.MonitorQuery{Limit: 10})
+	if err != nil || len(page.Items) != 1 || !maps.Equal(page.Items[0].Secrets, secretsA) {
+		t.Errorf("ListMonitors(a) = %+v, %v", page.Items, err)
+	}
+	if page, err := s.ListMonitors(ctx, "b", store.MonitorQuery{Limit: 10}); err != nil || len(page.Items) != 1 || len(page.Items[0].Secrets) != 0 {
+		t.Errorf("ListMonitors(b) = %+v, %v", page.Items, err)
+	}
+
+	// Replacing the secrets keeps the new map; clearing them stores none.
+	replaced := map[string]string{"/auth/token": "enc:v1:key:CCCC"} //nolint:gosec // G101: fake ciphertext
+	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.PutMonitor(ctx, mon("a", "m1", replaced), 1) }); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetMonitor(ctx, "a", "m1"); err != nil || !maps.Equal(got.Secrets, replaced) {
+		t.Fatalf("after replace: secrets = %v, %v", got.Secrets, err)
+	}
+	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.PutMonitor(ctx, mon("a", "m1", nil), 2) }); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetMonitor(ctx, "a", "m1"); err != nil || len(got.Secrets) != 0 {
+		t.Fatalf("after clear: secrets = %v, %v", got.Secrets, err)
+	}
 }

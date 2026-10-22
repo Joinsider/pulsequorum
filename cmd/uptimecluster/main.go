@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -29,11 +30,13 @@ import (
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/configsecret"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/node"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
+	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/stream"
 	"github.com/joinsider/uptimecluster/internal/uptime"
@@ -207,11 +210,20 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Maintenance: maint.InMaintenance, Logger: log,
 	})
 	sink := scheduler.Sinks{heartbeats, agg, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
-	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log})
+	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log,
+		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
+			return configsecret.ResolveMonitor(ctx, keyring, m)
+		}})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
 	bg.Go(func() { maint.Run(ctx) })
+	bg.Go(func() {
+		configsecret.RunMigration(ctx, configsecret.MigrationOptions{
+			State: state, Cluster: raftNode, Keyring: keyring, Schemas: &configsecret.Schemas{Registry: checker.Default},
+			IsLeader: raftNode.IsLeader, Logger: log,
+		})
+	})
 	maintenance := uptime.NewJob(uptime.JobOptions{
 		State: state, Metrics: metrics, Logger: log, Compaction: cfg.RawCompaction,
 		Retention: uptime.Retention{Raw: cfg.RetentionRaw, Hourly: cfg.RetentionHourly, Daily: cfg.RetentionDaily},

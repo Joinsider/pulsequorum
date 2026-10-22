@@ -70,6 +70,7 @@ type Monitor struct {
 	Revision          int64
 	CreatedMs         int64
 	UpdatedMs         int64
+	SecretsJson       string
 }
 
 type MonitorChannel struct {

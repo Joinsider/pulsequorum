@@ -81,7 +81,7 @@ const schemaJSON = `{
   "properties": {
     "url": {"type": "string", "title": "URL", "format": "uri", "maxLength": 2048},
     "method": {"type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], "default": "GET"},
-    "headers": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096}, "maxProperties": 50},
+    "headers": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096, "writeOnly": true}, "maxProperties": 50, "description": "Values are stored encrypted and shown masked"},
     "body": {"type": "string", "maxLength": 65536},
     "auth": {
       "type": "object",

@@ -350,7 +350,7 @@ func (q *Queries) GetMaintenanceWindow(ctx context.Context, arg GetMaintenanceWi
 }
 
 const getMonitor = `-- name: GetMonitor :one
-SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms,
+SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
        CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
@@ -394,6 +394,7 @@ func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (GetMoni
 		&i.Monitor.Revision,
 		&i.Monitor.CreatedMs,
 		&i.Monitor.UpdatedMs,
+		&i.Monitor.SecretsJson,
 		&i.StateStatus,
 		&i.StateConfirmed,
 		&i.StateSinceMs,
@@ -689,10 +690,10 @@ func (q *Queries) InsertMaintenanceWindow(ctx context.Context, arg InsertMainten
 
 const insertMonitor = `-- name: InsertMonitor :exec
 INSERT INTO monitors (
-    tenant_id, id, name, description, type, config_json, interval_s, timeout_s, retries,
+    tenant_id, id, name, description, type, config_json, secrets_json, interval_s, timeout_s, retries,
     recovery_threshold, resend_interval_min, assignment_json, consensus_policy, paused,
     revision, created_ms, updated_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertMonitorParams struct {
@@ -702,6 +703,7 @@ type InsertMonitorParams struct {
 	Description       string
 	Type              string
 	ConfigJson        string
+	SecretsJson       string
 	IntervalS         int64
 	TimeoutS          int64
 	Retries           int64
@@ -723,6 +725,7 @@ func (q *Queries) InsertMonitor(ctx context.Context, arg InsertMonitorParams) er
 		arg.Description,
 		arg.Type,
 		arg.ConfigJson,
+		arg.SecretsJson,
 		arg.IntervalS,
 		arg.TimeoutS,
 		arg.Retries,
@@ -1095,7 +1098,7 @@ func (q *Queries) ListMonitorTags(ctx context.Context, arg ListMonitorTagsParams
 }
 
 const listMonitors = `-- name: ListMonitors :many
-SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms,
+SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
        CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
@@ -1162,6 +1165,7 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 			&i.Monitor.Revision,
 			&i.Monitor.CreatedMs,
 			&i.Monitor.UpdatedMs,
+			&i.Monitor.SecretsJson,
 			&i.StateStatus,
 			&i.StateConfirmed,
 			&i.StateSinceMs,
@@ -1714,17 +1718,18 @@ UPDATE monitors SET
     description         = ?2,
     type                = ?3,
     config_json         = ?4,
-    interval_s          = ?5,
-    timeout_s           = ?6,
-    retries             = ?7,
-    recovery_threshold  = ?8,
-    resend_interval_min = ?9,
-    assignment_json     = ?10,
-    consensus_policy    = ?11,
-    paused              = ?12,
-    revision            = ?13,
-    updated_ms          = ?14
-WHERE tenant_id = ?15 AND id = ?16 AND revision = ?17
+    secrets_json        = ?5,
+    interval_s          = ?6,
+    timeout_s           = ?7,
+    retries             = ?8,
+    recovery_threshold  = ?9,
+    resend_interval_min = ?10,
+    assignment_json     = ?11,
+    consensus_policy    = ?12,
+    paused              = ?13,
+    revision            = ?14,
+    updated_ms          = ?15
+WHERE tenant_id = ?16 AND id = ?17 AND revision = ?18
 `
 
 type UpdateMonitorParams struct {
@@ -1732,6 +1737,7 @@ type UpdateMonitorParams struct {
 	Description       string
 	Type              string
 	ConfigJson        string
+	SecretsJson       string
 	IntervalS         int64
 	TimeoutS          int64
 	Retries           int64
@@ -1753,6 +1759,7 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (i
 		arg.Description,
 		arg.Type,
 		arg.ConfigJson,
+		arg.SecretsJson,
 		arg.IntervalS,
 		arg.TimeoutS,
 		arg.Retries,

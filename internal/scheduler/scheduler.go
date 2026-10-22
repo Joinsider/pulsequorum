@@ -6,6 +6,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -56,6 +57,9 @@ type Options struct {
 	MaxConcurrent int
 	// Unit is the length of one interval second; tests shrink it.
 	Unit time.Duration
+	// Resolve returns the configuration with its secrets decrypted (ADR 0015);
+	// nil uses the stored configuration as it is.
+	Resolve func(ctx context.Context, m store.Monitor) (json.RawMessage, error)
 }
 
 // Stats are counters for metrics and tests.
@@ -254,7 +258,16 @@ func (s *Scheduler) execute(ctx context.Context, m store.Monitor) (res checker.R
 	if err != nil {
 		return checker.Result{Status: checker.StatusDown, ErrorClass: checker.ClassInternal, Message: err.Error()}
 	}
-	return c.Check(ctx, s.opts.Env, m.Config)
+	cfg := m.Config
+	if s.opts.Resolve != nil {
+		if cfg, err = s.opts.Resolve(ctx, m); err != nil {
+			// The error names pointers and keys, never secret values.
+			s.opts.Logger.Error("cannot decrypt monitor secrets", "monitor", m.ID, "err", err)
+			return checker.Result{Status: checker.StatusDown, ErrorClass: checker.ClassInternal,
+				Message: "the stored credentials of this monitor cannot be decrypted"}
+		}
+	}
+	return c.Check(ctx, s.opts.Env, cfg)
 }
 
 // Phase returns the deterministic offset of a monitor within its interval.

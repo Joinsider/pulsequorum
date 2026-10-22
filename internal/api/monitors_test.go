@@ -23,6 +23,7 @@ import (
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
@@ -49,6 +50,7 @@ type env struct {
 	// local and setupToken are set when the env uses real local authentication.
 	local      *auth.Local
 	setupToken string
+	keyring    *secrets.Keyring
 }
 
 func newEnv(t *testing.T) *env {
@@ -94,6 +96,7 @@ func newEnvWith(t *testing.T, localAuth bool) *env {
 	e := &env{t: t, metrics: metrics, node: node, state: state}
 	cfg := config.Config{NodeName: "n1", Role: config.RoleVoter}
 	kr := newTestKeyring(t)
+	e.keyring = kr
 	deps := Deps{
 		State: state, Metrics: metrics, Cluster: node, Registry: checker.Default,
 		CheckEnv: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"}, NodeID: "n1",

@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
@@ -75,6 +77,9 @@ type MonitorDocument struct {
 	Paused                bool             `json:"paused,omitempty"`
 	// NotificationChannelIDs must name channels of the same tenant (FA-ALR-01).
 	NotificationChannelIDs []string `json:"notificationChannelIds,omitempty"`
+	// Secrets are ciphertexts by JSON pointer into Config (ADR 0015); the API
+	// encrypts them before proposing, the FSM rejects plaintext.
+	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
 // ChannelDocument is the JSON document of a notification channel. The leader
@@ -138,6 +143,18 @@ type PutResult struct {
 // NewPutTenant builds a platform-level command that creates or updates a tenant.
 func NewPutTenant(requestID, tenantID string, doc TenantDocument) (*pb.Command, error) {
 	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_TENANT, tenantID, doc, 0)
+}
+
+// MonitorDocumentFrom returns the document that recreates a stored monitor,
+// e.g. to pause it or to rewrite its secrets. Secrets stay encrypted.
+func MonitorDocumentFrom(m store.Monitor) MonitorDocument {
+	return MonitorDocument{
+		Name: m.Name, Description: m.Description, Type: m.Type, Config: m.Config,
+		IntervalSeconds: m.IntervalSeconds, TimeoutSeconds: m.TimeoutSeconds, Retries: m.Retries,
+		RecoveryThreshold: m.RecoveryThreshold, ResendIntervalMinutes: m.ResendIntervalMinutes,
+		Assignment: m.Assignment, ConsensusPolicy: m.ConsensusPolicy, Tags: m.Tags, Paused: m.Paused,
+		NotificationChannelIDs: slices.Clone(m.ChannelIDs), Secrets: maps.Clone(m.Secrets),
+	}
 }
 
 // NewPutMonitor builds a command that creates (expectedRevision 0) or replaces a monitor.
