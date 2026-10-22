@@ -380,6 +380,8 @@ type State interface {
 	ListJoinTokens(ctx context.Context) ([]JoinToken, error)
 	// ListRevokedCerts returns the revoked certificates ordered by serial.
 	ListRevokedCerts(ctx context.Context) ([]RevokedCert, error)
+	// ListRevokedNodes returns the revoked nodes ordered by node ID.
+	ListRevokedNodes(ctx context.Context) ([]RevokedNode, error)
 
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
@@ -457,6 +459,9 @@ type StateTx interface {
 	PutRevokedCert(ctx context.Context, c RevokedCert) error
 	// PruneRevokedCerts deletes the entries whose certificate expired before beforeMs.
 	PruneRevokedCerts(ctx context.Context, beforeMs int64) error
+	// PutRevokedNode records a revoked node. A repeated revocation keeps the
+	// later RevokedMs.
+	PutRevokedNode(ctx context.Context, n RevokedNode) error
 
 	// CountUsers returns the number of users of all tenants.
 	CountUsers(ctx context.Context) (int, error)
@@ -533,6 +538,13 @@ type RevokedCert struct {
 	NodeID     string
 	RevokedMs  int64
 	NotAfterMs int64
+}
+
+// RevokedNode is a node whose certificates issued before RevokedMs must no
+// longer be accepted (FA-PKI-04).
+type RevokedNode struct {
+	NodeID    string
+	RevokedMs int64
 }
 
 // SecretKey is a data encryption key wrapped with the master key (ADR 0011).

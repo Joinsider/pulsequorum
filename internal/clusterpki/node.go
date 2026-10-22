@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,34 +21,56 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// Revocations caches the revocation list for TLS handshakes (FA-PKI-04).
-// The list is small (only unexpired certificates of removed nodes).
+// Revocations caches the revocation list for TLS handshakes (FA-PKI-04):
+// revoked serials and removed nodes. Both lists are small.
 type Revocations struct {
-	serials atomic.Pointer[map[string]struct{}]
+	list atomic.Pointer[revocationList]
+}
+
+type revocationList struct {
+	serials map[string]struct{}
+	nodes   map[string]time.Time
 }
 
 // Revoked reports whether a serial is revoked. Before the first load
 // nothing is revoked.
 func (r *Revocations) Revoked(serial string) bool {
-	m := r.serials.Load()
-	if m == nil {
+	l := r.list.Load()
+	if l == nil {
 		return false
 	}
-	_, ok := (*m)[serial]
+	_, ok := l.serials[serial]
 	return ok
 }
 
-// Reload reads the list from the state.
+// RevokedNode returns when a node was revoked (pki.Verifier.RevokedNode).
+func (r *Revocations) RevokedNode(nodeID string) (time.Time, bool) {
+	l := r.list.Load()
+	if l == nil {
+		return time.Time{}, false
+	}
+	at, ok := l.nodes[nodeID]
+	return at, ok
+}
+
+// Reload reads the lists from the state.
 func (r *Revocations) Reload(ctx context.Context, state store.State) error {
-	list, err := state.ListRevokedCerts(ctx)
+	certs, err := state.ListRevokedCerts(ctx)
 	if err != nil {
 		return err
 	}
-	m := make(map[string]struct{}, len(list))
-	for _, c := range list {
-		m[c.Serial] = struct{}{}
+	nodes, err := state.ListRevokedNodes(ctx)
+	if err != nil {
+		return err
 	}
-	r.serials.Store(&m)
+	l := &revocationList{serials: make(map[string]struct{}, len(certs)), nodes: make(map[string]time.Time, len(nodes))}
+	for _, c := range certs {
+		l.serials[c.Serial] = struct{}{}
+	}
+	for _, n := range nodes {
+		l.nodes[n.NodeID] = time.UnixMilli(n.RevokedMs)
+	}
+	r.list.Store(l)
 	return nil
 }
 
@@ -82,8 +105,12 @@ type NodeCert struct {
 	NodeID  string
 	Holder  pki.Holder
 
+	// mu guards key, leaf and ca: handshakes read them while renewal
+	// replaces them.
+	mu   sync.RWMutex
 	key  *ecdsa.PrivateKey
 	leaf *x509.Certificate
+	ca   *x509.Certificate
 }
 
 // Load reads the stored key and certificate, if any. A certificate whose key
@@ -126,12 +153,26 @@ func (n *NodeCert) Load() error {
 }
 
 // Leaf returns the current certificate, or nil.
-func (n *NodeCert) Leaf() *x509.Certificate { return n.leaf }
+func (n *NodeCert) Leaf() *x509.Certificate {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.leaf
+}
+
+// CA returns the CA certificate the node certificate was issued by, or nil.
+// It is the trust anchor of a joined node until the replicated state with
+// the CA bundle has arrived.
+func (n *NodeCert) CA() *x509.Certificate {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.ca
+}
 
 // NeedsRenewal reports whether there is no certificate or it reached its
 // renewal time.
 func (n *NodeCert) NeedsRenewal(now time.Time) bool {
-	return n.leaf == nil || !now.Before(pki.RenewAt(n.leaf))
+	leaf := n.Leaf()
+	return leaf == nil || !now.Before(pki.RenewAt(leaf))
 }
 
 // NewCSR creates a fresh key for the next certificate and returns its CSR;
@@ -189,7 +230,9 @@ func (n *NodeCert) Install(key *ecdsa.PrivateKey, issued Issued) error {
 }
 
 func (n *NodeCert) set(key *ecdsa.PrivateKey, chain []*x509.Certificate) {
-	n.key, n.leaf = key, chain[0]
+	n.mu.Lock()
+	n.key, n.leaf, n.ca = key, chain[0], chain[1]
+	n.mu.Unlock()
 	n.Holder.Set(pki.Leaf(chain[0], key, chain[1]))
 }
 
@@ -259,33 +302,46 @@ func parseChain(data []byte) ([]*x509.Certificate, error) {
 	return chain, nil
 }
 
-// EnsureSelf gives the leader a valid certificate: it loads the stored one
-// and issues a new one directly from the CA when there is none or it is due
-// for renewal. Followers get theirs at join and renew through the leader
-// (AP-2.2/2.3); for them EnsureSelf only loads.
-func (n *NodeCert) EnsureSelf(ctx context.Context, a *Authority, isLeader bool, now time.Time) error {
-	if n.leaf == nil {
+// IssueFunc obtains a certificate for a CSR: from the CA on the leader,
+// through RenewCertificate on the leader for followers.
+type IssueFunc func(ctx context.Context, csrDER []byte) (Issued, error)
+
+// Renew loads the stored certificate if needed and, when there is none or it
+// is due (FA-PKI-03), obtains a new one with a fresh key through issue. A nil
+// issue only loads.
+func (n *NodeCert) Renew(ctx context.Context, now time.Time, issue IssueFunc) error {
+	if n.Leaf() == nil {
 		if err := n.Load(); err != nil {
 			return err
 		}
 	}
-	if !n.NeedsRenewal(now) || !isLeader {
+	if !n.NeedsRenewal(now) || issue == nil {
 		return nil
 	}
 	key, csr, err := n.NewCSR()
 	if err != nil {
 		return err
 	}
-	issued, err := a.IssueSelf(ctx, n.NodeID, csr)
+	issued, err := issue(ctx, csr)
 	if err != nil {
 		return err
 	}
 	return n.Install(key, issued)
 }
 
+// EnsureSelf gives the leader a valid certificate issued directly by the CA
+// (bootstrap node, leader renewing its own); on followers it only loads.
+func (n *NodeCert) EnsureSelf(ctx context.Context, a *Authority, isLeader bool, now time.Time) error {
+	var issue IssueFunc
+	if isLeader {
+		issue = func(ctx context.Context, csr []byte) (Issued, error) { return a.IssueSelf(ctx, n.NodeID, csr) }
+	}
+	return n.Renew(ctx, now, issue)
+}
+
 // RunRenewal checks every interval whether the certificate is due and
-// renews it (FA-PKI-03).
-func (n *NodeCert) RunRenewal(ctx context.Context, a *Authority, isLeader func() bool, interval time.Duration, log *slog.Logger) {
+// renews it through the issuer chosen at that moment (FA-PKI-03).
+func (n *NodeCert) RunRenewal(ctx context.Context, issuer func() IssueFunc, interval time.Duration, log *slog.Logger) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -294,7 +350,7 @@ func (n *NodeCert) RunRenewal(ctx context.Context, a *Authority, isLeader func()
 			return
 		case <-ticker.C:
 		}
-		if err := n.EnsureSelf(ctx, a, isLeader(), time.Now()); err != nil && ctx.Err() == nil {
+		if err := n.Renew(ctx, time.Now(), issuer()); err != nil && ctx.Err() == nil {
 			log.Warn("renewing the node certificate failed", "err", err)
 		}
 	}

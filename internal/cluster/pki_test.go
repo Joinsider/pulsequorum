@@ -389,6 +389,62 @@ func TestRevokeCertificate(t *testing.T) {
 	}
 }
 
+// TestRevokeNode covers FA-PKI-04: a node revocation is stored with the command
+// time, node IDs are validated, and a repeated revocation keeps the later time.
+func TestRevokeNode(t *testing.T) {
+	r := newReplica(t)
+	tests := []struct {
+		name    string
+		node    string
+		wantErr error
+	}{
+		{"valid ID", "node-1_a", nil},
+		{"maximum length", strings.Repeat("a", 128), nil},
+		{"too long", strings.Repeat("a", 129), ErrInvalidCommand},
+		{"empty ID", "", ErrInvalidCommand},
+		{"space", "node 1", ErrInvalidCommand},
+		{"dot", "node.1", ErrInvalidCommand},
+		{"slash", "node/1", ErrInvalidCommand},
+		{"non-ASCII letter", "knoten-\u00e4", ErrInvalidCommand},
+		{"newline", "node-1\n", ErrInvalidCommand},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expectErr(t, r.apply(NewRevokeNode(fmt.Sprint("rn-", i), tt.node), 10_000), tt.wantErr)
+		})
+	}
+
+	// The result carries the revocation time.
+	res := r.apply(NewRevokeNode("rn-result", "node-2"), 11_000)
+	expectErr(t, res, nil)
+	if want := `{"revokedMs":11000}`; string(res.Result) != want {
+		t.Errorf("result = %s, want %s", res.Result, want)
+	}
+
+	// A repeated revocation with a later time replaces the earlier one.
+	expectErr(t, r.apply(NewRevokeNode("rn-later", "node-2"), 12_000), nil)
+	// An earlier time never moves the revocation back.
+	expectErr(t, r.apply(NewRevokeNode("rn-earlier", "node-2"), 11_500), nil)
+
+	list, err := r.st.ListRevokedNodes(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, n := range list {
+		got[n.NodeID] = n.RevokedMs
+	}
+	if got["node-1_a"] != 10_000 {
+		t.Errorf("node-1_a revoked at %d, want 10000", got["node-1_a"])
+	}
+	if got["node-2"] != 12_000 {
+		t.Errorf("node-2 revoked at %d, want the later 12000", got["node-2"])
+	}
+	if _, ok := got["node 1"]; ok {
+		t.Error("invalid node ID stored")
+	}
+}
+
 // TestPKICommandsAreDeterministic covers the determinism rule of the FSM: two
 // replicas applying the same log reach the same state and results.
 func TestPKICommandsAreDeterministic(t *testing.T) {
@@ -410,6 +466,9 @@ func TestPKICommandsAreDeterministic(t *testing.T) {
 			{NewRedeemJoinToken("pk-again", "det-tok", pki.HashSecret(secret), "n2"), 5300},
 			{NewRevokeCertificate("pk-rev", "abc123", "n1", 9000), 5400},
 			{NewDeleteJoinToken("pk-del", "det-tok"), 5500},
+			{NewRevokeNode("pk-node", "n1"), 5600},
+			{NewRevokeNode("pk-node-again", "n1"), 5700},
+			{NewRevokeNode("pk-node-bad", "n 1"), 5800},
 		}
 		var outcome strings.Builder
 		for _, s := range steps {

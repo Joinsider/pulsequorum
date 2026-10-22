@@ -43,6 +43,7 @@ message Command {
     RevokeSessions revoke_sessions = 21;
     RedeemJoinToken redeem_join_token = 22;
     RevokeCertificate revoke_certificate = 23;
+    RevokeNode revoke_node = 24;
   }
 }
 
@@ -223,4 +224,11 @@ message RevokeCertificate {
   string node_id = 2;
   // NotAfter of the certificate, UTC milliseconds.
   int64 not_after_ms = 3;
+}
+
+// RevokeNode rejects every certificate of a node issued before the command
+// time (FA-PKI-04): a removed node can no longer connect, while a later
+// re-join with a new token gets a certificate that is valid again.
+message RevokeNode {
+  string node_id = 1;
 }

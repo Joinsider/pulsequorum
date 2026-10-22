@@ -165,9 +165,10 @@ func handshake(t *testing.T, server, client *tls.Config) (srvErr, cliErr error) 
 }
 
 type cluster struct {
-	ca      *CA
-	revoked sync.Map
-	now     time.Time
+	ca          *CA
+	revoked     sync.Map
+	revokedNode map[string]time.Time
+	now         time.Time
 }
 
 func (c *cluster) verifier() *Verifier {
@@ -175,7 +176,11 @@ func (c *cluster) verifier() *Verifier {
 		ClusterID: c.ca.ClusterID(),
 		Roots:     func() []*x509.Certificate { return []*x509.Certificate{c.ca.Cert} },
 		Revoked:   func(s string) bool { _, ok := c.revoked.Load(s); return ok },
-		Now:       func() time.Time { return c.now },
+		RevokedNode: func(id string) (time.Time, bool) {
+			at, ok := c.revokedNode[id]
+			return at, ok
+		},
+		Now: func() time.Time { return c.now },
 	}
 }
 
@@ -224,6 +229,19 @@ func TestMutualTLS(t *testing.T) {
 		t.Errorf("revoked client: server error = %v", s)
 	}
 	c.revoked.Delete(SerialString(cli.cert))
+
+	// Revocation of the node rejects its older certificates, not newer ones.
+	revokedAt := now.Add(time.Minute)
+	c.revokedNode = map[string]time.Time{"cli": revokedAt}
+	if s, _ := handshake(t, serverCfg, clientCfg(cli, c.ca)); !errors.Is(s, ErrRevoked) {
+		t.Errorf("client of a revoked node: server error = %v", s)
+	}
+	rejoined := issue(t, c.ca, voter("c1", "cli"), revokedAt.Add(time.Second))
+	c.now = revokedAt.Add(2 * time.Second)
+	if s, cl := handshake(t, serverCfg, clientCfg(rejoined, c.ca)); s != nil || cl != nil {
+		t.Errorf("re-joined node: server %v, client %v", s, cl)
+	}
+	c.revokedNode, c.now = nil, now
 
 	// Expiry, with the clock past NotAfter.
 	c.now = cli.cert.NotAfter.Add(time.Minute)

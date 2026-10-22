@@ -164,6 +164,11 @@ type RevokedCert struct {
 	NotAfterMs int64
 }
 
+type RevokedNode struct {
+	NodeID    string
+	RevokedMs int64
+}
+
 type SecretKey struct {
 	KeyID          string
 	WrappedDek     []byte

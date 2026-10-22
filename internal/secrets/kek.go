@@ -44,6 +44,58 @@ type KEK struct {
 	Fingerprint string
 	// Source tells where the key came from (SourceEnv, SourceFile, SourceGenerated).
 	Source string
+	// generated keeps a generated key for the hand-over to joining voters
+	// (ADR 0011 option B); external keys are never kept or handed over.
+	generated []byte
+}
+
+// Transferable returns the key for a joining voter, only if it was generated
+// in the data directory. Operators who configure MASTER_KEY or
+// MASTER_KEY_FILE provide the same key to every voter themselves.
+func (k *KEK) Transferable() ([]byte, bool) {
+	if k.Source != SourceGenerated || len(k.generated) != KeySize {
+		return nil, false
+	}
+	return append([]byte(nil), k.generated...), true
+}
+
+// KeyFingerprint returns the fingerprint a key would have as KEK.
+func KeyFingerprint(key []byte) string {
+	sum := sha256.Sum256(append([]byte("uptimecluster-kek-v1:"), key...))
+	return hex.EncodeToString(sum[:16])
+}
+
+// InstallGenerated stores a master key received at join in dataDir, as if it
+// had been generated there. It never overwrites an existing key; an existing
+// key must be the same one (fingerprint), otherwise the node belongs to
+// another cluster.
+func InstallGenerated(dataDir string, key []byte, fingerprint string) error {
+	if len(key) != KeySize || KeyFingerprint(key) != fingerprint {
+		return errors.New("received master key does not match its fingerprint")
+	}
+	path := filepath.Join(dataDir, GeneratedKEKFile)
+	if raw, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: path is inside the data directory
+		existing, err := decodeKey(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if KeyFingerprint(existing) != fingerprint {
+			return fmt.Errorf("%s holds a different master key than the cluster; this data directory belongs to another cluster", path)
+		}
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path is inside the data directory
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	_, werr := f.WriteString(base64.StdEncoding.EncodeToString(key) + "\n")
+	serr := f.Sync()
+	cerr := f.Close()
+	if err := errors.Join(werr, serr, cerr); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // LoadKEK returns the master key from envKey (base64), from keyFile (base64 or
@@ -96,7 +148,7 @@ func loadOrGenerate(path string) (*KEK, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
-		return newKEK(key, SourceGenerated)
+		return newGeneratedKEK(key)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -118,7 +170,16 @@ func loadOrGenerate(path string) (*KEK, error) {
 		_ = os.Remove(path)
 		return nil, fmt.Errorf("write %s: %w", path, err)
 	}
-	return newKEK(key, SourceGenerated)
+	return newGeneratedKEK(key)
+}
+
+func newGeneratedKEK(key []byte) (*KEK, error) {
+	k, err := newKEK(key, SourceGenerated)
+	if err != nil {
+		return nil, err
+	}
+	k.generated = append([]byte(nil), key...)
+	return k, nil
 }
 
 func newKEK(key []byte, source string) (*KEK, error) {
@@ -126,8 +187,7 @@ func newKEK(key []byte, source string) (*KEK, error) {
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(append([]byte("uptimecluster-kek-v1:"), key...))
-	return &KEK{aead: aead, Fingerprint: hex.EncodeToString(sum[:16]), Source: source}, nil
+	return &KEK{aead: aead, Fingerprint: KeyFingerprint(key), Source: source}, nil
 }
 
 func newAEAD(key []byte) (cipher.AEAD, error) {

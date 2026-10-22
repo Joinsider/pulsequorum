@@ -1393,6 +1393,33 @@ func (q *Queries) ListRevokedCerts(ctx context.Context) ([]RevokedCert, error) {
 	return items, nil
 }
 
+const listRevokedNodes = `-- name: ListRevokedNodes :many
+SELECT node_id, revoked_ms FROM revoked_nodes ORDER BY node_id
+`
+
+func (q *Queries) ListRevokedNodes(ctx context.Context) ([]RevokedNode, error) {
+	rows, err := q.db.QueryContext(ctx, listRevokedNodes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RevokedNode{}
+	for rows.Next() {
+		var i RevokedNode
+		if err := rows.Scan(&i.NodeID, &i.RevokedMs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSecretKeys = `-- name: ListSecretKeys :many
 SELECT key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms FROM secret_keys ORDER BY created_ms, key_id
 `
@@ -1696,6 +1723,24 @@ func (q *Queries) PutRevokedCert(ctx context.Context, arg PutRevokedCertParams) 
 		arg.RevokedMs,
 		arg.NotAfterMs,
 	)
+	return err
+}
+
+const putRevokedNode = `-- name: PutRevokedNode :exec
+INSERT INTO revoked_nodes (node_id, revoked_ms)
+VALUES (?, ?)
+ON CONFLICT (node_id) DO UPDATE SET revoked_ms = MAX(revoked_nodes.revoked_ms, excluded.revoked_ms)
+`
+
+type PutRevokedNodeParams struct {
+	NodeID    string
+	RevokedMs int64
+}
+
+// A repeated revocation keeps the later time: a node revoked again stays
+// revoked for everything issued before the newer revocation.
+func (q *Queries) PutRevokedNode(ctx context.Context, arg PutRevokedNodeParams) error {
+	_, err := q.db.ExecContext(ctx, putRevokedNode, arg.NodeID, arg.RevokedMs)
 	return err
 }
 

@@ -423,3 +423,13 @@ SELECT * FROM revoked_certs ORDER BY serial;
 
 -- name: PruneRevokedCerts :exec
 DELETE FROM revoked_certs WHERE not_after_ms < ?;
+
+-- name: PutRevokedNode :exec
+-- A repeated revocation keeps the later time: a node revoked again stays
+-- revoked for everything issued before the newer revocation.
+INSERT INTO revoked_nodes (node_id, revoked_ms)
+VALUES (?, ?)
+ON CONFLICT (node_id) DO UPDATE SET revoked_ms = MAX(revoked_nodes.revoked_ms, excluded.revoked_ms);
+
+-- name: ListRevokedNodes :many
+SELECT * FROM revoked_nodes ORDER BY node_id;

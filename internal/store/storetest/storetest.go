@@ -58,6 +58,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"ClusterCAs", testClusterCAs},
 		{"JoinTokens", testJoinTokens},
 		{"RevokedCerts", testRevokedCerts},
+		{"RevokedNodes", testRevokedNodes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -2457,6 +2458,43 @@ func testJoinTokens(t *testing.T, s store.State) {
 	list, err := s.ListJoinTokens(ctx)
 	if err != nil || len(list) != 1 || list[0].ID != "t1" {
 		t.Fatalf("tokens = %+v, %v", list, err)
+	}
+}
+
+func testRevokedNodes(t *testing.T, s store.State) {
+	ctx := context.Background()
+	put := func(n store.RevokedNode) error {
+		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutRevokedNode(ctx, n) })
+	}
+	if err := put(store.RevokedNode{NodeID: "node-b", RevokedMs: 200}); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(store.RevokedNode{NodeID: "node-a", RevokedMs: 100}); err != nil {
+		t.Fatal(err)
+	}
+	// A repeated revocation keeps the later time, whatever the order.
+	if err := put(store.RevokedNode{NodeID: "node-a", RevokedMs: 300}); err != nil {
+		t.Fatalf("second revocation: %v", err)
+	}
+	if err := put(store.RevokedNode{NodeID: "node-b", RevokedMs: 150}); err != nil {
+		t.Fatalf("earlier revocation: %v", err)
+	}
+	if err := put(store.RevokedNode{RevokedMs: 400}); err == nil {
+		t.Error("revocation without node ID accepted")
+	}
+
+	list, err := s.ListRevokedNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.RevokedNode{{NodeID: "node-a", RevokedMs: 300}, {NodeID: "node-b", RevokedMs: 200}}
+	if len(list) != len(want) {
+		t.Fatalf("revoked nodes = %+v, want %+v", list, want)
+	}
+	for i := range want {
+		if list[i] != want[i] {
+			t.Errorf("revoked node %d = %+v, want %+v", i, list[i], want[i])
+		}
 	}
 }
 

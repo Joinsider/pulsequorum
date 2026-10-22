@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,12 +30,11 @@ import (
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
 	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusterpki"
+	"github.com/joinsider/uptimecluster/internal/clusterhost"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/node"
-	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/server"
@@ -97,9 +97,6 @@ const (
 	checkpointInterval = 60 * time.Second
 	// reconcileInterval bounds how long the scheduler may miss a change signal.
 	reconcileInterval = 30 * time.Second
-	// revocationReload bounds how long a revoked certificate stays usable
-	// on other nodes (FA-PKI-04).
-	revocationReload = 10 * time.Second
 )
 
 func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
@@ -134,32 +131,44 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	joinToken, err := readJoinToken(cfg)
+	if err != nil {
+		return err
+	}
+	// Join before the master key is loaded: a joining voter takes the
+	// cluster's key instead of generating its own (ADR 0011).
+	prepared, err := clusterhost.Prepare(ctx, cfg.DataDir, nodeID, cfg.NodeName, cfg.ClusterAdvertise, version.Version,
+		clusterhost.JoinOptions{Seeds: cfg.ClusterJoin, Token: joinToken, ExternalKEK: cfg.MasterKey != "" || cfg.MasterKeyFile != ""}, log)
+	if err != nil {
+		return err
+	}
 	kek, err := secrets.LoadKEK(cfg.DataDir, cfg.MasterKey, cfg.MasterKeyFile)
 	if err != nil {
 		return fmt.Errorf("master key: %w", err)
+	}
+	if err := prepared.CheckKEK(kek); err != nil {
+		return err
 	}
 	log.Info("master key loaded", "source", kek.Source, "fingerprint", kek.Fingerprint)
 	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthZitadel {
 		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
 	}
 
-	raftNode, err := cluster.Start(ctx, cluster.Config{
-		NodeID:       nodeID,
-		Advertise:    cfg.ClusterAdvertise,
-		DataDir:      cfg.DataDir,
-		Timeout:      cfg.RaftTimeout,
-		Logger:       log,
-		RaftLogLevel: cfg.LogLevel.String(),
-		RaftLogJSON:  cfg.LogFormat == "json",
-	}, state, stop)
+	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
+	host, err := clusterhost.Start(ctx, clusterhost.Options{
+		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
+		Timeout: cfg.RaftTimeout, State: state, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
+		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
+	})
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := raftNode.Shutdown(); err != nil {
+		if err := host.Close(); err != nil {
 			log.Warn("raft shutdown", "err", err)
 		}
 	}()
+	raftNode := host.Node
 	log.Info("node ready", "node_id", nodeID, "advertise", cfg.ClusterAdvertise)
 
 	// Live stream (FA-API-04): committed status changes reach the hub through
@@ -179,24 +188,23 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bg.Go(func() { state.DB().RunCheckpointer(ctx, checkpointInterval, log) })
 	bg.Go(func() { metrics.DB().RunCheckpointer(ctx, checkpointInterval, log) })
 
-	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
 	var local *auth.Local
 	if cfg.AuthMode == config.AuthLocal {
 		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log})
 	}
-	authority := &clusterpki.Authority{State: state, Cluster: raftNode, Keyring: keyring}
-	nodeCert := &clusterpki.NodeCert{DataDir: cfg.DataDir, NodeID: nodeID}
-	revocations := &clusterpki.Revocations{}
 	bg.Go(func() {
 		if bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) {
-			bootstrapPKI(ctx, log, raftNode, authority, nodeCert)
-			bg.Go(func() { nodeCert.RunRenewal(ctx, authority, raftNode.IsLeader, time.Hour, log) })
+			bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			if err := host.Bootstrap(bootCtx); err != nil && ctx.Err() == nil {
+				log.Error("cluster PKI setup failed", "err", err)
+			}
+			cancel()
 		}
 		if local != nil {
 			local.RunKeyMaintenance(ctx, raftNode.IsLeader, time.Hour)
 		}
 	})
-	bg.Go(func() { revocations.Run(ctx, state, revocationReload, log) })
+	bg.Go(func() { host.Run(ctx) })
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
 	bg.Go(func() { bridge.Run(ctx) })
 
@@ -317,29 +325,6 @@ func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, 
 	return true
 }
 
-// bootstrapPKI creates the cluster CA on the leader and gives this node its
-// certificate (ADR 0006, FA-PKI-01). The certificates secure the cluster
-// port once the transport uses mTLS (AP-2.2).
-func bootstrapPKI(ctx context.Context, log *slog.Logger, n *cluster.Node, a *clusterpki.Authority, nc *clusterpki.NodeCert) {
-	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := a.Ensure(bootCtx, n.IsLeader()); err != nil {
-		if ctx.Err() == nil {
-			log.Error("could not create the cluster CA", "err", err)
-		}
-		return
-	}
-	if err := nc.EnsureSelf(bootCtx, a, n.IsLeader(), time.Now()); err != nil {
-		if ctx.Err() == nil {
-			log.Error("could not set up the node certificate", "err", err)
-		}
-		return
-	}
-	if leaf := nc.Leaf(); leaf != nil {
-		log.Info("node certificate ready", "serial", pki.SerialString(leaf), "renew_at", pki.RenewAt(leaf).UTC())
-	}
-}
-
 func newLogger(cfg config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
 	if cfg.LogFormat == "text" {
@@ -376,4 +361,17 @@ func healthcheck() int {
 		return 1
 	}
 	return 0
+}
+
+// readJoinToken returns the join token from JOIN_TOKEN or JOIN_TOKEN_FILE.
+// It is a secret and never logged.
+func readJoinToken(cfg config.Config) (string, error) {
+	if cfg.JoinTokenFile == "" {
+		return cfg.JoinToken, nil
+	}
+	raw, err := os.ReadFile(cfg.JoinTokenFile)
+	if err != nil {
+		return "", fmt.Errorf("JOIN_TOKEN_FILE: %w", err)
+	}
+	return strings.TrimSpace(string(raw)), nil
 }

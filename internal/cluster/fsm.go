@@ -244,6 +244,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRedeemJoinToken(ctx, tx, cmd, p.RedeemJoinToken)
 	case *pb.Command_RevokeCertificate:
 		return applyRevokeCertificate(ctx, tx, cmd, p.RevokeCertificate)
+	case *pb.Command_RevokeNode:
+		return applyRevokeNode(ctx, tx, cmd, p.RevokeNode)
 	case nil:
 		return nil, invalid("command without payload")
 	default:

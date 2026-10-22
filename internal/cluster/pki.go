@@ -93,6 +93,20 @@ func NewRevokeCertificate(requestID, serial, nodeID string, notAfterMs int64) *p
 	}
 }
 
+// NewRevokeNode builds the platform-level command that revokes all certificates
+// of a node issued so far (FA-PKI-04). The command time is the revocation time.
+func NewRevokeNode(requestID, nodeID string) *pb.Command {
+	return &pb.Command{
+		Version: CommandVersion, RequestId: requestID,
+		Payload: &pb.Command_RevokeNode{RevokeNode: &pb.RevokeNode{NodeId: nodeID}},
+	}
+}
+
+// RevokeNodeResult is the result of a node revocation: the revocation time.
+type RevokeNodeResult struct {
+	RevokedMs int64 `json:"revokedMs"`
+}
+
 func applyPutClusterCA(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity) (json.RawMessage, error) {
 	var doc CADocument
 	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
@@ -253,6 +267,36 @@ func applyRevokeCertificate(ctx context.Context, tx store.StateTx, cmd *pb.Comma
 		return nil, err
 	}
 	return json.Marshal(PutResult{ID: r.GetSerial()})
+}
+
+// applyRevokeNode revokes a node: its certificates issued before the command
+// time are rejected from now on (FA-PKI-04). A repeated revocation keeps the
+// later time in the store.
+func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *pb.RevokeNode) (json.RawMessage, error) {
+	id := r.GetNodeId()
+	if !isNodeID(id) {
+		return nil, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
+	}
+	now := cmd.GetIssuedAtMs()
+	if err := tx.PutRevokedNode(ctx, store.RevokedNode{NodeID: id, RevokedMs: now}); err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(RevokeNodeResult{RevokedMs: now})
+}
+
+// isNodeID reports whether s is a valid node ID: 1 to 128 characters of ASCII
+// letters, digits, '_' and '-'.
+func isNodeID(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // isFingerprint reports whether s is a base64url SHA-256 without padding (43 characters).

@@ -55,8 +55,12 @@ type Config struct {
 	SnapshotInterval  time.Duration
 
 	// Transport defaults to an in-memory transport on Advertise, which is all a
-	// single-member cluster needs; the mTLS transport follows in phase 2.
+	// single-member cluster in tests needs; voters use the mTLS cluster port.
 	Transport raft.Transport
+
+	// Join marks a node that joins an existing cluster: without Raft state it
+	// waits to be added instead of bootstrapping (FA-CLU-02/03, ADR 0005 6).
+	Join bool
 
 	Logger *slog.Logger
 	// RaftLogLevel and RaftLogJSON configure the library logger.
@@ -156,6 +160,10 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		return n, nil
 	}
 
+	if cfg.Join {
+		log.Info("no raft state found, waiting to be added to the cluster", "node_id", cfg.NodeID, "address", cfg.Advertise)
+		return n, nil
+	}
 	log.Info("no raft state found, bootstrapping a single-member cluster", "node_id", cfg.NodeID, "address", cfg.Advertise)
 	err = r.BootstrapCluster(raft.Configuration{Servers: []raft.Server{{
 		Suffrage: raft.Voter,
@@ -167,6 +175,25 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		return nil, fmt.Errorf("bootstrap: %w", err)
 	}
 	return n, nil
+}
+
+// HasState reports whether dataDir holds Raft state (log or snapshot), so
+// the node belongs to a cluster already (FA-CLU-02). Call it before Start.
+func HasState(dataDir string) (bool, error) {
+	dir := filepath.Join(dataDir, "raft")
+	if _, err := os.Stat(filepath.Join(dir, "raft.db")); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, "raft.db"))
+	if err != nil {
+		return false, fmt.Errorf("open raft log store: %w", err)
+	}
+	defer func() { _ = bolt.Close() }()
+	snaps, err := raft.NewFileSnapshotStoreWithLogger(dir, retainedSnapshots, hclog.NewNullLogger())
+	if err != nil {
+		return false, fmt.Errorf("open snapshot store: %w", err)
+	}
+	return raft.HasExistingState(bolt, bolt, snaps)
 }
 
 func orDefault(v, def uint64) uint64 {
@@ -258,15 +285,90 @@ func (n *Node) Status() Status {
 		}
 	}
 	return Status{
-		NodeID:        n.cfg.NodeID,
-		RaftState:     n.raft.State().String(),
-		AppliedIndex:  n.fsm.AppliedIndex(),
+		NodeID:    n.cfg.NodeID,
+		RaftState: n.raft.State().String(),
+		// Raft's applied index also counts configuration entries, which never
+		// reach the FSM; a joiner's own AddNonvoter entry is one of them, and
+		// the promotion waits for it (ADR 0012 A3).
+		AppliedIndex:  max(n.fsm.AppliedIndex(), n.raft.AppliedIndex()),
 		CommitIndex:   commit,
 		LastLogIndex:  n.raft.LastIndex(),
 		LastContactMs: lastContact,
 		LeaderID:      string(leaderID),
 	}
 }
+
+// Member is a server of the Raft configuration.
+type Member struct {
+	ID      string
+	Address string
+	Voter   bool
+}
+
+// Members returns the current Raft configuration and its index, which
+// membership changes pass as prevIndex so that a concurrent change makes
+// them fail instead of overwriting it (ADR 0012 A4).
+func (n *Node) Members() ([]Member, uint64, error) {
+	f := n.raft.GetConfiguration()
+	if err := f.Error(); err != nil {
+		return nil, 0, err
+	}
+	var out []Member
+	for _, s := range f.Configuration().Servers {
+		out = append(out, Member{ID: string(s.ID), Address: string(s.Address), Voter: s.Suffrage == raft.Voter})
+	}
+	return out, f.Index(), nil
+}
+
+// ErrMembershipChanged means the configuration changed since prevIndex.
+var ErrMembershipChanged = errors.New("cluster membership changed concurrently")
+
+func membershipError(err error) error {
+	switch {
+	case errors.Is(err, raft.ErrNotLeader):
+		return fmt.Errorf("%w: %w", ErrNotApplied, err)
+	case err != nil && strings.Contains(err.Error(), "configuration changed since"):
+		return fmt.Errorf("%w: %w", ErrMembershipChanged, err)
+	}
+	return err
+}
+
+// AddNonvoter adds a server that receives the log but does not vote (or
+// updates its address) and returns the index of the configuration entry.
+func (n *Node) AddNonvoter(id, address string, prevIndex uint64, timeout time.Duration) (uint64, error) {
+	f := n.raft.AddNonvoter(raft.ServerID(id), raft.ServerAddress(address), prevIndex, timeout)
+	if err := f.Error(); err != nil {
+		return 0, membershipError(err)
+	}
+	return f.Index(), nil
+}
+
+// AddVoter promotes a server to voter (or updates the address of a voter).
+func (n *Node) AddVoter(id, address string, prevIndex uint64, timeout time.Duration) (uint64, error) {
+	f := n.raft.AddVoter(raft.ServerID(id), raft.ServerAddress(address), prevIndex, timeout)
+	if err := f.Error(); err != nil {
+		return 0, membershipError(err)
+	}
+	return f.Index(), nil
+}
+
+// RemoveServer removes a server from the configuration.
+func (n *Node) RemoveServer(id string, prevIndex uint64, timeout time.Duration) (uint64, error) {
+	f := n.raft.RemoveServer(raft.ServerID(id), prevIndex, timeout)
+	if err := f.Error(); err != nil {
+		return 0, membershipError(err)
+	}
+	return f.Index(), nil
+}
+
+// Leader returns the address and ID of the current leader ("" if unknown).
+func (n *Node) Leader() (address, id string) {
+	a, i := n.raft.LeaderWithID()
+	return string(a), string(i)
+}
+
+// ID returns this node's ID.
+func (n *Node) ID() string { return n.cfg.NodeID }
 
 // Snapshot forces a Raft snapshot (used by tests and admin tooling).
 func (n *Node) Snapshot() error {

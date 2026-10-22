@@ -25,10 +25,17 @@ var (
 // handshake, so updates (CA rotation, new revocations) apply immediately.
 type Verifier struct {
 	ClusterID string
+	// ClusterIDFunc, if set, replaces ClusterID; nodes learn the cluster ID
+	// only after bootstrap or join.
+	ClusterIDFunc func() string
 	// Roots returns the trusted CA certificates (several during CA rotation).
 	Roots func() []*x509.Certificate
 	// Revoked reports whether a serial (SerialString) is revoked.
 	Revoked func(serial string) bool
+	// RevokedNode returns when a node was revoked (removed from the cluster);
+	// its certificates issued before that time are rejected, a later re-join
+	// gets a valid one.
+	RevokedNode func(nodeID string) (time.Time, bool)
 	// Now is the clock; nil uses time.Now.
 	Now func() time.Time
 }
@@ -60,7 +67,17 @@ func (v *Verifier) Verify(chain []*x509.Certificate, usage x509.ExtKeyUsage) (Id
 	if err != nil {
 		return Identity{}, err
 	}
-	if id.ClusterID != v.ClusterID {
+	if v.RevokedNode != nil {
+		// NotBefore is backdated; the certificate was issued Backdate later.
+		if at, ok := v.RevokedNode(id.NodeID); ok && !leaf.NotBefore.Add(Backdate).After(at) {
+			return Identity{}, ErrRevoked
+		}
+	}
+	want := v.ClusterID
+	if v.ClusterIDFunc != nil {
+		want = v.ClusterIDFunc()
+	}
+	if want == "" || id.ClusterID != want {
 		return Identity{}, ErrWrongCluster
 	}
 	return id, nil

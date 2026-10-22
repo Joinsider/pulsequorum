@@ -69,6 +69,21 @@ func (s *StateStore) ListRevokedCerts(ctx context.Context) ([]store.RevokedCert,
 	return out, nil
 }
 
+// ListRevokedNodes returns the revoked nodes ordered by node ID.
+func (s *StateStore) ListRevokedNodes(ctx context.Context) ([]store.RevokedNode, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.q.ListRevokedNodes(ctx)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.RevokedNode, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.RevokedNode{NodeID: r.NodeID, RevokedMs: r.RevokedMs})
+	}
+	return out, nil
+}
+
 func (t *stateTx) ListClusterCAs(ctx context.Context) ([]store.ClusterCA, error) {
 	rows, err := t.q.ListClusterCAs(ctx)
 	if err != nil {
@@ -146,6 +161,13 @@ func (t *stateTx) PutRevokedCert(ctx context.Context, c store.RevokedCert) error
 
 func (t *stateTx) PruneRevokedCerts(ctx context.Context, beforeMs int64) error {
 	return mapErr(t.q.PruneRevokedCerts(ctx, beforeMs))
+}
+
+func (t *stateTx) PutRevokedNode(ctx context.Context, n store.RevokedNode) error {
+	if n.NodeID == "" {
+		return errors.New("put revoked node: node ID is required")
+	}
+	return mapErr(t.q.PutRevokedNode(ctx, statedb.PutRevokedNodeParams{NodeID: n.NodeID, RevokedMs: n.RevokedMs}))
 }
 
 func getJoinToken(ctx context.Context, q *statedb.Queries, id string) (store.JoinToken, error) {
