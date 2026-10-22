@@ -55,6 +55,9 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"SigningKeys", testSigningKeys},
 		{"Sessions", testSessions},
 		{"StatusHistoryBatch", testStatusHistoryBatch},
+		{"ClusterCAs", testClusterCAs},
+		{"JoinTokens", testJoinTokens},
+		{"RevokedCerts", testRevokedCerts},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -2321,5 +2324,178 @@ func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	}
 	if _, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, 0); err == nil {
 		t.Error("batch size 0 accepted")
+	}
+}
+
+// --- Cluster PKI ------------------------------------------------------------
+
+func newClusterCA(fingerprint string, createdMs int64) store.ClusterCA {
+	return store.ClusterCA{
+		Fingerprint: fingerprint,
+		ClusterID:   "cluster-1",
+		CertDER:     []byte("der-" + fingerprint),
+		KeyEnc:      "enc:v1:key-1:" + fingerprint,
+		CreatedMs:   createdMs,
+	}
+}
+
+func putClusterCA(t *testing.T, s store.State, ca store.ClusterCA) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.PutClusterCA(ctx, ca)
+	})
+}
+
+func testClusterCAs(t *testing.T, s store.State) {
+	ctx := context.Background()
+	if cas, err := s.ListClusterCAs(ctx); err != nil || len(cas) != 0 {
+		t.Fatalf("initial CAs = %v, %v", cas, err)
+	}
+	if err := putClusterCA(t, s, newClusterCA("fp-2", 200)); err != nil {
+		t.Fatal(err)
+	}
+	if err := putClusterCA(t, s, newClusterCA("fp-1", 100)); err != nil {
+		t.Fatal(err)
+	}
+	if err := putClusterCA(t, s, newClusterCA("fp-1", 300)); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate CA error = %v, want ErrConflict", err)
+	}
+	if err := putClusterCA(t, s, store.ClusterCA{Fingerprint: "fp-3"}); err == nil {
+		t.Error("incomplete CA accepted")
+	}
+
+	cas, err := s.ListClusterCAs(ctx)
+	if err != nil || len(cas) != 2 {
+		t.Fatalf("CAs = %+v, %v", cas, err)
+	}
+	want := newClusterCA("fp-1", 100)
+	if cas[0].Fingerprint != "fp-1" || cas[0].CreatedMs != 100 || cas[0].ClusterID != want.ClusterID ||
+		string(cas[0].CertDER) != string(want.CertDER) || cas[0].KeyEnc != want.KeyEnc {
+		t.Errorf("CA fp-1 = %+v", cas[0])
+	}
+	if cas[1].Fingerprint != "fp-2" {
+		t.Errorf("second CA = %+v, want fp-2 (ordered by creation)", cas[1])
+	}
+}
+
+func newJoinToken(id, role, tenantID string, createdMs, expiresMs int64) store.JoinToken {
+	return store.JoinToken{
+		ID: id, SecretHash: "hash-" + id, Role: role, TenantID: tenantID,
+		CreatedMs: createdMs, ExpiresMs: expiresMs,
+	}
+}
+
+func putJoinToken(t *testing.T, s store.State, jt store.JoinToken) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.InsertJoinToken(ctx, jt)
+	})
+}
+
+func markJoinTokenUsed(t *testing.T, s store.State, id string, usedMs int64, usedBy string) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.MarkJoinTokenUsed(ctx, id, usedMs, usedBy)
+	})
+}
+
+func testJoinTokens(t *testing.T, s store.State) {
+	ctx := context.Background()
+	if err := putJoinToken(t, s, newJoinToken("t1", "voter", "", 100, 5000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := putJoinToken(t, s, newJoinToken("t2", "probe", tenantA, 200, 6000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := putJoinToken(t, s, newJoinToken("t1", "probe", "", 300, 7000)); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("duplicate token error = %v, want ErrConflict", err)
+	}
+	if _, err := s.GetJoinToken(ctx, "unknown"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown token error = %v, want ErrNotFound", err)
+	}
+
+	// The first redemption is kept; a second one is a conflict.
+	if err := markJoinTokenUsed(t, s, "t1", 400, "node-1"); err != nil {
+		t.Fatalf("redeem: %v", err)
+	}
+	if err := markJoinTokenUsed(t, s, "t1", 450, "node-2"); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("second redemption error = %v, want ErrConflict", err)
+	}
+	if err := markJoinTokenUsed(t, s, "unknown", 450, "node-2"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("redeem unknown error = %v, want ErrNotFound", err)
+	}
+	got, err := s.GetJoinToken(ctx, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UsedMs != 400 || got.UsedBy != "node-1" || got.Role != "voter" || got.TenantID != "" ||
+		got.SecretHash != "hash-t1" || got.ExpiresMs != 5000 || got.CreatedMs != 100 {
+		t.Errorf("t1 = %+v", got)
+	}
+	if got, err := s.GetJoinToken(ctx, "t2"); err != nil || got.UsedMs != 0 || got.TenantID != tenantA {
+		t.Errorf("unused t2 = %+v, %v", got, err)
+	}
+
+	// Pruning removes expired tokens only.
+	if err := putJoinToken(t, s, newJoinToken("t3", "probe", "", 50, 1000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneJoinTokens(ctx, 2000) }); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if _, err := s.GetJoinToken(ctx, "t3"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expired token after prune error = %v, want ErrNotFound", err)
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeleteJoinToken(ctx, "t2") }); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeleteJoinToken(ctx, "t2") }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete unknown error = %v, want ErrNotFound", err)
+	}
+
+	list, err := s.ListJoinTokens(ctx)
+	if err != nil || len(list) != 1 || list[0].ID != "t1" {
+		t.Fatalf("tokens = %+v, %v", list, err)
+	}
+}
+
+func testRevokedCerts(t *testing.T, s store.State) {
+	ctx := context.Background()
+	put := func(c store.RevokedCert) error {
+		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutRevokedCert(ctx, c) })
+	}
+	if err := put(store.RevokedCert{Serial: "b2", NodeID: "n2", RevokedMs: 200, NotAfterMs: 3000}); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(store.RevokedCert{Serial: "a1", NodeID: "n1", RevokedMs: 100, NotAfterMs: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	// A repeated revocation changes nothing.
+	if err := put(store.RevokedCert{Serial: "a1", NodeID: "other", RevokedMs: 150, NotAfterMs: 9000}); err != nil {
+		t.Fatalf("repeated revocation: %v", err)
+	}
+	if err := put(store.RevokedCert{Serial: "c3"}); err == nil {
+		t.Error("incomplete revocation accepted")
+	}
+
+	list, err := s.ListRevokedCerts(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("revoked = %+v, %v", list, err)
+	}
+	if list[0] != (store.RevokedCert{Serial: "a1", NodeID: "n1", RevokedMs: 100, NotAfterMs: 1000}) {
+		t.Errorf("a1 = %+v", list[0])
+	}
+	if list[1].Serial != "b2" {
+		t.Errorf("second = %+v, want b2", list[1])
+	}
+
+	// Pruning removes entries of certificates that expired before the cut-off.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneRevokedCerts(ctx, 2000) }); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	list, err = s.ListRevokedCerts(ctx)
+	if err != nil || len(list) != 1 || list[0].Serial != "b2" {
+		t.Errorf("after prune = %+v, %v", list, err)
 	}
 }

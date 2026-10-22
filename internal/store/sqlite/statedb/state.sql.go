@@ -73,6 +73,18 @@ func (q *Queries) DeleteChannel(ctx context.Context, arg DeleteChannelParams) (i
 	return result.RowsAffected()
 }
 
+const deleteJoinToken = `-- name: DeleteJoinToken :execrows
+DELETE FROM join_tokens WHERE id = ?
+`
+
+func (q *Queries) DeleteJoinToken(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteJoinToken, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteMaintenanceWindow = `-- name: DeleteMaintenanceWindow :execrows
 DELETE FROM maintenance_windows WHERE tenant_id = ? AND id = ?
 `
@@ -319,6 +331,39 @@ func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIn
 		&i.Incident.AffectedNodesJson,
 		&i.Incident.Confirmed,
 		&i.MonitorName,
+	)
+	return i, err
+}
+
+const getJoinToken = `-- name: GetJoinToken :one
+SELECT id, secret_hash, role, tenant_id, expires_ms, created_ms,
+       CAST(COALESCE(used_ms, 0) AS INTEGER) AS used_ms, used_by
+FROM join_tokens WHERE id = ?
+`
+
+type GetJoinTokenRow struct {
+	ID         string
+	SecretHash string
+	Role       string
+	TenantID   string
+	ExpiresMs  int64
+	CreatedMs  int64
+	UsedMs     int64
+	UsedBy     string
+}
+
+func (q *Queries) GetJoinToken(ctx context.Context, id string) (GetJoinTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getJoinToken, id)
+	var i GetJoinTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.SecretHash,
+		&i.Role,
+		&i.TenantID,
+		&i.ExpiresMs,
+		&i.CreatedMs,
+		&i.UsedMs,
+		&i.UsedBy,
 	)
 	return i, err
 }
@@ -598,6 +643,30 @@ func (q *Queries) InsertChannel(ctx context.Context, arg InsertChannelParams) er
 	return err
 }
 
+const insertClusterCA = `-- name: InsertClusterCA :exec
+INSERT INTO cluster_ca (fingerprint, cluster_id, cert_der, key_enc, created_ms)
+VALUES (?, ?, ?, ?, ?)
+`
+
+type InsertClusterCAParams struct {
+	Fingerprint string
+	ClusterID   string
+	CertDer     []byte
+	KeyEnc      string
+	CreatedMs   int64
+}
+
+func (q *Queries) InsertClusterCA(ctx context.Context, arg InsertClusterCAParams) error {
+	_, err := q.db.ExecContext(ctx, insertClusterCA,
+		arg.Fingerprint,
+		arg.ClusterID,
+		arg.CertDer,
+		arg.KeyEnc,
+		arg.CreatedMs,
+	)
+	return err
+}
+
 const insertDedup = `-- name: InsertDedup :exec
 INSERT INTO request_dedup (request_id, applied_index, issued_at_ms, result_json, error_code, error_message)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -650,6 +719,32 @@ func (q *Queries) InsertIncident(ctx context.Context, arg InsertIncidentParams) 
 		arg.ErrorClass,
 		arg.AffectedNodesJson,
 		arg.Confirmed,
+	)
+	return err
+}
+
+const insertJoinToken = `-- name: InsertJoinToken :exec
+INSERT INTO join_tokens (id, secret_hash, role, tenant_id, expires_ms, created_ms)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertJoinTokenParams struct {
+	ID         string
+	SecretHash string
+	Role       string
+	TenantID   string
+	ExpiresMs  int64
+	CreatedMs  int64
+}
+
+func (q *Queries) InsertJoinToken(ctx context.Context, arg InsertJoinTokenParams) error {
+	_, err := q.db.ExecContext(ctx, insertJoinToken,
+		arg.ID,
+		arg.SecretHash,
+		arg.Role,
+		arg.TenantID,
+		arg.ExpiresMs,
+		arg.CreatedMs,
 	)
 	return err
 }
@@ -920,6 +1015,39 @@ func (q *Queries) ListChannels(ctx context.Context, tenantID string) ([]Notifica
 	return items, nil
 }
 
+const listClusterCAs = `-- name: ListClusterCAs :many
+SELECT fingerprint, cluster_id, cert_der, key_enc, created_ms FROM cluster_ca ORDER BY created_ms, fingerprint
+`
+
+func (q *Queries) ListClusterCAs(ctx context.Context) ([]ClusterCa, error) {
+	rows, err := q.db.QueryContext(ctx, listClusterCAs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClusterCa{}
+	for rows.Next() {
+		var i ClusterCa
+		if err := rows.Scan(
+			&i.Fingerprint,
+			&i.ClusterID,
+			&i.CertDer,
+			&i.KeyEnc,
+			&i.CreatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIncidents = `-- name: ListIncidents :many
 SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
 FROM incidents i
@@ -982,6 +1110,55 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			&i.Incident.AffectedNodesJson,
 			&i.Incident.Confirmed,
 			&i.MonitorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listJoinTokens = `-- name: ListJoinTokens :many
+SELECT id, secret_hash, role, tenant_id, expires_ms, created_ms,
+       CAST(COALESCE(used_ms, 0) AS INTEGER) AS used_ms, used_by
+FROM join_tokens ORDER BY created_ms, id
+`
+
+type ListJoinTokensRow struct {
+	ID         string
+	SecretHash string
+	Role       string
+	TenantID   string
+	ExpiresMs  int64
+	CreatedMs  int64
+	UsedMs     int64
+	UsedBy     string
+}
+
+func (q *Queries) ListJoinTokens(ctx context.Context) ([]ListJoinTokensRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJoinTokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListJoinTokensRow{}
+	for rows.Next() {
+		var i ListJoinTokensRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SecretHash,
+			&i.Role,
+			&i.TenantID,
+			&i.ExpiresMs,
+			&i.CreatedMs,
+			&i.UsedMs,
+			&i.UsedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1184,6 +1361,38 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 	return items, nil
 }
 
+const listRevokedCerts = `-- name: ListRevokedCerts :many
+SELECT serial, node_id, revoked_ms, not_after_ms FROM revoked_certs ORDER BY serial
+`
+
+func (q *Queries) ListRevokedCerts(ctx context.Context) ([]RevokedCert, error) {
+	rows, err := q.db.QueryContext(ctx, listRevokedCerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RevokedCert{}
+	for rows.Next() {
+		var i RevokedCert
+		if err := rows.Scan(
+			&i.Serial,
+			&i.NodeID,
+			&i.RevokedMs,
+			&i.NotAfterMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSecretKeys = `-- name: ListSecretKeys :many
 SELECT key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms FROM secret_keys ORDER BY created_ms, key_id
 `
@@ -1342,6 +1551,25 @@ func (q *Queries) MaintenanceWindowRevision(ctx context.Context, arg Maintenance
 	return revision, err
 }
 
+const markJoinTokenUsed = `-- name: MarkJoinTokenUsed :execrows
+UPDATE join_tokens SET used_ms = ?, used_by = ? WHERE id = ? AND used_ms IS NULL
+`
+
+type MarkJoinTokenUsedParams struct {
+	UsedMs sql.NullInt64
+	UsedBy string
+	ID     string
+}
+
+// The first redemption is kept: a token with used_ms set matches no row.
+func (q *Queries) MarkJoinTokenUsed(ctx context.Context, arg MarkJoinTokenUsedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markJoinTokenUsed, arg.UsedMs, arg.UsedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const markSessionUsed = `-- name: MarkSessionUsed :execrows
 UPDATE refresh_sessions SET used_ms = ? WHERE token_hash = ? AND used_ms = 0
 `
@@ -1397,6 +1625,24 @@ func (q *Queries) PruneDedup(ctx context.Context, issuedAtMs int64) (int64, erro
 	return result.RowsAffected()
 }
 
+const pruneJoinTokens = `-- name: PruneJoinTokens :exec
+DELETE FROM join_tokens WHERE expires_ms < ?
+`
+
+func (q *Queries) PruneJoinTokens(ctx context.Context, expiresMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneJoinTokens, expiresMs)
+	return err
+}
+
+const pruneRevokedCerts = `-- name: PruneRevokedCerts :exec
+DELETE FROM revoked_certs WHERE not_after_ms < ?
+`
+
+func (q *Queries) PruneRevokedCerts(ctx context.Context, notAfterMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneRevokedCerts, notAfterMs)
+	return err
+}
+
 const pruneSessions = `-- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?
 `
@@ -1426,6 +1672,30 @@ type PruneStatusHistoryParams struct {
 // which still defines the status at before_ms.
 func (q *Queries) PruneStatusHistory(ctx context.Context, arg PruneStatusHistoryParams) error {
 	_, err := q.db.ExecContext(ctx, pruneStatusHistory, arg.TenantID, arg.MonitorID, arg.BeforeMs)
+	return err
+}
+
+const putRevokedCert = `-- name: PutRevokedCert :exec
+INSERT INTO revoked_certs (serial, node_id, revoked_ms, not_after_ms)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (serial) DO NOTHING
+`
+
+type PutRevokedCertParams struct {
+	Serial     string
+	NodeID     string
+	RevokedMs  int64
+	NotAfterMs int64
+}
+
+// A repeated revocation of the same serial changes nothing.
+func (q *Queries) PutRevokedCert(ctx context.Context, arg PutRevokedCertParams) error {
+	_, err := q.db.ExecContext(ctx, putRevokedCert,
+		arg.Serial,
+		arg.NodeID,
+		arg.RevokedMs,
+		arg.NotAfterMs,
+	)
 	return err
 }
 

@@ -240,6 +240,10 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRotateSession(ctx, tx, cmd, p.RotateSession)
 	case *pb.Command_RevokeSessions:
 		return applyRevokeSessions(ctx, tx, cmd, p.RevokeSessions)
+	case *pb.Command_RedeemJoinToken:
+		return applyRedeemJoinToken(ctx, tx, cmd, p.RedeemJoinToken)
+	case *pb.Command_RevokeCertificate:
+		return applyRevokeCertificate(ctx, tx, cmd, p.RevokeCertificate)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -343,6 +347,12 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 	case pb.EntityKind_ENTITY_KIND_SIGNING_KEY:
 		return applyPutSigningKey(ctx, tx, cmd, put)
 
+	case pb.EntityKind_ENTITY_KIND_CLUSTER_CA:
+		return applyPutClusterCA(ctx, tx, cmd, put)
+
+	case pb.EntityKind_ENTITY_KIND_JOIN_TOKEN:
+		return applyPutJoinToken(ctx, tx, cmd, put)
+
 	case pb.EntityKind_ENTITY_KIND_SECRET_KEY:
 		var doc SecretKeyDocument
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
@@ -374,6 +384,8 @@ func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb
 		return json.Marshal(PutResult{ID: del.GetId()})
 	case pb.EntityKind_ENTITY_KIND_USER:
 		return applyDeleteUser(ctx, tx, cmd, del.GetId())
+	case pb.EntityKind_ENTITY_KIND_JOIN_TOKEN:
+		return applyDeleteJoinToken(ctx, tx, del.GetId())
 	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
 		if err := tx.DeleteChannel(ctx, cmd.GetTenantId(), del.GetId()); err != nil {
 			return nil, storeError(err)

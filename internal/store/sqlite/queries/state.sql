@@ -380,3 +380,46 @@ WHERE h.tenant_id = sqlc.arg(tenant_id)
           AND p.since_ms <= sqlc.arg(from_ms)), sqlc.arg(from_ms))
   AND h.monitor_id IN (sqlc.slice(monitor_ids))
 ORDER BY h.monitor_id, h.since_ms;
+
+-- name: InsertClusterCA :exec
+INSERT INTO cluster_ca (fingerprint, cluster_id, cert_der, key_enc, created_ms)
+VALUES (?, ?, ?, ?, ?);
+
+-- name: ListClusterCAs :many
+SELECT * FROM cluster_ca ORDER BY created_ms, fingerprint;
+
+-- name: InsertJoinToken :exec
+INSERT INTO join_tokens (id, secret_hash, role, tenant_id, expires_ms, created_ms)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetJoinToken :one
+SELECT id, secret_hash, role, tenant_id, expires_ms, created_ms,
+       CAST(COALESCE(used_ms, 0) AS INTEGER) AS used_ms, used_by
+FROM join_tokens WHERE id = ?;
+
+-- name: ListJoinTokens :many
+SELECT id, secret_hash, role, tenant_id, expires_ms, created_ms,
+       CAST(COALESCE(used_ms, 0) AS INTEGER) AS used_ms, used_by
+FROM join_tokens ORDER BY created_ms, id;
+
+-- name: MarkJoinTokenUsed :execrows
+-- The first redemption is kept: a token with used_ms set matches no row.
+UPDATE join_tokens SET used_ms = ?, used_by = ? WHERE id = ? AND used_ms IS NULL;
+
+-- name: DeleteJoinToken :execrows
+DELETE FROM join_tokens WHERE id = ?;
+
+-- name: PruneJoinTokens :exec
+DELETE FROM join_tokens WHERE expires_ms < ?;
+
+-- name: PutRevokedCert :exec
+-- A repeated revocation of the same serial changes nothing.
+INSERT INTO revoked_certs (serial, node_id, revoked_ms, not_after_ms)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (serial) DO NOTHING;
+
+-- name: ListRevokedCerts :many
+SELECT * FROM revoked_certs ORDER BY serial;
+
+-- name: PruneRevokedCerts :exec
+DELETE FROM revoked_certs WHERE not_after_ms < ?;

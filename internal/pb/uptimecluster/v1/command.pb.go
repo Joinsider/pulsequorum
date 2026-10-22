@@ -37,6 +37,8 @@ const (
 	EntityKind_ENTITY_KIND_JOIN_TOKEN           EntityKind = 6
 	EntityKind_ENTITY_KIND_SECRET_KEY           EntityKind = 7
 	EntityKind_ENTITY_KIND_SIGNING_KEY          EntityKind = 8
+	// Cluster CA (ADR 0006); the ID is the CA fingerprint, the key is encrypted (ADR 0011).
+	EntityKind_ENTITY_KIND_CLUSTER_CA EntityKind = 9
 )
 
 // Enum value maps for EntityKind.
@@ -51,6 +53,7 @@ var (
 		6: "ENTITY_KIND_JOIN_TOKEN",
 		7: "ENTITY_KIND_SECRET_KEY",
 		8: "ENTITY_KIND_SIGNING_KEY",
+		9: "ENTITY_KIND_CLUSTER_CA",
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":          0,
@@ -62,6 +65,7 @@ var (
 		"ENTITY_KIND_JOIN_TOKEN":           6,
 		"ENTITY_KIND_SECRET_KEY":           7,
 		"ENTITY_KIND_SIGNING_KEY":          8,
+		"ENTITY_KIND_CLUSTER_CA":           9,
 	}
 )
 
@@ -222,6 +226,8 @@ type Command struct {
 	//	*Command_CreateSession
 	//	*Command_RotateSession
 	//	*Command_RevokeSessions
+	//	*Command_RedeemJoinToken
+	//	*Command_RevokeCertificate
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -389,6 +395,24 @@ func (x *Command) GetRevokeSessions() *RevokeSessions {
 	return nil
 }
 
+func (x *Command) GetRedeemJoinToken() *RedeemJoinToken {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RedeemJoinToken); ok {
+			return x.RedeemJoinToken
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRevokeCertificate() *RevokeCertificate {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RevokeCertificate); ok {
+			return x.RevokeCertificate
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -433,6 +457,14 @@ type Command_RevokeSessions struct {
 	RevokeSessions *RevokeSessions `protobuf:"bytes,21,opt,name=revoke_sessions,json=revokeSessions,proto3,oneof"`
 }
 
+type Command_RedeemJoinToken struct {
+	RedeemJoinToken *RedeemJoinToken `protobuf:"bytes,22,opt,name=redeem_join_token,json=redeemJoinToken,proto3,oneof"`
+}
+
+type Command_RevokeCertificate struct {
+	RevokeCertificate *RevokeCertificate `protobuf:"bytes,23,opt,name=revoke_certificate,json=revokeCertificate,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -452,6 +484,10 @@ func (*Command_CreateSession) isCommand_Payload() {}
 func (*Command_RotateSession) isCommand_Payload() {}
 
 func (*Command_RevokeSessions) isCommand_Payload() {}
+
+func (*Command_RedeemJoinToken) isCommand_Payload() {}
+
+func (*Command_RevokeCertificate) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -1368,11 +1404,141 @@ func (x *NodeInfo) GetMaxCommandVersion() uint32 {
 	return 0
 }
 
+// RedeemJoinToken uses up a join token (FA-PKI-02). The leader checks the
+// presented secret in constant time and proposes its hash; the FSM accepts
+// it once, before the token expires at command time, and only if the hash
+// matches the stored one.
+type RedeemJoinToken struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TokenId string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	// Hex SHA-256 as computed by pki.HashSecret.
+	SecretHash string `protobuf:"bytes,2,opt,name=secret_hash,json=secretHash,proto3" json:"secret_hash,omitempty"`
+	// Node the certificate will be issued to.
+	NodeId        string `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RedeemJoinToken) Reset() {
+	*x = RedeemJoinToken{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RedeemJoinToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RedeemJoinToken) ProtoMessage() {}
+
+func (x *RedeemJoinToken) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RedeemJoinToken.ProtoReflect.Descriptor instead.
+func (*RedeemJoinToken) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RedeemJoinToken) GetTokenId() string {
+	if x != nil {
+		return x.TokenId
+	}
+	return ""
+}
+
+func (x *RedeemJoinToken) GetSecretHash() string {
+	if x != nil {
+		return x.SecretHash
+	}
+	return ""
+}
+
+func (x *RedeemJoinToken) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// RevokeCertificate adds a node certificate to the revocation list
+// (FA-PKI-04). Entries are pruned once the certificate has expired.
+type RevokeCertificate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Serial in lower-case hex (pki.SerialString).
+	Serial string `protobuf:"bytes,1,opt,name=serial,proto3" json:"serial,omitempty"`
+	NodeId string `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// NotAfter of the certificate, UTC milliseconds.
+	NotAfterMs    int64 `protobuf:"varint,3,opt,name=not_after_ms,json=notAfterMs,proto3" json:"not_after_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeCertificate) Reset() {
+	*x = RevokeCertificate{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeCertificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeCertificate) ProtoMessage() {}
+
+func (x *RevokeCertificate) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeCertificate.ProtoReflect.Descriptor instead.
+func (*RevokeCertificate) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RevokeCertificate) GetSerial() string {
+	if x != nil {
+		return x.Serial
+	}
+	return ""
+}
+
+func (x *RevokeCertificate) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *RevokeCertificate) GetNotAfterMs() int64 {
+	if x != nil {
+		return x.NotAfterMs
+	}
+	return 0
+}
+
 var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xb1\a\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xd8\b\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -1392,7 +1558,9 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x11set_feature_level\x18\x12 \x01(\v2!.uptimecluster.v1.SetFeatureLevelH\x00R\x0fsetFeatureLevel\x12H\n" +
 	"\x0ecreate_session\x18\x13 \x01(\v2\x1f.uptimecluster.v1.CreateSessionH\x00R\rcreateSession\x12H\n" +
 	"\x0erotate_session\x18\x14 \x01(\v2\x1f.uptimecluster.v1.RotateSessionH\x00R\rrotateSession\x12K\n" +
-	"\x0frevoke_sessions\x18\x15 \x01(\v2 .uptimecluster.v1.RevokeSessionsH\x00R\x0erevokeSessionsB\t\n" +
+	"\x0frevoke_sessions\x18\x15 \x01(\v2 .uptimecluster.v1.RevokeSessionsH\x00R\x0erevokeSessions\x12O\n" +
+	"\x11redeem_join_token\x18\x16 \x01(\v2!.uptimecluster.v1.RedeemJoinTokenH\x00R\x0fredeemJoinToken\x12T\n" +
+	"\x12revoke_certificate\x18\x17 \x01(\v2#.uptimecluster.v1.RevokeCertificateH\x00R\x11revokeCertificateB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -1480,7 +1648,17 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_VOTER\x10\x01\x12\x0e\n" +
 	"\n" +
-	"ROLE_PROBE\x10\x02*\x8f\x02\n" +
+	"ROLE_PROBE\x10\x02\"f\n" +
+	"\x0fRedeemJoinToken\x12\x19\n" +
+	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x1f\n" +
+	"\vsecret_hash\x18\x02 \x01(\tR\n" +
+	"secretHash\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\"f\n" +
+	"\x11RevokeCertificate\x12\x16\n" +
+	"\x06serial\x18\x01 \x01(\tR\x06serial\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12 \n" +
+	"\fnot_after_ms\x18\x03 \x01(\x03R\n" +
+	"notAfterMs*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -1491,7 +1669,8 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x12ENTITY_KIND_TENANT\x10\x05\x12\x1a\n" +
 	"\x16ENTITY_KIND_JOIN_TOKEN\x10\x06\x12\x1a\n" +
 	"\x16ENTITY_KIND_SECRET_KEY\x10\a\x12\x1b\n" +
-	"\x17ENTITY_KIND_SIGNING_KEY\x10\bBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
+	"\x17ENTITY_KIND_SIGNING_KEY\x10\b\x12\x1a\n" +
+	"\x16ENTITY_KIND_CLUSTER_CA\x10\tBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
 
 var (
 	file_uptimecluster_v1_command_proto_rawDescOnce sync.Once
@@ -1506,27 +1685,29 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
-	(EntityKind)(0),          // 0: uptimecluster.v1.EntityKind
-	(Actor_Kind)(0),          // 1: uptimecluster.v1.Actor.Kind
-	(NodeInfo_Role)(0),       // 2: uptimecluster.v1.NodeInfo.Role
-	(*Command)(nil),          // 3: uptimecluster.v1.Command
-	(*Actor)(nil),            // 4: uptimecluster.v1.Actor
-	(*PutEntity)(nil),        // 5: uptimecluster.v1.PutEntity
-	(*DeleteEntity)(nil),     // 6: uptimecluster.v1.DeleteEntity
-	(*SetMonitorState)(nil),  // 7: uptimecluster.v1.SetMonitorState
-	(*IncidentStart)(nil),    // 8: uptimecluster.v1.IncidentStart
-	(*EnqueueAlert)(nil),     // 9: uptimecluster.v1.EnqueueAlert
-	(*AckAlertDelivery)(nil), // 10: uptimecluster.v1.AckAlertDelivery
-	(*CreateSession)(nil),    // 11: uptimecluster.v1.CreateSession
-	(*RotateSession)(nil),    // 12: uptimecluster.v1.RotateSession
-	(*RevokeSessions)(nil),   // 13: uptimecluster.v1.RevokeSessions
-	(*RegisterNode)(nil),     // 14: uptimecluster.v1.RegisterNode
-	(*SetFeatureLevel)(nil),  // 15: uptimecluster.v1.SetFeatureLevel
-	(*NodeInfo)(nil),         // 16: uptimecluster.v1.NodeInfo
-	nil,                      // 17: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),          // 18: uptimecluster.v1.ErrorClass
+	(EntityKind)(0),           // 0: uptimecluster.v1.EntityKind
+	(Actor_Kind)(0),           // 1: uptimecluster.v1.Actor.Kind
+	(NodeInfo_Role)(0),        // 2: uptimecluster.v1.NodeInfo.Role
+	(*Command)(nil),           // 3: uptimecluster.v1.Command
+	(*Actor)(nil),             // 4: uptimecluster.v1.Actor
+	(*PutEntity)(nil),         // 5: uptimecluster.v1.PutEntity
+	(*DeleteEntity)(nil),      // 6: uptimecluster.v1.DeleteEntity
+	(*SetMonitorState)(nil),   // 7: uptimecluster.v1.SetMonitorState
+	(*IncidentStart)(nil),     // 8: uptimecluster.v1.IncidentStart
+	(*EnqueueAlert)(nil),      // 9: uptimecluster.v1.EnqueueAlert
+	(*AckAlertDelivery)(nil),  // 10: uptimecluster.v1.AckAlertDelivery
+	(*CreateSession)(nil),     // 11: uptimecluster.v1.CreateSession
+	(*RotateSession)(nil),     // 12: uptimecluster.v1.RotateSession
+	(*RevokeSessions)(nil),    // 13: uptimecluster.v1.RevokeSessions
+	(*RegisterNode)(nil),      // 14: uptimecluster.v1.RegisterNode
+	(*SetFeatureLevel)(nil),   // 15: uptimecluster.v1.SetFeatureLevel
+	(*NodeInfo)(nil),          // 16: uptimecluster.v1.NodeInfo
+	(*RedeemJoinToken)(nil),   // 17: uptimecluster.v1.RedeemJoinToken
+	(*RevokeCertificate)(nil), // 18: uptimecluster.v1.RevokeCertificate
+	nil,                       // 19: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),           // 20: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -1540,19 +1721,21 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	11, // 8: uptimecluster.v1.Command.create_session:type_name -> uptimecluster.v1.CreateSession
 	12, // 9: uptimecluster.v1.Command.rotate_session:type_name -> uptimecluster.v1.RotateSession
 	13, // 10: uptimecluster.v1.Command.revoke_sessions:type_name -> uptimecluster.v1.RevokeSessions
-	1,  // 11: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 12: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 13: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 14: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	18, // 15: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	16, // 16: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 17: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	17, // 18: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	17, // 11: uptimecluster.v1.Command.redeem_join_token:type_name -> uptimecluster.v1.RedeemJoinToken
+	18, // 12: uptimecluster.v1.Command.revoke_certificate:type_name -> uptimecluster.v1.RevokeCertificate
+	1,  // 13: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 14: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 15: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 16: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	20, // 17: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	16, // 18: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 19: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	19, // 20: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -1572,6 +1755,8 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_CreateSession)(nil),
 		(*Command_RotateSession)(nil),
 		(*Command_RevokeSessions)(nil),
+		(*Command_RedeemJoinToken)(nil),
+		(*Command_RevokeCertificate)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1579,7 +1764,7 @@ func file_uptimecluster_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

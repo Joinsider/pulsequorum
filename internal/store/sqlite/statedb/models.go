@@ -22,6 +22,14 @@ type AlertOutbox struct {
 	UpdatedMs     int64
 }
 
+type ClusterCa struct {
+	Fingerprint string
+	ClusterID   string
+	CertDer     []byte
+	KeyEnc      string
+	CreatedMs   int64
+}
+
 type FsmMetum struct {
 	Key   string
 	Value int64
@@ -37,6 +45,17 @@ type Incident struct {
 	ErrorClass        string
 	AffectedNodesJson string
 	Confirmed         int64
+}
+
+type JoinToken struct {
+	ID         string
+	SecretHash string
+	Role       string
+	TenantID   string
+	ExpiresMs  int64
+	CreatedMs  int64
+	UsedMs     sql.NullInt64
+	UsedBy     string
 }
 
 type MaintenanceWindow struct {
@@ -136,6 +155,13 @@ type RequestDedup struct {
 	ResultJson   string
 	ErrorCode    string
 	ErrorMessage string
+}
+
+type RevokedCert struct {
+	Serial     string
+	NodeID     string
+	RevokedMs  int64
+	NotAfterMs int64
 }
 
 type SecretKey struct {

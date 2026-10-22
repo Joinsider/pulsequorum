@@ -472,6 +472,14 @@ func (t *stateTx) DeleteMonitor(ctx context.Context, tenantID, id string) error 
 	return nil
 }
 
+func (t *stateTx) GetTenant(ctx context.Context, id string) (store.Tenant, error) {
+	row, err := t.q.GetTenant(ctx, id)
+	if err != nil {
+		return store.Tenant{}, mapErr(err)
+	}
+	return tenantFromRow(row), nil
+}
+
 func (t *stateTx) GetMonitorState(ctx context.Context, tenantID, monitorID string) (store.MonitorState, error) {
 	r, err := t.q.GetMonitorState(ctx, statedb.GetMonitorStateParams{TenantID: tenantID, MonitorID: monitorID})
 	if err != nil {

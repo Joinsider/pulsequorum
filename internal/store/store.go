@@ -372,6 +372,15 @@ type State interface {
 	// ListSecretKeys returns all data encryption keys ordered by creation (ADR 0011).
 	ListSecretKeys(ctx context.Context) ([]SecretKey, error)
 
+	// ListClusterCAs returns the cluster CAs ordered by creation (ADR 0006).
+	ListClusterCAs(ctx context.Context) ([]ClusterCA, error)
+	// GetJoinToken returns the join token with the ID or ErrNotFound.
+	GetJoinToken(ctx context.Context, id string) (JoinToken, error)
+	// ListJoinTokens returns all join tokens ordered by creation and ID.
+	ListJoinTokens(ctx context.Context) ([]JoinToken, error)
+	// ListRevokedCerts returns the revoked certificates ordered by serial.
+	ListRevokedCerts(ctx context.Context) ([]RevokedCert, error)
+
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
 
@@ -384,6 +393,7 @@ type State interface {
 // the clock or a random source: timestamps and IDs come with the records.
 type StateTx interface {
 	PutTenant(ctx context.Context, t Tenant) error
+	GetTenant(ctx context.Context, id string) (Tenant, error)
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
 	// replaces the monitor at that revision. On success m.Revision is stored as
 	// expectedRevision+1. Channels of another tenant are ErrNotFound.
@@ -428,6 +438,26 @@ type StateTx interface {
 	// creation time of an existing key is kept.
 	PutSecretKey(ctx context.Context, k SecretKey) error
 
+	// ListClusterCAs returns the cluster CAs ordered by creation.
+	ListClusterCAs(ctx context.Context) ([]ClusterCA, error)
+	// GetJoinToken returns the join token with the ID or ErrNotFound.
+	GetJoinToken(ctx context.Context, id string) (JoinToken, error)
+	// PutClusterCA stores a CA. A CA with the same fingerprint is ErrConflict.
+	PutClusterCA(ctx context.Context, ca ClusterCA) error
+	// InsertJoinToken stores a join token; a duplicate ID is ErrConflict.
+	InsertJoinToken(ctx context.Context, t JoinToken) error
+	// MarkJoinTokenUsed records the first redemption of a token. A token that
+	// is already used is ErrConflict, an unknown one ErrNotFound.
+	MarkJoinTokenUsed(ctx context.Context, id string, usedMs int64, usedBy string) error
+	// DeleteJoinToken deletes the token or returns ErrNotFound.
+	DeleteJoinToken(ctx context.Context, id string) error
+	// PruneJoinTokens deletes the tokens that expired before beforeMs.
+	PruneJoinTokens(ctx context.Context, beforeMs int64) error
+	// PutRevokedCert records a revoked certificate; a repeated serial changes nothing.
+	PutRevokedCert(ctx context.Context, c RevokedCert) error
+	// PruneRevokedCerts deletes the entries whose certificate expired before beforeMs.
+	PruneRevokedCerts(ctx context.Context, beforeMs int64) error
+
 	// CountUsers returns the number of users of all tenants.
 	CountUsers(ctx context.Context) (int, error)
 	// GetUser returns a user of the tenant or ErrNotFound.
@@ -471,6 +501,38 @@ type StateTx interface {
 	PutDedup(ctx context.Context, e DedupEntry) error
 	// PruneDedup removes entries issued before beforeMs (deterministic retention).
 	PruneDedup(ctx context.Context, beforeMs int64) error
+}
+
+// ClusterCA is the certificate authority of the cluster (ADR 0006). KeyEnc is
+// the PKCS#8 private key encrypted with a data key (ADR 0011).
+type ClusterCA struct {
+	Fingerprint string
+	ClusterID   string
+	CertDER     []byte
+	KeyEnc      string
+	CreatedMs   int64
+}
+
+// JoinToken is a one-time credential that lets a node join (FA-PKI-02). Only
+// the hash of its secret is stored. UsedMs is 0 until the token is redeemed.
+type JoinToken struct {
+	ID         string
+	SecretHash string
+	Role       string
+	// TenantID is only set for probe tokens of a private tenant.
+	TenantID  string
+	ExpiresMs int64
+	CreatedMs int64
+	UsedMs    int64
+	UsedBy    string
+}
+
+// RevokedCert is a node certificate that must no longer be accepted (FA-PKI-04).
+type RevokedCert struct {
+	Serial     string
+	NodeID     string
+	RevokedMs  int64
+	NotAfterMs int64
 }
 
 // SecretKey is a data encryption key wrapped with the master key (ADR 0011).

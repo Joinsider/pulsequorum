@@ -41,6 +41,8 @@ message Command {
     CreateSession create_session = 19;
     RotateSession rotate_session = 20;
     RevokeSessions revoke_sessions = 21;
+    RedeemJoinToken redeem_join_token = 22;
+    RevokeCertificate revoke_certificate = 23;
   }
 }
 
@@ -67,6 +69,8 @@ enum EntityKind {
   ENTITY_KIND_JOIN_TOKEN = 6;
   ENTITY_KIND_SECRET_KEY = 7;
   ENTITY_KIND_SIGNING_KEY = 8;
+  // Cluster CA (ADR 0006); the ID is the CA fingerprint, the key is encrypted (ADR 0011).
+  ENTITY_KIND_CLUSTER_CA = 9;
 }
 
 // PutEntity creates or replaces a configuration object. Secrets inside the
@@ -197,4 +201,26 @@ message NodeInfo {
   string version = 10;
   // Highest Command.version this node can apply.
   uint32 max_command_version = 11;
+}
+
+// RedeemJoinToken uses up a join token (FA-PKI-02). The leader checks the
+// presented secret in constant time and proposes its hash; the FSM accepts
+// it once, before the token expires at command time, and only if the hash
+// matches the stored one.
+message RedeemJoinToken {
+  string token_id = 1;
+  // Hex SHA-256 as computed by pki.HashSecret.
+  string secret_hash = 2;
+  // Node the certificate will be issued to.
+  string node_id = 3;
+}
+
+// RevokeCertificate adds a node certificate to the revocation list
+// (FA-PKI-04). Entries are pruned once the certificate has expired.
+message RevokeCertificate {
+  // Serial in lower-case hex (pki.SerialString).
+  string serial = 1;
+  string node_id = 2;
+  // NotAfter of the certificate, UTC milliseconds.
+  int64 not_after_ms = 3;
 }
