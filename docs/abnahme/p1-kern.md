@@ -1,6 +1,6 @@
 # Abnahme P1 – Kern (AP-1.15)
 
-Stand: 2026-10-22, Commit `e491cce` und Folgecommits. Messumgebung: Apple M4 Pro (Notebook), Podman 6.1 in einer VM mit 4 CPUs / 7,5 GB; der Voter läuft als Container mit **`--cpus 2 --memory 1g`** (Pflichtenheft NFA-PERF-01: 2 vCPU / 1 GB). Werkzeuge: `test/load/loadtest`, `test/load/gendata`, `test/acceptance/as01`, `web/e2e` (Playwright).
+Stand: 2026-10-22, Commits `e491cce` (Lasttest) und `2c19703` (AS-10). Messumgebung: Apple M4 Pro (Notebook), Podman 6.1 in einer VM mit 4 CPUs / 7,5 GB; der Voter läuft als Container mit **`--cpus 2 --memory 1g`** (Pflichtenheft NFA-PERF-01: 2 vCPU / 1 GB). Werkzeuge: `test/load/loadtest`, `test/load/gendata`, `test/acceptance/as01`, `web/e2e` (Playwright).
 
 ## Ergebnis
 
@@ -14,7 +14,7 @@ Stand: 2026-10-22, Commit `e491cce` und Folgecommits. Messumgebung: Apple M4 Pro
 | NFA-PERF-07 | Image < 40 MB, statisch ohne CGO | 31,4 MB | erfüllt |
 | NFA-USE-01 | Single-Node-Inbetriebnahme mit Compose < 5 min | bereit 7 s nach `compose up`, Healthcheck `healthy`; Anleitung `docs/betrieb/compose.md` | erfüllt |
 | AS-01 | DOWN-Alert über ntfy ≤ (retries+1) × Intervall + 30 s, Incident, Uptime < 100 % | Compose-Setup, Intervall 20 s, retries 1: Alert nach 40,9 s (Grenze 70 s), Incident offen und nach Recovery beendet, Uptime 47,6 % | erfüllt |
-| AS-10 | 30 d Daten bei 1.000 Monitoren, ≤ 4 GB je Voter, API p95 < 200 ms | Hochrechnung ≈ 10 GB | **nicht erfüllt – ADR 0016** |
+| AS-10 | 30 d Daten bei 1.000 Monitoren, ≤ 4 GB je Voter, API p95 < 200 ms | 2,2 GB; Monitorliste p95 96 ms, Uptime p95 2 ms; Retention-Lauf ohne Fehler (nach ADR 0016, AP-1.17) | erfüllt |
 | E2E | Kernabläufe der SPA (Pflichtenheft 13.1) | 6/6 Playwright-Tests gegen das eingebettete Binary, zweimal grün | erfüllt |
 
 ## Befunde und Korrekturen während der Abnahme
@@ -26,17 +26,21 @@ Stand: 2026-10-22, Commit `e491cce` und Folgecommits. Messumgebung: Apple M4 Pro
 
 ## AS-10: Speicherbedarf
 
-Gemessen mit `gendata` (50 Monitore, 10 Tage, Verdichtung an; `dbstat`):
+**Vor ADR 0016** (gemessen mit `gendata`, 50 Monitore, 10 Tage, `dbstat`): Latenz-Minuten 224 B/Zeile, Rohdaten 320 B/Zeile, Rollups ≈ 210 B/Zeile → Hochrechnung 1.000 Monitore × 30 Tage ≈ 10 GB.
 
-| Tabelle inkl. Indizes | Bytes je Zeile |
-|---|---|
-| `latency_minutes` | 224 |
-| `heartbeats` | 320 |
-| `uptime_rollups` | ≈ 210 |
+**Nach ADR 0016** (AP-1.17, kompaktes Schema), voller Lauf mit 1.000 Monitoren à 60 s und 30 Tagen (43,2 Mio. Heartbeats, Uptime-Job tageweise mit Verdichtung, Laufzeit 1 h 25 min):
 
-Hochrechnung 1.000 Monitore × 30 Tage: Latenz-Minuten ≈ 9 GB, Rohdaten 48 h ≈ 0,9 GB → ≈ 10 GB > 4 GB. Ursache und Lösungsvorschlag: [ADR 0016](../adr/0016-kompaktes-metrik-schema.md). AS-10 wird nach der Umsetzung (AP-1.17) erneut gemessen; dabei auch die Uptime-Abfragen auf 30 Tagen Daten und der Retention-Lauf (FA-UPT-06).
+| Tabelle inkl. Indizes | Zeilen | Größe | Bytes je Zeile |
+|---|---|---|---|
+| `minutes` (Latenz-Minuten) | 40,3 Mio. | 1.173 MiB | 30,5 |
+| `heartbeats` (Rohdaten ≥ 48 h) inkl. 3 Indizes | 3,05 Mio. | 981 MiB | 337 |
+| `rollups` | 1,5 Mio. | 59 MiB | 40 |
+| `state.db` | – | 1 MiB | – |
+| **Summe** | | **2,2 GB** | |
 
-Bekannte Grenze von `gendata`: Konsens-Statushistorie liegt in `state.db` (über Raft repliziert) und wird nicht erzeugt; Node-Rollups sind echt. Für die erneute Messung muss das Erstellungsdatum der Monitore rückdatiert werden (sonst zählt die Zeit vor der Anlage als „unbekannt“).
+Danach Voter auf diesen Daten gestartet (nativ, 10 min Messung, 1.000 aktive Monitore): bereit nach 3 s, erster Retention-Lauf löschte 86.345 abgelaufene Zeilen in Batches, Monitorliste p95 96 ms, Uptime-Abfragen (24 h–365 d, zufällig) p95 2 ms, RAM max. 246 MiB.
+
+Vorgehen und Grenzen der Messung: Monitore wurden über die API angelegt; als Testdaten-Vorbereitung wurden ihre wenigen echten Heartbeats gelöscht und das Erstellungsdatum per SQL um 31 Tage zurückdatiert, damit die erzeugte Historie zählt. Die Konsens-Statushistorie liegt in `state.db` und wird von `gendata` nicht erzeugt; Konsens-Uptime über den erzeugten Zeitraum ist daher „unbekannt“, die Abfragekosten sind dieselben. Rollups wachsen über die Standard-Aufbewahrung von 365 Tagen auf ≈ 0,7 GB.
 
 ## Nicht gemessen
 
