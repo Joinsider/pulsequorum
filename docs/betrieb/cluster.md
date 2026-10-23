@@ -6,6 +6,7 @@ Dieses Dokument beschreibt, wie Voter zu einem laufenden Cluster hinzugefügt, e
 
 - Jeder Voter öffnet einen Cluster-Port (`CLUSTER_ADDR`, Standard `:9443`). Darüber laufen Raft und der interne gRPC-Dienst, jeweils mit gegenseitiger TLS-Authentifizierung (mTLS). Der Port ist nur für die Cluster-Kommunikation gedacht; die Oberfläche und die API laufen auf `HTTP_ADDR` (Standard `:8080`).
 - Die Zertifizierungsstelle (CA) gehört dem Cluster. Sie wird beim ersten Start des ersten Voters erzeugt und über den replizierten Zustand verteilt. Jeder Node erhält ein eigenes Zertifikat mit Rolle und Node-ID.
+- Jeder Voter nimmt schreibende API-Anfragen an. Ein Follower leitet sie über den Cluster-Port an den Leader weiter und antwortet erst, wenn die Änderung auch bei ihm angekommen ist; ein Load-Balancer darf also auf beliebige Voter verteilen. Hat der Follower länger als zwei Heartbeat-Timeouts nichts vom Leader gehört oder gelingt die Weiterleitung nicht binnen 3 s, antwortet er mit HTTP 503 und `Retry-After`. Lautet die Antwort „Result Unknown“, ist die Änderung womöglich übernommen; eine Wiederholung mit demselben `Idempotency-Key` legt nichts doppelt an.
 - `CLUSTER_ADVERTISE` ist die Adresse, unter der die anderen Knoten diesen Knoten erreichen. Sie wird als Raft-Serveradresse gespeichert und muss als `host:port` mit **stabilem DNS-Namen** angegeben werden. Standard ist `<NODE_NAME>:<Port aus CLUSTER_ADDR>`. Die Planung sollte nicht auf IP-Adressen beruhen, da sich diese bei Containern und VPS ändern können.
 
 ## Voter hinzufügen
