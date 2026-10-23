@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-23 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-SCH-01/02/06, FA-CHK-31, FA-CLU-07/12, E1, E11, ADR 0005, ADR 0012 A3/A9 |
@@ -80,3 +80,4 @@ Randbedingungen: `Apply` ist deterministisch (FA-CLU-07). Ein Binary, das eine u
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-23 | Proposed | Claude | |
+| 2026-10-23 | Accepted | Projektinhaber | im Chat bestätigt |
