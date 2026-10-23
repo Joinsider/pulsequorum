@@ -195,7 +195,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.Authority.Cluster = node
 	h.Manager = &membership.Manager{Raft: node, Status: h.status, Log: opts.Log}
 
-	h.grpc = grpc.NewServer(clusternet.ServerOptions(clusternet.Authorize(membership.Access))...)
+	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
 	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log,

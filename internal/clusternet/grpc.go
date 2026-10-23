@@ -46,11 +46,13 @@ func (h handshaked) Clone() credentials.TransportCredentials { return h }
 func (handshaked) OverrideServerName(string) error           { return nil }
 
 // ServerOptions returns the gRPC server options of the cluster port
-// (ADR 0006: keepalive, maximum connection age).
-func ServerOptions(unary grpc.UnaryServerInterceptor) []grpc.ServerOption {
+// (ADR 0006: keepalive, maximum connection age). levels says who may call
+// each method, unary and streaming alike; unknown methods are denied.
+func ServerOptions(levels map[string]Access) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		grpc.Creds(handshaked{}),
-		grpc.UnaryInterceptor(unary),
+		grpc.UnaryInterceptor(Authorize(levels)),
+		grpc.StreamInterceptor(AuthorizeStream(levels)),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionAge:      MaxConnectionAge,
 			MaxConnectionAgeGrace: 30 * time.Second,
@@ -90,7 +92,7 @@ const (
 	Anonymous Access = iota
 	// AnyNode requires a valid certificate of any role (RenewCertificate).
 	AnyNode
-	// VoterOnly requires a voter certificate (Apply, GetStatus).
+	// VoterOnly requires a voter certificate (Apply, GetStatus, replication).
 	VoterOnly
 )
 
@@ -98,21 +100,40 @@ const (
 // each method; unknown methods are denied.
 func Authorize(levels map[string]Access) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		level, known := levels[info.FullMethod]
-		if !known {
-			return nil, status.Error(codes.PermissionDenied, "method not allowed on the cluster port")
-		}
-		if level != Anonymous {
-			id, ok := Peer(ctx)
-			if !ok {
-				return nil, status.Error(codes.Unauthenticated, "client certificate required")
-			}
-			if level == VoterOnly && id.Role != pki.RoleVoter {
-				return nil, status.Error(codes.PermissionDenied, "voter certificate required")
-			}
+		if err := authorize(ctx, levels, info.FullMethod); err != nil {
+			return nil, err
 		}
 		return handler(ctx, req)
 	}
+}
+
+// AuthorizeStream is Authorize for streaming methods: the caller is checked
+// once when the stream opens, before the handler runs.
+func AuthorizeStream(levels map[string]Access) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if err := authorize(ss.Context(), levels, info.FullMethod); err != nil {
+			return err
+		}
+		return handler(srv, ss)
+	}
+}
+
+func authorize(ctx context.Context, levels map[string]Access, method string) error {
+	level, known := levels[method]
+	if !known {
+		return status.Error(codes.PermissionDenied, "method not allowed on the cluster port")
+	}
+	if level == Anonymous {
+		return nil
+	}
+	id, ok := Peer(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "client certificate required")
+	}
+	if level == VoterOnly && id.Role != pki.RoleVoter {
+		return status.Error(codes.PermissionDenied, "voter certificate required")
+	}
+	return nil
 }
 
 // DialVoter opens a gRPC connection to another voter with this node's

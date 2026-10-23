@@ -124,6 +124,15 @@ type stubCluster struct {
 	pb.UnimplementedClusterServiceServer
 }
 
+// stubReplication answers a stream with one empty response.
+type stubReplication struct {
+	pb.UnimplementedReplicationServiceServer
+}
+
+func (stubReplication) StreamHeartbeats(s grpc.BidiStreamingServer[pb.StreamHeartbeatsRequest, pb.StreamHeartbeatsResponse]) error {
+	return s.Send(&pb.StreamHeartbeatsResponse{})
+}
+
 func (stubCluster) Join(context.Context, *pb.JoinRequest) (*pb.JoinResponse, error) {
 	return &pb.JoinResponse{ClusterId: "c1"}, nil
 }
@@ -139,12 +148,14 @@ func (stubCluster) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStat
 func TestGRPCAuthorization(t *testing.T) {
 	f := newFixture(t)
 	m := f.listen(t, f.holder(t, "srv", pki.RoleVoter))
-	srv := grpc.NewServer(ServerOptions(Authorize(map[string]Access{
-		pb.ClusterService_Join_FullMethodName:             Anonymous,
-		pb.ClusterService_RenewCertificate_FullMethodName: AnyNode,
-		pb.ClusterService_GetStatus_FullMethodName:        VoterOnly,
-	}))...)
+	srv := grpc.NewServer(ServerOptions(map[string]Access{
+		pb.ClusterService_Join_FullMethodName:                 Anonymous,
+		pb.ClusterService_RenewCertificate_FullMethodName:     AnyNode,
+		pb.ClusterService_GetStatus_FullMethodName:            VoterOnly,
+		pb.ReplicationService_StreamHeartbeats_FullMethodName: VoterOnly,
+	})...)
 	pb.RegisterClusterServiceServer(srv, stubCluster{})
+	pb.RegisterReplicationServiceServer(srv, stubReplication{})
 	go func() { _ = srv.Serve(m.GRPCListener()) }()
 	t.Cleanup(srv.Stop)
 
@@ -155,6 +166,14 @@ func TestGRPCAuthorization(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = conn.Close() })
 		return pb.NewClusterServiceClient(conn)
+	}
+	replication := func(cfg *tls.Config) pb.ReplicationServiceClient {
+		conn, err := grpc.NewClient(m.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		return pb.NewReplicationServiceClient(conn)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -184,6 +203,23 @@ func TestGRPCAuthorization(t *testing.T) {
 	expect("voter GetStatus", err, codes.OK)
 	_, err = voter.Apply(ctx, &pb.ApplyRequest{})
 	expect("unlisted Apply", err, codes.PermissionDenied)
+
+	// Streams are checked when they open, before the handler runs.
+	stream := func(c pb.ReplicationServiceClient) error {
+		s, err := c.StreamHeartbeats(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = s.Recv()
+		return err
+	}
+	expect("anonymous stream", stream(replication(noClientCert(f, ALPNGRPC))), codes.Unauthenticated)
+	probeCfg := pki.ClientConfig(f.holder(t, "p2", pki.RoleProbe), f.v, "", nil, ALPNGRPC)
+	voterCfg := pki.ClientConfig(f.holder(t, "v3", pki.RoleVoter), f.v, "", pki.OnlyVoters, ALPNGRPC)
+	expect("probe stream", stream(replication(probeCfg)), codes.PermissionDenied)
+	expect("voter stream", stream(replication(voterCfg)), codes.OK)
+	_, err = replication(voterCfg).GetWatermarks(ctx, &pb.GetWatermarksRequest{})
+	expect("unlisted GetWatermarks", err, codes.PermissionDenied)
 
 	// The voter dial helper refuses a server that is not a voter.
 	pm := f.listen(t, f.holder(t, "probe-srv", pki.RoleProbe))
