@@ -556,6 +556,41 @@ func (n *Node) OnPeerResumed(fn func(peerID string)) {
 	}()
 }
 
+// OnHeartbeat calls fn with the ID of a peer whose heartbeat from the leader
+// failed (ok false) or resumed after failures (ok true), with the time of the
+// observation, until the node shuts down. fn must not block for long; it runs
+// on its own goroutine. Raft emits these observations on the leader only (ADR
+// 0017).
+func (n *Node) OnHeartbeat(fn func(peerID string, ok bool, at time.Time)) {
+	// Non-blocking, like OnPeerResumed: a full channel drops an observation,
+	// and the next failure or resume follows anyway.
+	ch := make(chan raft.Observation, 64)
+	obs := raft.NewObserver(ch, false, func(o *raft.Observation) bool {
+		switch o.Data.(type) {
+		case raft.FailedHeartbeatObservation, raft.ResumedHeartbeatObservation:
+			return true
+		}
+		return false
+	})
+	n.raft.RegisterObserver(obs)
+	n.observers = append(n.observers, obs)
+	go func() {
+		for {
+			select {
+			case <-n.done:
+				return
+			case o := <-ch:
+				switch d := o.Data.(type) {
+				case raft.FailedHeartbeatObservation:
+					fn(string(d.PeerID), false, time.Now())
+				case raft.ResumedHeartbeatObservation:
+					fn(string(d.PeerID), true, time.Now())
+				}
+			}
+		}
+	}()
+}
+
 // Shutdown hands over leadership if there are other voters, stops Raft and
 // closes the log store (FA-NODE-04).
 func (n *Node) Shutdown() error {
