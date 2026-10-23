@@ -273,6 +273,109 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 	}
 }
 
+// tenantCount counts the tenants in the state of n.
+func tenantCount(t *testing.T, n *testNode) int {
+	t.Helper()
+	tenants, err := n.state.ListTenants(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(tenants)
+}
+
+// FA-CLU-05/06, PF-04: a write proposed on a follower is forwarded to the
+// leader and visible on the follower when Apply returns; a retry with the same
+// request ID is deduplicated on any node, also after a leader change.
+func TestWriteForwarding(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	n1, err := startNode(ctx, t, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n1 leader", 10*time.Second, n1.host.Node.IsLeader)
+
+	token := func() string {
+		tok, _, err := n1.host.Authority.CreateJoinToken(ctx, pki.RoleVoter, "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	n2, err := startNode(ctx, t, []string{n1.addr}, token())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
+	n3, err := startNode(ctx, t, []string{n2.addr}, token())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n3 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n3.id) })
+	before := tenantCount(t, n1)
+
+	const requestID = "t-fwd-1"
+	doc := cluster.TenantDocument{Name: "Forwarded", Plan: "default"}
+
+	// a) Forwarded by n2; read-after-write on n2 without waiting.
+	cmd, _ := cluster.NewPutTenant(requestID, "fwd", doc)
+	res, err := n2.host.Node.Apply(ctx, cmd)
+	if err != nil {
+		t.Fatalf("apply via follower n2: %v", err)
+	}
+	if res.Duplicate {
+		t.Error("first application reported as duplicate")
+	}
+	if _, err := n2.state.GetTenant(ctx, "fwd"); err != nil {
+		t.Fatalf("read after write on n2: %v", err)
+	}
+	if got := tenantCount(t, n2); got != before+1 {
+		t.Fatalf("tenants on n2 = %d, want %d", got, before+1)
+	}
+
+	// b) The same request ID through n3 is a deduplicated retry.
+	again, _ := cluster.NewPutTenant(requestID, "fwd", doc)
+	res, err = n3.host.Node.Apply(ctx, again)
+	if err != nil {
+		t.Fatalf("retry via n3: %v", err)
+	}
+	if !res.Duplicate {
+		t.Error("retry with the same request ID not reported as duplicate")
+	}
+	if got := tenantCount(t, n3); got != before+1 {
+		t.Errorf("tenants on n3 after retry = %d, want %d", got, before+1)
+	}
+
+	// c) A deterministic rejection reaches the caller as *cluster.CommandError.
+	invalid, _ := cluster.NewPutTenant("t-fwd-invalid", "", doc) // empty ID
+	_, err = n2.host.Node.Apply(ctx, invalid)
+	var cmdErr *cluster.CommandError
+	if !errors.As(err, &cmdErr) || cmdErr.Code != cluster.CodeInvalid {
+		t.Errorf("rejected command: err = %v, want a CommandError with code %q", err, cluster.CodeInvalid)
+	}
+
+	// d) The leader stops and hands over; the retry still deduplicates.
+	n1.cancel()
+	if err := n1.host.Close(); err != nil {
+		t.Logf("close n1: %v", err)
+	}
+	eventually(t, "new leader among n2 and n3", 30*time.Second, func() bool {
+		return n2.host.Node.IsLeader() || n3.host.Node.IsLeader()
+	})
+	retry, _ := cluster.NewPutTenant(requestID, "fwd", doc)
+	res, err = n2.host.Node.Apply(ctx, retry)
+	if err != nil {
+		t.Fatalf("retry after leader change: %v", err)
+	}
+	if !res.Duplicate {
+		t.Error("retry after leader change not reported as duplicate")
+	}
+	if got := tenantCount(t, n2); got != before+1 {
+		t.Errorf("tenants after leader change = %d, want %d", got, before+1)
+	}
+}
+
 func containsID(err error, id string) bool {
 	return err != nil && id != "" && strings.Contains(err.Error(), id)
 }

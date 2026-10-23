@@ -144,6 +144,13 @@ type Host struct {
 	sec       clusternet.Security
 	log       *slog.Logger
 	wg        sync.WaitGroup
+
+	// leaderMu guards the cached connection to the current leader, which
+	// write forwarding reuses instead of dialing per command.
+	leaderMu     sync.Mutex
+	leaderAddr   string
+	leaderConn   *grpc.ClientConn
+	leaderClient pb.ClusterServiceClient
 }
 
 // Start opens the cluster port and starts Raft on it with mTLS.
@@ -177,6 +184,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	node, err := cluster.Start(ctx, cluster.Config{
 		NodeID: opts.NodeID, Advertise: opts.Advertise, DataDir: opts.DataDir, Timeout: opts.Timeout,
 		Transport: transport, Join: opts.Prepared.Joining, Logger: opts.Log,
+		Forwarder:    &membership.Forwarder{Client: h.leaderClientFor},
 		RaftLogLevel: opts.RaftLogLevel, RaftLogJSON: opts.RaftLogJSON,
 	}, opts.State, opts.OnFatal)
 	if err != nil {
@@ -328,7 +336,39 @@ func (h *Host) Close() error {
 	err := h.Node.Shutdown()
 	_ = h.mux.Close()
 	h.wg.Wait()
+	h.closeLeaderConn()
 	return err
+}
+
+// leaderClientFor returns a client for the leader at address. The connection
+// is kept while the leader stays the same; a new leader replaces and closes
+// it. grpc.NewClient connects lazily, so dialing is cheap.
+func (h *Host) leaderClientFor(address string) (pb.ClusterServiceClient, error) {
+	h.leaderMu.Lock()
+	defer h.leaderMu.Unlock()
+	if h.leaderClient != nil && h.leaderAddr == address {
+		return h.leaderClient, nil
+	}
+	conn, err := clusternet.DialVoter(address, h.sec)
+	if err != nil {
+		return nil, err
+	}
+	if h.leaderConn != nil {
+		_ = h.leaderConn.Close()
+	}
+	h.leaderConn = conn
+	h.leaderAddr = address
+	h.leaderClient = pb.NewClusterServiceClient(conn)
+	return h.leaderClient, nil
+}
+
+func (h *Host) closeLeaderConn() {
+	h.leaderMu.Lock()
+	defer h.leaderMu.Unlock()
+	if h.leaderConn != nil {
+		_ = h.leaderConn.Close()
+	}
+	h.leaderConn, h.leaderClient, h.leaderAddr = nil, nil, ""
 }
 
 // roots are the CA bundle from the replicated state, or the CA of the node

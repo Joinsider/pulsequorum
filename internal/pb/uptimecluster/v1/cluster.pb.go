@@ -332,7 +332,12 @@ type ApplyResponse struct {
 	// Command-specific result (e.g. the created object) as JSON.
 	ResultJson []byte `protobuf:"bytes,2,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
 	// true if the request ID had already been applied (deduplicated retry).
-	Duplicate     bool `protobuf:"varint,3,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	Duplicate bool `protobuf:"varint,3,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	// Set if the command was deterministically rejected (the leader's
+	// cluster.CommandError): the code is stable, the message is for humans.
+	// The rejection is a result, not a gRPC error, so the caller can map it.
+	ErrorCode     string `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage  string `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -386,6 +391,20 @@ func (x *ApplyResponse) GetDuplicate() bool {
 		return x.Duplicate
 	}
 	return false
+}
+
+func (x *ApplyResponse) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ApplyResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
 }
 
 type GetStatusRequest struct {
@@ -545,12 +564,15 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x15certificate_chain_der\x18\x01 \x03(\fR\x13certificateChainDer\x12\"\n" +
 	"\rca_bundle_der\x18\x02 \x03(\fR\vcaBundleDer\"C\n" +
 	"\fApplyRequest\x123\n" +
-	"\acommand\x18\x01 \x01(\v2\x19.uptimecluster.v1.CommandR\acommand\"d\n" +
+	"\acommand\x18\x01 \x01(\v2\x19.uptimecluster.v1.CommandR\acommand\"\xa8\x01\n" +
 	"\rApplyResponse\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x04R\x05index\x12\x1f\n" +
 	"\vresult_json\x18\x02 \x01(\fR\n" +
 	"resultJson\x12\x1c\n" +
-	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"\x12\n" +
+	"\tduplicate\x18\x03 \x01(\bR\tduplicate\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
 	"\x10GetStatusRequest\"\xfe\x01\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +

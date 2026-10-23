@@ -41,8 +41,9 @@ type ClusterServiceClient interface {
 	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
 	// RenewCertificate issues a new node certificate before expiry (FA-PKI-03).
 	RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error)
-	// Apply forwards a command from a follower to the leader (FA-CLU-05).
-	// Returns FAILED_PRECONDITION with the current leader if called on a follower.
+	// Apply runs a command on the leader for a follower that forwards it
+	// (FA-CLU-05). A follower returns FAILED_PRECONDITION and never forwards
+	// again, so forwarding cannot loop.
 	Apply(ctx context.Context, in *ApplyRequest, opts ...grpc.CallOption) (*ApplyResponse, error)
 	// GetStatus reports the callee's Raft and replication state. The leader uses
 	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
@@ -111,8 +112,9 @@ type ClusterServiceServer interface {
 	Join(context.Context, *JoinRequest) (*JoinResponse, error)
 	// RenewCertificate issues a new node certificate before expiry (FA-PKI-03).
 	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
-	// Apply forwards a command from a follower to the leader (FA-CLU-05).
-	// Returns FAILED_PRECONDITION with the current leader if called on a follower.
+	// Apply runs a command on the leader for a follower that forwards it
+	// (FA-CLU-05). A follower returns FAILED_PRECONDITION and never forwards
+	// again, so forwarding cannot loop.
 	Apply(context.Context, *ApplyRequest) (*ApplyResponse, error)
 	// GetStatus reports the callee's Raft and replication state. The leader uses
 	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the

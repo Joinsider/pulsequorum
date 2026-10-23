@@ -41,6 +41,19 @@ const (
 	retainedSnapshots        = 2
 )
 
+// Bounds of forwarding a command from a follower to the leader (FA-CLU-05).
+const (
+	// forwardTimeout bounds the whole Apply call on a follower, including the
+	// wait until the command is applied locally.
+	forwardTimeout = 3 * time.Second
+	// forwardBackoffStart and forwardBackoffLimit bound the pause between retries
+	// (not leader, no leader known yet).
+	forwardBackoffStart = 50 * time.Millisecond
+	forwardBackoffLimit = 500 * time.Millisecond
+	// appliedPoll is how often a follower checks whether the FSM caught up.
+	appliedPoll = 5 * time.Millisecond
+)
+
 // Config configures a Raft node.
 type Config struct {
 	NodeID string
@@ -62,10 +75,26 @@ type Config struct {
 	// waits to be added instead of bootstrapping (FA-CLU-02/03, ADR 0005 6).
 	Join bool
 
+	// Forwarder sends commands of followers to the leader. Nil means that a
+	// follower does not forward and returns ErrNotApplied (FA-CLU-05).
+	Forwarder Forwarder
+
 	Logger *slog.Logger
 	// RaftLogLevel and RaftLogJSON configure the library logger.
 	RaftLogLevel string
 	RaftLogJSON  bool
+}
+
+// Forwarder delivers a command to the leader at leaderAddress and returns the
+// leader's result. Error contract, which Node.Apply relies on:
+//   - ErrNotApplied: the leader certainly did not append the command; the
+//     caller may retry at once or later.
+//   - ErrUnknownOutcome: the command may or may not be committed; retrying
+//     with the same request ID is safe thanks to deduplication.
+//   - a *CommandError: the leader rejected the command deterministically. It
+//     is returned both in ApplyResult.Err and as the error.
+type Forwarder interface {
+	Forward(ctx context.Context, leaderAddress string, cmd *pb.Command) (ApplyResult, error)
 }
 
 // Node runs Raft with the FSM on top of state.db.
@@ -225,10 +254,67 @@ func (n *Node) WaitLeader(ctx context.Context) error {
 	}
 }
 
-// Apply proposes a command and waits until it is applied on this node. The
-// leader stamps issued_at_ms, so the FSM never reads the clock (FA-CLU-07).
-// Forwarding from followers follows in phase 2 (FA-CLU-05).
+// Apply proposes a command and waits until it is applied on this node. On
+// the leader the command is appended directly (ApplyLocal). On a follower it
+// is forwarded to the leader, and the follower waits until its own FSM has
+// applied the result, so a read after a successful Apply sees the command.
+// The caller notices nothing; a retry keeps the request ID, and the FSM
+// deduplicates it (ADR 0012 A8).
+//
+// Errors: ErrNotApplied if the command certainly did not commit, ErrUnknownOutcome
+// if it may have committed, and a *CommandError if it was rejected.
 func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) {
+	if n.raft.State() == raft.Leader {
+		return n.ApplyLocal(ctx, cmd)
+	}
+	if n.cfg.Forwarder == nil {
+		return ApplyResult{}, fmt.Errorf("%w: not the leader", ErrNotApplied)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, forwardTimeout)
+	defer cancel()
+	backoff := forwardBackoffStart
+	for {
+		if n.raft.State() == raft.Leader {
+			return n.ApplyLocal(ctx, cmd)
+		}
+		if leaderContactStale(n.raft.LastContact(), time.Now(), n.heartbeatTimeout()) {
+			return ApplyResult{}, fmt.Errorf("%w: no recent contact with the leader", ErrNotApplied)
+		}
+
+		addr, _ := n.raft.LeaderWithID()
+		if addr == "" {
+			if !sleepContext(ctx, backoff) {
+				return ApplyResult{}, forwardTimeoutError(ctx)
+			}
+			backoff = nextBackoff(backoff)
+			continue
+		}
+
+		res, err := n.cfg.Forwarder.Forward(ctx, string(addr), cmd)
+		var cmdErr *CommandError
+		switch {
+		case err == nil, errors.As(err, &cmdErr):
+			// Committed, or rejected by the FSM on the leader: either way
+			// the entry is in the log and this node must apply it too.
+			n.waitApplied(ctx, res.Index)
+			return res, err
+		case errors.Is(err, ErrNotApplied):
+			if !sleepContext(ctx, backoff) {
+				return ApplyResult{}, forwardTimeoutError(ctx)
+			}
+			backoff = nextBackoff(backoff)
+		default:
+			return ApplyResult{}, err
+		}
+	}
+}
+
+// ApplyLocal proposes a command on this node, which must be the leader; it
+// never forwards. The leader stamps issued_at_ms, so the FSM never reads the
+// clock (FA-CLU-07). The ClusterService uses it for forwarded commands, so
+// that a forwarded command is not forwarded again.
+func (n *Node) ApplyLocal(ctx context.Context, cmd *pb.Command) (ApplyResult, error) {
 	if n.raft.State() != raft.Leader {
 		return ApplyResult{}, fmt.Errorf("%w: not the leader", ErrNotApplied)
 	}
@@ -259,6 +345,57 @@ func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) 
 		return ApplyResult{}, fmt.Errorf("%w: unexpected FSM response %T", ErrUnknownOutcome, future.Response())
 	}
 	return res, res.Err
+}
+
+// heartbeatTimeout is the Raft HeartbeatTimeout of this node (see Start).
+func (n *Node) heartbeatTimeout() time.Duration {
+	if n.cfg.Timeout > 0 {
+		return n.cfg.Timeout
+	}
+	return raft.DefaultConfig().HeartbeatTimeout
+}
+
+// waitApplied waits until the local FSM applied index. It gives up at ctx's
+// end: the command is committed anyway, so the caller still gets the result.
+func (n *Node) waitApplied(ctx context.Context, index uint64) {
+	ticker := time.NewTicker(appliedPoll)
+	defer ticker.Stop()
+	for n.fsm.AppliedIndex() < index {
+		select {
+		case <-ctx.Done():
+			n.logger.Debug("result not applied locally before the deadline", "index", index, "applied", n.fsm.AppliedIndex(), "err", ctx.Err())
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// leaderContactStale reports whether the last contact with the leader is too
+// old for forwarding: the leader is presumed gone when it was not heard from
+// for twice the heartbeat timeout, and a zero time means never.
+func leaderContactStale(last, now time.Time, heartbeat time.Duration) bool {
+	return last.IsZero() || now.Sub(last) > 2*heartbeat
+}
+
+// nextBackoff doubles the retry pause up to forwardBackoffLimit.
+func nextBackoff(d time.Duration) time.Duration {
+	return min(d*2, forwardBackoffLimit)
+}
+
+// sleepContext pauses for d and reports false if ctx ended first.
+func sleepContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func forwardTimeoutError(ctx context.Context) error {
+	return fmt.Errorf("%w: forwarding to the leader timed out: %w", ErrNotApplied, ctx.Err())
 }
 
 // Status reports the Raft and replication state (proto GetStatusResponse,

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/clusternet"
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
@@ -27,10 +28,12 @@ import (
 const forwardedKey = "uc-forwarded"
 
 // Access levels of the ClusterService methods (clusternet.Authorize).
-// Apply is added with write forwarding (AP-2.3).
+// Apply accepts forwarded commands from voters only: a voter is a full
+// member and could propose any command itself, probes never write (FA-CLU-05).
 var Access = map[string]clusternet.Access{
 	pb.ClusterService_Join_FullMethodName:             clusternet.Anonymous,
 	pb.ClusterService_RenewCertificate_FullMethodName: clusternet.AnyNode,
+	pb.ClusterService_Apply_FullMethodName:            clusternet.VoterOnly,
 	pb.ClusterService_GetStatus_FullMethodName:        clusternet.VoterOnly,
 }
 
@@ -38,6 +41,8 @@ var Access = map[string]clusternet.Access{
 type Node interface {
 	Raft
 	Leader() (address, id string)
+	// ApplyLocal proposes a forwarded command on the leader without forwarding it again.
+	ApplyLocal(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
 }
 
 // KEK hands the generated master key to joining voters (ADR 0011 option B).

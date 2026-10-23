@@ -20,8 +20,9 @@ service ClusterService {
   // RenewCertificate issues a new node certificate before expiry (FA-PKI-03).
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
 
-  // Apply forwards a command from a follower to the leader (FA-CLU-05).
-  // Returns FAILED_PRECONDITION with the current leader if called on a follower.
+  // Apply runs a command on the leader for a follower that forwards it
+  // (FA-CLU-05). A follower returns FAILED_PRECONDITION and never forwards
+  // again, so forwarding cannot loop.
   rpc Apply(ApplyRequest) returns (ApplyResponse);
 
   // GetStatus reports the callee's Raft and replication state. The leader uses
@@ -75,6 +76,11 @@ message ApplyResponse {
   bytes result_json = 2;
   // true if the request ID had already been applied (deduplicated retry).
   bool duplicate = 3;
+  // Set if the command was deterministically rejected (the leader's
+  // cluster.CommandError): the code is stable, the message is for humans.
+  // The rejection is a result, not a gRPC error, so the caller can map it.
+  string error_code = 4;
+  string error_message = 5;
 }
 
 message GetStatusRequest {}
