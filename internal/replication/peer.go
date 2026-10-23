@@ -63,7 +63,7 @@ func (w *worker) run(ctx context.Context) {
 	if !ok {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := pb.NewReplicationServiceClient(conn)
 
 	var wg sync.WaitGroup
@@ -284,7 +284,7 @@ func (w *worker) fetchStream(ctx context.Context, client pb.ReplicationServiceCl
 			NodeId:      key.node,
 			Incarnation: key.inc,
 			AfterSeq:    after,
-			Limit:       uint32(w.r.opts.PageSize),
+			Limit:       uint32(w.r.opts.PageSize), //nolint:gosec // G115: New caps PageSize at maxFetchLimit
 			UntilSeq:    until,
 		})
 		cancel()
@@ -392,7 +392,7 @@ func (b *backoff) wait() time.Duration {
 	d := b.cur
 	b.cur = min(2*d, b.max)
 	half := d / 2
-	return half + rand.N(d-half)
+	return half + rand.N(d-half) //nolint:gosec // G404: jitter, not a secret
 }
 
 func (b *backoff) reset() { b.cur = b.min }

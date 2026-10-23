@@ -162,7 +162,7 @@ func makeHB(node, inc string, seq uint64) store.Heartbeat {
 		Seq:         seq,
 		TenantID:    "t1",
 		MonitorID:   "m1",
-		TsMs:        1_000 + int64(seq),
+		TsMs:        1_000 + int64(seq), //nolint:gosec // G115: small test seqs
 		Status:      store.CheckUp,
 		LatencyMs:   12,
 		Details:     json.RawMessage(`{"code":200}`),

@@ -6,6 +6,7 @@ package replication
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
@@ -32,8 +33,8 @@ func heartbeatToPB(h store.Heartbeat) *pb.Heartbeat {
 		TenantId:    h.TenantID,
 		MonitorId:   h.MonitorID,
 		TsMs:        h.TsMs,
-		Status:      pb.CheckStatus(h.Status),
-		LatencyMs:   uint32(h.LatencyMs),
+		Status:      pb.CheckStatus(h.Status), //nolint:gosec // G115: statuses are 1..3
+		LatencyMs:   uint32(min(max(h.LatencyMs, 0), math.MaxUint32)),
 		ErrorClass:  cluster.ErrorClassToProto(h.ErrorClass),
 		Message:     h.Message,
 		DetailsJson: detailsOrEmpty(h.Details),

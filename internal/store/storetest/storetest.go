@@ -2341,7 +2341,7 @@ func streamHeartbeats(node, incarnation string, seqs ...uint64) []store.Heartbea
 	for _, seq := range seqs {
 		out = append(out, store.Heartbeat{
 			NodeID: node, Incarnation: incarnation, Seq: seq,
-			TenantID: tenantA, MonitorID: "mon", TsMs: int64(seq) * 1000, Status: store.CheckUp,
+			TenantID: tenantA, MonitorID: "mon", TsMs: int64(seq) * 1000, Status: store.CheckUp, //nolint:gosec // G115: small test seqs
 		})
 	}
 	return out

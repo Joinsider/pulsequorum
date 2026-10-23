@@ -78,7 +78,7 @@ func New(opts Options) *Replicator {
 	if opts.PeerRefresh <= 0 {
 		opts.PeerRefresh = 5 * time.Second
 	}
-	if opts.PageSize <= 0 {
+	if opts.PageSize <= 0 || opts.PageSize > maxFetchLimit {
 		opts.PageSize = maxFetchLimit
 	}
 	if opts.PushBuffer <= 0 {
