@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-23 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-CLU-07/12, NFA-PORT-04, NFA-MNT-04, PF-09, ADR 0004, ADR 0005 Nr. 8, ADR 0017 |
@@ -144,3 +144,4 @@ Stand nach AP-2.5:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-23 | Proposed | Claude | |
+| 2026-10-23 | Accepted | Projektinhaber | im Chat bestätigt |

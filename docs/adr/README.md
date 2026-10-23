@@ -23,4 +23,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0015](0015-geheimnisse-in-monitor-konfigurationen.md) | Geheimnisse in Monitor-Konfigurationen | Accepted | 2026-10-22 |
 | [0016](0016-kompaktes-metrik-schema.md) | Kompaktes Schema für Latenz-Minuten und Rollups | Accepted | 2026-10-22 |
 | [0017](0017-zuweisung-von-monitoren.md) | Zuweisung von Monitoren an Nodes, Node-Register und Node-Gesundheit | Accepted | 2026-10-23 |
-| [0018](0018-rolling-updates-und-feature-gates.md) | Rolling Updates: Befehlsversionen, Feature-Gate und Expand/Contract | Proposed | 2026-10-23 |
+| [0018](0018-rolling-updates-und-feature-gates.md) | Rolling Updates: Befehlsversionen, Feature-Gate und Expand/Contract | Accepted | 2026-10-23 |
