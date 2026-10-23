@@ -1333,6 +1333,14 @@ components:
         voter: { type: boolean }
         leader: { type: boolean }
         self: { type: boolean, description: "True for the node that answered the request" }
+        replicationLagMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "How far this node's copy of the heartbeats replicated from that node lags behind, in milliseconds: time since the last complete anti-entropy round with it. Absent for the answering node itself and for peers it has not caught up with yet."
+        replicationError:
+          type: string
+          description: "Last replication error with this node as seen by the answering node"
     ClusterNodeList:
       type: object
       required: [nodes, leaderId, warnings]

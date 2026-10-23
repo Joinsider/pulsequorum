@@ -27,14 +27,19 @@ import (
 // most once.
 const forwardedKey = "uc-forwarded"
 
-// Access levels of the ClusterService methods (clusternet.Authorize).
-// Apply accepts forwarded commands from voters only: a voter is a full
-// member and could propose any command itself, probes never write (FA-CLU-05).
+// Access levels of the ClusterService and ReplicationService methods
+// (clusternet.Authorize). Apply accepts forwarded commands from voters only: a
+// voter is a full member and could propose any command itself, probes never
+// write (FA-CLU-05). Replication runs between voters only; probe heartbeats
+// reach the cluster through the probe gateway (P5).
 var Access = map[string]clusternet.Access{
-	pb.ClusterService_Join_FullMethodName:             clusternet.Anonymous,
-	pb.ClusterService_RenewCertificate_FullMethodName: clusternet.AnyNode,
-	pb.ClusterService_Apply_FullMethodName:            clusternet.VoterOnly,
-	pb.ClusterService_GetStatus_FullMethodName:        clusternet.VoterOnly,
+	pb.ClusterService_Join_FullMethodName:                 clusternet.Anonymous,
+	pb.ClusterService_RenewCertificate_FullMethodName:     clusternet.AnyNode,
+	pb.ClusterService_Apply_FullMethodName:                clusternet.VoterOnly,
+	pb.ClusterService_GetStatus_FullMethodName:            clusternet.VoterOnly,
+	pb.ReplicationService_StreamHeartbeats_FullMethodName: clusternet.VoterOnly,
+	pb.ReplicationService_GetWatermarks_FullMethodName:    clusternet.VoterOnly,
+	pb.ReplicationService_FetchRange_FullMethodName:       clusternet.VoterOnly,
 }
 
 // Node is the part of cluster.Node the service uses.

@@ -5,6 +5,7 @@ package clusterhost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
@@ -20,6 +21,7 @@ import (
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
 
@@ -28,10 +30,13 @@ type testNode struct {
 	addr    string
 	dir     string
 	state   *sqlite.StateStore
+	metrics *sqlite.MetricsStore
 	kek     *secrets.KEK
 	keyring *secrets.Keyring
 	host    *Host
 	cancel  context.CancelFunc
+	// replInterval is the anti-entropy period; zero keeps the default.
+	replInterval time.Duration
 }
 
 func freeAddr(t *testing.T) string {
@@ -47,7 +52,13 @@ func freeAddr(t *testing.T) string {
 // startNode assembles a voter like the binary does (cmd/uptimecluster).
 func startNode(ctx context.Context, t *testing.T, seeds []string, token string) (*testNode, error) {
 	t.Helper()
-	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir()}, seeds, token)
+	return startNodeInterval(ctx, t, seeds, token, 0)
+}
+
+// startNodeInterval is startNode with a replication interval (zero = default).
+func startNodeInterval(ctx context.Context, t *testing.T, seeds []string, token string, interval time.Duration) (*testNode, error) {
+	t.Helper()
+	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir(), replInterval: interval}, seeds, token)
 }
 
 // restart stops n and starts it again from the same data directory under a
@@ -59,7 +70,7 @@ func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
 		t.Logf("close: %v", err)
 	}
 	_ = n.state.Close()
-	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir}, nil, "")
+	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,10 +97,14 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 	if n.state, err = sqlite.OpenState(ctx, n.dir); err != nil {
 		t.Fatal(err)
 	}
+	if n.metrics, err = sqlite.OpenMetrics(ctx, n.dir, sqlite.MetricsOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	n.keyring = secrets.NewKeyring(n.kek, n.state.ListSecretKeys)
 	n.host, err = Start(ctx, Options{
 		NodeID: n.id, ListenAddr: n.addr, Advertise: n.addr, DataDir: n.dir, Timeout: 300 * time.Millisecond,
-		State: n.state, KEK: n.kek, Keyring: n.keyring, Prepared: prepared, Log: log, RaftLogLevel: "error",
+		State: n.state, Metrics: n.metrics, ReplicationInterval: n.replInterval,
+		KEK: n.kek, Keyring: n.keyring, Prepared: prepared, Log: log, RaftLogLevel: "error",
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
 	})
 	if err != nil {
@@ -102,6 +117,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		cancel()
 		_ = n.host.Close()
 		_ = n.state.Close()
+		_ = n.metrics.Close()
 	})
 	if !prepared.Joining && !existing {
 		if err := cluster.EnsureDefaultTenant(ctx, n.host.Node, n.state); err != nil {
@@ -378,4 +394,115 @@ func TestWriteForwarding(t *testing.T) {
 
 func containsID(err error, id string) bool {
 	return err != nil && id != "" && strings.Contains(err.Error(), id)
+}
+
+// produce stores count new heartbeats of the own stream of n and, if publish is
+// set, offers them to the replication like the heartbeat writer does.
+func produce(ctx context.Context, t *testing.T, n *testNode, count int, publish bool) {
+	t.Helper()
+	inc := n.metrics.Incarnation()
+	last, err := n.metrics.LastSeq(ctx, n.id, inc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hbs := make([]store.Heartbeat, 0, count)
+	for i := 1; i <= count; i++ {
+		hbs = append(hbs, store.Heartbeat{
+			NodeID: n.id, Incarnation: inc, Seq: last + uint64(i), TenantID: "t-acme", MonitorID: "m-web",
+			TsMs: time.Now().UnixMilli(), Status: store.CheckUp, LatencyMs: 10, Details: json.RawMessage("{}"),
+		})
+	}
+	if _, err := n.metrics.InsertHeartbeats(ctx, hbs); err != nil {
+		t.Fatal(err)
+	}
+	if publish {
+		n.host.Replication.Publish(hbs)
+	}
+}
+
+// complete reports whether n holds every heartbeat of each source stream up to
+// the wanted count: position, last seq and the stored rows agree.
+func complete(ctx context.Context, n *testNode, want map[*testNode]uint64) bool {
+	positions, err := n.metrics.StreamPositions(ctx)
+	if err != nil {
+		return false
+	}
+	pos := make(map[streamKey]uint64, len(positions))
+	for _, p := range positions {
+		pos[streamKey{node: p.NodeID, inc: p.Incarnation}] = p.Seq
+	}
+	for src, count := range want {
+		key := streamKey{node: src.id, inc: src.metrics.Incarnation()}
+		if pos[key] != count {
+			return false
+		}
+		if last, err := n.metrics.LastSeq(ctx, key.node, key.inc); err != nil || last != count {
+			return false
+		}
+		hbs, more, err := n.metrics.HeartbeatsAfter(ctx, key.node, key.inc, 0, count, 1000)
+		if err != nil || more || uint64(len(hbs)) != count {
+			return false
+		}
+	}
+	return true
+}
+
+// streamKey identifies a heartbeat stream in the tests.
+type streamKey struct {
+	node string
+	inc  string
+}
+
+// FA-REP-02/03/07: every voter ends up with the complete heartbeat streams of
+// all voters. Pushed batches arrive directly; a batch that is not pushed is
+// repaired by anti-entropy.
+func TestHeartbeatReplication(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	const interval = 300 * time.Millisecond
+
+	n1, err := startNodeInterval(ctx, t, nil, "", interval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n1 leader", 10*time.Second, n1.host.Node.IsLeader)
+	token := func() string {
+		tok, _, err := n1.host.Authority.CreateJoinToken(ctx, pki.RoleVoter, "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	n2, err := startNodeInterval(ctx, t, []string{n1.addr}, token(), interval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
+	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, token(), interval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n3 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n3.id) })
+	nodes := []*testNode{n1, n2, n3}
+
+	// Every voter stores and pushes 50 heartbeats of its own stream.
+	want := make(map[*testNode]uint64, len(nodes))
+	for _, n := range nodes {
+		produce(ctx, t, n, 50, true)
+		want[n] = 50
+	}
+	for _, n := range nodes {
+		eventually(t, "pushed heartbeats on every voter", 30*time.Second, func() bool { return complete(ctx, n, want) })
+	}
+
+	// n1 stores 20 more heartbeats without pushing them, as if the batch was
+	// lost on the way. Anti-entropy brings them to n2 and n3.
+	produce(ctx, t, n1, 20, false)
+	want[n1] = 70
+	for _, n := range []*testNode{n2, n3} {
+		eventually(t, "unpushed heartbeats repaired by anti-entropy", 30*time.Second, func() bool { return complete(ctx, n, want) })
+	}
+	if !complete(ctx, n1, want) {
+		t.Error("the producing voter lost heartbeats of its own stream")
+	}
 }

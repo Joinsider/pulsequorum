@@ -25,6 +25,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/stream"
 	"github.com/joinsider/uptimecluster/internal/uptime"
@@ -50,7 +51,12 @@ type Deps struct {
 	Cluster Applier
 	// ClusterAdmin serves the cluster administration (FA-CLU-08); nil answers 503.
 	ClusterAdmin ClusterAdmin
-	Registry     *checker.Registry
+	// Replication reports the state of the heartbeat replication to the other
+	// voters for the cluster listing (FA-REP-05); nil omits the lag.
+	Replication interface {
+		Status() []replication.PeerStatus
+	}
+	Registry *checker.Registry
 	// CheckEnv runs on-demand checks (POST /monitors/{id}/test).
 	CheckEnv *checker.Env
 	NodeID   string

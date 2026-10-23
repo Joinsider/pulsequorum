@@ -31,6 +31,9 @@ type HeartbeatWriter struct {
 
 	seq   atomic.Uint64
 	queue chan store.Heartbeat
+	// onStored is called with every batch stored successfully (push to the
+	// peers). It must not block; see SetOnStored.
+	onStored func([]store.Heartbeat)
 }
 
 var _ Sink = (*HeartbeatWriter)(nil)
@@ -45,6 +48,12 @@ func NewHeartbeatWriter(ctx context.Context, metrics store.Metrics, nodeID strin
 		queue: make(chan store.Heartbeat, queueSize)}
 	w.seq.Store(last)
 	return w, nil
+}
+
+// SetOnStored registers fn to receive every batch after it was stored. fn must
+// not block, because the writer runs on. It must be set before Run starts.
+func (w *HeartbeatWriter) SetOnStored(fn func([]store.Heartbeat)) {
+	w.onStored = fn
 }
 
 // Record implements Sink. It blocks only if the queue is full, which applies
@@ -120,6 +129,9 @@ func (w *HeartbeatWriter) flush(ctx context.Context, batch []store.Heartbeat) {
 	for {
 		_, err := w.metrics.InsertHeartbeats(ctx, batch)
 		if err == nil {
+			if w.onStored != nil {
+				w.onStored(batch)
+			}
 			return
 		}
 		w.log.Error("storing heartbeats failed, retrying", "count", len(batch), "err", err)

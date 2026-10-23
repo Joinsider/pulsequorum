@@ -17,6 +17,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/replication"
 )
 
 // fakeClusterAdmin records the calls and returns the configured results.
@@ -336,5 +337,67 @@ func TestClusterAdminUnavailableWithoutHost(t *testing.T) {
 		if d := problemDetail(t, res); d != "cluster administration is not available" {
 			t.Errorf("detail = %q", d)
 		}
+	}
+}
+
+// fakeReplication returns the configured peer states.
+type fakeReplication []replication.PeerStatus
+
+func (f fakeReplication) Status() []replication.PeerStatus { return f }
+
+// FA-REP-05: the cluster listing shows how far each peer's heartbeats lag and
+// the last replication error; the answering node and peers that were never
+// caught up carry neither.
+func TestListClusterNodesReplicationLag(t *testing.T) {
+	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
+	statuses := fakeReplication{
+		{ID: "n1", Address: "n1:9443", CaughtUpAt: now.Add(-time.Second)}, // self: ignored
+		{ID: "n2", Address: "n2:9443", Connected: true, CaughtUpAt: now.Add(-5 * time.Second)},
+		{ID: "n3", Address: "n3:9443", LastError: "dial: connection refused"}, // never caught up
+	}
+	tests := []struct {
+		name       string
+		replicator fakeReplication
+		wantLag    map[string]int64
+		wantErr    map[string]string
+	}{
+		{
+			name:       "lag and errors per peer",
+			replicator: statuses,
+			wantLag:    map[string]int64{"n2": 5000},
+			wantErr:    map[string]string{"n3": "dial: connection refused"},
+		},
+		{
+			name:       "without replication nothing is reported",
+			replicator: nil,
+			wantLag:    map[string]int64{},
+			wantErr:    map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnvTweaked(t, false, func(d *Deps) {
+				d.ClusterAdmin = admin
+				d.Now = func() time.Time { return now }
+				if tt.replicator != nil {
+					d.Replication = tt.replicator
+				}
+			})
+			got := decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+			if len(got.Nodes) != 4 {
+				t.Fatalf("nodes = %d, want 4", len(got.Nodes))
+			}
+			for _, n := range got.Nodes {
+				lag, hasLag := tt.wantLag[n.Id]
+				if hasLag != (n.ReplicationLagMs != nil) || (hasLag && *n.ReplicationLagMs != lag) {
+					t.Errorf("node %s: lag = %v, want %v", n.Id, n.ReplicationLagMs, lag)
+				}
+				msg, hasErr := tt.wantErr[n.Id]
+				if hasErr != (n.ReplicationError != nil) || (hasErr && *n.ReplicationError != msg) {
+					t.Errorf("node %s: error = %v, want %q", n.Id, n.ReplicationError, msg)
+				}
+			}
+		})
 	}
 }

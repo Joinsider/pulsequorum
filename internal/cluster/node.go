@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -104,6 +105,12 @@ type Node struct {
 	fsm    *FSM
 	bolt   *raftboltdb.BoltStore
 	logger *slog.Logger
+
+	// observers are the Raft observers of OnPeerResumed; done ends their
+	// goroutines at Shutdown.
+	observers []*raft.Observer
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Start opens the Raft stores and starts Raft. A node without existing Raft
@@ -182,7 +189,7 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		return nil, fmt.Errorf("start raft: %w", err)
 	}
 
-	n := &Node{cfg: cfg, raft: r, fsm: fsm, bolt: bolt, logger: log}
+	n := &Node{cfg: cfg, raft: r, fsm: fsm, bolt: bolt, logger: log, done: make(chan struct{})}
 	if existing {
 		log.Info("resuming from existing raft state", "node_id", cfg.NodeID,
 			"applied_index", fsm.AppliedIndex(), "skip_snapshot_restore", rc.NoSnapshotRestoreOnStart)
@@ -512,9 +519,52 @@ func (n *Node) Snapshot() error {
 	return n.raft.Snapshot().Error()
 }
 
+// OnPeerResumed calls fn with the ID of a peer whose heartbeats resumed after
+// a failure and with the ID of every peer added to the configuration, until
+// the node shuts down. fn must not block for long; it runs on its own
+// goroutine. Raft emits these observations on the leader only, so followers
+// rely on the reconnect of their push streams (ADR 0012 B6).
+func (n *Node) OnPeerResumed(fn func(peerID string)) {
+	// Non-blocking: Raft must never wait for this observer. A full channel
+	// drops an event, which is acceptable because anti-entropy repairs gaps.
+	ch := make(chan raft.Observation, 64)
+	obs := raft.NewObserver(ch, false, func(o *raft.Observation) bool {
+		switch d := o.Data.(type) {
+		case raft.ResumedHeartbeatObservation:
+			return true
+		case raft.PeerObservation:
+			return !d.Removed
+		}
+		return false
+	})
+	n.raft.RegisterObserver(obs)
+	n.observers = append(n.observers, obs)
+	go func() {
+		for {
+			select {
+			case <-n.done:
+				return
+			case o := <-ch:
+				switch d := o.Data.(type) {
+				case raft.ResumedHeartbeatObservation:
+					fn(string(d.PeerID))
+				case raft.PeerObservation:
+					fn(string(d.Peer.ID))
+				}
+			}
+		}
+	}()
+}
+
 // Shutdown hands over leadership if there are other voters, stops Raft and
 // closes the log store (FA-NODE-04).
 func (n *Node) Shutdown() error {
+	n.closeOnce.Do(func() {
+		for _, obs := range n.observers {
+			n.raft.DeregisterObserver(obs)
+		}
+		close(n.done)
+	})
 	if n.IsLeader() {
 		if cfg := n.raft.GetConfiguration(); cfg.Error() == nil && len(cfg.Configuration().Servers) > 1 {
 			if err := n.raft.LeadershipTransfer().Error(); err != nil {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -32,6 +33,10 @@ const (
 	compactLookback = 24 * time.Hour
 	// maxHoursPerRun bounds the work of one run while catching up.
 	maxHoursPerRun = 24
+	// maxReplicationHoldBack bounds how long rollups and compaction wait for
+	// heartbeats of other voters that arrive late after a partition (FA-REP-03).
+	// Without the bound, a dead voter would stop all rollups.
+	maxReplicationHoldBack = time.Hour
 	// Retention deletes in small batches with pauses (FA-UPT-06).
 	retentionBatch = 5000
 	retentionPause = 50 * time.Millisecond
@@ -60,6 +65,10 @@ type JobOptions struct {
 	Retention  Retention
 	// Now returns the wall clock; tests replace it.
 	Now func() time.Time
+	// ReplicatedUntil returns the time up to which the heartbeats of all peers
+	// are replicated here (FA-REP-03). Hours after it are held back. Nil means
+	// no hold-back.
+	ReplicatedUntil func() time.Time
 }
 
 // Job maintains rollups, compaction and retention of metrics.db. It runs
@@ -124,6 +133,27 @@ func (j *Job) RunOnce(ctx context.Context) error {
 
 func floorTo(ms, bucket int64) int64 { return ms - ((ms%bucket)+bucket)%bucket }
 
+// replicationLimit returns the end of the newest hour that may be rolled up or
+// compacted with respect to replication, or math.MaxInt64 without hold-back.
+func (j *Job) replicationLimit(now time.Time) int64 {
+	if j.opts.ReplicatedUntil == nil {
+		return math.MaxInt64
+	}
+	return holdBackLimit(now, j.opts.ReplicatedUntil())
+}
+
+// holdBackLimit returns the end of the newest hour that is final for all
+// voters: the replicated-until time minus grace, floored to an hour. The
+// replicated-until time is never older than maxReplicationHoldBack, so that a
+// voter which stopped replicating does not stop the rollups.
+func holdBackLimit(now, replicatedUntil time.Time) int64 {
+	safe := now.Add(-maxReplicationHoldBack)
+	if replicatedUntil.After(safe) {
+		safe = replicatedUntil
+	}
+	return floorTo(safe.Add(-grace).UnixMilli(), hourMs)
+}
+
 // watermark returns a watermark, initializing it to def on first use.
 func (j *Job) watermark(ctx context.Context, name string, def int64) (int64, error) {
 	v, err := j.opts.Metrics.Watermark(ctx, name)
@@ -144,7 +174,7 @@ func (j *Job) rollup(ctx context.Context, monitors []store.Monitor, now time.Tim
 		return err
 	}
 
-	limit := floorTo(now.Add(-grace).UnixMilli(), hourMs)
+	limit := min(floorTo(now.Add(-grace).UnixMilli(), hourMs), j.replicationLimit(now))
 	for n := 0; hourWM+hourMs <= limit && n < maxHoursPerRun; n++ {
 		from, to := hourWM, hourWM+hourMs
 		var rollups []store.Rollup
@@ -214,7 +244,10 @@ func (j *Job) compact(ctx context.Context, monitors []store.Monitor, now time.Ti
 		return err
 	}
 	// Starts where the rollups started: older raw data is left to retention.
-	limit := min(hourWM, floorTo(now.Add(-CompactAfter).UnixMilli(), hourMs))
+	// Hours still open for late replicated heartbeats are not compacted: a
+	// late heartbeat would otherwise be compacted away or missing from the
+	// hour's rollup.
+	limit := min(hourWM, floorTo(now.Add(-CompactAfter).UnixMilli(), hourMs), j.replicationLimit(now))
 	compWM, err := j.watermark(ctx, wmCompaction, limit)
 	if err != nil {
 		return err

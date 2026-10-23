@@ -18,4 +18,11 @@ export interface ClusterNode {
   leader: boolean;
   /** True for the node that answered the request */
   self: boolean;
+  /**
+     * How far this node's copy of the heartbeats replicated from that node lags behind, in milliseconds: time since the last complete anti-entropy round with it. Absent for the answering node itself and for peers it has not caught up with yet.
+     * @minimum 0
+     */
+  replicationLagMs?: number;
+  /** Last replication error with this node as seen by the answering node */
+  replicationError?: string;
 }

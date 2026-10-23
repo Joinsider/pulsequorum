@@ -16,6 +16,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/replication"
 )
 
 // Cluster administration (FA-CLU-08, FA-PKI-02). Platform admins only.
@@ -150,6 +151,7 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	}
 	_, leaderID := admin.Leader()
 	self := admin.ID()
+	peers := h.replicationPeers()
 
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
@@ -157,9 +159,20 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		if m.Voter {
 			voters++
 		}
-		nodes = append(nodes, gen.ClusterNode{
+		node := gen.ClusterNode{
 			Id: m.ID, Address: m.Address, Voter: m.Voter, Leader: m.ID == leaderID, Self: m.ID == self,
-		})
+		}
+		if ps, ok := peers[m.ID]; ok && m.ID != self {
+			if lag, caught := ps.Lag(h.deps.Now()); caught {
+				ms := max(lag.Milliseconds(), 0)
+				node.ReplicationLagMs = &ms
+			}
+			if ps.LastError != "" {
+				e := ps.LastError
+				node.ReplicationError = &e
+			}
+		}
+		nodes = append(nodes, node)
 	}
 	warnings := make([]string, 0, 2)
 	if voters > 0 && voters%2 == 0 {
@@ -169,6 +182,20 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		warnings = append(warnings, fmt.Sprintf("the cluster has more than %d voters (%d); more voters add latency without adding fault tolerance (FA-CLU-11)", maxVoters, voters))
 	}
 	return gen.ListClusterNodes200JSONResponse{Nodes: nodes, LeaderId: leaderID, Warnings: warnings}, nil
+}
+
+// replicationPeers indexes the replication state by peer ID. Without a
+// replicator it is empty.
+func (h *Handlers) replicationPeers() map[string]replication.PeerStatus {
+	if h.deps.Replication == nil {
+		return nil
+	}
+	statuses := h.deps.Replication.Status()
+	out := make(map[string]replication.PeerStatus, len(statuses))
+	for _, s := range statuses {
+		out[s.ID] = s
+	}
+	return out
 }
 
 // RemoveClusterNode takes a node out of the cluster. The leader does the work;

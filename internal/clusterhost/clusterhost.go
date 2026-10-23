@@ -25,7 +25,9 @@ import (
 	"github.com/joinsider/uptimecluster/internal/membership"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
 
@@ -36,6 +38,10 @@ const (
 	RevocationReload = 10 * time.Second
 	renewalCheck     = time.Hour
 	leaderWatch      = time.Second
+	// grpcStopGrace bounds the graceful stop of the cluster port. Peers keep
+	// their replication push streams to this node open while it is a voter,
+	// so a graceful stop alone could wait for them indefinitely.
+	grpcStopGrace = 5 * time.Second
 )
 
 // JoinOptions describe how this node joins, if it does.
@@ -119,10 +125,15 @@ type Options struct {
 	DataDir    string
 	Timeout    time.Duration
 	State      *sqlite.StateStore
-	KEK        *secrets.KEK
-	Keyring    *secrets.Keyring
-	Prepared   Prepared
-	Log        *slog.Logger
+	// Metrics holds the heartbeats that the replication exchanges (FA-REP-01).
+	Metrics store.Metrics
+	// ReplicationInterval is the period of the anti-entropy pass per peer.
+	// Zero means the default of the replication package; tests use short ones.
+	ReplicationInterval time.Duration
+	KEK                 *secrets.KEK
+	Keyring             *secrets.Keyring
+	Prepared            Prepared
+	Log                 *slog.Logger
 	// RaftLogLevel and RaftLogJSON configure the Raft library logger.
 	RaftLogLevel string
 	RaftLogJSON  bool
@@ -137,6 +148,8 @@ type Host struct {
 	Cert        *clusterpki.NodeCert
 	Revocations *clusterpki.Revocations
 	Manager     *membership.Manager
+	// Replication pushes and repairs heartbeats between the voters (ADR 0006).
+	Replication *replication.Replicator
 
 	mux       *clusternet.Mux
 	grpc      *grpc.Server
@@ -194,11 +207,26 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.Node = node
 	h.Authority.Cluster = node
 	h.Manager = &membership.Manager{Raft: node, Status: h.status, Log: opts.Log}
+	h.Replication = replication.New(replication.Options{
+		NodeID:              opts.NodeID,
+		Metrics:             opts.Metrics,
+		Peers:               h.replicationPeers,
+		Dial:                func(address string) (*grpc.ClientConn, error) { return clusternet.DialVoter(address, h.sec) },
+		Log:                 opts.Log,
+		AntiEntropyInterval: opts.ReplicationInterval,
+	})
+	// A peer that resumes heartbeats or joins the configuration gets an
+	// immediate anti-entropy pass (ADR 0012 B6). Followers do not see these
+	// observations; their push streams reconnect instead.
+	node.OnPeerResumed(h.Replication.Trigger)
 
 	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
 	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log,
+	})
+	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
+		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, Log: opts.Log,
 	})
 	h.wg.Go(func() {
 		if err := mux.Serve(); err != nil {
@@ -229,15 +257,33 @@ func (h *Host) Bootstrap(ctx context.Context) error {
 	return nil
 }
 
-// Run starts the background jobs: revocation reload, certificate renewal
-// and resuming promotions on a new leader. It returns when ctx ends.
+// Run starts the background jobs: revocation reload, certificate renewal,
+// resuming promotions on a new leader, address announcement and heartbeat
+// replication. It returns when ctx ends.
 func (h *Host) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	wg.Go(func() { h.Revocations.Run(ctx, h.Authority.State, RevocationReload, h.log) })
 	wg.Go(func() { h.Cert.RunRenewal(ctx, h.issuer, renewalCheck, h.log) })
 	wg.Go(func() { h.Manager.Run(ctx, leaderWatch) })
 	wg.Go(func() { h.announceAddress(ctx) })
+	wg.Go(func() { h.Replication.Run(ctx) })
 	wg.Wait()
+}
+
+// replicationPeers returns the current Raft voters except this node. A
+// configuration that cannot be read yields no peers; the next refresh retries.
+func (h *Host) replicationPeers() []replication.Peer {
+	members, _, err := h.Node.Members()
+	if err != nil {
+		return nil
+	}
+	var peers []replication.Peer
+	for _, m := range members {
+		if m.Voter && m.ID != h.Node.ID() {
+			peers = append(peers, replication.Peer{ID: m.ID, Address: m.Address})
+		}
+	}
+	return peers
 }
 
 // announceAddress reports a changed CLUSTER_ADVERTISE to the leader
@@ -332,12 +378,30 @@ func (h *Host) issuer() clusterpki.IssueFunc {
 
 // Close stops gRPC, Raft and the cluster port.
 func (h *Host) Close() error {
-	h.grpc.GracefulStop()
+	h.stopGRPC()
 	err := h.Node.Shutdown()
 	_ = h.mux.Close()
 	h.wg.Wait()
 	h.closeLeaderConn()
 	return err
+}
+
+// stopGRPC stops the cluster port gracefully and cuts the streams that are
+// still open after grpcStopGrace, such as the replication push streams of
+// the peers.
+func (h *Host) stopGRPC() {
+	done := make(chan struct{})
+	go func() {
+		h.grpc.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(grpcStopGrace):
+		h.log.Warn("cluster port still has open streams, closing them", "grace", grpcStopGrace)
+		h.grpc.Stop()
+		<-done
+	}
 }
 
 // leaderClientFor returns a client for the leader at address. The connection

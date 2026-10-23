@@ -159,7 +159,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
 		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
-		Timeout: cfg.RaftTimeout, State: state, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
+		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 	})
 	if err != nil {
@@ -214,6 +214,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Stored heartbeats are pushed to the other voters without blocking the writer.
+	heartbeats.SetOnStored(host.Replication.Publish)
 	var policy checker.AddressPolicy
 	if cfg.SSRFProtectionEnabled() {
 		policy = checker.BlockPrivate{}
@@ -255,6 +257,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Metrics: metrics, Logger: log, Compaction: cfg.RawCompaction,
 		Retention: uptime.Retention{Raw: cfg.RetentionRaw, Hourly: cfg.RetentionHourly, Daily: cfg.RetentionDaily},
 		Vacuum:    func(ctx context.Context) error { return metrics.DB().IncrementalVacuum(ctx, 0) },
+		// Late heartbeats of other voters are waited for before rollup and compaction (FA-REP-03).
+		ReplicatedUntil: host.Replication.ReplicatedUntil,
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
@@ -269,6 +273,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Keyring: keyring, Alerts: sender,
 		Stream: hub, Tickets: auth.NewTickets(),
 		ClusterAdmin: clusterAdmin{host: host},
+		Replication:  host.Replication,
 	}
 	if local != nil {
 		apiDeps.Local, apiDeps.Authenticator = local, local

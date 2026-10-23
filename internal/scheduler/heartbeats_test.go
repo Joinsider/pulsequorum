@@ -63,3 +63,41 @@ func TestHeartbeatWriter(t *testing.T) {
 		}
 	}
 }
+
+// The OnStored hook receives every stored batch, and only stored ones.
+func TestHeartbeatWriterOnStored(t *testing.T) {
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	metrics, err := sqlite.OpenMetrics(ctx, t.TempDir(), sqlite.MetricsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = metrics.Close() }()
+
+	w, err := NewHeartbeatWriter(ctx, metrics, "node-1", log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored []store.Heartbeat
+	w.SetOnStored(func(hbs []store.Heartbeat) { stored = append(stored, hbs...) })
+
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { w.Run(runCtx); close(done) }()
+	m := store.Monitor{TenantID: "t", ID: "m"}
+	for i := range 4 {
+		w.Record(runCtx, Outcome{Monitor: m, Started: time.UnixMilli(int64(1000 * (i + 1))),
+			Result: checker.Result{Status: checker.StatusUp, LatencyMs: 3}})
+	}
+	cancel()
+	<-done
+
+	if len(stored) != 4 {
+		t.Fatalf("hook received %d heartbeats, want 4", len(stored))
+	}
+	for i, hb := range stored {
+		if hb.Seq != uint64(i+1) {
+			t.Errorf("hook heartbeat %d has seq %d", i, hb.Seq)
+		}
+	}
+}
