@@ -17,6 +17,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/replication"
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // Cluster administration (FA-CLU-08, FA-PKI-02). Platform admins only.
@@ -152,6 +153,14 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	_, leaderID := admin.Leader()
 	self := admin.ID()
 	peers := h.replicationPeers()
+	registry, err := h.deps.State.ListNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	registered := make(map[string]store.Node, len(registry))
+	for _, n := range registry {
+		registered[n.ID] = n
+	}
 
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
@@ -161,6 +170,13 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		}
 		node := gen.ClusterNode{
 			Id: m.ID, Address: m.Address, Voter: m.Voter, Leader: m.ID == leaderID, Self: m.ID == self,
+		}
+		if n, ok := registered[m.ID]; ok {
+			name, version, healthy := n.Name, n.Version, n.Healthy
+			changedAt := time.UnixMilli(n.HealthChangedMs).UTC()
+			capabilities := append([]string{}, n.Capabilities...)
+			node.Name, node.Version, node.Healthy = &name, &version, &healthy
+			node.Capabilities, node.HealthChangedAt = &capabilities, &changedAt
 		}
 		if ps, ok := peers[m.ID]; ok && m.ID != self {
 			if lag, caught := ps.Lag(h.deps.Now()); caught {

@@ -435,3 +435,37 @@ func TestHeartbeatsAndTypesAndTestRun(t *testing.T) {
 		t.Errorf("viewer test run = %d", res.code)
 	}
 }
+
+// TestAssignmentNodesAreRegistered checks that mode nodes names only nodes of
+// the registry, once there is one (ADR 0017).
+func TestAssignmentNodesAreRegistered(t *testing.T) {
+	e := newEnv(t)
+	create := func(nodes ...string) response {
+		return e.do("POST", "/api/v1/monitors", editor, map[string]any{
+			"name": "x", "type": "http", "intervalSeconds": 60, "config": map[string]any{"url": "https://a"},
+			"assignment": map[string]any{"mode": "nodes", "nodes": nodes},
+		})
+	}
+	if res := create("anything"); res.code != http.StatusCreated {
+		t.Fatalf("without a registry: status = %d %s", res.code, res.body)
+	}
+
+	cmd := cluster.NewRegisterNode("register-node-a", store.Node{ID: "node-a", Role: store.NodeRoleVoter})
+	if _, err := e.node.Apply(context.Background(), cmd); err != nil {
+		t.Fatal(err)
+	}
+	res := create("node-a", "node-b")
+	if res.code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown node: status = %d %s", res.code, res.body)
+	}
+	found := false
+	for _, f := range *decode[gen.Problem](t, res).Errors {
+		found = found || (f.Field == "/assignment/nodes/1" && f.Message == "unknown node")
+	}
+	if !found {
+		t.Errorf("errors do not name /assignment/nodes/1: %s", res.body)
+	}
+	if res := create("node-a"); res.code != http.StatusCreated {
+		t.Errorf("registered node: status = %d %s", res.code, res.body)
+	}
+}

@@ -984,7 +984,14 @@ components:
       enum: [dns, connect, tls, timeout, http_status, assertion, ssrf_blocked, internal]
     Assignment:
       type: object
-      description: Which nodes run the check (E1). Single-node clusters ignore this until phase 2.
+      description: |
+        Which nodes run the check (E1, ADR 0017). Only voters with the capability the
+        monitor type requires are candidates; `nodes` lists node IDs from the node registry.
+        - `all`: every candidate, healthy or not.
+        - `count`: `count` healthy candidates chosen by rendezvous hashing over the monitor ID;
+          if fewer are healthy, all healthy candidates run it.
+        - `nodes`: the listed nodes, if they are candidates.
+        Without a node registry (a single voter before its first registration) every node runs the check.
       required: [mode]
       properties:
         mode: { type: string, enum: [all, count, nodes], default: all }
@@ -1333,6 +1340,19 @@ components:
         voter: { type: boolean }
         leader: { type: boolean }
         self: { type: boolean, description: "True for the node that answered the request" }
+        name: { type: string, description: "Node name from the node registry; absent until the node registered" }
+        version: { type: string, description: "Version of the binary from the node registry; absent until the node registered" }
+        capabilities:
+          type: array
+          description: "Capabilities of the node, e.g. icmp (FA-CHK-31); absent until the node registered"
+          items: { type: string }
+        healthy:
+          type: boolean
+          description: "Health as the leader decided it (ADR 0017); absent until the node registered"
+        healthChangedAt:
+          type: string
+          format: date-time
+          description: "Time of the last health change, or of the registration; absent until the node registered"
         replicationLagMs:
           type: integer
           format: int64

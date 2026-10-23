@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/replication"
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // fakeClusterAdmin records the calls and returns the configured results.
@@ -399,5 +401,36 @@ func TestListClusterNodesReplicationLag(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestListClusterNodesRegistry checks that the registry fields are shown for
+// registered nodes only (ADR 0017).
+func TestListClusterNodesRegistry(t *testing.T) {
+	e := clusterEnv(t, &fakeClusterAdmin{members: voters(2), leaderID: "n1", selfID: "n1"})
+	cmd := cluster.NewRegisterNode("register-n1", store.Node{ID: "n1", Name: "node-one", Role: store.NodeRoleVoter,
+		Version: "1.2.3", Capabilities: []string{"icmp"}})
+	if _, err := e.node.Apply(context.Background(), cmd); err != nil {
+		t.Fatal(err)
+	}
+	got := decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+	byID := map[string]gen.ClusterNode{}
+	for _, n := range got.Nodes {
+		byID[n.Id] = n
+	}
+
+	n1 := byID["n1"]
+	if n1.Name == nil || *n1.Name != "node-one" || n1.Version == nil || *n1.Version != "1.2.3" {
+		t.Errorf("n1 name/version = %v/%v", n1.Name, n1.Version)
+	}
+	if n1.Capabilities == nil || !slices.Equal(*n1.Capabilities, []string{"icmp"}) {
+		t.Errorf("n1 capabilities = %v", n1.Capabilities)
+	}
+	if n1.Healthy == nil || !*n1.Healthy || n1.HealthChangedAt == nil {
+		t.Errorf("n1 health = %v at %v", n1.Healthy, n1.HealthChangedAt)
+	}
+	n2 := byID["n2"]
+	if n2.Name != nil || n2.Version != nil || n2.Capabilities != nil || n2.Healthy != nil || n2.HealthChangedAt != nil {
+		t.Errorf("unregistered n2 has registry fields: %+v", n2)
 	}
 }

@@ -156,11 +156,18 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
 	}
 
+	// Capabilities tell the other nodes which monitors this node can run (ADR 0017).
+	var capabilities []string
+	if icmpMode != icmpcheck.ModeOff {
+		capabilities = append(capabilities, icmpcheck.Capability)
+	}
+
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
 		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
+		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
 	})
 	if err != nil {
 		return err
@@ -262,7 +269,15 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
-	bg.Go(func() { scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, sched, agg) })
+	// The scheduler runs only the monitors assigned to this node; the aggregator
+	// keeps all monitors, because it tracks results of other nodes too (ADR 0017).
+	assigned := scheduler.AssignmentSyncer{
+		Target: sched, NodeID: nodeID, Assigner: scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)},
+		Registry: func() ([]store.Node, error) { return state.ListNodes(ctx) }, Log: log,
+	}
+	bg.Go(func() {
+		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg)
+	})
 
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")

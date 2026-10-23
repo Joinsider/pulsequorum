@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/membership"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
@@ -37,6 +39,8 @@ type testNode struct {
 	cancel  context.CancelFunc
 	// replInterval is the anti-entropy period; zero keeps the default.
 	replInterval time.Duration
+	// caps are the node capabilities the node registers with (ADR 0017).
+	caps []string
 }
 
 func freeAddr(t *testing.T) string {
@@ -55,6 +59,12 @@ func startNode(ctx context.Context, t *testing.T, seeds []string, token string) 
 	return startNodeInterval(ctx, t, seeds, token, 0)
 }
 
+// startNodeWithCaps is startNode for a node with the given capabilities.
+func startNodeWithCaps(ctx context.Context, t *testing.T, seeds []string, token string, caps []string) (*testNode, error) {
+	t.Helper()
+	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir(), caps: caps}, seeds, token)
+}
+
 // startNodeInterval is startNode with a replication interval (zero = default).
 func startNodeInterval(ctx context.Context, t *testing.T, seeds []string, token string, interval time.Duration) (*testNode, error) {
 	t.Helper()
@@ -70,7 +80,7 @@ func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
 		t.Logf("close: %v", err)
 	}
 	_ = n.state.Close()
-	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval}, nil, "")
+	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval, caps: n.caps}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +116,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		State: n.state, Metrics: n.metrics, ReplicationInterval: n.replInterval,
 		KEK: n.kek, Keyring: n.keyring, Prepared: prepared, Log: log, RaftLogLevel: "error",
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
+		Name:    "n", Version: "test", Capabilities: n.caps,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -505,4 +516,126 @@ func TestHeartbeatReplication(t *testing.T) {
 	if !complete(ctx, n1, want) {
 		t.Error("the producing voter lost heartbeats of its own stream")
 	}
+}
+
+// registry returns the node registry of n by node ID.
+func registry(t *testing.T, n *testNode) map[string]store.Node {
+	t.Helper()
+	nodes, err := n.state.ListNodes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]store.Node, len(nodes))
+	for _, node := range nodes {
+		out[node.ID] = node
+	}
+	return out
+}
+
+// TestAssignment covers ADR 0017 (FA-SCH-01/02): every voter registers with its
+// capabilities and is healthy; when a node stops, the leader marks it unhealthy
+// and the remaining nodes agree on the new node of a count monitor.
+func TestAssignment(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	n1, err := startNodeWithCaps(ctx, t, nil, "", []string{"icmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n1 leader", 10*time.Second, n1.host.Node.IsLeader)
+	token := func() string {
+		tok, _, err := n1.host.Authority.CreateJoinToken(ctx, pki.RoleVoter, "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	n2, err := startNodeWithCaps(ctx, t, []string{n1.addr}, token(), []string{"icmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n2 voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
+	n3, err := startNodeWithCaps(ctx, t, []string{n2.addr}, token(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n3 voter", 30*time.Second, func() bool { return isVoter(n1, n3.id) })
+
+	// Every node has all three registered and healthy, with their capabilities.
+	for _, n := range []*testNode{n1, n2, n3} {
+		eventually(t, "registry complete and healthy on "+n.id, 60*time.Second, func() bool {
+			reg := registry(t, n)
+			for _, id := range []string{n1.id, n2.id, n3.id} {
+				if r, ok := reg[id]; !ok || !r.Healthy {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	reg := registry(t, n1)
+	if !reg[n1.id].HasCapability("icmp") || !reg[n2.id].HasCapability("icmp") || reg[n3.id].HasCapability("icmp") {
+		t.Errorf("capabilities = %v %v %v", reg[n1.id].Capabilities, reg[n2.id].Capabilities, reg[n3.id].Capabilities)
+	}
+
+	// An ICMP monitor runs on the capable voters only (FA-CHK-31).
+	nodeIDs := []string{n1.id, n2.id}
+	slices.Sort(nodeIDs)
+	icmpAll := scheduler.Assigner{Capability: func(string) string { return "icmp" }}
+	if got := icmpAll.Nodes(store.Monitor{ID: "icmp", Type: "icmp", Assignment: store.Assignment{Mode: "all"}}, nodesOf(reg)); !slices.Equal(got, nodeIDs) {
+		t.Errorf("icmp assignment = %v, want %v", got, nodeIDs)
+	}
+
+	// A count-1 monitor whose rendezvous winner is n3 while all nodes are healthy.
+	all := scheduler.Assigner{}
+	var monitor store.Monitor
+	for range 1000 {
+		m := store.Monitor{ID: uuid.NewString(), Assignment: store.Assignment{Mode: "count", Count: 1}}
+		if slices.Equal(all.Nodes(m, nodesOf(reg)), []string{n3.id}) {
+			monitor = m
+			break
+		}
+	}
+	if monitor.ID == "" {
+		t.Fatal("no monitor with n3 as winner found")
+	}
+
+	// n3 stops; the leader marks it unhealthy within the threshold.
+	n3.cancel()
+	if err := n3.host.Close(); err != nil {
+		t.Logf("close n3: %v", err)
+	}
+	eventually(t, "n3 unhealthy in the registry of the leader", 30*time.Second, func() bool {
+		leader := n1
+		if !n1.host.Node.IsLeader() {
+			leader = n2
+		}
+		r, ok := registry(t, leader)[n3.id]
+		return ok && !r.Healthy
+	})
+	eventually(t, "n3 unhealthy on both survivors", 15*time.Second, func() bool {
+		r1, ok1 := registry(t, n1)[n3.id]
+		r2, ok2 := registry(t, n2)[n3.id]
+		return ok1 && ok2 && !r1.Healthy && !r2.Healthy
+	})
+
+	// Both survivors compute the same new node, and it is not n3.
+	a1 := all.Nodes(monitor, nodesOf(registry(t, n1)))
+	a2 := all.Nodes(monitor, nodesOf(registry(t, n2)))
+	if !slices.Equal(a1, a2) {
+		t.Errorf("assignments differ: n1 %v, n2 %v", a1, a2)
+	}
+	if len(a1) != 1 || (a1[0] != n1.id && a1[0] != n2.id) {
+		t.Errorf("assignment = %v, want one of n1 or n2", a1)
+	}
+}
+
+// nodesOf returns the registry entries of reg as a slice.
+func nodesOf(reg map[string]store.Node) []store.Node {
+	out := make([]store.Node, 0, len(reg))
+	for _, n := range reg {
+		out = append(out, n)
+	}
+	return out
 }

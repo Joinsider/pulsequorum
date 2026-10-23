@@ -525,6 +525,24 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 			add("/assignment/count", "required for mode count")
 		case a.Mode == string(gen.AssignmentModeNodes) && len(a.Nodes) == 0:
 			add("/assignment/nodes", "required for mode nodes")
+		case a.Mode == string(gen.AssignmentModeNodes):
+			// Without a registry (single voter before its first registration)
+			// any node ID is accepted (ADR 0017).
+			registry, err := h.deps.State.ListNodes(ctx)
+			if err != nil {
+				return cluster.MonitorDocument{}, err
+			}
+			if len(registry) > 0 {
+				known := make(map[string]bool, len(registry))
+				for _, n := range registry {
+					known[n.ID] = true
+				}
+				for i, id := range a.Nodes {
+					if !known[id] {
+						add(fmt.Sprintf("/assignment/nodes/%d", i), "unknown node")
+					}
+				}
+			}
 		}
 		doc.Assignment = a
 	}

@@ -13,7 +13,13 @@
 import type { AssignmentMode } from './assignmentMode';
 
 /**
- * Which nodes run the check (E1). Single-node clusters ignore this until phase 2.
+ * Which nodes run the check (E1, ADR 0017). Only voters with the capability the
+ * monitor type requires are candidates; `nodes` lists node IDs from the node registry.
+ * - `all`: every candidate, healthy or not.
+ * - `count`: `count` healthy candidates chosen by rendezvous hashing over the monitor ID;
+ *   if fewer are healthy, all healthy candidates run it.
+ * - `nodes`: the listed nodes, if they are candidates.
+ * Without a node registry (a single voter before its first registration) every node runs the check.
  */
 export interface Assignment {
   mode: AssignmentMode;

@@ -139,6 +139,11 @@ type Options struct {
 	RaftLogJSON  bool
 	// OnFatal stops the node when the FSM halts (FA-CLU-13).
 	OnFatal func(error)
+	// Name, Version and Capabilities describe this node in the node registry
+	// (ADR 0017). Capabilities are sorted and deduplicated on registration.
+	Name         string
+	Version      string
+	Capabilities []string
 }
 
 // Host is the running cluster side of a voter.
@@ -150,7 +155,12 @@ type Host struct {
 	Manager     *membership.Manager
 	// Replication pushes and repairs heartbeats between the voters (ADR 0006).
 	Replication *replication.Replicator
+	// Health turns the heartbeat failures of the leader into the health of
+	// the nodes in the registry (ADR 0017).
+	Health *membership.HealthWatcher
 
+	state     store.State
+	self      store.Node
 	mux       *clusternet.Mux
 	grpc      *grpc.Server
 	advertise string
@@ -174,6 +184,8 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring},
 		log:         opts.Log,
 		advertise:   opts.Advertise,
+		state:       opts.State,
+		self:        selfNode(opts),
 	}
 	if err := h.Revocations.Reload(ctx, opts.State); err != nil {
 		return nil, err
@@ -207,6 +219,8 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.Node = node
 	h.Authority.Cluster = node
 	h.Manager = &membership.Manager{Raft: node, Status: h.status, Log: opts.Log}
+	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log}
+	node.OnHeartbeat(h.Health.Observe)
 	h.Replication = replication.New(replication.Options{
 		NodeID:              opts.NodeID,
 		Metrics:             opts.Metrics,
@@ -258,8 +272,8 @@ func (h *Host) Bootstrap(ctx context.Context) error {
 }
 
 // Run starts the background jobs: revocation reload, certificate renewal,
-// resuming promotions on a new leader, address announcement and heartbeat
-// replication. It returns when ctx ends.
+// resuming promotions on a new leader, address announcement, heartbeat
+// replication, node registration and node health. It returns when ctx ends.
 func (h *Host) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	wg.Go(func() { h.Revocations.Run(ctx, h.Authority.State, RevocationReload, h.log) })
@@ -267,6 +281,8 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.Manager.Run(ctx, leaderWatch) })
 	wg.Go(func() { h.announceAddress(ctx) })
 	wg.Go(func() { h.Replication.Run(ctx) })
+	wg.Go(func() { h.registerSelf(ctx) })
+	wg.Go(func() { h.Health.Run(ctx) })
 	wg.Wait()
 }
 

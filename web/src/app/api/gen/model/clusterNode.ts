@@ -18,6 +18,16 @@ export interface ClusterNode {
   leader: boolean;
   /** True for the node that answered the request */
   self: boolean;
+  /** Node name from the node registry; absent until the node registered */
+  name?: string;
+  /** Version of the binary from the node registry; absent until the node registered */
+  version?: string;
+  /** Capabilities of the node, e.g. icmp (FA-CHK-31); absent until the node registered */
+  capabilities?: string[];
+  /** Health as the leader decided it (ADR 0017); absent until the node registered */
+  healthy?: boolean;
+  /** Time of the last health change, or of the registration; absent until the node registered */
+  healthChangedAt?: string;
   /**
      * How far this node's copy of the heartbeats replicated from that node lags behind, in milliseconds: time since the last complete anti-entropy round with it. Absent for the answering node itself and for peers it has not caught up with yet.
      * @minimum 0
