@@ -198,7 +198,12 @@ type FetchRangeRequest struct {
 	Incarnation string                 `protobuf:"bytes,2,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
 	AfterSeq    uint64                 `protobuf:"varint,3,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
 	// Maximum number of heartbeats (server caps at 5000).
-	Limit         uint32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Limit uint32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Upper bound (inclusive): the callee's position of the stream from
+	// GetWatermarks. Everything the callee has in (after_seq, until_seq] is
+	// returned, so the caller may adopt until_seq as its position once it has
+	// stored all pages (ADR 0012 B2). 0 means no bound.
+	UntilSeq      uint64 `protobuf:"varint,5,opt,name=until_seq,json=untilSeq,proto3" json:"until_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -257,6 +262,13 @@ func (x *FetchRangeRequest) GetAfterSeq() uint64 {
 func (x *FetchRangeRequest) GetLimit() uint32 {
 	if x != nil {
 		return x.Limit
+	}
+	return 0
+}
+
+func (x *FetchRangeRequest) GetUntilSeq() uint64 {
+	if x != nil {
+		return x.UntilSeq
 	}
 	return 0
 }
@@ -327,12 +339,13 @@ const file_uptimecluster_v1_replication_proto_rawDesc = "" +
 	"\tpersisted\x18\x01 \x03(\v2 .uptimecluster.v1.StreamPositionR\tpersisted\"\x16\n" +
 	"\x14GetWatermarksRequest\"W\n" +
 	"\x15GetWatermarksResponse\x12>\n" +
-	"\tpositions\x18\x01 \x03(\v2 .uptimecluster.v1.StreamPositionR\tpositions\"\x81\x01\n" +
+	"\tpositions\x18\x01 \x03(\v2 .uptimecluster.v1.StreamPositionR\tpositions\"\x9e\x01\n" +
 	"\x11FetchRangeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12 \n" +
 	"\vincarnation\x18\x02 \x01(\tR\vincarnation\x12\x1b\n" +
 	"\tafter_seq\x18\x03 \x01(\x04R\bafterSeq\x12\x14\n" +
-	"\x05limit\x18\x04 \x01(\rR\x05limit\"e\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\x12\x1b\n" +
+	"\tuntil_seq\x18\x05 \x01(\x04R\buntilSeq\"e\n" +
 	"\x12FetchRangeResponse\x12;\n" +
 	"\n" +
 	"heartbeats\x18\x01 \x03(\v2\x1b.uptimecluster.v1.HeartbeatR\n" +

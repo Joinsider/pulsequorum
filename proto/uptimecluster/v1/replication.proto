@@ -46,6 +46,11 @@ message FetchRangeRequest {
   uint64 after_seq = 3;
   // Maximum number of heartbeats (server caps at 5000).
   uint32 limit = 4;
+  // Upper bound (inclusive): the callee's position of the stream from
+  // GetWatermarks. Everything the callee has in (after_seq, until_seq] is
+  // returned, so the caller may adopt until_seq as its position once it has
+  // stored all pages (ADR 0012 B2). 0 means no bound.
+  uint64 until_seq = 5;
 }
 
 message FetchRangeResponse {
