@@ -138,6 +138,22 @@ func (q *Queries) GetSeries(ctx context.Context, arg GetSeriesParams) (int64, er
 	return id, err
 }
 
+const getStreamPosition = `-- name: GetStreamPosition :one
+SELECT seq FROM stream_positions WHERE node_id = ? AND incarnation = ?
+`
+
+type GetStreamPositionParams struct {
+	NodeID      string
+	Incarnation string
+}
+
+func (q *Queries) GetStreamPosition(ctx context.Context, arg GetStreamPositionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getStreamPosition, arg.NodeID, arg.Incarnation)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
 const insertHeartbeat = `-- name: InsertHeartbeat :execrows
 INSERT INTO heartbeats (
     node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms,
@@ -608,6 +624,135 @@ func (q *Queries) ListSeriesIDsAfter(ctx context.Context, arg ListSeriesIDsAfter
 	return items, nil
 }
 
+const listStreamHeartbeatsAfter = `-- name: ListStreamHeartbeatsAfter :many
+SELECT node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms, error_class, message, details_json FROM heartbeats
+WHERE node_id = ?1 AND incarnation = ?2
+  AND seq > ?3 AND seq <= ?4
+ORDER BY seq
+LIMIT ?5
+`
+
+type ListStreamHeartbeatsAfterParams struct {
+	NodeID      string
+	Incarnation string
+	AfterSeq    int64
+	UntilSeq    int64
+	RowLimit    int64
+}
+
+// One stream in seq order, afterSeq < seq <= untilSeq.
+func (q *Queries) ListStreamHeartbeatsAfter(ctx context.Context, arg ListStreamHeartbeatsAfterParams) ([]Heartbeat, error) {
+	rows, err := q.db.QueryContext(ctx, listStreamHeartbeatsAfter,
+		arg.NodeID,
+		arg.Incarnation,
+		arg.AfterSeq,
+		arg.UntilSeq,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Heartbeat{}
+	for rows.Next() {
+		var i Heartbeat
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.Incarnation,
+			&i.Seq,
+			&i.TenantID,
+			&i.MonitorID,
+			&i.TsMs,
+			&i.Status,
+			&i.LatencyMs,
+			&i.ErrorClass,
+			&i.Message,
+			&i.DetailsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStreamPositions = `-- name: ListStreamPositions :many
+SELECT node_id, incarnation, seq FROM stream_positions ORDER BY node_id, incarnation
+`
+
+func (q *Queries) ListStreamPositions(ctx context.Context) ([]StreamPosition, error) {
+	rows, err := q.db.QueryContext(ctx, listStreamPositions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StreamPosition{}
+	for rows.Next() {
+		var i StreamPosition
+		if err := rows.Scan(&i.NodeID, &i.Incarnation, &i.Seq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStreamSeqsAfter = `-- name: ListStreamSeqsAfter :many
+SELECT seq FROM heartbeats
+WHERE node_id = ?1 AND incarnation = ?2 AND seq > ?3
+ORDER BY seq
+LIMIT ?4
+`
+
+type ListStreamSeqsAfterParams struct {
+	NodeID      string
+	Incarnation string
+	AfterSeq    int64
+	RowLimit    int64
+}
+
+// Seqs only, to find the contiguous run above a position; the heartbeats primary
+// key serves the range.
+func (q *Queries) ListStreamSeqsAfter(ctx context.Context, arg ListStreamSeqsAfterParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listStreamSeqsAfter,
+		arg.NodeID,
+		arg.Incarnation,
+		arg.AfterSeq,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var seq int64
+		if err := rows.Scan(&seq); err != nil {
+			return nil, err
+		}
+		items = append(items, seq)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertMeta = `-- name: UpsertMeta :exec
 INSERT INTO meta (key, value) VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET value = excluded.value
@@ -669,5 +814,22 @@ func (q *Queries) UpsertRollup(ctx context.Context, arg UpsertRollupParams) erro
 		arg.LatencyAvgUs,
 		arg.LatencyP95Us,
 	)
+	return err
+}
+
+const upsertStreamPosition = `-- name: UpsertStreamPosition :exec
+INSERT INTO stream_positions (node_id, incarnation, seq) VALUES (?, ?, ?)
+ON CONFLICT (node_id, incarnation) DO UPDATE SET seq = MAX(seq, excluded.seq)
+`
+
+type UpsertStreamPositionParams struct {
+	NodeID      string
+	Incarnation string
+	Seq         int64
+}
+
+// Positions never move backwards: a lower seq leaves the stored one.
+func (q *Queries) UpsertStreamPosition(ctx context.Context, arg UpsertStreamPositionParams) error {
+	_, err := q.db.ExecContext(ctx, upsertStreamPosition, arg.NodeID, arg.Incarnation, arg.Seq)
 	return err
 }

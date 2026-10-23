@@ -359,3 +359,72 @@ func TestMinuteRowSize(t *testing.T) {
 		t.Errorf("%.1f bytes per minute row, want < 80", perRow)
 	}
 }
+
+// TestMigrationV4InitialisesStreamPositions migrates a metrics.db at version 3
+// with heartbeats of two streams to version 4 and checks that each stream's
+// position is its highest stored seq. Down removes the table again.
+func TestMigrationV4InitialisesStreamPositions(t *testing.T) {
+	ctx := context.Background()
+	migrations, err := fs.Sub(metricsMigrationFiles, "migrations/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), MetricsFile), Synchronous: SyncNormal, ReadConns: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db.writer, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 3); err != nil {
+		t.Fatalf("migrate to version 3: %v", err)
+	}
+	for _, hb := range []struct {
+		node, inc string
+		seq       int64
+	}{
+		{"n1", "inc-1", 1}, {"n1", "inc-1", 2}, {"n1", "inc-1", 5}, {"n1", "inc-2", 1}, {"n2", "inc-3", 9},
+	} {
+		if _, err := db.writer.ExecContext(ctx, `INSERT INTO heartbeats (node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms)
+			VALUES (?, ?, ?, 't', 'm', 0, 0, 0)`, hb.node, hb.inc, hb.seq); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := provider.UpTo(ctx, 4); err != nil {
+		t.Fatalf("migrate to version 4: %v", err)
+	}
+	want := map[string]int64{"n1/inc-1": 5, "n1/inc-2": 1, "n2/inc-3": 9}
+	rows, err := db.writer.QueryContext(ctx, `SELECT node_id, incarnation, seq FROM stream_positions`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for rows.Next() {
+		var node, inc string
+		var seq int64
+		if err := rows.Scan(&node, &inc, &seq); err != nil {
+			t.Fatal(err)
+		}
+		got[node+"/"+inc] = seq
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("stream positions after migration = %v, want %v", got, want)
+	}
+
+	if _, err := provider.DownTo(ctx, 3); err != nil {
+		t.Fatalf("migrate down to version 3: %v", err)
+	}
+	var tables int
+	if err := db.writer.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'stream_positions'`).Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	if tables != 0 {
+		t.Errorf("stream_positions survived down migration")
+	}
+}

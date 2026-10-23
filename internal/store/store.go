@@ -683,15 +683,37 @@ type HeartbeatKey struct {
 	Seq         uint64
 }
 
+// StreamPosition is the replication watermark of one heartbeat stream
+// (ADR 0012 B2): every heartbeat of the stream with Seq <= this value that
+// still exists anywhere is stored here. Gaps below it are heartbeats that were
+// compacted, expired or never stored by the producer, never missing ones.
+type StreamPosition struct {
+	NodeID      string
+	Incarnation string
+	Seq         uint64
+}
+
 // Metrics stores data class B.
 type Metrics interface {
 	// Incarnation identifies this metrics database; it changes whenever the
 	// database is recreated (ADR 0012 B4).
 	Incarnation() string
-	// InsertHeartbeats stores heartbeats idempotently and returns how many were new.
+	// InsertHeartbeats stores heartbeats idempotently and returns how many were
+	// new. In the same transaction it advances the position of each stream it
+	// touches while the next seq is present without a gap (FA-REP-03).
 	InsertHeartbeats(ctx context.Context, hbs []Heartbeat) (int, error)
 	// LastSeq returns the highest stored seq of a stream (0 if none).
 	LastSeq(ctx context.Context, nodeID, incarnation string) (uint64, error)
+
+	// StreamPositions returns the position of every stream known locally.
+	StreamPositions(ctx context.Context) ([]StreamPosition, error)
+	// AdvanceStreamPosition raises a stream's position to seq; a lower seq is
+	// ignored. Anti-entropy calls it after storing a page fetched from a peer
+	// whose position covers it.
+	AdvanceStreamPosition(ctx context.Context, pos StreamPosition) error
+	// HeartbeatsAfter returns up to limit heartbeats of one stream with
+	// afterSeq < seq <= untilSeq in seq order, and whether more follow.
+	HeartbeatsAfter(ctx context.Context, nodeID, incarnation string, afterSeq, untilSeq uint64, limit int) ([]Heartbeat, bool, error)
 	ListHeartbeats(ctx context.Context, tenantID string, q HeartbeatQuery) (HeartbeatPage, error)
 	// LatestHeartbeats returns up to limit of the newest heartbeats of a
 	// monitor, newest first; nodeID empty = all nodes.

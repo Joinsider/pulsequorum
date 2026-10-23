@@ -53,3 +53,9 @@ type Series struct {
 	MonitorID string
 	NodeID    string
 }
+
+type StreamPosition struct {
+	NodeID      string
+	Incarnation string
+	Seq         int64
+}

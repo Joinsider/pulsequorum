@@ -86,6 +86,13 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"RollupLatencyPrecision", testRollupLatencyPrecision},
 		{"SeriesTenantIsolation", testSeriesTenantIsolation},
 		{"RetentionInBatches", testRetentionInBatches},
+		{"StreamPositionContiguous", testStreamPositionContiguous},
+		{"StreamPositionGap", testStreamPositionGap},
+		{"StreamPositionDuplicates", testStreamPositionDuplicates},
+		{"AdvanceStreamPosition", testAdvanceStreamPosition},
+		{"StreamPositionPerStream", testStreamPositionPerStream},
+		{"HeartbeatsAfter", testHeartbeatsAfter},
+		{"StreamPositionSurvivesDelete", testStreamPositionSurvivesDelete},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -2325,6 +2332,180 @@ func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	}
 	if _, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, 0); err == nil {
 		t.Error("batch size 0 accepted")
+	}
+}
+
+// streamHeartbeats returns heartbeats of one stream with the given seqs.
+func streamHeartbeats(node, incarnation string, seqs ...uint64) []store.Heartbeat {
+	out := make([]store.Heartbeat, 0, len(seqs))
+	for _, seq := range seqs {
+		out = append(out, store.Heartbeat{
+			NodeID: node, Incarnation: incarnation, Seq: seq,
+			TenantID: tenantA, MonitorID: "mon", TsMs: int64(seq) * 1000, Status: store.CheckUp,
+		})
+	}
+	return out
+}
+
+// streamPositions returns the positions of all streams as a map keyed by node and incarnation.
+func streamPositions(t *testing.T, m store.Metrics) map[[2]string]uint64 {
+	t.Helper()
+	list, err := m.StreamPositions(context.Background())
+	if err != nil {
+		t.Fatalf("StreamPositions: %v", err)
+	}
+	out := make(map[[2]string]uint64, len(list))
+	for _, p := range list {
+		out[[2]string{p.NodeID, p.Incarnation}] = p.Seq
+	}
+	return out
+}
+
+func testStreamPositionContiguous(t *testing.T, m store.Metrics) {
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3))
+	if got := streamPositions(t, m); len(got) != 1 || got[[2]string{"n1", "a"}] != 3 {
+		t.Errorf("positions after contiguous insert = %v, want n1/a = 3", got)
+	}
+}
+
+// testStreamPositionGap inserts an out-of-order batch: the position stops at the
+// first gap and moves on once a later insert fills it.
+func testStreamPositionGap(t *testing.T, m store.Metrics) {
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 4))
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 2 {
+		t.Errorf("position with gap at 3 = %d, want 2", got)
+	}
+	insert(t, m, streamHeartbeats("n1", "a", 3))
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 4 {
+		t.Errorf("position after filling gap = %d, want 4", got)
+	}
+}
+
+func testStreamPositionDuplicates(t *testing.T, m store.Metrics) {
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3))
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3))
+	insert(t, m, streamHeartbeats("n1", "a", 2))
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 3 {
+		t.Errorf("position after duplicates = %d, want 3", got)
+	}
+	insert(t, m, streamHeartbeats("n1", "a", 5))
+	insert(t, m, streamHeartbeats("n1", "a", 5))
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 3 {
+		t.Errorf("position after duplicate beyond gap = %d, want 3", got)
+	}
+}
+
+func testAdvanceStreamPosition(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	if err := m.AdvanceStreamPosition(ctx, store.StreamPosition{NodeID: "n9", Incarnation: "x", Seq: 7}); err != nil {
+		t.Fatalf("advance unknown stream: %v", err)
+	}
+	if got := streamPositions(t, m)[[2]string{"n9", "x"}]; got != 7 {
+		t.Errorf("position of new stream = %d, want 7", got)
+	}
+	for _, seq := range []uint64{5, 7} {
+		if err := m.AdvanceStreamPosition(ctx, store.StreamPosition{NodeID: "n9", Incarnation: "x", Seq: seq}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := streamPositions(t, m)[[2]string{"n9", "x"}]; got != 7 {
+		t.Errorf("position after lower and equal advance = %d, want 7", got)
+	}
+	if err := m.AdvanceStreamPosition(ctx, store.StreamPosition{NodeID: "n9", Incarnation: "x", Seq: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if got := streamPositions(t, m)[[2]string{"n9", "x"}]; got != 10 {
+		t.Errorf("position after higher advance = %d, want 10", got)
+	}
+	// Heartbeats up to the advanced position are covered; the next one advances as usual.
+	insert(t, m, streamHeartbeats("n9", "x", 1, 2, 11))
+	if got := streamPositions(t, m)[[2]string{"n9", "x"}]; got != 11 {
+		t.Errorf("position after insert above advance = %d, want 11", got)
+	}
+
+	for _, pos := range []store.StreamPosition{{Incarnation: "x", Seq: 1}, {NodeID: "n9", Seq: 1}} {
+		if err := m.AdvanceStreamPosition(ctx, pos); err == nil {
+			t.Errorf("advance with empty node or incarnation accepted: %+v", pos)
+		}
+	}
+}
+
+func testStreamPositionPerStream(t *testing.T, m store.Metrics) {
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3))
+	insert(t, m, streamHeartbeats("n1", "b", 1, 2, 4))
+	insert(t, m, streamHeartbeats("n2", "a", 1))
+	want := map[[2]string]uint64{{"n1", "a"}: 3, {"n1", "b"}: 2, {"n2", "a"}: 1}
+	got := streamPositions(t, m)
+	if len(got) != len(want) {
+		t.Fatalf("positions = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("position of %v = %d, want %d", k, got[k], v)
+		}
+	}
+}
+
+func testHeartbeatsAfter(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3, 4, 5, 6, 7))
+	insert(t, m, streamHeartbeats("n1", "b", 1))
+
+	for _, tc := range []struct {
+		name         string
+		node, inc    string
+		after, until uint64
+		limit        int
+		want         []uint64
+		more         bool
+	}{
+		{"first page", "n1", "a", 0, 0, 3, []uint64{1, 2, 3}, true},
+		{"bounded range", "n1", "a", 3, 5, 10, []uint64{4, 5}, false},
+		{"whole stream", "n1", "a", 0, 0, 7, []uint64{1, 2, 3, 4, 5, 6, 7}, false},
+		{"open end", "n1", "a", 5, 0, 2, []uint64{6, 7}, false},
+		{"single seq", "n1", "a", 5, 6, 1, []uint64{6}, false},
+		{"limit clamped to one", "n1", "a", 0, 0, 0, []uint64{1}, true},
+		{"other incarnation", "n1", "b", 0, 0, 10, []uint64{1}, false},
+		{"unknown stream", "n9", "x", 0, 0, 10, nil, false},
+		{"after the end", "n1", "a", 7, 0, 10, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, more, err := m.HeartbeatsAfter(ctx, tc.node, tc.inc, tc.after, tc.until, tc.limit)
+			if err != nil {
+				t.Fatalf("HeartbeatsAfter: %v", err)
+			}
+			if more != tc.more {
+				t.Errorf("more = %v, want %v", more, tc.more)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d heartbeats, want %d", len(got), len(tc.want))
+			}
+			for i, hb := range got {
+				if hb.Seq != tc.want[i] || hb.NodeID != tc.node || hb.Incarnation != tc.inc {
+					t.Errorf("heartbeat %d = %s/%s/%d, want %s/%s/%d", i, hb.NodeID, hb.Incarnation, hb.Seq, tc.node, tc.inc, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// testStreamPositionSurvivesDelete checks that retention does not move a position:
+// the gaps left by deleted heartbeats are below it.
+func testStreamPositionSurvivesDelete(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, streamHeartbeats("n1", "a", 1, 2, 3))
+	if _, err := m.DeleteHeartbeatsBefore(ctx, 10_000, 100); err != nil {
+		t.Fatal(err)
+	}
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 3 {
+		t.Errorf("position after retention = %d, want 3", got)
+	}
+	if got, more, err := m.HeartbeatsAfter(ctx, "n1", "a", 0, 0, 10); err != nil || more || len(got) != 0 {
+		t.Errorf("heartbeats after retention = %d, %v, %v", len(got), more, err)
+	}
+	insert(t, m, streamHeartbeats("n1", "a", 4))
+	if got := streamPositions(t, m)[[2]string{"n1", "a"}]; got != 4 {
+		t.Errorf("position after insert following retention = %d, want 4", got)
 	}
 }
 

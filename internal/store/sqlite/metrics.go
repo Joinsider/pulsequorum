@@ -108,6 +108,7 @@ func (m *MetricsStore) Close() error { return m.db.Close() }
 func (m *MetricsStore) Incarnation() string { return m.incarnation }
 
 // InsertHeartbeats stores heartbeats in one transaction; duplicates are ignored.
+// The same transaction advances the position of each stream it touches.
 func (m *MetricsStore) InsertHeartbeats(ctx context.Context, hbs []store.Heartbeat) (int, error) {
 	if len(hbs) == 0 {
 		return 0, nil
@@ -147,10 +148,144 @@ func (m *MetricsStore) InsertHeartbeats(ctx context.Context, hbs []store.Heartbe
 		}
 		inserted += int(n)
 	}
+	// Advance the position of every stream the batch touched, in the same
+	// transaction, so a position never covers a heartbeat that did not commit.
+	type stream struct{ nodeID, incarnation string }
+	advanced := make(map[stream]struct{}, 1)
+	for _, hb := range hbs {
+		key := stream{hb.NodeID, hb.Incarnation}
+		if _, ok := advanced[key]; ok {
+			continue
+		}
+		advanced[key] = struct{}{}
+		if err := advanceStreamPosition(ctx, q, hb.NodeID, hb.Incarnation); err != nil {
+			return 0, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit heartbeat insert: %w", err)
 	}
 	return inserted, nil
+}
+
+// streamPageSize bounds one read of a stream's seqs while its position advances.
+const streamPageSize = 1000
+
+// advanceStreamPosition moves the position of one stream over the run of stored
+// seqs directly above it and stops at the first gap. Gaps are heartbeats that
+// have not arrived yet; a later insert that fills one advances the position then.
+func advanceStreamPosition(ctx context.Context, q *metricsdb.Queries, nodeID, incarnation string) error {
+	pos, err := q.GetStreamPosition(ctx, metricsdb.GetStreamPositionParams{NodeID: nodeID, Incarnation: incarnation})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("read stream position %s/%s: %w", nodeID, incarnation, mapErr(err))
+	}
+	next := pos
+	for {
+		seqs, err := q.ListStreamSeqsAfter(ctx, metricsdb.ListStreamSeqsAfterParams{
+			NodeID:      nodeID,
+			Incarnation: incarnation,
+			AfterSeq:    next,
+			RowLimit:    streamPageSize,
+		})
+		if err != nil {
+			return fmt.Errorf("list seqs of stream %s/%s: %w", nodeID, incarnation, mapErr(err))
+		}
+		gap := false
+		for _, seq := range seqs {
+			if seq != next+1 {
+				gap = true
+				break
+			}
+			next = seq
+		}
+		if gap || len(seqs) < streamPageSize {
+			break
+		}
+	}
+	if next == pos {
+		return nil
+	}
+	if err := q.UpsertStreamPosition(ctx, metricsdb.UpsertStreamPositionParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		Seq:         next,
+	}); err != nil {
+		return fmt.Errorf("advance stream position %s/%s: %w", nodeID, incarnation, mapErr(err))
+	}
+	return nil
+}
+
+// StreamPositions returns the position of every stream known locally.
+func (m *MetricsStore) StreamPositions(ctx context.Context) ([]store.StreamPosition, error) {
+	rows, err := m.q.ListStreamPositions(ctx)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.StreamPosition, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.StreamPosition{
+			NodeID:      r.NodeID,
+			Incarnation: r.Incarnation,
+			Seq:         uint64(max(r.Seq, 0)),
+		})
+	}
+	return out, nil
+}
+
+// AdvanceStreamPosition raises the position of a stream to pos.Seq; a lower seq
+// is ignored. An unknown stream is created.
+func (m *MetricsStore) AdvanceStreamPosition(ctx context.Context, pos store.StreamPosition) error {
+	if pos.NodeID == "" || pos.Incarnation == "" {
+		return errors.New("advance stream position: node ID and incarnation are required")
+	}
+	seq, err := toInt64(pos.Seq)
+	if err != nil {
+		return fmt.Errorf("advance stream position: %w", err)
+	}
+	if err := metricsdb.New(m.db.writer).UpsertStreamPosition(ctx, metricsdb.UpsertStreamPositionParams{
+		NodeID:      pos.NodeID,
+		Incarnation: pos.Incarnation,
+		Seq:         seq,
+	}); err != nil {
+		return fmt.Errorf("advance stream position %s/%s: %w", pos.NodeID, pos.Incarnation, mapErr(err))
+	}
+	return nil
+}
+
+// HeartbeatsAfter returns up to limit heartbeats of one stream with
+// afterSeq < seq <= untilSeq in seq order, and whether more follow. untilSeq 0
+// means no upper bound.
+func (m *MetricsStore) HeartbeatsAfter(ctx context.Context, nodeID, incarnation string, afterSeq, untilSeq uint64, limit int) ([]store.Heartbeat, bool, error) {
+	after, err := toInt64(afterSeq)
+	if err != nil {
+		return nil, false, err
+	}
+	until := int64(math.MaxInt64)
+	if untilSeq != 0 {
+		if until, err = toInt64(untilSeq); err != nil {
+			return nil, false, err
+		}
+	}
+	limit = clampLimit(limit, 1, maxHeartbeatLimit)
+	rows, err := m.q.ListStreamHeartbeatsAfter(ctx, metricsdb.ListStreamHeartbeatsAfterParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		AfterSeq:    after,
+		UntilSeq:    until,
+		RowLimit:    int64(limit + 1), // one extra row tells whether more follow
+	})
+	if err != nil {
+		return nil, false, mapErr(err)
+	}
+	more := len(rows) > limit
+	if more {
+		rows = rows[:limit]
+	}
+	out := make([]store.Heartbeat, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, heartbeatFromRow(r))
+	}
+	return out, more, nil
 }
 
 // LastSeq returns the highest stored seq of the stream, or 0.

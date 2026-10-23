@@ -154,3 +154,30 @@ SELECT id FROM series WHERE tenant_id = ? AND monitor_id = ? AND node_id = ?;
 
 -- name: InsertSeries :one
 INSERT INTO series (tenant_id, monitor_id, node_id) VALUES (?, ?, ?) RETURNING id;
+
+-- name: GetStreamPosition :one
+SELECT seq FROM stream_positions WHERE node_id = ? AND incarnation = ?;
+
+-- name: UpsertStreamPosition :exec
+-- Positions never move backwards: a lower seq leaves the stored one.
+INSERT INTO stream_positions (node_id, incarnation, seq) VALUES (?, ?, ?)
+ON CONFLICT (node_id, incarnation) DO UPDATE SET seq = MAX(seq, excluded.seq);
+
+-- name: ListStreamPositions :many
+SELECT node_id, incarnation, seq FROM stream_positions ORDER BY node_id, incarnation;
+
+-- name: ListStreamSeqsAfter :many
+-- Seqs only, to find the contiguous run above a position; the heartbeats primary
+-- key serves the range.
+SELECT seq FROM heartbeats
+WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation) AND seq > sqlc.arg(after_seq)
+ORDER BY seq
+LIMIT sqlc.arg(row_limit);
+
+-- name: ListStreamHeartbeatsAfter :many
+-- One stream in seq order, afterSeq < seq <= untilSeq.
+SELECT * FROM heartbeats
+WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation)
+  AND seq > sqlc.arg(after_seq) AND seq <= sqlc.arg(until_seq)
+ORDER BY seq
+LIMIT sqlc.arg(row_limit);
