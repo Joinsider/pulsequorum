@@ -147,6 +147,18 @@ func (q *Queries) DeleteMonitorTags(ctx context.Context, arg DeleteMonitorTagsPa
 	return err
 }
 
+const deleteNode = `-- name: DeleteNode :execrows
+DELETE FROM nodes WHERE id = ?
+`
+
+func (q *Queries) DeleteNode(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNode, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteUser = `-- name: DeleteUser :execrows
 DELETE FROM users WHERE tenant_id = ? AND id = ?
 `
@@ -467,6 +479,41 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 		&i.Confirmed,
 		&i.SinceMs,
 	)
+	return i, err
+}
+
+const getNode = `-- name: GetNode :one
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes WHERE id = ?
+`
+
+func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
+	row := q.db.QueryRowContext(ctx, getNode, id)
+	var i Node
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.CapabilitiesJson,
+		&i.LabelsJson,
+		&i.Region,
+		&i.Version,
+		&i.MaxCommandVersion,
+		&i.Healthy,
+		&i.HealthChangedMs,
+		&i.RegisteredMs,
+		&i.UpdatedMs,
+	)
+	return i, err
+}
+
+const getRevokedNode = `-- name: GetRevokedNode :one
+SELECT node_id, revoked_ms FROM revoked_nodes WHERE node_id = ?
+`
+
+func (q *Queries) GetRevokedNode(ctx context.Context, nodeID string) (RevokedNode, error) {
+	row := q.db.QueryRowContext(ctx, getRevokedNode, nodeID)
+	var i RevokedNode
+	err := row.Scan(&i.NodeID, &i.RevokedMs)
 	return i, err
 }
 
@@ -1361,6 +1408,46 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 	return items, nil
 }
 
+const listNodes = `-- name: ListNodes :many
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes ORDER BY id
+`
+
+func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
+	rows, err := q.db.QueryContext(ctx, listNodes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Node{}
+	for rows.Next() {
+		var i Node
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Role,
+			&i.CapabilitiesJson,
+			&i.LabelsJson,
+			&i.Region,
+			&i.Version,
+			&i.MaxCommandVersion,
+			&i.Healthy,
+			&i.HealthChangedMs,
+			&i.RegisteredMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRevokedCerts = `-- name: ListRevokedCerts :many
 SELECT serial, node_id, revoked_ms, not_after_ms FROM revoked_certs ORDER BY serial
 `
@@ -1699,6 +1786,57 @@ type PruneStatusHistoryParams struct {
 // which still defines the status at before_ms.
 func (q *Queries) PruneStatusHistory(ctx context.Context, arg PruneStatusHistoryParams) error {
 	_, err := q.db.ExecContext(ctx, pruneStatusHistory, arg.TenantID, arg.MonitorID, arg.BeforeMs)
+	return err
+}
+
+const putNode = `-- name: PutNode :exec
+INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    name = excluded.name,
+    role = excluded.role,
+    capabilities_json = excluded.capabilities_json,
+    labels_json = excluded.labels_json,
+    region = excluded.region,
+    version = excluded.version,
+    max_command_version = excluded.max_command_version,
+    healthy = excluded.healthy,
+    health_changed_ms = excluded.health_changed_ms,
+    registered_ms = excluded.registered_ms,
+    updated_ms = excluded.updated_ms
+`
+
+type PutNodeParams struct {
+	ID                string
+	Name              string
+	Role              string
+	CapabilitiesJson  string
+	LabelsJson        string
+	Region            string
+	Version           string
+	MaxCommandVersion int64
+	Healthy           int64
+	HealthChangedMs   int64
+	RegisteredMs      int64
+	UpdatedMs         int64
+}
+
+func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
+	_, err := q.db.ExecContext(ctx, putNode,
+		arg.ID,
+		arg.Name,
+		arg.Role,
+		arg.CapabilitiesJson,
+		arg.LabelsJson,
+		arg.Region,
+		arg.Version,
+		arg.MaxCommandVersion,
+		arg.Healthy,
+		arg.HealthChangedMs,
+		arg.RegisteredMs,
+		arg.UpdatedMs,
+	)
 	return err
 }
 

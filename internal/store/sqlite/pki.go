@@ -163,6 +163,16 @@ func (t *stateTx) PruneRevokedCerts(ctx context.Context, beforeMs int64) error {
 	return mapErr(t.q.PruneRevokedCerts(ctx, beforeMs))
 }
 
+// GetRevokedNode returns a revocation entry or store.ErrNotFound. Inside a
+// transaction the revocation list can be read this way (ADR 0017).
+func (t *stateTx) GetRevokedNode(ctx context.Context, nodeID string) (store.RevokedNode, error) {
+	r, err := t.q.GetRevokedNode(ctx, nodeID)
+	if err != nil {
+		return store.RevokedNode{}, mapErr(err)
+	}
+	return store.RevokedNode{NodeID: r.NodeID, RevokedMs: r.RevokedMs}, nil
+}
+
 func (t *stateTx) PutRevokedNode(ctx context.Context, n store.RevokedNode) error {
 	if n.NodeID == "" {
 		return errors.New("put revoked node: node ID is required")

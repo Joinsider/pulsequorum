@@ -119,6 +119,21 @@ type MonitorTag struct {
 	Tag       string
 }
 
+type Node struct {
+	ID                string
+	Name              string
+	Role              string
+	CapabilitiesJson  string
+	LabelsJson        string
+	Region            string
+	Version           string
+	MaxCommandVersion int64
+	Healthy           int64
+	HealthChangedMs   int64
+	RegisteredMs      int64
+	UpdatedMs         int64
+}
+
 type NotificationChannel struct {
 	TenantID           string
 	ID                 string

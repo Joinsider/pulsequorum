@@ -59,6 +59,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"JoinTokens", testJoinTokens},
 		{"RevokedCerts", testRevokedCerts},
 		{"RevokedNodes", testRevokedNodes},
+		{"Nodes", testNodes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -2676,6 +2677,144 @@ func testRevokedNodes(t *testing.T, s store.State) {
 		if list[i] != want[i] {
 			t.Errorf("revoked node %d = %+v, want %+v", i, list[i], want[i])
 		}
+	}
+}
+
+// nodeFields compares the fields of two registry entries; capabilities and
+// labels are compared by content, so nil and empty values are equal.
+func nodeFields(a, b store.Node) bool {
+	return a.ID == b.ID && a.Name == b.Name && a.Role == b.Role &&
+		slices.Equal(a.Capabilities, b.Capabilities) && maps.Equal(a.Labels, b.Labels) &&
+		a.Region == b.Region && a.Version == b.Version &&
+		a.MaxCommandVersion == b.MaxCommandVersion && a.Healthy == b.Healthy &&
+		a.HealthChangedMs == b.HealthChangedMs && a.RegisteredMs == b.RegisteredMs &&
+		a.UpdatedMs == b.UpdatedMs
+}
+
+func testNodes(t *testing.T, s store.State) {
+	ctx := context.Background()
+	put := func(n store.Node) error {
+		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutNode(ctx, n) })
+	}
+	nodeB := store.Node{
+		ID:                "node-b",
+		Name:              "Berlin",
+		Role:              store.NodeRoleVoter,
+		Capabilities:      []string{"icmp", "http"},
+		Labels:            map[string]string{"env": "prod", "az": "1"},
+		Region:            "eu",
+		Version:           "1.2.0",
+		MaxCommandVersion: 2,
+		Healthy:           true,
+		HealthChangedMs:   100,
+		RegisteredMs:      100,
+		UpdatedMs:         100,
+	}
+	nodeA := store.Node{
+		ID:              "node-a",
+		Name:            "Amsterdam",
+		Role:            store.NodeRoleProbe,
+		HealthChangedMs: 200,
+		RegisteredMs:    200,
+		UpdatedMs:       200,
+	}
+	if err := put(nodeB); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(nodeA); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(store.Node{Name: "no id", Role: store.NodeRoleVoter}); err == nil {
+		t.Error("node without ID accepted")
+	}
+
+	// Capabilities come back sorted; missing capabilities and labels come
+	// back as empty values, never nil.
+	wantB := nodeB
+	wantB.Capabilities = []string{"http", "icmp"}
+	wantA := nodeA
+	wantA.Capabilities = []string{}
+	wantA.Labels = map[string]string{}
+
+	list, err := s.ListNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.Node{wantA, wantB}
+	if len(list) != len(want) {
+		t.Fatalf("nodes = %+v, want %d entries", list, len(want))
+	}
+	for i := range want {
+		if !nodeFields(list[i], want[i]) {
+			t.Errorf("node %d = %+v, want %+v", i, list[i], want[i])
+		}
+		if list[i].Capabilities == nil || list[i].Labels == nil {
+			t.Errorf("node %d has nil capabilities or labels: %+v", i, list[i])
+		}
+	}
+
+	var got store.Node
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		var err error
+		got, err = tx.GetNode(ctx, "node-b")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !nodeFields(got, wantB) {
+		t.Errorf("GetNode = %+v, want %+v", got, wantB)
+	}
+
+	// A put replaces the entry as a whole.
+	replaced := nodeB
+	replaced.Version = "1.3.0"
+	replaced.Capabilities = nil
+	replaced.Labels = nil
+	replaced.Healthy = false
+	replaced.HealthChangedMs = 300
+	replaced.UpdatedMs = 300
+	if err := put(replaced); err != nil {
+		t.Fatal(err)
+	}
+	err = update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		var err error
+		got, err = tx.GetNode(ctx, "node-b")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReplaced := replaced
+	wantReplaced.Capabilities = []string{}
+	wantReplaced.Labels = map[string]string{}
+	if !nodeFields(got, wantReplaced) {
+		t.Errorf("replaced node = %+v, want %+v", got, wantReplaced)
+	}
+
+	// Unknown IDs are not found on read, but not an error on delete.
+	err = update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		_, err := tx.GetNode(ctx, "node-x")
+		return err
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetNode unknown: err = %v, want ErrNotFound", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.DeleteNode(ctx, "node-a")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.DeleteNode(ctx, "node-x")
+	}); err != nil {
+		t.Errorf("delete unknown node: %v", err)
+	}
+	list, err = s.ListNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != "node-b" || list[0].Version != "1.3.0" {
+		t.Errorf("nodes after delete = %+v, want only node-b at 1.3.0", list)
 	}
 }
 

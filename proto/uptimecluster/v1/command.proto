@@ -44,6 +44,7 @@ message Command {
     RedeemJoinToken redeem_join_token = 22;
     RevokeCertificate revoke_certificate = 23;
     RevokeNode revoke_node = 24;
+    SetNodeHealth set_node_health = 25;
   }
 }
 
@@ -173,6 +174,13 @@ message RevokeSessions {
 // RegisterNode adds or updates a node in the cluster registry.
 message RegisterNode {
   NodeInfo node = 1;
+}
+
+// SetNodeHealth records a health change of a registered node (ADR 0017). Only
+// the leader proposes it, from its Raft contact with the node.
+message SetNodeHealth {
+  string node_id = 1;
+  bool healthy = 2;
 }
 
 // SetFeatureLevel raises the command version the cluster may use (FA-CLU-12).

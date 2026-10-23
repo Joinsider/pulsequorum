@@ -246,6 +246,10 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRevokeCertificate(ctx, tx, cmd, p.RevokeCertificate)
 	case *pb.Command_RevokeNode:
 		return applyRevokeNode(ctx, tx, cmd, p.RevokeNode)
+	case *pb.Command_RegisterNode:
+		return applyRegisterNode(ctx, tx, cmd, p.RegisterNode)
+	case *pb.Command_SetNodeHealth:
+		return applySetNodeHealth(ctx, tx, cmd, p.SetNodeHealth)
 	case nil:
 		return nil, invalid("command without payload")
 	default:

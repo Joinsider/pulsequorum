@@ -433,3 +433,32 @@ ON CONFLICT (node_id) DO UPDATE SET revoked_ms = MAX(revoked_nodes.revoked_ms, e
 
 -- name: ListRevokedNodes :many
 SELECT * FROM revoked_nodes ORDER BY node_id;
+
+-- name: GetRevokedNode :one
+SELECT * FROM revoked_nodes WHERE node_id = ?;
+
+-- name: GetNode :one
+SELECT * FROM nodes WHERE id = ?;
+
+-- name: ListNodes :many
+SELECT * FROM nodes ORDER BY id;
+
+-- name: PutNode :exec
+INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    name = excluded.name,
+    role = excluded.role,
+    capabilities_json = excluded.capabilities_json,
+    labels_json = excluded.labels_json,
+    region = excluded.region,
+    version = excluded.version,
+    max_command_version = excluded.max_command_version,
+    healthy = excluded.healthy,
+    health_changed_ms = excluded.health_changed_ms,
+    registered_ms = excluded.registered_ms,
+    updated_ms = excluded.updated_ms;
+
+-- name: DeleteNode :execrows
+DELETE FROM nodes WHERE id = ?;

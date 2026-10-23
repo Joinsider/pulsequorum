@@ -18,8 +18,9 @@ import (
 )
 
 // CommandVersion is the highest Command.version this binary can apply.
-// It is raised together with a feature gate (FA-CLU-12).
-const CommandVersion = 1
+// It is raised together with a feature gate (FA-CLU-12). Version 2 adds
+// RegisterNode and SetNodeHealth (ADR 0017).
+const CommandVersion = 2
 
 // Stable codes of deterministic command errors. They are stored in the dedup
 // table, so a retry returns the same error.

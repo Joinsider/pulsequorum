@@ -52,6 +52,10 @@ func commandLog(t *testing.T) []*raft.Log {
 		must(NewPutMonitor("r5", "missing-tenant", "m2", monitorDoc("x"), 0)),
 		{Version: 1, RequestId: "r6", Payload: &pb.Command_SetFeatureLevel{SetFeatureLevel: &pb.SetFeatureLevel{Level: 1}}},
 		NewDeleteMonitor("r7", "default", "m1"),
+		NewRegisterNode("r8", store.Node{ID: "node-1", Name: "one", Role: store.NodeRoleVoter,
+			Capabilities: []string{"icmp", "http"}, Labels: map[string]string{"env": "prod"},
+			Region: "eu", Version: "1.0.0", MaxCommandVersion: 2}),
+		NewSetNodeHealth("r9", "node-1", false),
 	}
 	logs := make([]*raft.Log, 0, len(cmds)+1)
 	for i, c := range cmds {
@@ -86,11 +90,15 @@ func TestFSMDeterminism(t *testing.T) {
 		if !errors.Is(results[4].Err, store.ErrConflict) || !errors.Is(results[5].Err, store.ErrNotFound) {
 			t.Errorf("conflict/not found results: %v / %v", results[4].Err, results[5].Err)
 		}
-		if !errors.Is(results[6].Err, ErrInvalidCommand) || !errors.Is(results[8].Err, ErrInvalidCommand) {
-			t.Errorf("unsupported/invalid results: %v / %v", results[6].Err, results[8].Err)
+		last := len(results) - 1
+		if !errors.Is(results[6].Err, ErrInvalidCommand) || !errors.Is(results[last].Err, ErrInvalidCommand) {
+			t.Errorf("unsupported/invalid results: %v / %v", results[6].Err, results[last].Err)
 		}
-		if idx, _ := st.AppliedIndex(ctx); idx != 9 || fsm.AppliedIndex() != 9 {
-			t.Errorf("applied index = %d/%d, want 9", idx, fsm.AppliedIndex())
+		if results[8].Err != nil || results[9].Err != nil {
+			t.Errorf("node commands: %v / %v", results[8].Err, results[9].Err)
+		}
+		if idx, _ := st.AppliedIndex(ctx); idx != uint64(len(results)) || fsm.AppliedIndex() != uint64(len(results)) {
+			t.Errorf("applied index = %d/%d, want %d", idx, fsm.AppliedIndex(), len(results))
 		}
 		// Replayed entries are skipped (ADR 0012 A2).
 		if r := fsm.Apply(commandLog(t)[1]).(ApplyResult); r.Result != nil || r.Err != nil {

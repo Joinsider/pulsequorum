@@ -271,7 +271,7 @@ func applyRevokeCertificate(ctx context.Context, tx store.StateTx, cmd *pb.Comma
 
 // applyRevokeNode revokes a node: its certificates issued before the command
 // time are rejected from now on (FA-PKI-04). A repeated revocation keeps the
-// later time in the store.
+// later time in the store. The registry entry of the node is removed (ADR 0017).
 func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *pb.RevokeNode) (json.RawMessage, error) {
 	id := r.GetNodeId()
 	if !isNodeID(id) {
@@ -279,6 +279,10 @@ func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *
 	}
 	now := cmd.GetIssuedAtMs()
 	if err := tx.PutRevokedNode(ctx, store.RevokedNode{NodeID: id, RevokedMs: now}); err != nil {
+		return nil, storeError(err)
+	}
+	// The registry entry goes with the node (ADR 0017).
+	if err := tx.DeleteNode(ctx, id); err != nil {
 		return nil, storeError(err)
 	}
 	return json.Marshal(RevokeNodeResult{RevokedMs: now})

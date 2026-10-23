@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 )
 
 var (
@@ -382,6 +383,8 @@ type State interface {
 	ListRevokedCerts(ctx context.Context) ([]RevokedCert, error)
 	// ListRevokedNodes returns the revoked nodes ordered by node ID.
 	ListRevokedNodes(ctx context.Context) ([]RevokedNode, error)
+	// ListNodes returns the node registry ordered by node ID (ADR 0017).
+	ListNodes(ctx context.Context) ([]Node, error)
 
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
@@ -462,6 +465,14 @@ type StateTx interface {
 	// PutRevokedNode records a revoked node. A repeated revocation keeps the
 	// later RevokedMs.
 	PutRevokedNode(ctx context.Context, n RevokedNode) error
+	// GetRevokedNode returns the revocation of a node or ErrNotFound.
+	GetRevokedNode(ctx context.Context, nodeID string) (RevokedNode, error)
+	// GetNode returns a registered node or ErrNotFound.
+	GetNode(ctx context.Context, id string) (Node, error)
+	// PutNode creates or replaces a registry entry (ADR 0017).
+	PutNode(ctx context.Context, n Node) error
+	// DeleteNode removes a registry entry; an unknown ID is not an error.
+	DeleteNode(ctx context.Context, id string) error
 
 	// CountUsers returns the number of users of all tenants.
 	CountUsers(ctx context.Context) (int, error)
@@ -545,6 +556,38 @@ type RevokedCert struct {
 type RevokedNode struct {
 	NodeID    string
 	RevokedMs int64
+}
+
+// Node roles in the registry.
+const (
+	NodeRoleVoter = "voter"
+	NodeRoleProbe = "probe"
+)
+
+// Node is an entry of the node registry in the Raft state (ADR 0017). Each
+// node registers itself; Healthy is set by the leader from its contact with
+// the node.
+type Node struct {
+	ID           string
+	Name         string
+	Role         string   // NodeRoleVoter or NodeRoleProbe
+	Capabilities []string // sorted, e.g. "icmp" (FA-CHK-31)
+	Labels       map[string]string
+	Region       string
+	Version      string
+	// MaxCommandVersion is the highest command version the node can apply.
+	MaxCommandVersion uint32
+	Healthy           bool
+	// HealthChangedMs is the command time of the last health change, or of
+	// the first registration.
+	HealthChangedMs int64
+	RegisteredMs    int64
+	UpdatedMs       int64
+}
+
+// HasCapability reports whether the node has the capability; "" is always true.
+func (n Node) HasCapability(c string) bool {
+	return c == "" || slices.Contains(n.Capabilities, c)
 }
 
 // SecretKey is a data encryption key wrapped with the master key (ADR 0011).
