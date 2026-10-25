@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-10-25 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-OBS-04, FA-CLU-08, FA-PKI-04, PF-06, ADR 0005, ADR 0006, ADR 0008, ADR 0012 A5 |
@@ -128,3 +128,4 @@ Für den Quorumverlust **Option A**, für das Passwort **Option A**.
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-10-25 | Proposed | Claude | |
+| 2026-10-25 | Accepted | Projektinhaber | im Chat bestätigt |
