@@ -8,7 +8,7 @@ Dieses Dokument beschreibt, wie Voter zu einem laufenden Cluster hinzugefügt, e
 - Die Zertifizierungsstelle (CA) gehört dem Cluster. Sie wird beim ersten Start des ersten Voters erzeugt und über den replizierten Zustand verteilt. Jeder Node erhält ein eigenes Zertifikat mit Rolle und Node-ID.
 - Jeder Voter nimmt schreibende API-Anfragen an. Ein Follower leitet sie über den Cluster-Port an den Leader weiter und antwortet erst, wenn die Änderung auch bei ihm angekommen ist; ein Load-Balancer darf also auf beliebige Voter verteilen. Hat der Follower länger als zwei Heartbeat-Timeouts nichts vom Leader gehört oder gelingt die Weiterleitung nicht binnen 3 s, antwortet er mit HTTP 503 und `Retry-After`. Lautet die Antwort „Result Unknown“, ist die Änderung womöglich übernommen; eine Wiederholung mit demselben `Idempotency-Key` legt nichts doppelt an.
 - Messergebnisse (Heartbeats) laufen nicht über Raft. Jeder Voter schickt seine Ergebnisse direkt an die anderen Voter und gleicht alle 30 s mit jedem Voter ab, was ihm fehlt. Nach einer Netztrennung holt ein Voter Fehlendes daher selbstständig nach. Stündliche Auswertungen und das Verdichten alter Rohdaten warten, bis alle Voter abgeglichen sind, höchstens aber eine Stunde. Die Node-Liste der Admin-API zeigt je Node den Replikationsrückstand (`replicationLagMs`) und den letzten Fehler (`replicationError`) aus Sicht des antwortenden Nodes.
-- Welcher Node einen Monitor prüft, legt dessen Zuweisung fest: `all` (alle Voter), `count: k` (k Voter, automatisch verteilt) oder `nodes` (die genannten Voter). ICMP-Monitore bekommen nur Voter, deren ICMP-Selbsttest beim Start gelungen ist. Erreicht der Leader einen Voter 10 s lang nicht, gilt dieser als ungesund, und seine `count`-Monitore übernehmen andere Voter, meist binnen 15 s. Antwortet er wieder 10 s lang, bekommt er sie zurück. Die Node-Liste der Admin-API zeigt je Node Fähigkeiten und Gesundheit. **Alle Voter müssen dieselbe Version haben**, bis Rolling Updates unterstützt werden: Ein älterer Voter hält an, sobald ein neuerer Befehl im Log steht.
+- Welcher Node einen Monitor prüft, legt dessen Zuweisung fest: `all` (alle Voter), `count: k` (k Voter, automatisch verteilt) oder `nodes` (die genannten Voter). ICMP-Monitore bekommen nur Voter, deren ICMP-Selbsttest beim Start gelungen ist. Erreicht der Leader einen Voter 10 s lang nicht, gilt dieser als ungesund, und seine `count`-Monitore übernehmen andere Voter, meist binnen 15 s. Antwortet er wieder 10 s lang, bekommt er sie zurück. Die Node-Liste der Admin-API zeigt je Node Fähigkeiten und Gesundheit. Voter unterschiedlicher Versionen laufen während eines Updates gemeinsam (siehe [Cluster aktualisieren](#cluster-aktualisieren-rolling-update)).
 - `CLUSTER_ADVERTISE` ist die Adresse, unter der die anderen Knoten diesen Knoten erreichen. Sie wird als Raft-Serveradresse gespeichert und muss als `host:port` mit **stabilem DNS-Namen** angegeben werden. Standard ist `<NODE_NAME>:<Port aus CLUSTER_ADDR>`. Die Planung sollte nicht auf IP-Adressen beruhen, da sich diese bei Containern und VPS ändern können.
 
 ## Voter hinzufügen
@@ -72,6 +72,19 @@ Bis die Meldung gelingt, ist der Node für die übrigen Voter unter der alten Ad
 
 Ist der Node beim Neustart selbst Leader, ist die Meldung nicht getestet. In diesem Fall vorher die Führung abgeben (siehe „Node entfernen“).
 
+## Cluster aktualisieren (Rolling Update)
+
+Voter werden einzeln aktualisiert, der Cluster bleibt dabei verfügbar (FA-CLU-12, ADR 0018).
+
+1. Nur auf die **nächste Minor-Version** aktualisieren. Wer eine Minor-Version überspringt, muss erst auf die dazwischenliegende aktualisieren.
+2. Einen Voter stoppen, das neue Image starten und warten, bis er in der Node-Liste wieder gesund ist und seine neue Version zeigt. Dann den nächsten Voter. Den Leader zuletzt aktualisieren ist nicht nötig, aber üblich.
+3. Während des Updates zeigt die Node-Liste `upgradePending: true`. Funktionen, die eine neuere Befehlsversion brauchen, antworten so lange mit 503 und `Retry-After`.
+4. Sobald alle Voter die neue Version melden, hebt der Leader die **Befehlsversion des Clusters** (`commandLevel`) innerhalb weniger Sekunden an. Erst dann sind die neuen Funktionen aktiv.
+
+**Zurück auf die alte Version** geht nur, solange `commandLevel` noch nicht angehoben ist. Danach startet ein älteres Binary nicht mehr (`state requires command version …`). Ein Rollback ist dann nur über ein Backup möglich. Wer sich die Rückkehr offenhalten will, aktualisiert zuerst einen einzelnen Voter und prüft ihn, bevor er den letzten Voter aktualisiert.
+
+Ein Node mit älterem Binary kann einem Cluster mit höherer Befehlsversion nicht beitreten (`upgrade the binary before joining`).
+
 ## Zertifikate
 
 - Node-Zertifikate sind 90 Tage gültig.
@@ -90,6 +103,10 @@ Ist der Node beim Neustart selbst Leader, ist die Meldung nicht getestet. In die
 | `this node's master key differs from the cluster's` | Der konfigurierte Master-Key passt nicht zu dem des Clusters. | `MASTER_KEY` bzw. `MASTER_KEY_FILE` auf den Schlüssel des Clusters setzen. |
 | `configure MASTER_KEY or MASTER_KEY_FILE` | Der Cluster nutzt einen externen Schlüssel, der Node hat keinen. | Denselben Schlüssel auf dem neuen Node konfigurieren. |
 | `master key does not match the cluster` | Beim Start passt der Master-Key nicht zu den replizierten Datenschlüsseln. | Den Schlüssel des Clusters konfigurieren; nie einen neuen erzeugen lassen. |
+| `state requires command version …, this binary supports up to …` | Das Binary ist älter als die Befehlsversion des Clusters (Downgrade nach abgeschlossenem Update). | Wieder das aktuelle Binary starten. Ein Rollback geht nur über ein Backup. |
+| `cluster command level … is older than …` | Das Binary überspringt eine Minor-Version. | Erst auf die nächste Minor-Version aktualisieren, dann weiter. |
+| `upgrade the binary before joining` | Der neue Node hat ein älteres Binary als der Cluster. | Den Node mit dem Binary der Cluster-Version starten. |
+| `command version … is not enabled yet` (503) | Ein Rolling Update läuft noch; nicht alle Voter kennen die Funktion. | Update der restlichen Voter abschließen. |
 | `no leader available, retry` | Es gibt gerade keinen Leader (Wahl läuft, Quorum fehlt). | Keine Aktion nötig; der Join wird wiederholt. Bleibt der Fehler bestehen, Quorum und Netz prüfen. |
 
 ## Verwandte Dokumente
