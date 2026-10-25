@@ -233,7 +233,7 @@ func applyOnLeader(ctx context.Context, localAddr string, sec clusternet.Securit
 	case "":
 		return nil
 	case cluster.CodeConflict:
-		return fmt.Errorf("the user was changed at the same time, retry: %s", resp.GetErrorMessage())
+		return fmt.Errorf("the user was changed in the meantime, or this node has not caught up with the leader yet; retry: %s", resp.GetErrorMessage())
 	default:
 		return fmt.Errorf("rejected: %s: %s", resp.GetErrorCode(), resp.GetErrorMessage())
 	}
