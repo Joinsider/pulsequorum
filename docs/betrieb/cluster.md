@@ -111,5 +111,6 @@ Ein Node mit älterem Binary kann einem Cluster mit höherer Befehlsversion nich
 
 ## Verwandte Dokumente
 
+- [recovery.md](recovery.md): Quorumverlust, Recovery-CLI und Zurücksetzen des Admin-Passworts
 - [compose.md](compose.md): Konfiguration eines einzelnen Knotens und Variablen
 - [icmp.md](icmp.md): ICMP-Prüfungen im Container
