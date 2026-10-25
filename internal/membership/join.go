@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
@@ -32,8 +34,11 @@ type JoinOptions struct {
 	Name    string
 	Address string
 	Version string
-	Cert    *clusterpki.NodeCert
-	Log     *slog.Logger
+	// MaxCommandVersion is announced to the cluster at join (ADR 0018). Zero
+	// means cluster.CommandVersion; tests override it.
+	MaxCommandVersion uint32
+	Cert              *clusterpki.NodeCert
+	Log               *slog.Logger
 }
 
 // Joined is the result of a successful join.
@@ -63,9 +68,16 @@ func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
 	if err != nil {
 		return Joined{}, err
 	}
+	maxVersion := opts.MaxCommandVersion
+	if maxVersion == 0 {
+		maxVersion = cluster.CommandVersion
+	}
 	req := &pb.JoinRequest{
 		TokenId: tok.ID, TokenSecret: tok.Secret, CsrDer: csr,
-		Node: &pb.NodeInfo{Id: opts.NodeID, Name: opts.Name, Role: pb.NodeInfo_ROLE_VOTER, AdvertiseAddr: opts.Address, Version: opts.Version},
+		Node: &pb.NodeInfo{
+			Id: opts.NodeID, Name: opts.Name, Role: pb.NodeInfo_ROLE_VOTER, AdvertiseAddr: opts.Address, Version: opts.Version,
+			MaxCommandVersion: maxVersion,
+		},
 	}
 	backoff := time.Second
 	for attempt := 0; ; attempt++ {
@@ -77,8 +89,7 @@ func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
 			}
 			return Joined{ClusterID: resp.GetClusterId(), KEK: resp.GetKek(), KEKFingerprint: resp.GetKekFingerprint()}, nil
 		}
-		switch status.Code(err) {
-		case codes.PermissionDenied, codes.AlreadyExists, codes.InvalidArgument:
+		if permanentJoinError(err) {
 			return Joined{}, fmt.Errorf("%w by %s: %s", ErrJoinRejected, seed, status.Convert(err).Message())
 		}
 		opts.Log.Warn("join attempt failed, retrying", "seed", seed, "err", err)
@@ -89,6 +100,20 @@ func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
 		}
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+// permanentJoinError reports whether retrying the same join cannot succeed: a
+// rejected token, an address conflict, an invalid request, or a binary too old
+// for the cluster's command level (ADR 0018). Other FailedPrecondition errors,
+// such as "not the leader", are retried.
+func permanentJoinError(err error) bool {
+	switch status.Code(err) {
+	case codes.PermissionDenied, codes.AlreadyExists, codes.InvalidArgument:
+		return true
+	case codes.FailedPrecondition:
+		return strings.Contains(status.Convert(err).Message(), upgradeRequiredText)
+	}
+	return false
 }
 
 func joinOnce(ctx context.Context, seed, fingerprint string, req *pb.JoinRequest) (*pb.JoinResponse, *x509.Certificate, error) {

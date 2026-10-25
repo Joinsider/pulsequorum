@@ -51,6 +51,9 @@ type JoinOptions struct {
 	// ExternalKEK is set when MASTER_KEY or MASTER_KEY_FILE is configured;
 	// then the cluster's key is never installed, only compared.
 	ExternalKEK bool
+	// MaxCommandVersion is the command version announced at join. Zero means
+	// cluster.CommandVersion; a test override (ADR 0018).
+	MaxCommandVersion uint32
 }
 
 // Prepared is the result of Prepare.
@@ -88,6 +91,7 @@ func Prepare(ctx context.Context, dataDir, nodeID, name, advertise, version stri
 	log.Info("joining the cluster", "seeds", join.Seeds, "node_id", nodeID, "advertise", advertise)
 	joined, err := membership.Join(ctx, membership.JoinOptions{
 		Seeds: join.Seeds, Token: join.Token, NodeID: nodeID, Name: name, Address: advertise, Version: version, Cert: cert, Log: log,
+		MaxCommandVersion: join.MaxCommandVersion,
 	})
 	if err != nil {
 		return Prepared{}, err
@@ -144,6 +148,10 @@ type Options struct {
 	Name         string
 	Version      string
 	Capabilities []string
+	// MaxCommandVersion overrides cluster.CommandVersion, the highest command
+	// version this node applies and announces (ADR 0018). Zero means
+	// cluster.CommandVersion. Tests use it to simulate an older binary.
+	MaxCommandVersion uint32
 }
 
 // Host is the running cluster side of a voter.
@@ -158,6 +166,9 @@ type Host struct {
 	// Health turns the heartbeat failures of the leader into the health of
 	// the nodes in the registry (ADR 0017).
 	Health *membership.HealthWatcher
+	// Level raises the cluster command level once all voters support it
+	// (ADR 0018).
+	Level *membership.LevelWatcher
 
 	state     store.State
 	self      store.Node
@@ -209,8 +220,10 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	node, err := cluster.Start(ctx, cluster.Config{
 		NodeID: opts.NodeID, Advertise: opts.Advertise, DataDir: opts.DataDir, Timeout: opts.Timeout,
 		Transport: transport, Join: opts.Prepared.Joining, Logger: opts.Log,
-		Forwarder:    &membership.Forwarder{Client: h.leaderClientFor},
-		RaftLogLevel: opts.RaftLogLevel, RaftLogJSON: opts.RaftLogJSON,
+		Forwarder:         &membership.Forwarder{Client: h.leaderClientFor},
+		RaftLogLevel:      opts.RaftLogLevel,
+		RaftLogJSON:       opts.RaftLogJSON,
+		MaxCommandVersion: opts.MaxCommandVersion,
 	}, opts.State, opts.OnFatal)
 	if err != nil {
 		_ = mux.Close()
@@ -220,6 +233,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.Authority.Cluster = node
 	h.Manager = &membership.Manager{Raft: node, Status: h.status, Log: opts.Log}
 	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log}
+	h.Level = &membership.LevelWatcher{Node: node, State: opts.State, Log: opts.Log}
 	node.OnHeartbeat(h.Health.Observe)
 	h.Replication = replication.New(replication.Options{
 		NodeID:              opts.NodeID,
@@ -283,6 +297,7 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.Replication.Run(ctx) })
 	wg.Go(func() { h.registerSelf(ctx) })
 	wg.Go(func() { h.Health.Run(ctx) })
+	wg.Go(func() { h.Level.Run(ctx) })
 	wg.Wait()
 }
 

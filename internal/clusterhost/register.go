@@ -38,8 +38,17 @@ func selfNode(opts Options) store.Node {
 		Role:              store.NodeRoleVoter,
 		Capabilities:      slices.Compact(caps),
 		Version:           opts.Version,
-		MaxCommandVersion: cluster.CommandVersion,
+		MaxCommandVersion: commandVersion(opts.MaxCommandVersion),
 	}
+}
+
+// commandVersion returns the command version this node announces: the test
+// override if set, otherwise cluster.CommandVersion (ADR 0018).
+func commandVersion(override uint32) uint32 {
+	if override != 0 {
+		return override
+	}
+	return cluster.CommandVersion
 }
 
 // registerRequestID derives the request ID from the content of the entry, so

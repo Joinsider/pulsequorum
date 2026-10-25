@@ -41,6 +41,9 @@ type testNode struct {
 	replInterval time.Duration
 	// caps are the node capabilities the node registers with (ADR 0017).
 	caps []string
+	// maxVersion overrides the command version of the node; zero keeps
+	// cluster.CommandVersion (ADR 0018).
+	maxVersion uint32
 }
 
 func freeAddr(t *testing.T) string {
@@ -71,16 +74,36 @@ func startNodeInterval(ctx context.Context, t *testing.T, seeds []string, token 
 	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir(), replInterval: interval}, seeds, token)
 }
 
-// restart stops n and starts it again from the same data directory under a
-// new address (FA-CLU-10).
-func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
+// startNodeWithVersion is startNode for a node that announces the command
+// version maxVersion (ADR 0018).
+func startNodeWithVersion(ctx context.Context, t *testing.T, seeds []string, token string, maxVersion uint32) (*testNode, error) {
+	t.Helper()
+	return launch(ctx, t, &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir(), maxVersion: maxVersion}, seeds, token)
+}
+
+// stop stops the node n and its cluster port; its data stays on disk.
+func stop(t *testing.T, n *testNode) {
 	t.Helper()
 	n.cancel()
 	if err := n.host.Close(); err != nil {
 		t.Logf("close: %v", err)
 	}
 	_ = n.state.Close()
-	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval, caps: n.caps}, nil, "")
+}
+
+// restart stops n and starts it again from the same data directory under a
+// new address (FA-CLU-10), with the command version of n.
+func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
+	t.Helper()
+	return restartWithVersion(ctx, t, n, n.maxVersion)
+}
+
+// restartWithVersion is restart with another command version, as after a
+// binary update (maxVersion) or downgrade.
+func restartWithVersion(ctx context.Context, t *testing.T, n *testNode, maxVersion uint32) *testNode {
+	t.Helper()
+	stop(t, n)
+	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval, caps: n.caps, maxVersion: maxVersion}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +117,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token}, log)
+	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token, MaxCommandVersion: n.maxVersion}, log)
 	if err != nil {
 		return nil, err
 	}
@@ -117,9 +140,13 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		KEK: n.kek, Keyring: n.keyring, Prepared: prepared, Log: log, RaftLogLevel: "error",
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
 		Name:    "n", Version: "test", Capabilities: n.caps,
+		MaxCommandVersion: n.maxVersion,
 	})
 	if err != nil {
-		t.Fatal(err)
+		// The state is not registered for cleanup yet; close it here.
+		_ = n.state.Close()
+		_ = n.metrics.Close()
+		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	n.cancel = cancel
@@ -638,4 +665,132 @@ func nodesOf(reg map[string]store.Node) []store.Node {
 		out = append(out, n)
 	}
 	return out
+}
+
+// TestRollingUpdate covers ADR 0018 (FA-CLU-12, PF-09): a voter with an older
+// binary holds the cluster command level back; the level rises once it is
+// updated; a downgrade does not start; a join with an old binary is rejected.
+func TestRollingUpdate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// The node with version 2 bootstraps the cluster. A single voter sets the
+	// level, so the old node must be in the configuration before the others
+	// join; otherwise the level would already be 3 when it joins.
+	c, err := startNodeWithVersion(ctx, t, nil, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "c leader", 10*time.Second, c.host.Node.IsLeader)
+	token := func() string {
+		tok, _, err := c.host.Authority.CreateJoinToken(ctx, pki.RoleVoter, "", 0)
+		if err != nil {
+			t.Fatal(err, c.dir, c.id, c.addr)
+		}
+		return tok
+	}
+	a, err := startNodeWithVersion(ctx, t, []string{c.addr}, token(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a voter", 30*time.Second, func() bool { return isVoter(c, a.id) })
+	b, err := startNodeWithVersion(ctx, t, []string{a.addr}, token(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "b voter", 30*time.Second, func() bool { return isVoter(c, b.id) })
+
+	// All three are registered with their versions.
+	for _, n := range []*testNode{c, a, b} {
+		eventually(t, "registry with versions on "+n.id, 60*time.Second, func() bool {
+			reg := registry(t, n)
+			return reg[c.id].MaxCommandVersion == 2 && reg[a.id].MaxCommandVersion == 3 && reg[b.id].MaxCommandVersion == 3
+		})
+	}
+
+	// The level stays at 2 while c is a voter (ADR 0018, option A).
+	requireLevel(ctx, t, []*testNode{c, a, b}, 2, 3*time.Second)
+
+	// A command of version 3 is rejected while c supports only 2.
+	early := cluster.NewSetNodeHealth(uuid.NewString(), a.id, true)
+	early.Version = 3
+	_, err = a.host.Node.Apply(ctx, early)
+	var cmdErr *cluster.CommandError
+	if !errors.As(err, &cmdErr) || cmdErr.Code != cluster.CodeNotEnabled {
+		t.Fatalf("version 3 command at level 2: err = %v, want CommandError %q", err, cluster.CodeNotEnabled)
+	}
+
+	// c is updated: it restarts with version 3 and the level rises to 3.
+	c = restartWithVersion(ctx, t, c, 3)
+	nodes := []*testNode{c, a, b}
+	for _, n := range nodes {
+		eventually(t, "command level 3 on "+n.id, 60*time.Second, func() bool {
+			level, err := n.host.Node.CommandLevel(ctx)
+			return err == nil && level == 3
+		})
+	}
+
+	// A version 3 command now succeeds through a follower and is applied on
+	// every voter, without the FSM halting.
+	follower := a
+	if a.host.Node.IsLeader() {
+		follower = b
+	}
+	ok := cluster.NewSetNodeHealth(uuid.NewString(), a.id, true)
+	ok.Version = 3
+	res, err := follower.host.Node.Apply(ctx, ok)
+	if err != nil {
+		t.Fatalf("version 3 command at level 3 via %s: %v", follower.id, err)
+	}
+	for _, n := range nodes {
+		eventually(t, "version 3 command applied on "+n.id, 15*time.Second, func() bool {
+			return n.host.Node.Status().AppliedIndex >= res.Index
+		})
+		if err := n.host.Node.FSM().Healthy(); err != nil {
+			t.Errorf("FSM of %s halted: %v", n.id, err)
+		}
+	}
+
+	// A downgrade does not start: the state needs version 3.
+	stop(t, c)
+	downgraded := &testNode{id: c.id, addr: freeAddr(t), dir: c.dir, maxVersion: 2}
+	if _, err := launch(ctx, t, downgraded, nil, ""); !errors.Is(err, cluster.ErrIncompatibleVersion) {
+		t.Fatalf("downgrade start: err = %v, want ErrIncompatibleVersion", err)
+	}
+
+	// A new node with version 2 is refused as a voter, and the token is
+	// kept. The rejection is permanent, so the join ends before the context.
+	joinCtx, joinCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer joinCancel()
+	oldToken, _, err := a.host.Authority.CreateJoinToken(joinCtx, pki.RoleVoter, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := &testNode{id: uuid.NewString(), addr: freeAddr(t), dir: t.TempDir(), maxVersion: 2}
+	_, err = launch(joinCtx, t, old, []string{a.addr}, oldToken)
+	if !errors.Is(err, membership.ErrJoinRejected) || !strings.Contains(err.Error(), "upgrade the binary") {
+		t.Fatalf("join with version 2: err = %v, want ErrJoinRejected mentioning the upgrade", err)
+	}
+	requireLevel(ctx, t, []*testNode{a, b}, 3, time.Second)
+}
+
+// requireLevel checks for d that every node reports the command level want.
+func requireLevel(ctx context.Context, t *testing.T, nodes []*testNode, want uint32, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		for _, n := range nodes {
+			level, err := n.host.Node.CommandLevel(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if level != want {
+				t.Fatalf("command level on %s = %d, want %d", n.id, level, want)
+			}
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

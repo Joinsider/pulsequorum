@@ -106,6 +106,11 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 		} else if err != nil {
 			return nil, status.Error(codes.Unavailable, err.Error())
 		}
+		// Before the token is spent: a binary that cannot apply the cluster's
+		// command level must not become a voter (ADR 0018).
+		if err := s.checkJoinLevel(ctx, info); err != nil {
+			return nil, err
+		}
 	}
 
 	bundle, _, err := s.Authority.Bundle(ctx)
@@ -150,6 +155,32 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	}
 	s.Log.Info("node joined", "node_id", info.GetId(), "role", role, "address", info.GetAdvertiseAddr())
 	return resp, nil
+}
+
+// upgradeRequiredText is part of the FailedPrecondition message of a join
+// rejected for the command level. The joining client treats it as permanent
+// (permanentJoinError).
+const upgradeRequiredText = "upgrade the binary"
+
+// checkJoinLevel rejects a joining voter whose binary supports a lower command
+// version than the cluster requires (ADR 0018). A joiner that does not report
+// a version counts as the base level.
+func (s *Service) checkJoinLevel(ctx context.Context, info *pb.NodeInfo) error {
+	stored, err := s.State.CommandLevel(ctx)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "read command level: %v", err)
+	}
+	level := cluster.EffectiveCommandLevel(stored)
+	version := info.GetMaxCommandVersion()
+	if version == 0 {
+		version = cluster.BaseCommandLevel
+	}
+	if version < level {
+		return status.Errorf(codes.FailedPrecondition,
+			"this binary supports command version %d, the cluster requires %d: %s before joining (ADR 0018)",
+			version, level, upgradeRequiredText)
+	}
+	return nil
 }
 
 // updateAddress changes the address of the calling voter in the Raft
