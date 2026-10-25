@@ -1361,6 +1361,11 @@ components:
         replicationError:
           type: string
           description: "Last replication error with this node as seen by the answering node"
+        maxCommandVersion:
+          type: integer
+          format: int32
+          minimum: 0
+          description: "Highest command version the node's binary supports, from the node registry (ADR 0018); absent until the node registered"
     ClusterNodeList:
       type: object
       required: [nodes, leaderId, warnings]
@@ -1372,6 +1377,14 @@ components:
         warnings:
           type: array
           items: { type: string }
+        commandLevel:
+          type: integer
+          format: int32
+          minimum: 0
+          description: "Command version the cluster may use (ADR 0018); new features need all voters to support it"
+        upgradePending:
+          type: boolean
+          description: "True while at least one registered voter supports a lower command version than another, i.e. a rolling update is in progress"
     NodeRemoval:
       type: object
       required: [votersLeft]

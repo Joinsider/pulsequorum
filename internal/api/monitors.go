@@ -97,6 +97,8 @@ func (h *Handlers) apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyRes
 			return res, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "the object was changed concurrently or already exists; reload and retry"}
 		case cluster.CodeNotFound:
 			return res, notFound("object")
+		case cluster.CodeNotEnabled:
+			return res, notEnabled(ce)
 		default:
 			return res, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity", Detail: ce.Message}
 		}

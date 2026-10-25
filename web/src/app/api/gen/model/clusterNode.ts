@@ -35,4 +35,9 @@ export interface ClusterNode {
   replicationLagMs?: number;
   /** Last replication error with this node as seen by the answering node */
   replicationError?: string;
+  /**
+     * Highest command version the node's binary supports, from the node registry (ADR 0018); absent until the node registered
+     * @minimum 0
+     */
+  maxCommandVersion?: number;
 }

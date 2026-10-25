@@ -17,4 +17,11 @@ export interface ClusterNodeList {
   /** Empty while no leader is known */
   leaderId: string;
   warnings: string[];
+  /**
+     * Command version the cluster may use (ADR 0018); new features need all voters to support it
+     * @minimum 0
+     */
+  commandLevel?: number;
+  /** True while at least one registered voter supports a lower command version than another, i.e. a rolling update is in progress */
+  upgradePending?: boolean;
 }

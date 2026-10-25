@@ -17,6 +17,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	"github.com/joinsider/uptimecluster/internal/membership"
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -433,4 +434,122 @@ func TestListClusterNodesRegistry(t *testing.T) {
 	if n2.Name != nil || n2.Version != nil || n2.Capabilities != nil || n2.Healthy != nil || n2.HealthChangedAt != nil {
 		t.Errorf("unregistered n2 has registry fields: %+v", n2)
 	}
+}
+
+// TestListClusterNodesCommandVersions covers ADR 0018 section 7: the registry
+// version of each node, the active command level and whether voters differ.
+func TestListClusterNodesCommandVersions(t *testing.T) {
+	ctx := context.Background()
+	register := func(e *env, id string, maxVersion uint32) {
+		t.Helper()
+		cmd := cluster.NewRegisterNode("register-"+id, store.Node{ID: id, Name: id, Role: store.NodeRoleVoter,
+			Version: "1.0.0", MaxCommandVersion: maxVersion})
+		if _, err := e.node.Apply(ctx, cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		name        string
+		register    map[string]uint32 // voter ID -> max command version
+		level       uint32            // stored command level, 0 = unset
+		wantLevel   int32
+		wantPending bool
+	}{
+		{
+			name:        "all voters on the same version",
+			register:    map[string]uint32{"n1": 2, "n2": 2},
+			wantLevel:   2,
+			wantPending: false,
+		},
+		{
+			name:        "one voter still on version 2",
+			register:    map[string]uint32{"n1": 3, "n2": 2},
+			wantLevel:   2,
+			wantPending: true,
+		},
+		{
+			name:        "stored level is shown",
+			register:    map[string]uint32{"n1": 3, "n2": 3},
+			level:       3,
+			wantLevel:   3,
+			wantPending: false,
+		},
+		{
+			name:        "no registered voter means no pending upgrade",
+			wantLevel:   2,
+			wantPending: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := clusterEnv(t, &fakeClusterAdmin{members: voters(2), leaderID: "n1", selfID: "n1"})
+			for _, id := range []string{"n1", "n2"} {
+				if v, ok := tt.register[id]; ok {
+					register(e, id, v)
+				}
+			}
+			if tt.level > 0 {
+				if err := e.state.Update(ctx, func(tx store.StateTx) error { return tx.SetCommandLevel(ctx, tt.level) }); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+			if got.CommandLevel == nil || *got.CommandLevel != tt.wantLevel {
+				t.Errorf("commandLevel = %v, want %d", got.CommandLevel, tt.wantLevel)
+			}
+			if got.UpgradePending == nil || *got.UpgradePending != tt.wantPending {
+				t.Errorf("upgradePending = %v, want %v", got.UpgradePending, tt.wantPending)
+			}
+			for _, n := range got.Nodes {
+				want, registered := tt.register[n.Id]
+				if !registered {
+					if n.MaxCommandVersion != nil {
+						t.Errorf("unregistered node %s has maxCommandVersion %d", n.Id, *n.MaxCommandVersion)
+					}
+					continue
+				}
+				if n.MaxCommandVersion == nil || int64(*n.MaxCommandVersion) != int64(want) {
+					t.Errorf("node %s maxCommandVersion = %v, want %d", n.Id, n.MaxCommandVersion, want)
+				}
+			}
+		})
+	}
+}
+
+// TestCommandNotEnabledIs503 covers ADR 0018 section 4: a command that waits
+// for a rolling update to finish is answered with 503 and a retry hint.
+func TestCommandNotEnabledIs503(t *testing.T) {
+	notEnabled := &cluster.CommandError{Code: cluster.CodeNotEnabled, Message: "requires command version 3; upgrade all voters first"}
+
+	t.Run("apply", func(t *testing.T) {
+		e := newEnvTweaked(t, false, func(d *Deps) { d.Cluster = fakeApplier{err: notEnabled} })
+		res := e.do("POST", "/api/v1/monitors", tenantEditor, httpMonitor("late", "https://example.com"))
+		if res.code != http.StatusServiceUnavailable {
+			t.Fatalf("= %d, want 503: %s", res.code, res.body)
+		}
+		if res.hdr.Get("Retry-After") != "30" {
+			t.Errorf("Retry-After = %q, want 30", res.hdr.Get("Retry-After"))
+		}
+		if d := problemDetail(t, res); d != notEnabled.Message {
+			t.Errorf("detail = %q, want %q", d, notEnabled.Message)
+		}
+	})
+
+	t.Run("cluster administration", func(t *testing.T) {
+		e := clusterEnv(t, &fakeClusterAdmin{tokenErr: notEnabled, selfID: "n1", leaderID: "n1"})
+		res := e.do("POST", "/api/v1/admin/join-tokens", platformAdmin, map[string]any{"role": "voter"})
+		if res.code != http.StatusServiceUnavailable {
+			t.Fatalf("= %d, want 503: %s", res.code, res.body)
+		}
+		if res.hdr.Get("Retry-After") != "30" {
+			t.Errorf("Retry-After = %q, want 30", res.hdr.Get("Retry-After"))
+		}
+	})
+}
+
+// fakeApplier returns the configured error for every command.
+type fakeApplier struct{ err error }
+
+func (f fakeApplier) Apply(context.Context, *pb.Command) (cluster.ApplyResult, error) {
+	return cluster.ApplyResult{}, f.err
 }

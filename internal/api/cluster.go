@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -73,10 +74,21 @@ func clusterAdminError(err error) error {
 	// Deterministic rejections of the FSM, e.g. a probe token for an unknown
 	// tenant; their messages contain no secrets.
 	var cmdErr *cluster.CommandError
-	if errors.As(err, &cmdErr) && cmdErr.Code == cluster.CodeInvalid {
-		return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: cmdErr.Message}
+	if errors.As(err, &cmdErr) {
+		switch cmdErr.Code {
+		case cluster.CodeInvalid:
+			return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: cmdErr.Message}
+		case cluster.CodeNotEnabled:
+			return notEnabled(cmdErr)
+		}
 	}
 	return err
+}
+
+// notEnabled maps a command that waits for a rolling update to finish (ADR
+// 0018) to 503. The detail names the required version; no secrets are involved.
+func notEnabled(ce *cluster.CommandError) *Problem {
+	return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable", Detail: ce.Message, RetryAfter: 30}
 }
 
 // CreateJoinToken issues a one-time token. The secret is returned once and
@@ -157,6 +169,10 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if err != nil {
 		return nil, err
 	}
+	commandLevel, err := h.deps.State.CommandLevel(ctx)
+	if err != nil {
+		return nil, err
+	}
 	registered := make(map[string]store.Node, len(registry))
 	for _, n := range registry {
 		registered[n.ID] = n
@@ -164,6 +180,9 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
+	// Command versions of the registered voters decide whether a rolling
+	// update is in progress (ADR 0018, section 7).
+	var voterVersions []uint32
 	for _, m := range members {
 		if m.Voter {
 			voters++
@@ -175,8 +194,13 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 			name, version, healthy := n.Name, n.Version, n.Healthy
 			changedAt := time.UnixMilli(n.HealthChangedMs).UTC()
 			capabilities := append([]string{}, n.Capabilities...)
+			maxCommand := int32(min(n.MaxCommandVersion, math.MaxInt32))
 			node.Name, node.Version, node.Healthy = &name, &version, &healthy
 			node.Capabilities, node.HealthChangedAt = &capabilities, &changedAt
+			node.MaxCommandVersion = &maxCommand
+			if m.Voter {
+				voterVersions = append(voterVersions, n.MaxCommandVersion)
+			}
 		}
 		if ps, ok := peers[m.ID]; ok && m.ID != self {
 			if lag, caught := ps.Lag(h.deps.Now()); caught {
@@ -197,7 +221,25 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if voters > maxVoters {
 		warnings = append(warnings, fmt.Sprintf("the cluster has more than %d voters (%d); more voters add latency without adding fault tolerance (FA-CLU-11)", maxVoters, voters))
 	}
-	return gen.ListClusterNodes200JSONResponse{Nodes: nodes, LeaderId: leaderID, Warnings: warnings}, nil
+	level := int32(min(cluster.EffectiveCommandLevel(commandLevel), math.MaxInt32))
+	upgradePending := upgradeInProgress(voterVersions)
+	return gen.ListClusterNodes200JSONResponse{
+		Nodes: nodes, LeaderId: leaderID, Warnings: warnings,
+		CommandLevel: &level, UpgradePending: &upgradePending,
+	}, nil
+}
+
+// upgradeInProgress reports whether the registered voters support different
+// command versions, i.e. a rolling update is running (ADR 0018).
+func upgradeInProgress(versions []uint32) bool {
+	if len(versions) == 0 {
+		return false
+	}
+	lo, hi := versions[0], versions[0]
+	for _, v := range versions[1:] {
+		lo, hi = min(lo, v), max(hi, v)
+	}
+	return lo < hi
 }
 
 // replicationPeers indexes the replication state by peer ID. Without a
