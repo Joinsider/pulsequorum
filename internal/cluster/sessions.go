@@ -62,10 +62,10 @@ func NewPutUser(requestID, tenantID, userID string, doc UserDocument, expectedRe
 
 // NewDeleteUser builds a command that deletes a user and its sessions.
 func NewDeleteUser(requestID, tenantID, userID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+	return stamp(&pb.Command{
+		RequestId: requestID, TenantId: tenantID,
 		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_USER, Id: userID}},
-	}
+	})
 }
 
 // NewPutSigningKey builds a platform-level command that stores or retires a signing key.
@@ -75,41 +75,41 @@ func NewPutSigningKey(requestID, kid string, doc SigningKeyDocument) (*pb.Comman
 
 // NewCreateSession builds the command that starts a token family.
 func NewCreateSession(requestID, tenantID, userID, tokenHash, familyID string, expiresMs int64) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+	return stamp(&pb.Command{
+		RequestId: requestID, TenantId: tenantID,
 		Actor: &pb.Actor{Kind: pb.Actor_KIND_USER, Id: userID},
 		Payload: &pb.Command_CreateSession{CreateSession: &pb.CreateSession{
 			UserId: userID, TokenHash: tokenHash, FamilyId: familyID, ExpiresMs: expiresMs,
 		}},
-	}
+	})
 }
 
 // NewRotateSession builds the refresh command. The request ID covers both
 // hashes: retrying the same refresh is deduplicated, while presenting the old
 // token again (with a new random successor) is applied and detected as reuse.
 func NewRotateSession(oldHash, newHash string, expiresMs int64) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: "rotate:" + oldHash + ":" + newHash,
+	return stamp(&pb.Command{
+		RequestId: "rotate:" + oldHash + ":" + newHash,
 		Payload: &pb.Command_RotateSession{RotateSession: &pb.RotateSession{
 			OldTokenHash: oldHash, NewTokenHash: newHash, ExpiresMs: expiresMs,
 		}},
-	}
+	})
 }
 
 // NewRevokeFamily builds the logout command.
 func NewRevokeFamily(requestID, familyID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID,
-		Payload: &pb.Command_RevokeSessions{RevokeSessions: &pb.RevokeSessions{FamilyId: familyID}},
-	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Payload:   &pb.Command_RevokeSessions{RevokeSessions: &pb.RevokeSessions{FamilyId: familyID}},
+	})
 }
 
 // NewRevokeUserSessions builds the command that ends all sessions of a user.
 func NewRevokeUserSessions(requestID, tenantID, userID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+	return stamp(&pb.Command{
+		RequestId: requestID, TenantId: tenantID,
 		Payload: &pb.Command_RevokeSessions{RevokeSessions: &pb.RevokeSessions{UserId: userID}},
-	}
+	})
 }
 
 func applyPutUser(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity) (json.RawMessage, error) {

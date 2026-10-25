@@ -11,11 +11,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+
+	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
 )
 
-const metaAppliedIndex = "applied_index"
+// Keys of fsm_meta.
+const (
+	metaAppliedIndex = "applied_index"
+	metaCommandLevel = "command_level"
+)
 
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
 // is excluded: the applied index legitimately differs between replicas that
@@ -55,6 +62,26 @@ func (s *StateStore) AppliedIndex(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("read applied index: %w", err)
 	}
 	return uint64(max(v, 0)), nil
+}
+
+// CommandLevel returns the command level stored in state.db (ADR 0018), 0 if unset.
+func (s *StateStore) CommandLevel(ctx context.Context) (uint32, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return commandLevel(ctx, s.q)
+}
+
+func commandLevel(ctx context.Context, q interface {
+	GetFSMMeta(ctx context.Context, key string) (int64, error)
+}) (uint32, error) {
+	v, err := q.GetFSMMeta(ctx, metaCommandLevel)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read command level: %w", err)
+	}
+	return uint32(min(max(v, 0), math.MaxUint32)), nil
 }
 
 // WriteSnapshot writes a consistent copy of state.db to w using VACUUM INTO
@@ -189,6 +216,12 @@ func (s *StateStore) Fingerprint(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("fingerprint %s: %w", t.name, err)
 		}
 	}
+	// The command level is replicated state in fsm_meta (ADR 0018).
+	level, err := commandLevel(ctx, statedb.New(tx))
+	if err != nil {
+		return "", fmt.Errorf("fingerprint: %w", err)
+	}
+	_, _ = fmt.Fprintf(h, "command_level:%d\x1e", level)
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 

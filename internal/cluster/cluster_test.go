@@ -34,7 +34,7 @@ func monitorDoc(name string) MonitorDocument {
 }
 
 // commandLog builds a fixed sequence including duplicates, a conflict, an
-// unsupported payload and undecodable bytes.
+// invalid command and undecodable bytes.
 func commandLog(t *testing.T) []*raft.Log {
 	t.Helper()
 	must := func(c *pb.Command, err error) *pb.Command {
@@ -50,7 +50,7 @@ func commandLog(t *testing.T) []*raft.Log {
 		must(NewPutMonitor("r3", "default", "m1", monitorDoc("one v2"), 1)),
 		must(NewPutMonitor("r4", "default", "m1", monitorDoc("stale"), 1)), // conflict
 		must(NewPutMonitor("r5", "missing-tenant", "m2", monitorDoc("x"), 0)),
-		{Version: 1, RequestId: "r6", Payload: &pb.Command_SetFeatureLevel{SetFeatureLevel: &pb.SetFeatureLevel{Level: 1}}},
+		NewSetFeatureLevel("r6", 0), // invalid level
 		NewDeleteMonitor("r7", "default", "m1"),
 		NewRegisterNode("r8", store.Node{ID: "node-1", Name: "one", Role: store.NodeRoleVoter,
 			Capabilities: []string{"icmp", "http"}, Labels: map[string]string{"env": "prod"},
@@ -92,7 +92,7 @@ func TestFSMDeterminism(t *testing.T) {
 		}
 		last := len(results) - 1
 		if !errors.Is(results[6].Err, ErrInvalidCommand) || !errors.Is(results[last].Err, ErrInvalidCommand) {
-			t.Errorf("unsupported/invalid results: %v / %v", results[6].Err, results[last].Err)
+			t.Errorf("invalid results: %v / %v", results[6].Err, results[last].Err)
 		}
 		if results[8].Err != nil || results[9].Err != nil {
 			t.Errorf("node commands: %v / %v", results[8].Err, results[9].Err)

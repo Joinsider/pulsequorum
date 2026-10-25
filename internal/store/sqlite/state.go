@@ -426,6 +426,14 @@ func (t *stateTx) SetAppliedIndex(ctx context.Context, index uint64) error {
 	return mapErr(t.q.SetFSMMeta(ctx, statedb.SetFSMMetaParams{Key: metaAppliedIndex, Value: v}))
 }
 
+func (t *stateTx) CommandLevel(ctx context.Context) (uint32, error) {
+	return commandLevel(ctx, t.q)
+}
+
+func (t *stateTx) SetCommandLevel(ctx context.Context, level uint32) error {
+	return mapErr(t.q.SetFSMMeta(ctx, statedb.SetFSMMetaParams{Key: metaCommandLevel, Value: int64(level)}))
+}
+
 func (t *stateTx) GetDedup(ctx context.Context, requestID string) (store.DedupEntry, error) {
 	r, err := t.q.GetDedup(ctx, requestID)
 	if err != nil {

@@ -66,40 +66,40 @@ func NewPutJoinToken(requestID, tokenID string, doc JoinTokenDocument) (*pb.Comm
 
 // NewDeleteJoinToken builds a platform-level command that deletes a join token.
 func NewDeleteJoinToken(requestID, tokenID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID,
-		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_JOIN_TOKEN, Id: tokenID}},
-	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Payload:   &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_JOIN_TOKEN, Id: tokenID}},
+	})
 }
 
 // NewRedeemJoinToken builds the command that uses up a join token for a node.
 func NewRedeemJoinToken(requestID, tokenID, secretHash, nodeID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID,
+	return stamp(&pb.Command{
+		RequestId: requestID,
 		Payload: &pb.Command_RedeemJoinToken{RedeemJoinToken: &pb.RedeemJoinToken{
 			TokenId: tokenID, SecretHash: secretHash, NodeId: nodeID,
 		}},
-	}
+	})
 }
 
 // NewRevokeCertificate builds the command that adds a node certificate to the
 // revocation list. The serial is pki.SerialString of the certificate.
 func NewRevokeCertificate(requestID, serial, nodeID string, notAfterMs int64) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID,
+	return stamp(&pb.Command{
+		RequestId: requestID,
 		Payload: &pb.Command_RevokeCertificate{RevokeCertificate: &pb.RevokeCertificate{
 			Serial: serial, NodeId: nodeID, NotAfterMs: notAfterMs,
 		}},
-	}
+	})
 }
 
 // NewRevokeNode builds the platform-level command that revokes all certificates
 // of a node issued so far (FA-PKI-04). The command time is the revocation time.
 func NewRevokeNode(requestID, nodeID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID,
-		Payload: &pb.Command_RevokeNode{RevokeNode: &pb.RevokeNode{NodeId: nodeID}},
-	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Payload:   &pb.Command_RevokeNode{RevokeNode: &pb.RevokeNode{NodeId: nodeID}},
+	})
 }
 
 // RevokeNodeResult is the result of a node revocation: the revocation time.

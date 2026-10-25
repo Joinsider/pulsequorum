@@ -22,6 +22,17 @@ import (
 // RegisterNode and SetNodeHealth (ADR 0017).
 const CommandVersion = 2
 
+// BaseCommandLevel is the command level of a cluster that never stored one:
+// the first release with the feature gate (ADR 0018). Commands up to this
+// version are always allowed.
+const BaseCommandLevel = 2
+
+// EffectiveCommandLevel returns the command level the cluster may use, given
+// the level stored in state.db (0 if unset).
+func EffectiveCommandLevel(stored uint32) uint32 {
+	return max(stored, BaseCommandLevel)
+}
+
 // Stable codes of deterministic command errors. They are stored in the dedup
 // table, so a retry returns the same error.
 const (
@@ -29,6 +40,9 @@ const (
 	CodeNotFound    = "not_found"
 	CodeInvalid     = "invalid"
 	CodeUnsupported = "unsupported"
+	// CodeNotEnabled rejects a command before it is proposed because not all
+	// voters support its version yet (ADR 0018). It is never stored.
+	CodeNotEnabled = "not_enabled"
 )
 
 // ErrInvalidCommand is matched by CommandErrors with the codes invalid and unsupported.
@@ -187,10 +201,10 @@ func NewPutChannel(requestID, tenantID, channelID string, doc ChannelDocument, e
 
 // NewDeleteChannel builds a command that deletes a channel.
 func NewDeleteChannel(requestID, tenantID, channelID string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+	return stamp(&pb.Command{
+		RequestId: requestID, TenantId: tenantID,
 		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, Id: channelID}},
-	}
+	})
 }
 
 // NewPutMaintenanceWindow builds a command that creates (expectedRevision 0) or replaces a maintenance window.
@@ -200,23 +214,22 @@ func NewPutMaintenanceWindow(requestID, tenantID, id string, doc MaintenanceDocu
 
 // NewDeleteMaintenanceWindow builds a command that deletes a maintenance window.
 func NewDeleteMaintenanceWindow(requestID, tenantID, id string) *pb.Command {
-	return &pb.Command{
-		Version: CommandVersion, RequestId: requestID, TenantId: tenantID,
+	return stamp(&pb.Command{
+		RequestId: requestID, TenantId: tenantID,
 		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{Kind: pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW, Id: id}},
-	}
+	})
 }
 
 // NewEnqueueReminder builds the command for the n-th repeated DOWN alert.
 func NewEnqueueReminder(tenantID, monitorID string, downSinceMs int64, n uint32) *pb.Command {
-	return &pb.Command{
-		Version:   CommandVersion,
+	return stamp(&pb.Command{
 		RequestId: fmt.Sprintf("reminder:%s:%d:%d", monitorID, downSinceMs, n),
 		TenantId:  tenantID,
 		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
 		Payload: &pb.Command_EnqueueAlert{EnqueueAlert: &pb.EnqueueAlert{
 			MonitorId: monitorID, DownSinceMs: downSinceMs, Reminder: n,
 		}},
-	}
+	})
 }
 
 // DeliveryOutcome is the result of one delivery attempt, decided by the leader.
@@ -231,8 +244,7 @@ type DeliveryOutcome struct {
 
 // NewAckAlertDelivery builds the command that records a delivery attempt.
 func NewAckAlertDelivery(a store.AlertDelivery, attempt uint32, o DeliveryOutcome) *pb.Command {
-	return &pb.Command{
-		Version:   CommandVersion,
+	return stamp(&pb.Command{
 		RequestId: fmt.Sprintf("ack:%s:%s:%d", a.AlertKey, a.ChannelID, attempt),
 		TenantId:  a.TenantID,
 		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
@@ -240,20 +252,19 @@ func NewAckAlertDelivery(a store.AlertDelivery, attempt uint32, o DeliveryOutcom
 			AlertKey: a.AlertKey, ChannelId: a.ChannelID, Delivered: o.Delivered, PermanentFailure: o.Permanent,
 			Error: o.Error, NextAttemptMs: o.NextAttemptMs, Attempt: attempt, GiveUp: o.GiveUp,
 		}},
-	}
+	})
 }
 
 // NewDeleteMonitor builds a command that deletes a monitor.
 func NewDeleteMonitor(requestID, tenantID, monitorID string) *pb.Command {
-	return &pb.Command{
-		Version:   CommandVersion,
+	return stamp(&pb.Command{
 		RequestId: requestID,
 		TenantId:  tenantID,
 		Payload: &pb.Command_DeleteEntity{DeleteEntity: &pb.DeleteEntity{
 			Kind: pb.EntityKind_ENTITY_KIND_MONITOR,
 			Id:   monitorID,
 		}},
-	}
+	})
 }
 
 func newPut(requestID, tenantID string, kind pb.EntityKind, id string, doc any, expectedRevision uint64) (*pb.Command, error) {
@@ -261,8 +272,7 @@ func newPut(requestID, tenantID string, kind pb.EntityKind, id string, doc any, 
 	if err != nil {
 		return nil, fmt.Errorf("encode %s document: %w", kind, err)
 	}
-	return &pb.Command{
-		Version:   CommandVersion,
+	return stamp(&pb.Command{
 		RequestId: requestID,
 		TenantId:  tenantID,
 		Payload: &pb.Command_PutEntity{PutEntity: &pb.PutEntity{
@@ -271,7 +281,7 @@ func newPut(requestID, tenantID string, kind pb.EntityKind, id string, doc any, 
 			DocumentJson:     raw,
 			ExpectedRevision: expectedRevision,
 		}},
-	}, nil
+	}), nil
 }
 
 // StateChange is a consensus status change decided by the leader.
@@ -303,13 +313,12 @@ func NewSetMonitorState(c StateChange) *pb.Command {
 			AffectedNodeIds: c.Incident.AffectedNodes,
 		}
 	}
-	return &pb.Command{
-		Version:   CommandVersion,
+	return stamp(&pb.Command{
 		RequestId: fmt.Sprintf("state:%s:%s:%s:%d", c.MonitorID, c.From, c.To, c.SinceMs),
 		TenantId:  c.TenantID,
 		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
 		Payload:   &pb.Command_SetMonitorState{SetMonitorState: set},
-	}
+	})
 }
 
 // ErrorClassToProto maps a checker error class ("dns", "http_status", …) to

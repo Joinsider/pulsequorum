@@ -76,6 +76,10 @@ type Config struct {
 	// waits to be added instead of bootstrapping (FA-CLU-02/03, ADR 0005 6).
 	Join bool
 
+	// MaxCommandVersion overrides CommandVersion; for tests only (ADR 0018).
+	// 0 means CommandVersion.
+	MaxCommandVersion uint32
+
 	// Forwarder sends commands of followers to the leader. Nil means that a
 	// follower does not forward and returns ErrNotApplied (FA-CLU-05).
 	Forwarder Forwarder
@@ -149,6 +153,27 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 	if err != nil {
 		_ = bolt.Close()
 		return nil, err
+	}
+	if cfg.MaxCommandVersion != 0 {
+		fsm.maxVersion = cfg.MaxCommandVersion
+	}
+	// A binary must not start on state that needs a newer version, and must not
+	// start on state older than the oldest version it can still apply (ADR 0018).
+	storedLevel, err := state.CommandLevel(ctx)
+	if err != nil {
+		_ = bolt.Close()
+		return nil, fmt.Errorf("read command level: %w", err)
+	}
+	level := EffectiveCommandLevel(storedLevel)
+	if level > fsm.maxVersion {
+		_ = bolt.Close()
+		return nil, fmt.Errorf("%w: state requires command version %d, this binary supports up to %d: upgrade the binary (ADR 0018)",
+			ErrIncompatibleVersion, level, fsm.maxVersion)
+	}
+	if level < MinCommandLevel {
+		_ = bolt.Close()
+		return nil, fmt.Errorf("%w: cluster command level %d is older than %d, the oldest this binary supports: upgrade through the previous minor version first (ADR 0018)",
+			ErrIncompatibleVersion, level, MinCommandLevel)
 	}
 
 	rc := raft.DefaultConfig()
@@ -242,6 +267,36 @@ func orDefault(v, def uint64) uint64 {
 // FSM returns the state machine.
 func (n *Node) FSM() *FSM { return n.fsm }
 
+// MaxCommandVersion returns the highest Command.version this node applies
+// (ADR 0018): CommandVersion, unless a test overrides it.
+func (n *Node) MaxCommandVersion() uint32 { return n.fsm.maxVersion }
+
+// CommandLevel returns the command level of the locally applied state
+// (ADR 0018).
+func (n *Node) CommandLevel(ctx context.Context) (uint32, error) {
+	stored, err := n.fsm.state.CommandLevel(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("read command level: %w", err)
+	}
+	return EffectiveCommandLevel(stored), nil
+}
+
+// checkCommandLevel rejects a command whose version the cluster does not
+// support yet: not every voter knows it (ADR 0018). The rejection is not
+// stored in the log, so it is not a deterministic command result.
+func (n *Node) checkCommandLevel(ctx context.Context, cmd *pb.Command) error {
+	level, err := n.CommandLevel(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrNotApplied, err)
+	}
+	if cmd.GetVersion() > level {
+		return &CommandError{Code: CodeNotEnabled, Message: fmt.Sprintf(
+			"command version %d is not enabled yet: the cluster command level is %d; all voters must be upgraded first",
+			cmd.GetVersion(), level)}
+	}
+	return nil
+}
+
 // IsLeader reports whether this node currently leads.
 func (n *Node) IsLeader() bool { return n.raft.State() == raft.Leader }
 
@@ -271,6 +326,12 @@ func (n *Node) WaitLeader(ctx context.Context) error {
 // Errors: ErrNotApplied if the command certainly did not commit, ErrUnknownOutcome
 // if it may have committed, and a *CommandError if it was rejected.
 func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) {
+	if cmd.GetVersion() == 0 {
+		cmd.Version = minVersion(cmd)
+	}
+	if err := n.checkCommandLevel(ctx, cmd); err != nil {
+		return ApplyResult{}, err
+	}
 	if n.raft.State() == raft.Leader {
 		return n.ApplyLocal(ctx, cmd)
 	}
@@ -326,7 +387,17 @@ func (n *Node) ApplyLocal(ctx context.Context, cmd *pb.Command) (ApplyResult, er
 		return ApplyResult{}, fmt.Errorf("%w: not the leader", ErrNotApplied)
 	}
 	if cmd.GetVersion() == 0 {
-		cmd.Version = CommandVersion
+		cmd.Version = minVersion(cmd)
+	}
+	// A forwarded command from a newer follower may need a version this leader
+	// does not know yet (ADR 0018).
+	if cmd.GetVersion() > n.MaxCommandVersion() {
+		return ApplyResult{}, &CommandError{Code: CodeNotEnabled, Message: fmt.Sprintf(
+			"command version %d is not supported by this node, which supports up to %d; the leader must be upgraded first",
+			cmd.GetVersion(), n.MaxCommandVersion())}
+	}
+	if err := n.checkCommandLevel(ctx, cmd); err != nil {
+		return ApplyResult{}, err
 	}
 	cmd.IssuedAtMs = time.Now().UnixMilli()
 	data, err := proto.Marshal(cmd)

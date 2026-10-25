@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+package cluster
+
+import (
+	"errors"
+
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+)
+
+// MinCommandLevel is the oldest cluster command level whose log entries this
+// binary can still apply (ADR 0018). A cluster below it must first be updated
+// through the previous minor version.
+const MinCommandLevel = 2
+
+// ErrIncompatibleVersion means this binary cannot run the cluster state: its
+// command version is older than the cluster's command level, or the level is
+// older than MinCommandLevel (ADR 0018).
+var ErrIncompatibleVersion = errors.New("incompatible command version")
+
+// minVersion returns the minimum Command.version at which this binary applies
+// the payload of cmd the way it is applied now (ADR 0018). Every payload has
+// an entry, and a test enforces it. A nil or unknown payload returns 0.
+func minVersion(cmd *pb.Command) uint32 {
+	switch cmd.GetPayload().(type) {
+	case *pb.Command_PutEntity,
+		*pb.Command_DeleteEntity,
+		*pb.Command_SetMonitorState,
+		*pb.Command_EnqueueAlert,
+		*pb.Command_AckAlertDelivery,
+		*pb.Command_CreateSession,
+		*pb.Command_RotateSession,
+		*pb.Command_RevokeSessions,
+		*pb.Command_RedeemJoinToken,
+		*pb.Command_RevokeCertificate,
+		*pb.Command_RevokeNode:
+		return 1
+	case *pb.Command_RegisterNode,
+		*pb.Command_SetNodeHealth,
+		*pb.Command_SetFeatureLevel:
+		return 2
+	}
+	return 0
+}
+
+// stamp sets the version of cmd from its payload and returns cmd. Constructors
+// use it instead of a fixed CommandVersion, so that an old binary keeps
+// accepting commands that do not need the new version (ADR 0018).
+func stamp(cmd *pb.Command) *pb.Command {
+	cmd.Version = minVersion(cmd)
+	return cmd
+}

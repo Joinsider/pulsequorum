@@ -138,7 +138,7 @@ func TestRegisterNodeValidation(t *testing.T) {
 			f := newNodeFSM(t)
 			info := validNodeInfo()
 			tt.mutate(info)
-			cmd := &pb.Command{Version: nodeCommandVersion, Payload: &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{Node: info}}}
+			cmd := stamp(&pb.Command{Payload: &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{Node: info}}})
 			res := f.apply(cmd, 1_000)
 			if tt.wantErr {
 				if !errors.Is(res.Err, ErrInvalidCommand) {

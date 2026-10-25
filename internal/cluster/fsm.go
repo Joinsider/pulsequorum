@@ -61,6 +61,9 @@ type FSM struct {
 	state   StateStore
 	log     *slog.Logger
 	onFatal func(error)
+	// maxVersion is the highest Command.version this FSM applies; it is
+	// CommandVersion unless a test overrides it (ADR 0018).
+	maxVersion uint32
 
 	applied  atomic.Uint64
 	haltErr  atomic.Pointer[error]
@@ -81,7 +84,7 @@ func NewFSM(ctx context.Context, state StateStore, log *slog.Logger, onFatal fun
 	if err != nil {
 		return nil, err
 	}
-	f := &FSM{state: state, log: log, onFatal: onFatal, changes: make(chan struct{}, 1)}
+	f := &FSM{state: state, log: log, onFatal: onFatal, maxVersion: CommandVersion, changes: make(chan struct{}, 1)}
 	f.applied.Store(idx)
 	return f, nil
 }
@@ -135,9 +138,9 @@ func (f *FSM) Apply(l *raft.Log) any {
 	if err := proto.Unmarshal(l.Data, &cmd); err != nil {
 		return f.reject(ctx, l.Index, nil, invalid("decode command: %v", err))
 	}
-	if cmd.GetVersion() > CommandVersion {
+	if cmd.GetVersion() > f.maxVersion {
 		// Feature gates must prevent this; applying partially would diverge.
-		f.halt(fmt.Errorf("command version %d at index %d is newer than supported version %d", cmd.GetVersion(), l.Index, CommandVersion))
+		f.halt(fmt.Errorf("command version %d at index %d is newer than supported version %d", cmd.GetVersion(), l.Index, f.maxVersion))
 		return ApplyResult{Index: l.Index, Err: f.Healthy()}
 	}
 
@@ -250,6 +253,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRegisterNode(ctx, tx, cmd, p.RegisterNode)
 	case *pb.Command_SetNodeHealth:
 		return applySetNodeHealth(ctx, tx, cmd, p.SetNodeHealth)
+	case *pb.Command_SetFeatureLevel:
+		return applySetFeatureLevel(ctx, tx, cmd, p.SetFeatureLevel)
 	case nil:
 		return nil, invalid("command without payload")
 	default:

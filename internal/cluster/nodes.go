@@ -14,10 +14,6 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// nodeCommandVersion is the Command.version of RegisterNode and SetNodeHealth:
-// the version that introduced them (ADR 0017). It is fixed, unlike CommandVersion.
-const nodeCommandVersion = 2
-
 // Limits of the node registry (ADR 0017). Lengths are counted in bytes.
 const (
 	maxNodeNameLen      = 200
@@ -44,19 +40,19 @@ type NodeResult struct {
 // NewRegisterNode builds the command that registers a node or updates its
 // registry entry (ADR 0017). The node proposes it itself.
 func NewRegisterNode(requestID string, n store.Node) *pb.Command {
-	return &pb.Command{
-		Version: nodeCommandVersion, RequestId: requestID,
-		Payload: &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{Node: nodeInfoFrom(n)}},
-	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Payload:   &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{Node: nodeInfoFrom(n)}},
+	})
 }
 
 // NewSetNodeHealth builds the command that records a health change of a node
 // (ADR 0017). Only the leader proposes it, and only when the value changes.
 func NewSetNodeHealth(requestID, nodeID string, healthy bool) *pb.Command {
-	return &pb.Command{
-		Version: nodeCommandVersion, RequestId: requestID,
-		Payload: &pb.Command_SetNodeHealth{SetNodeHealth: &pb.SetNodeHealth{NodeId: nodeID, Healthy: healthy}},
-	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Payload:   &pb.Command_SetNodeHealth{SetNodeHealth: &pb.SetNodeHealth{NodeId: nodeID, Healthy: healthy}},
+	})
 }
 
 // nodeInfoFrom converts a registry entry to its wire form. Capabilities are

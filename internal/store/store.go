@@ -388,6 +388,9 @@ type State interface {
 
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
+	// CommandLevel returns the command version the cluster may use (ADR 0018),
+	// 0 if it was never set.
+	CommandLevel(ctx context.Context) (uint32, error)
 
 	// Update runs fn in one write transaction. Only the Raft FSM calls it, so
 	// that every replica applies the same changes (ADR 0005, FA-CLU-07).
@@ -512,6 +515,10 @@ type StateTx interface {
 
 	// SetAppliedIndex records the Raft index applied by this transaction (ADR 0005).
 	SetAppliedIndex(ctx context.Context, index uint64) error
+	// CommandLevel returns the stored command level (ADR 0018), 0 if unset.
+	CommandLevel(ctx context.Context) (uint32, error)
+	// SetCommandLevel stores the command level. The caller only ever raises it.
+	SetCommandLevel(ctx context.Context, level uint32) error
 	// GetDedup returns the stored outcome of a request ID or ErrNotFound.
 	GetDedup(ctx context.Context, requestID string) (DedupEntry, error)
 	PutDedup(ctx context.Context, e DedupEntry) error
