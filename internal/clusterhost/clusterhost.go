@@ -175,6 +175,7 @@ type Host struct {
 	mux       *clusternet.Mux
 	grpc      *grpc.Server
 	advertise string
+	dataDir   string
 	sec       clusternet.Security
 	log       *slog.Logger
 	wg        sync.WaitGroup
@@ -195,6 +196,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring},
 		log:         opts.Log,
 		advertise:   opts.Advertise,
+		dataDir:     opts.DataDir,
 		state:       opts.State,
 		self:        selfNode(opts),
 	}
@@ -298,6 +300,7 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.registerSelf(ctx) })
 	wg.Go(func() { h.Health.Run(ctx) })
 	wg.Go(func() { h.Level.Run(ctx) })
+	wg.Go(func() { h.revokeRecovered(ctx) })
 	wg.Wait()
 }
 

@@ -486,13 +486,14 @@ type Status struct {
 	LastLogIndex  uint64
 	LastContactMs int64
 	LeaderID      string
+	LeaderAddress string
 }
 
 // Status returns the current status of this node.
 func (n *Node) Status() Status {
 	stats := n.raft.Stats()
 	commit, _ := strconv.ParseUint(stats["commit_index"], 10, 64)
-	_, leaderID := n.raft.LeaderWithID()
+	leaderAddr, leaderID := n.raft.LeaderWithID()
 	var lastContact int64
 	if n.raft.State() != raft.Leader {
 		if t := n.raft.LastContact(); !t.IsZero() {
@@ -510,6 +511,7 @@ func (n *Node) Status() Status {
 		LastLogIndex:  n.raft.LastIndex(),
 		LastContactMs: lastContact,
 		LeaderID:      string(leaderID),
+		LeaderAddress: string(leaderAddr),
 	}
 }
 

@@ -98,4 +98,7 @@ message GetStatusResponse {
   int64 last_contact_ms = 6;
   // Node ID of the current leader as seen by the callee; empty without leader.
   string leader_id = 7;
+  // Cluster address of the current leader; empty without leader. The admin
+  // CLI sends its commands there (ADR 0019).
+  string leader_address = 8;
 }

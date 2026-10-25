@@ -456,7 +456,10 @@ type GetStatusResponse struct {
 	// Time since the last contact with the leader in milliseconds; 0 on the leader.
 	LastContactMs int64 `protobuf:"varint,6,opt,name=last_contact_ms,json=lastContactMs,proto3" json:"last_contact_ms,omitempty"`
 	// Node ID of the current leader as seen by the callee; empty without leader.
-	LeaderId      string `protobuf:"bytes,7,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	LeaderId string `protobuf:"bytes,7,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	// Cluster address of the current leader; empty without leader. The admin
+	// CLI sends its commands there (ADR 0019).
+	LeaderAddress string `protobuf:"bytes,8,opt,name=leader_address,json=leaderAddress,proto3" json:"leader_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -540,6 +543,13 @@ func (x *GetStatusResponse) GetLeaderId() string {
 	return ""
 }
 
+func (x *GetStatusResponse) GetLeaderAddress() string {
+	if x != nil {
+		return x.LeaderAddress
+	}
+	return ""
+}
+
 var File_uptimecluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
@@ -573,7 +583,7 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10GetStatusRequest\"\xfe\x01\n" +
+	"\x10GetStatusRequest\"\xa5\x02\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -582,7 +592,8 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\fcommit_index\x18\x04 \x01(\x04R\vcommitIndex\x12$\n" +
 	"\x0elast_log_index\x18\x05 \x01(\x04R\flastLogIndex\x12&\n" +
 	"\x0flast_contact_ms\x18\x06 \x01(\x03R\rlastContactMs\x12\x1b\n" +
-	"\tleader_id\x18\a \x01(\tR\bleaderId2\xe2\x02\n" +
+	"\tleader_id\x18\a \x01(\tR\bleaderId\x12%\n" +
+	"\x0eleader_address\x18\b \x01(\tR\rleaderAddress2\xe2\x02\n" +
 	"\x0eClusterService\x12E\n" +
 	"\x04Join\x12\x1d.uptimecluster.v1.JoinRequest\x1a\x1e.uptimecluster.v1.JoinResponse\x12i\n" +
 	"\x10RenewCertificate\x12).uptimecluster.v1.RenewCertificateRequest\x1a*.uptimecluster.v1.RenewCertificateResponse\x12H\n" +

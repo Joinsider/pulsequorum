@@ -275,6 +275,7 @@ func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatu
 	return &pb.GetStatusResponse{
 		NodeId: st.NodeID, RaftState: st.RaftState, AppliedIndex: st.AppliedIndex, CommitIndex: st.CommitIndex,
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
+		LeaderAddress: st.LeaderAddress,
 	}, nil
 }
 
