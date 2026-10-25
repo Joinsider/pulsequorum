@@ -22,6 +22,7 @@ import (
 	// All voters evaluate maintenance time zones with the same embedded database.
 	_ "time/tzdata"
 
+	"github.com/joinsider/uptimecluster/internal/admincli"
 	"github.com/joinsider/uptimecluster/internal/aggregator"
 	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api"
@@ -60,8 +61,12 @@ func run(args []string) int {
 			return 0
 		case "healthcheck":
 			return healthcheck()
+		case "admin":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return admincli.Run(ctx, args[1:], admincli.Env{Getenv: os.Getenv, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck)\n", args[0])
+			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck, admin)\n", args[0])
 			return 2
 		}
 	}
