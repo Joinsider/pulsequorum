@@ -37,6 +37,7 @@ type fakeClusterAdmin struct {
 	removal    membership.Removal
 	removeErr  error
 	removedID  string
+	removedBy  string
 	removeCall int
 
 	members    []cluster.Member
@@ -51,9 +52,10 @@ func (f *fakeClusterAdmin) CreateJoinToken(_ context.Context, role pki.Role, ten
 	return f.token, f.expires, f.tokenErr
 }
 
-func (f *fakeClusterAdmin) Remove(_ context.Context, nodeID string) (membership.Removal, error) {
+func (f *fakeClusterAdmin) Remove(_ context.Context, nodeID, requestedBy string) (membership.Removal, error) {
 	f.removeCall++
 	f.removedID = nodeID
+	f.removedBy = requestedBy
 	return f.removal, f.removeErr
 }
 
@@ -236,6 +238,9 @@ func TestRemoveClusterNode(t *testing.T) {
 		}
 		if fake.removedID != "n2" {
 			t.Errorf("removed %q, want n2", fake.removedID)
+		}
+		if fake.removedBy == "" {
+			t.Error("the removal does not name the requesting admin")
 		}
 	})
 	t.Run("removed without warning", func(t *testing.T) {

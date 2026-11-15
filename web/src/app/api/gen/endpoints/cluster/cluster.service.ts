@@ -164,9 +164,10 @@ export class ClusterService {
     );
   }
 /**
- * Platform admins only. Nodes are never removed automatically. The
- * leader must be asked to do this: a node cannot remove itself while it
- * leads, so transfer leadership first. The last voter cannot be removed.
+ * Platform admins only. Nodes are never removed automatically. Any voter
+ * accepts the request and forwards it to the leader, which does the
+ * removal. The leader itself cannot be removed while it leads: transfer
+ * leadership first. The last voter cannot be removed.
  * @summary Remove a node from the cluster and revoke its certificates
  */
  removeClusterNode<TData = NodeRemoval>(nodeId: string, options?: HttpClientBodyOptions): Observable<TData>;

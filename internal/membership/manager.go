@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
@@ -29,6 +31,9 @@ const (
 	PromoteTimeout = 10 * time.Minute
 	promotePoll    = 2 * time.Second
 	changeTimeout  = 10 * time.Second
+	// removeForwardTimeout bounds a removal forwarded to the leader, which
+	// waits for the configuration change.
+	removeForwardTimeout = 15 * time.Second
 )
 
 // Errors of membership changes.
@@ -38,6 +43,9 @@ var (
 	ErrRemoveLeader  = errors.New("the leader cannot remove itself; transfer leadership first")
 	ErrLastVoter     = errors.New("the last voter cannot be removed")
 	errStatusPending = errors.New("node has not caught up yet")
+	// ErrLeaderUnavailable is a transport failure while a follower forwards a
+	// request to the leader; the caller may retry.
+	ErrLeaderUnavailable = errors.New("no leader available, retry")
 )
 
 // AddressInUseError rejects a join of a new node under an address another
@@ -58,6 +66,7 @@ type Raft interface {
 	AddVoter(id, address string, prevIndex uint64, timeout time.Duration) (uint64, error)
 	RemoveServer(id string, prevIndex uint64, timeout time.Duration) (uint64, error)
 	Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
+	Leader() (address, id string)
 }
 
 // StatusFunc asks a node for its status over the cluster port (GetStatus).
@@ -69,7 +78,10 @@ type StatusFunc func(ctx context.Context, address string) (*pb.GetStatusResponse
 type Manager struct {
 	Raft   Raft
 	Status StatusFunc
-	Log    *slog.Logger
+	// DialLeader returns a client for the leader at address (mTLS as voter).
+	// The caller closes the connection with the returned func.
+	DialLeader func(address string) (pb.ClusterServiceClient, func(), error)
+	Log        *slog.Logger
 
 	mu        sync.Mutex
 	promoting map[string]bool
@@ -269,8 +281,69 @@ type Removal struct {
 
 // Remove takes a node out of the cluster and revokes its certificates.
 // Nodes are never removed automatically (FA-CLU-08); the caller is a
-// platform admin.
-func (m *Manager) Remove(ctx context.Context, nodeID string) (Removal, error) {
+// platform admin. Any voter accepts the request: a follower forwards it to
+// the leader, which does the work (RemoveNode). requestedBy is the admin's
+// user ID, for the log only.
+func (m *Manager) Remove(ctx context.Context, nodeID, requestedBy string) (Removal, error) {
+	if m.Raft.IsLeader() {
+		return m.removeLocal(ctx, nodeID)
+	}
+	return m.forwardRemove(ctx, nodeID, requestedBy)
+}
+
+// forwardRemove sends the removal to the leader. Without a known leader, a
+// leader that moved meanwhile, or an older leader binary without RemoveNode,
+// it returns ErrNotLeader so that the caller retries.
+func (m *Manager) forwardRemove(ctx context.Context, nodeID, requestedBy string) (Removal, error) {
+	addr, _ := m.Raft.Leader()
+	if addr == "" {
+		return Removal{}, ErrNotLeader
+	}
+	if m.DialLeader == nil {
+		return Removal{}, errors.New("forward removal: no leader dialer configured")
+	}
+	client, done, err := m.DialLeader(addr)
+	if err != nil {
+		return Removal{}, fmt.Errorf("%w: connect to leader %s: %w", ErrLeaderUnavailable, addr, err)
+	}
+	defer done()
+	callCtx, cancel := context.WithTimeout(ctx, removeForwardTimeout)
+	defer cancel()
+	resp, err := client.RemoveNode(callCtx, &pb.RemoveNodeRequest{NodeId: nodeID, RequestedBy: requestedBy})
+	if err != nil {
+		switch status.Code(err) {
+		case codes.FailedPrecondition, codes.Unimplemented:
+			return Removal{}, ErrNotLeader
+		}
+		return Removal{}, fmt.Errorf("%w: forward removal to %s: %w", ErrLeaderUnavailable, addr, err)
+	}
+	if code := resp.GetErrorCode(); code != "" {
+		sentinel := removeErrorByCode(code)
+		if sentinel == nil {
+			return Removal{}, fmt.Errorf("remove %s on leader %s: %s", nodeID, addr, resp.GetErrorMessage())
+		}
+		return Removal{}, fmt.Errorf("remove %s on leader %s: %w", nodeID, addr, sentinel)
+	}
+	return Removal{VotersLeft: int(resp.GetVotersLeft()), Warning: resp.GetWarning()}, nil
+}
+
+// removeErrorByCode maps the deterministic rejection codes of RemoveNodeResponse
+// to their sentinel errors; nil for an unknown code.
+func removeErrorByCode(code string) error {
+	switch code {
+	case "unknown_node":
+		return ErrUnknownNode
+	case "remove_leader":
+		return ErrRemoveLeader
+	case "last_voter":
+		return ErrLastVoter
+	}
+	return nil
+}
+
+// removeLocal removes the node on this leader. It is called by Remove on the
+// leader and by RemoveNode, which never forwards again.
+func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, error) {
 	if !m.Raft.IsLeader() {
 		return Removal{}, ErrNotLeader
 	}

@@ -29,6 +29,13 @@ service ClusterService {
   // it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
   // admin UI use it to show replication lag (ADR 0012 A9).
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // RemoveNode removes a member on the leader for a follower that forwards a
+  // platform admin's request (FA-CLU-08). Voters only: a voter is a full member
+  // and could change the configuration itself. The follower has authorized the
+  // admin; requested_by is for the log only. A follower returns
+  // FAILED_PRECONDITION and never forwards again.
+  rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
 }
 
 message JoinRequest {
@@ -101,4 +108,21 @@ message GetStatusResponse {
   // Cluster address of the current leader; empty without leader. The admin
   // CLI sends its commands there (ADR 0019).
   string leader_address = 8;
+}
+
+message RemoveNodeRequest {
+  string node_id = 1;
+  // User ID of the platform admin who asked, for the leader's log.
+  string requested_by = 2;
+}
+
+message RemoveNodeResponse {
+  // Voters left after the removal.
+  int32 voters_left = 1;
+  // Quorum warning (FA-CLU-11); empty when none applies.
+  string warning = 2;
+  // Deterministic rejection: "unknown_node", "remove_leader" or "last_voter";
+  // empty on success.
+  string error_code = 3;
+  string error_message = 4;
 }

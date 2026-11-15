@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"net"
 	"time"
 
@@ -30,13 +31,17 @@ const forwardedKey = "uc-forwarded"
 // Access levels of the ClusterService and ReplicationService methods
 // (clusternet.Authorize). Apply accepts forwarded commands from voters only: a
 // voter is a full member and could propose any command itself, probes never
-// write (FA-CLU-05). Replication runs between voters only; probe heartbeats
-// reach the cluster through the probe gateway (P5).
+// write (FA-CLU-05). RemoveNode carries a platform admin's request that the
+// forwarding voter has authorized; any voter could change the configuration
+// itself, so it needs no more than a voter certificate. Replication runs
+// between voters only; probe heartbeats reach the cluster through the probe
+// gateway (P5).
 var Access = map[string]clusternet.Access{
 	pb.ClusterService_Join_FullMethodName:                 clusternet.Anonymous,
 	pb.ClusterService_RenewCertificate_FullMethodName:     clusternet.AnyNode,
 	pb.ClusterService_Apply_FullMethodName:                clusternet.VoterOnly,
 	pb.ClusterService_GetStatus_FullMethodName:            clusternet.VoterOnly,
+	pb.ClusterService_RemoveNode_FullMethodName:           clusternet.VoterOnly,
 	pb.ReplicationService_StreamHeartbeats_FullMethodName: clusternet.VoterOnly,
 	pb.ReplicationService_GetWatermarks_FullMethodName:    clusternet.VoterOnly,
 	pb.ReplicationService_FetchRange_FullMethodName:       clusternet.VoterOnly,
@@ -277,6 +282,45 @@ func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatu
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
 		LeaderAddress: st.LeaderAddress,
 	}, nil
+}
+
+// RemoveNode removes a member on the leader for a follower that forwards a
+// platform admin's request (FA-CLU-08). The follower has authorized the
+// admin; requested_by is for the log only. It only calls removeLocal: a
+// follower answers FAILED_PRECONDITION and never forwards again.
+func (s *Service) RemoveNode(ctx context.Context, req *pb.RemoveNodeRequest) (*pb.RemoveNodeResponse, error) {
+	nodeID := req.GetNodeId()
+	if nodeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "node ID is required")
+	}
+	if !s.Node.IsLeader() {
+		_, leaderID := s.Node.Leader()
+		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+	}
+	s.Log.Info("cluster node removal forwarded", "node_id", nodeID, "requested_by", req.GetRequestedBy())
+
+	removal, err := s.Manager.removeLocal(ctx, nodeID)
+	var code string
+	switch {
+	case err == nil:
+		if removal.VotersLeft < 0 || removal.VotersLeft > math.MaxInt32 {
+			return nil, status.Errorf(codes.Internal, "voter count %d out of range", removal.VotersLeft)
+		}
+		return &pb.RemoveNodeResponse{VotersLeft: int32(removal.VotersLeft), Warning: removal.Warning}, nil
+	case errors.Is(err, ErrNotLeader):
+		// Leadership moved between the check and the removal.
+		_, leaderID := s.Node.Leader()
+		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+	case errors.Is(err, ErrUnknownNode):
+		code = "unknown_node"
+	case errors.Is(err, ErrRemoveLeader):
+		code = "remove_leader"
+	case errors.Is(err, ErrLastVoter):
+		code = "last_voter"
+	default:
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	return &pb.RemoveNodeResponse{ErrorCode: code, ErrorMessage: err.Error()}, nil
 }
 
 // renewTimeout bounds one renewal call to the leader.

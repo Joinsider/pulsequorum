@@ -414,8 +414,8 @@ func (a clusterAdmin) CreateJoinToken(ctx context.Context, role pki.Role, tenant
 	return a.host.Authority.CreateJoinToken(ctx, role, tenantID, ttl)
 }
 
-func (a clusterAdmin) Remove(ctx context.Context, nodeID string) (membership.Removal, error) {
-	return a.host.Manager.Remove(ctx, nodeID)
+func (a clusterAdmin) Remove(ctx context.Context, nodeID, requestedBy string) (membership.Removal, error) {
+	return a.host.Manager.Remove(ctx, nodeID, requestedBy)
 }
 
 func (a clusterAdmin) Members() ([]cluster.Member, uint64, error) { return a.host.Node.Members() }

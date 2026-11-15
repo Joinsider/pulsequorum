@@ -301,10 +301,10 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 	}
 
 	// Removal is manual and revokes the node (FA-CLU-08, FA-PKI-04).
-	if _, err := n1.host.Manager.Remove(ctx, n1.id); !errors.Is(err, membership.ErrRemoveLeader) {
+	if _, err := n1.host.Manager.Remove(ctx, n1.id, ""); !errors.Is(err, membership.ErrRemoveLeader) {
 		t.Errorf("leader removing itself: err = %v", err)
 	}
-	removal, err := n1.host.Manager.Remove(ctx, n3.id)
+	removal, err := n1.host.Manager.Remove(ctx, n3.id, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,6 +324,64 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 	defer callCancel()
 	if _, err := pb.NewClusterServiceClient(conn).GetStatus(callCtx, &pb.GetStatusRequest{}); err == nil {
 		t.Error("removed node still reaches the cluster port")
+	}
+}
+
+// FA-CLU-08: a removal asked of a follower is forwarded to the leader, which
+// does the work; the leader itself and unknown nodes are rejected.
+func TestRemoveForwardedByFollower(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	n1, err := startNode(ctx, t, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n1 leader", 10*time.Second, n1.host.Node.IsLeader)
+	token := func() string {
+		tok, _, err := n1.host.Authority.CreateJoinToken(ctx, pki.RoleVoter, "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	n2, err := startNode(ctx, t, []string{n1.addr}, token())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n2 voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
+	n3, err := startNode(ctx, t, []string{n1.addr}, token())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "n3 voter", 30*time.Second, func() bool { return isVoter(n1, n3.id) })
+	eventually(t, "n2 knows the leader", 10*time.Second, func() bool {
+		addr, _ := n2.host.Node.Leader()
+		return addr != "" && !n2.host.Node.IsLeader()
+	})
+
+	// n3 is removed through the follower n2 (forwarded to n1).
+	removal, err := n2.host.Manager.Remove(ctx, n3.id, "admin-user")
+	if err != nil {
+		t.Fatalf("remove %s via follower: %v", n3.id, err)
+	}
+	if removal.VotersLeft != 2 || removal.Warning == "" {
+		t.Errorf("removal = %+v, want 2 voters with a warning", removal)
+	}
+	eventually(t, "n3 out of the configuration", 10*time.Second, func() bool { return memberCount(n1) == 2 })
+	if isVoter(n1, n3.id) {
+		t.Error("n3 still a voter on the leader")
+	}
+
+	// The leader cannot be removed, even when asked through a follower.
+	if _, err := n2.host.Manager.Remove(ctx, n1.id, "admin-user"); !errors.Is(err, membership.ErrRemoveLeader) {
+		t.Errorf("leader removed via follower: err = %v, want ErrRemoveLeader", err)
+	}
+	if _, err := n2.host.Manager.Remove(ctx, "00000000-0000-4000-8000-000000000000", "admin-user"); !errors.Is(err, membership.ErrUnknownNode) {
+		t.Errorf("unknown node via follower: err = %v, want ErrUnknownNode", err)
+	}
+	if memberCount(n1) != 2 {
+		t.Errorf("rejected removals changed the configuration: %d members", memberCount(n1))
 	}
 }
 

@@ -44,7 +44,7 @@ Dieses Dokument beschreibt, wie Voter zu einem laufenden Cluster hinzugefügt, e
 - Die Antwort nennt die verbleibende Anzahl der Voter (`votersLeft`). Bleiben weniger als 3 Voter oder eine gerade Anzahl, enthält sie zusätzlich eine Warnung. Ein Cluster mit 2 Votern übersteht den Ausfall eines Votern nicht; mit 4 Votern nicht mehr als mit 3.
 - Die Zertifikate des entfernten Nodes werden gesperrt. Die Sperre wirkt spätestens nach 10 Sekunden auf allen Knoten. Der Node kann sich danach nicht mehr mit dem alten Zertifikat verbinden.
 - Das Entfernen besteht aus zwei Schritten: erst die Entfernung aus der Raft-Konfiguration, dann die Sperre. Schlägt die Sperre fehl, liefert der Vorgang einen Fehler; der Node ist dann bereits aus dem Cluster entfernt, und die Sperre muss erneut ausgelöst werden.
-- Der Aufruf muss den Leader erreichen. Ein Node, der nicht Leader ist, antwortet mit `503` und der Bitte, es erneut zu versuchen.
+- Der Aufruf kann an jeden Voter gehen. Ein Voter, der nicht Leader ist, leitet die Entfernung an den Leader weiter. Ist kein Leader erreichbar oder wechselt die Führung gerade, antwortet er mit `503` und der Bitte, es erneut zu versuchen.
 - Fehlerantworten: `409`, wenn der Leader sich selbst oder den letzten Voter entfernen soll; `404`, wenn die Node-ID kein Mitglied ist.
 - Das Datenverzeichnis des entfernten Nodes ist danach unbrauchbar, weil es Raft-Zustand und ein gesperrtes Zertifikat enthält und ein erneuter Join nicht stattfindet. Vor einer Wiederverwendung des Verzeichnisses oder des Hosts löschen.
 

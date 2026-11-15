@@ -26,6 +26,7 @@ const (
 	ClusterService_RenewCertificate_FullMethodName = "/uptimecluster.v1.ClusterService/RenewCertificate"
 	ClusterService_Apply_FullMethodName            = "/uptimecluster.v1.ClusterService/Apply"
 	ClusterService_GetStatus_FullMethodName        = "/uptimecluster.v1.ClusterService/GetStatus"
+	ClusterService_RemoveNode_FullMethodName       = "/uptimecluster.v1.ClusterService/RemoveNode"
 )
 
 // ClusterServiceClient is the client API for ClusterService service.
@@ -49,6 +50,12 @@ type ClusterServiceClient interface {
 	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
 	// admin UI use it to show replication lag (ADR 0012 A9).
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// RemoveNode removes a member on the leader for a follower that forwards a
+	// platform admin's request (FA-CLU-08). Voters only: a voter is a full member
+	// and could change the configuration itself. The follower has authorized the
+	// admin; requested_by is for the log only. A follower returns
+	// FAILED_PRECONDITION and never forwards again.
+	RemoveNode(ctx context.Context, in *RemoveNodeRequest, opts ...grpc.CallOption) (*RemoveNodeResponse, error)
 }
 
 type clusterServiceClient struct {
@@ -99,6 +106,16 @@ func (c *clusterServiceClient) GetStatus(ctx context.Context, in *GetStatusReque
 	return out, nil
 }
 
+func (c *clusterServiceClient) RemoveNode(ctx context.Context, in *RemoveNodeRequest, opts ...grpc.CallOption) (*RemoveNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveNodeResponse)
+	err := c.cc.Invoke(ctx, ClusterService_RemoveNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClusterServiceServer is the server API for ClusterService service.
 // All implementations must embed UnimplementedClusterServiceServer
 // for forward compatibility.
@@ -120,6 +137,12 @@ type ClusterServiceServer interface {
 	// it to decide when a nonvoter may be promoted (ADR 0012 A3); health and the
 	// admin UI use it to show replication lag (ADR 0012 A9).
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// RemoveNode removes a member on the leader for a follower that forwards a
+	// platform admin's request (FA-CLU-08). Voters only: a voter is a full member
+	// and could change the configuration itself. The follower has authorized the
+	// admin; requested_by is for the log only. A follower returns
+	// FAILED_PRECONDITION and never forwards again.
+	RemoveNode(context.Context, *RemoveNodeRequest) (*RemoveNodeResponse, error)
 	mustEmbedUnimplementedClusterServiceServer()
 }
 
@@ -141,6 +164,9 @@ func (UnimplementedClusterServiceServer) Apply(context.Context, *ApplyRequest) (
 }
 func (UnimplementedClusterServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedClusterServiceServer) RemoveNode(context.Context, *RemoveNodeRequest) (*RemoveNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveNode not implemented")
 }
 func (UnimplementedClusterServiceServer) mustEmbedUnimplementedClusterServiceServer() {}
 func (UnimplementedClusterServiceServer) testEmbeddedByValue()                        {}
@@ -235,6 +261,24 @@ func _ClusterService_GetStatus_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClusterService_RemoveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).RemoveNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_RemoveNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).RemoveNode(ctx, req.(*RemoveNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ClusterService_ServiceDesc is the grpc.ServiceDesc for ClusterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -257,6 +301,10 @@ var ClusterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _ClusterService_GetStatus_Handler,
+		},
+		{
+			MethodName: "RemoveNode",
+			Handler:    _ClusterService_RemoveNode_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

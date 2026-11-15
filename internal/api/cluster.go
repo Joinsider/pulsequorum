@@ -35,7 +35,7 @@ const (
 // manager and Raft node.
 type ClusterAdmin interface {
 	CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error)
-	Remove(ctx context.Context, nodeID string) (membership.Removal, error)
+	Remove(ctx context.Context, nodeID, requestedBy string) (membership.Removal, error)
 	Members() ([]cluster.Member, uint64, error)
 	Leader() (address, id string)
 	ID() string
@@ -56,7 +56,7 @@ func clusterAdminError(err error) error {
 	case errors.Is(err, membership.ErrNotLeader):
 		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
 			Detail: "this node is not the leader, retry", RetryAfter: 1}
-	case errors.Is(err, cluster.ErrNotApplied), errors.Is(err, cluster.ErrUnknownOutcome):
+	case errors.Is(err, cluster.ErrNotApplied), errors.Is(err, cluster.ErrUnknownOutcome), errors.Is(err, membership.ErrLeaderUnavailable):
 		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
 			Detail: "no leader available, retry", RetryAfter: 1}
 	case errors.Is(err, clusterpki.ErrNoCA):
@@ -256,8 +256,10 @@ func (h *Handlers) replicationPeers() map[string]replication.PeerStatus {
 	return out
 }
 
-// RemoveClusterNode takes a node out of the cluster. The leader does the work;
-// a follower answers 503 so that the caller retries against the leader.
+// RemoveClusterNode takes a node out of the cluster. Any voter accepts the
+// request; a follower forwards it to the leader, which does the work. The
+// leader itself and the last voter cannot be removed. 503 asks the caller to
+// retry when no leader can be reached.
 func (h *Handlers) RemoveClusterNode(ctx context.Context, req gen.RemoveClusterNodeRequestObject) (gen.RemoveClusterNodeResponseObject, error) {
 	p, err := principal(ctx, platformAccess)
 	if err != nil {
@@ -267,7 +269,7 @@ func (h *Handlers) RemoveClusterNode(ctx context.Context, req gen.RemoveClusterN
 	if err != nil {
 		return nil, err
 	}
-	removal, err := admin.Remove(ctx, req.NodeId)
+	removal, err := admin.Remove(ctx, req.NodeId, p.UserID)
 	if err != nil {
 		return nil, clusterAdminError(err)
 	}

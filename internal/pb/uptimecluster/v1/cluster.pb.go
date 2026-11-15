@@ -550,6 +550,131 @@ func (x *GetStatusResponse) GetLeaderAddress() string {
 	return ""
 }
 
+type RemoveNodeRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	NodeId string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// User ID of the platform admin who asked, for the leader's log.
+	RequestedBy   string `protobuf:"bytes,2,opt,name=requested_by,json=requestedBy,proto3" json:"requested_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveNodeRequest) Reset() {
+	*x = RemoveNodeRequest{}
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveNodeRequest) ProtoMessage() {}
+
+func (x *RemoveNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveNodeRequest.ProtoReflect.Descriptor instead.
+func (*RemoveNodeRequest) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_cluster_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RemoveNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *RemoveNodeRequest) GetRequestedBy() string {
+	if x != nil {
+		return x.RequestedBy
+	}
+	return ""
+}
+
+type RemoveNodeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Voters left after the removal.
+	VotersLeft int32 `protobuf:"varint,1,opt,name=voters_left,json=votersLeft,proto3" json:"voters_left,omitempty"`
+	// Quorum warning (FA-CLU-11); empty when none applies.
+	Warning string `protobuf:"bytes,2,opt,name=warning,proto3" json:"warning,omitempty"`
+	// Deterministic rejection: "unknown_node", "remove_leader" or "last_voter";
+	// empty on success.
+	ErrorCode     string `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage  string `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveNodeResponse) Reset() {
+	*x = RemoveNodeResponse{}
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveNodeResponse) ProtoMessage() {}
+
+func (x *RemoveNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_cluster_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveNodeResponse.ProtoReflect.Descriptor instead.
+func (*RemoveNodeResponse) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_cluster_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RemoveNodeResponse) GetVotersLeft() int32 {
+	if x != nil {
+		return x.VotersLeft
+	}
+	return 0
+}
+
+func (x *RemoveNodeResponse) GetWarning() string {
+	if x != nil {
+		return x.Warning
+	}
+	return ""
+}
+
+func (x *RemoveNodeResponse) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *RemoveNodeResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_uptimecluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
@@ -593,12 +718,24 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x0elast_log_index\x18\x05 \x01(\x04R\flastLogIndex\x12&\n" +
 	"\x0flast_contact_ms\x18\x06 \x01(\x03R\rlastContactMs\x12\x1b\n" +
 	"\tleader_id\x18\a \x01(\tR\bleaderId\x12%\n" +
-	"\x0eleader_address\x18\b \x01(\tR\rleaderAddress2\xe2\x02\n" +
+	"\x0eleader_address\x18\b \x01(\tR\rleaderAddress\"O\n" +
+	"\x11RemoveNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
+	"\frequested_by\x18\x02 \x01(\tR\vrequestedBy\"\x93\x01\n" +
+	"\x12RemoveNodeResponse\x12\x1f\n" +
+	"\vvoters_left\x18\x01 \x01(\x05R\n" +
+	"votersLeft\x12\x18\n" +
+	"\awarning\x18\x02 \x01(\tR\awarning\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage2\xbb\x03\n" +
 	"\x0eClusterService\x12E\n" +
 	"\x04Join\x12\x1d.uptimecluster.v1.JoinRequest\x1a\x1e.uptimecluster.v1.JoinResponse\x12i\n" +
 	"\x10RenewCertificate\x12).uptimecluster.v1.RenewCertificateRequest\x1a*.uptimecluster.v1.RenewCertificateResponse\x12H\n" +
 	"\x05Apply\x12\x1e.uptimecluster.v1.ApplyRequest\x1a\x1f.uptimecluster.v1.ApplyResponse\x12T\n" +
-	"\tGetStatus\x12\".uptimecluster.v1.GetStatusRequest\x1a#.uptimecluster.v1.GetStatusResponseBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
+	"\tGetStatus\x12\".uptimecluster.v1.GetStatusRequest\x1a#.uptimecluster.v1.GetStatusResponse\x12W\n" +
+	"\n" +
+	"RemoveNode\x12#.uptimecluster.v1.RemoveNodeRequest\x1a$.uptimecluster.v1.RemoveNodeResponseBQZOgithub.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1b\x06proto3"
 
 var (
 	file_uptimecluster_v1_cluster_proto_rawDescOnce sync.Once
@@ -612,7 +749,7 @@ func file_uptimecluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_uptimecluster_v1_cluster_proto_rawDescData
 }
 
-var file_uptimecluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_uptimecluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_uptimecluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),              // 0: uptimecluster.v1.JoinRequest
 	(*JoinResponse)(nil),             // 1: uptimecluster.v1.JoinResponse
@@ -622,26 +759,30 @@ var file_uptimecluster_v1_cluster_proto_goTypes = []any{
 	(*ApplyResponse)(nil),            // 5: uptimecluster.v1.ApplyResponse
 	(*GetStatusRequest)(nil),         // 6: uptimecluster.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),        // 7: uptimecluster.v1.GetStatusResponse
-	(*NodeInfo)(nil),                 // 8: uptimecluster.v1.NodeInfo
-	(*Command)(nil),                  // 9: uptimecluster.v1.Command
+	(*RemoveNodeRequest)(nil),        // 8: uptimecluster.v1.RemoveNodeRequest
+	(*RemoveNodeResponse)(nil),       // 9: uptimecluster.v1.RemoveNodeResponse
+	(*NodeInfo)(nil),                 // 10: uptimecluster.v1.NodeInfo
+	(*Command)(nil),                  // 11: uptimecluster.v1.Command
 }
 var file_uptimecluster_v1_cluster_proto_depIdxs = []int32{
-	8, // 0: uptimecluster.v1.JoinRequest.node:type_name -> uptimecluster.v1.NodeInfo
-	8, // 1: uptimecluster.v1.JoinResponse.voters:type_name -> uptimecluster.v1.NodeInfo
-	9, // 2: uptimecluster.v1.ApplyRequest.command:type_name -> uptimecluster.v1.Command
-	0, // 3: uptimecluster.v1.ClusterService.Join:input_type -> uptimecluster.v1.JoinRequest
-	2, // 4: uptimecluster.v1.ClusterService.RenewCertificate:input_type -> uptimecluster.v1.RenewCertificateRequest
-	4, // 5: uptimecluster.v1.ClusterService.Apply:input_type -> uptimecluster.v1.ApplyRequest
-	6, // 6: uptimecluster.v1.ClusterService.GetStatus:input_type -> uptimecluster.v1.GetStatusRequest
-	1, // 7: uptimecluster.v1.ClusterService.Join:output_type -> uptimecluster.v1.JoinResponse
-	3, // 8: uptimecluster.v1.ClusterService.RenewCertificate:output_type -> uptimecluster.v1.RenewCertificateResponse
-	5, // 9: uptimecluster.v1.ClusterService.Apply:output_type -> uptimecluster.v1.ApplyResponse
-	7, // 10: uptimecluster.v1.ClusterService.GetStatus:output_type -> uptimecluster.v1.GetStatusResponse
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	10, // 0: uptimecluster.v1.JoinRequest.node:type_name -> uptimecluster.v1.NodeInfo
+	10, // 1: uptimecluster.v1.JoinResponse.voters:type_name -> uptimecluster.v1.NodeInfo
+	11, // 2: uptimecluster.v1.ApplyRequest.command:type_name -> uptimecluster.v1.Command
+	0,  // 3: uptimecluster.v1.ClusterService.Join:input_type -> uptimecluster.v1.JoinRequest
+	2,  // 4: uptimecluster.v1.ClusterService.RenewCertificate:input_type -> uptimecluster.v1.RenewCertificateRequest
+	4,  // 5: uptimecluster.v1.ClusterService.Apply:input_type -> uptimecluster.v1.ApplyRequest
+	6,  // 6: uptimecluster.v1.ClusterService.GetStatus:input_type -> uptimecluster.v1.GetStatusRequest
+	8,  // 7: uptimecluster.v1.ClusterService.RemoveNode:input_type -> uptimecluster.v1.RemoveNodeRequest
+	1,  // 8: uptimecluster.v1.ClusterService.Join:output_type -> uptimecluster.v1.JoinResponse
+	3,  // 9: uptimecluster.v1.ClusterService.RenewCertificate:output_type -> uptimecluster.v1.RenewCertificateResponse
+	5,  // 10: uptimecluster.v1.ClusterService.Apply:output_type -> uptimecluster.v1.ApplyResponse
+	7,  // 11: uptimecluster.v1.ClusterService.GetStatus:output_type -> uptimecluster.v1.GetStatusResponse
+	9,  // 12: uptimecluster.v1.ClusterService.RemoveNode:output_type -> uptimecluster.v1.RemoveNodeResponse
+	8,  // [8:13] is the sub-list for method output_type
+	3,  // [3:8] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_cluster_proto_init() }
@@ -656,7 +797,7 @@ func file_uptimecluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_cluster_proto_rawDesc), len(file_uptimecluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

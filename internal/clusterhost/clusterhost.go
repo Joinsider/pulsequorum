@@ -233,7 +233,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	}
 	h.Node = node
 	h.Authority.Cluster = node
-	h.Manager = &membership.Manager{Raft: node, Status: h.status, Log: opts.Log}
+	h.Manager = &membership.Manager{Raft: node, Status: h.status, DialLeader: h.dial, Log: opts.Log}
 	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log}
 	h.Level = &membership.LevelWatcher{Node: node, State: opts.State, Log: opts.Log}
 	node.OnHeartbeat(h.Health.Observe)
