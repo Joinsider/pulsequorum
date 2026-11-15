@@ -159,6 +159,9 @@ type Options struct {
 	// time.Now. The multi-node tests give each node its own skewed clock
 	// (ADR 0020).
 	Clock func() time.Time
+	// ClockInterval is the period of the clock offset measurement; zero means
+	// clockSampleInterval. Tests shorten it.
+	ClockInterval time.Duration
 }
 
 // Host is the running cluster side of a voter.
@@ -180,14 +183,16 @@ type Host struct {
 	state store.State
 	self  store.Node
 	// clock is the wall clock of this node (Options.Clock).
-	clock     func() time.Time
-	mux       *clusternet.Mux
-	grpc      *grpc.Server
-	advertise string
-	dataDir   string
-	sec       clusternet.Security
-	log       *slog.Logger
-	wg        sync.WaitGroup
+	clock         func() time.Time
+	clocks        clockTracker
+	clockInterval time.Duration
+	mux           *clusternet.Mux
+	grpc          *grpc.Server
+	advertise     string
+	dataDir       string
+	sec           clusternet.Security
+	log           *slog.Logger
+	wg            sync.WaitGroup
 
 	// leaderMu guards the cached connection to the current leader, which
 	// write forwarding reuses instead of dialing per command.
@@ -204,15 +209,19 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		clock = time.Now
 	}
 	h := &Host{
-		Cert:        opts.Prepared.Cert,
-		Revocations: &clusterpki.Revocations{},
-		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
-		log:         opts.Log,
-		advertise:   opts.Advertise,
-		dataDir:     opts.DataDir,
-		state:       opts.State,
-		self:        selfNode(opts),
-		clock:       clock,
+		Cert:          opts.Prepared.Cert,
+		Revocations:   &clusterpki.Revocations{},
+		Authority:     &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
+		log:           opts.Log,
+		advertise:     opts.Advertise,
+		dataDir:       opts.DataDir,
+		state:         opts.State,
+		self:          selfNode(opts),
+		clock:         clock,
+		clockInterval: opts.ClockInterval,
+	}
+	if h.clockInterval <= 0 {
+		h.clockInterval = clockSampleInterval
 	}
 	h.Cert.Now = clock
 	if err := h.Revocations.Reload(ctx, opts.State); err != nil {
@@ -271,7 +280,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
 	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
-		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log,
+		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
 	})
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
 		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, Log: opts.Log,
@@ -318,6 +327,7 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.registerSelf(ctx) })
 	wg.Go(func() { h.Health.Run(ctx) })
 	wg.Go(func() { h.Level.Run(ctx) })
+	wg.Go(func() { h.watchClocks(ctx) })
 	wg.Go(func() { h.revokeRecovered(ctx) })
 	wg.Wait()
 }

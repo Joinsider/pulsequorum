@@ -56,7 +56,10 @@ type Deps struct {
 	Replication interface {
 		Status() []replication.PeerStatus
 	}
-	Registry *checker.Registry
+	// ClockOffsets returns the fresh clock offsets of the peers in
+	// milliseconds, by node ID (ADR 0020); nil omits them.
+	ClockOffsets func() map[string]int64
+	Registry     *checker.Registry
 	// CheckEnv runs on-demand checks (POST /monitors/{id}/test).
 	CheckEnv *checker.Env
 	NodeID   string

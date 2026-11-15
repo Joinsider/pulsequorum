@@ -93,6 +93,18 @@ Ein Node mit älterem Binary kann einem Cluster mit höherer Befehlsversion nich
 - Verbindungen werden spätestens nach einer Stunde geschlossen und neu aufgebaut. Damit übernehmen auch laufende Verbindungen ein erneuertes Zertifikat spätestens nach 1 Stunde.
 - Gesperrte Zertifikate werden alle 10 Sekunden aus dem replizierten Zustand nachgeladen.
 
+## Uhrzeit
+
+Auf jedem Node ist NTP Pflicht. Der Cluster braucht synchronisierte Uhren, weil Zertifikate, Zugangstoken, Zeitstempel der Heartbeats und Wartungsfenster die Wanduhr nutzen. Raft selbst arbeitet mit monotoner Zeit und ist davon nicht betroffen (ADR 0020).
+
+Die Toleranzen, die die Tests gefunden haben:
+
+- **Zugangstoken (JWT):** Ein Node akzeptiert ein Token bis 30 s vor seinem Ausstellungszeitpunkt und bis 30 s nach seinem Ablauf. Liegt die Uhr weiter daneben, lehnt er das Token ab (`internal/auth`).
+- **Node-Zertifikate:** Sie sind ab 5 min vor der Ausstellung gültig (`NotBefore`). Ein Node, dessen Uhr mehr als 5 min hinter der des ausstellenden Voters liegt, lehnt das Zertifikat als `not yet valid` ab, bis seine Uhr aufgeholt hat. Ein Node mit vorgehender Uhr hat dieses Problem nicht.
+- **Messung im Test (drei Voter mit +90 s, −90 s und danach +6 min):** Die gemessenen Abweichungen lagen innerhalb von 1 s. Der Cluster blieb bestehen, Schreibzugriffe über jeden Node kamen überall an, und bestehende Zertifikate funktionierten weiter. Ein Zertifikat, das ein Voter mit +6 min ausstellt, lehnte ein Voter mit 0 s ab. Hätte der +6-min-Voter den Leader übernommen, verlöre der Voter mit 0 s die mTLS-Verbindung zu den von diesem Leader ausgestellten Zertifikaten. Deshalb gilt NTP als Pflicht und nicht nur als Empfehlung.
+
+Die Voter messen die Abweichung jedes anderen Voters alle 15 s über `GetStatus` und berücksichtigen nur Antworten mit einer Laufzeit bis 1 s. Ein Messwert gilt zwei Minuten. Die Abweichung zeigt die Cluster-Ansicht der Admin-UI (Karte jedes Nodes, Zeile „Uhrzeitabweichung“) und die Node-Liste der API (`clockOffsetMs`, positiv heißt: der Node geht vor). Ab 2 s Abweichung erscheint in der UI eine Warnung. Ein Systemalert dazu folgt mit AP-3.6.
+
 ## Fehlerbilder
 
 | Meldung | Bedeutung | Vorgehen |

@@ -178,6 +178,10 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		registered[n.ID] = n
 	}
 
+	var offsets map[string]int64
+	if h.deps.ClockOffsets != nil {
+		offsets = h.deps.ClockOffsets()
+	}
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
 	// Command versions of the registered voters decide whether a rolling
@@ -201,6 +205,9 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 			if m.Voter {
 				voterVersions = append(voterVersions, n.MaxCommandVersion)
 			}
+		}
+		if off, ok := offsets[m.ID]; ok && m.ID != self {
+			node.ClockOffsetMs = &off
 		}
 		if ps, ok := peers[m.ID]; ok && m.ID != self {
 			if lag, caught := ps.Lag(h.deps.Now()); caught {

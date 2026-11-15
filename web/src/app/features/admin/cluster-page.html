@@ -139,6 +139,15 @@
                   }
                 </dd>
               </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.clockOffset') }}</dt>
+                <dd [class]="'clock clock--' + row.clockSeverity">
+                  {{ row.clockText ?? '–' }}
+                  @if (row.clockSeverity === 'warn') {
+                    <span class="wrap">{{ t('admin.cluster.node.clockWarning') }}</span>
+                  }
+                </dd>
+              </div>
             </dl>
 
             <div class="node__actions">

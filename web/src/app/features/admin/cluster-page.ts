@@ -28,6 +28,9 @@ import {
   formatDuration,
   healthOf,
   LagSeverity,
+  ClockSeverity,
+  clockSeverity,
+  formatOffset,
   lagSeverity,
   NodeHealth,
   quorumOf,
@@ -49,6 +52,9 @@ export interface NodeRow {
   readonly lagSeverity: LagSeverity;
   /** Formatted lag, or null when there is none to show ("–"). */
   readonly lagText: string | null;
+  readonly clockSeverity: ClockSeverity;
+  /** Signed clock offset, or null while no fresh measurement exists ("–"). */
+  readonly clockText: string | null;
 }
 
 /** Summary figures above the node list. */
@@ -120,6 +126,8 @@ export class ClusterPage {
         health: healthOf(node),
         lagSeverity: lagSeverity(lagMs),
         lagText: lagMs === undefined ? null : formatDuration(lagMs),
+        clockSeverity: clockSeverity(node.clockOffsetMs),
+        clockText: node.clockOffsetMs === undefined ? null : formatOffset(node.clockOffsetMs),
       };
     });
   });

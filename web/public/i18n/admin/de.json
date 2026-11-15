@@ -56,7 +56,9 @@
       "maxCommandVersion": "Max. Befehlsversion",
       "capabilities": "Fähigkeiten",
       "replicationLag": "Replikationsverzug",
-      "replicationError": "Replikationsfehler: {{ error }}"
+      "replicationError": "Replikationsfehler: {{ error }}",
+      "clockOffset": "Uhrzeitabweichung",
+      "clockWarning": "Die Uhrzeit weicht um 2 s oder mehr ab. Aktiviere NTP auf allen Nodes."
     },
     "actions": {
       "remove": "Entfernen",

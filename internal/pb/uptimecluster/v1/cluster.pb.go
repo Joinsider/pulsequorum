@@ -460,8 +460,11 @@ type GetStatusResponse struct {
 	// Cluster address of the current leader; empty without leader. The admin
 	// CLI sends its commands there (ADR 0019).
 	LeaderAddress string `protobuf:"bytes,8,opt,name=leader_address,json=leaderAddress,proto3" json:"leader_address,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Wall clock of the callee in Unix milliseconds when it answered (ADR 0020).
+	// Callers estimate the clock offset from it.
+	WallClockUnixMs int64 `protobuf:"varint,9,opt,name=wall_clock_unix_ms,json=wallClockUnixMs,proto3" json:"wall_clock_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -548,6 +551,13 @@ func (x *GetStatusResponse) GetLeaderAddress() string {
 		return x.LeaderAddress
 	}
 	return ""
+}
+
+func (x *GetStatusResponse) GetWallClockUnixMs() int64 {
+	if x != nil {
+		return x.WallClockUnixMs
+	}
+	return 0
 }
 
 type RemoveNodeRequest struct {
@@ -708,7 +718,7 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10GetStatusRequest\"\xa5\x02\n" +
+	"\x10GetStatusRequest\"\xd2\x02\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -718,7 +728,8 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x0elast_log_index\x18\x05 \x01(\x04R\flastLogIndex\x12&\n" +
 	"\x0flast_contact_ms\x18\x06 \x01(\x03R\rlastContactMs\x12\x1b\n" +
 	"\tleader_id\x18\a \x01(\tR\bleaderId\x12%\n" +
-	"\x0eleader_address\x18\b \x01(\tR\rleaderAddress\"O\n" +
+	"\x0eleader_address\x18\b \x01(\tR\rleaderAddress\x12+\n" +
+	"\x12wall_clock_unix_ms\x18\t \x01(\x03R\x0fwallClockUnixMs\"O\n" +
 	"\x11RemoveNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
 	"\frequested_by\x18\x02 \x01(\tR\vrequestedBy\"\x93\x01\n" +

@@ -44,6 +44,11 @@ type testNode struct {
 	// maxVersion overrides the command version of the node; zero keeps
 	// cluster.CommandVersion (ADR 0018).
 	maxVersion uint32
+	// clock is the wall clock of the node; nil keeps the system clock (ADR 0020).
+	clock func() time.Time
+	// clockInterval is the period of the clock offset measurement; zero keeps
+	// the default.
+	clockInterval time.Duration
 }
 
 func freeAddr(t *testing.T) string {
@@ -103,7 +108,8 @@ func restart(ctx context.Context, t *testing.T, n *testNode) *testNode {
 func restartWithVersion(ctx context.Context, t *testing.T, n *testNode, maxVersion uint32) *testNode {
 	t.Helper()
 	stop(t, n)
-	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval, caps: n.caps, maxVersion: maxVersion}, nil, "")
+	moved, err := launch(ctx, t, &testNode{id: n.id, addr: freeAddr(t), dir: n.dir, replInterval: n.replInterval, caps: n.caps, maxVersion: maxVersion,
+		clock: n.clock, clockInterval: n.clockInterval}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +123,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token, MaxCommandVersion: n.maxVersion}, log)
+	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token, MaxCommandVersion: n.maxVersion, Clock: n.clock}, log)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +146,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		KEK: n.kek, Keyring: n.keyring, Prepared: prepared, Log: log, RaftLogLevel: "error",
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
 		Name:    "n", Version: "test", Capabilities: n.caps,
-		MaxCommandVersion: n.maxVersion,
+		MaxCommandVersion: n.maxVersion, Clock: n.clock, ClockInterval: n.clockInterval,
 	})
 	if err != nil {
 		// The state is not registered for cleanup yet; close it here.

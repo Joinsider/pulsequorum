@@ -195,6 +195,11 @@
   font-weight: 600;
 }
 
+.clock--warn {
+  color: var(--status-degraded);
+  font-weight: 600;
+}
+
 .error-text {
   display: block;
   color: var(--danger);

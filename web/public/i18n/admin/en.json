@@ -56,7 +56,9 @@
       "maxCommandVersion": "Max. command version",
       "capabilities": "Capabilities",
       "replicationLag": "Replication lag",
-      "replicationError": "Replication error: {{ error }}"
+      "replicationError": "Replication error: {{ error }}",
+      "clockOffset": "Clock offset",
+      "clockWarning": "The clock differs by 2 s or more. Enable NTP on all nodes."
     },
     "actions": {
       "remove": "Remove",

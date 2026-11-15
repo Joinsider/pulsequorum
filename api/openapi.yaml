@@ -1362,6 +1362,10 @@ components:
         replicationError:
           type: string
           description: "Last replication error with this node as seen by the answering node"
+        clockOffsetMs:
+          type: integer
+          format: int64
+          description: "Offset of that node's wall clock relative to the answering node, in milliseconds; positive means the node is ahead (ADR 0020). Estimated from GetStatus round trips of at most one second; absent for the answering node itself and while no fresh sample of the last two minutes exists."
         maxCommandVersion:
           type: integer
           format: int32

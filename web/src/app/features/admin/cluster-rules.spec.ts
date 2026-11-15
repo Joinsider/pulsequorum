@@ -5,9 +5,11 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it } from 'vitest';
 import { ClusterNode } from '../../api/gen/model';
 import {
+  clockSeverity,
   clusterErrorKey,
   faultTolerance,
   formatDuration,
+  formatOffset,
   healthOf,
   lagSeverity,
   nodeLabel,
@@ -227,5 +229,31 @@ describe('statusOf', () => {
 
   it('returns undefined for other errors', () => {
     expect(statusOf(new Error('boom'))).toBeUndefined();
+  });
+});
+
+describe('clockSeverity', () => {
+  it.each([
+    [undefined, 'none'],
+    [0, 'ok'],
+    [1_999, 'ok'],
+    [-1_999, 'ok'],
+    [2_000, 'warn'],
+    [-2_000, 'warn'],
+    [-90_000, 'warn'],
+  ] as const)('%s ms is %s', (ms, want) => {
+    expect(clockSeverity(ms)).toBe(want);
+  });
+});
+
+describe('formatOffset', () => {
+  it.each([
+    [0, '+0 ms'],
+    [-450, '-450 ms'],
+    [2_300, '+2.3 s'],
+    [-89_999, '-90.0 s'],
+    [90_000, '+90.0 s'],
+  ])('formats %s ms as %s', (ms, want) => {
+    expect(formatOffset(ms)).toBe(want);
   });
 });

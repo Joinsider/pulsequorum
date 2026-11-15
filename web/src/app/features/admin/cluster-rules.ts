@@ -107,6 +107,29 @@ export function lagSeverity(ms: number | undefined): LagSeverity {
   return 'critical';
 }
 
+/** Clock offsets from this many milliseconds on, in either direction, are a warning (ADR 0020). */
+export const CLOCK_WARN_MS = 2_000;
+
+/** Severity of a node's clock offset; `none` while no fresh measurement exists. */
+export type ClockSeverity = 'ok' | 'warn' | 'none';
+
+export function clockSeverity(ms: number | undefined): ClockSeverity {
+  if (ms === undefined) {
+    return 'none';
+  }
+  return Math.abs(ms) >= CLOCK_WARN_MS ? 'warn' : 'ok';
+}
+
+/** Signed offset text with the sign shown: "+2.3 s", "-90.0 s", "-450 ms". */
+export function formatOffset(ms: number): string {
+  const sign = ms < 0 ? '-' : '+';
+  const abs = Math.abs(ms);
+  if (abs < 1000) {
+    return `${sign}${Math.round(abs)} ms`;
+  }
+  return `${sign}${(abs / 1000).toFixed(1)} s`;
+}
+
 /** Short human text for a duration: "850 ms", "12 s", "4 min", "2 h". Rounds down. */
 export function formatDuration(ms: number): string {
   if (ms < 1000) {

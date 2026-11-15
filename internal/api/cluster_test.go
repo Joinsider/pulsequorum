@@ -410,6 +410,40 @@ func TestListClusterNodesReplicationLag(t *testing.T) {
 	}
 }
 
+// ADR 0020: the listing shows the clock offset of each peer with a fresh
+// sample; the answering node and peers without one carry none.
+func TestListClusterNodesClockOffset(t *testing.T) {
+	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
+	offsets := map[string]int64{"n1": 5, "n2": 90_000, "n3": -2_300}
+	e := newEnvTweaked(t, false, func(d *Deps) {
+		d.ClusterAdmin = admin
+		d.ClockOffsets = func() map[string]int64 { return offsets }
+	})
+	got := decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+	byID := map[string]gen.ClusterNode{}
+	for _, n := range got.Nodes {
+		byID[n.Id] = n
+	}
+	if n := byID["n1"]; n.ClockOffsetMs != nil {
+		t.Errorf("answering node has offset %d, want none", *n.ClockOffsetMs)
+	}
+	if n := byID["n2"]; n.ClockOffsetMs == nil || *n.ClockOffsetMs != 90_000 {
+		t.Errorf("n2 offset = %v, want 90000", n.ClockOffsetMs)
+	}
+	if n := byID["n3"]; n.ClockOffsetMs == nil || *n.ClockOffsetMs != -2_300 {
+		t.Errorf("n3 offset = %v, want -2300", n.ClockOffsetMs)
+	}
+
+	// Without a fresh sample for n2 it is absent.
+	delete(offsets, "n2")
+	got = decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+	for _, n := range got.Nodes {
+		if n.Id == "n2" && n.ClockOffsetMs != nil {
+			t.Errorf("n2 offset = %d without a sample, want none", *n.ClockOffsetMs)
+		}
+	}
+}
+
 // TestListClusterNodesRegistry checks that the registry fields are shown for
 // registered nodes only (ADR 0017).
 func TestListClusterNodesRegistry(t *testing.T) {

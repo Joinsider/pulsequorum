@@ -250,3 +250,39 @@ func TestSignAccessTokenRejectsBadKey(t *testing.T) {
 		t.Error("short private key accepted")
 	}
 }
+
+// ADR 0020: a token issued at T is accepted by a node whose clock is up to
+// 30 s off (clockLeeway) and rejected beyond that, both at the start of its
+// validity (iat, nbf) and at its end (exp).
+func TestAccessTokenClockTolerance(t *testing.T) {
+	issued := time.Unix(1_800_000_000, 0)
+	k := newTestKey(t, "kid-1")
+	c := Claims{Issuer: Issuer, Audience: Audience, Subject: "user-1", TenantID: "default",
+		Roles: []string{"tenant-editor"}, IssuedAt: issued.Unix(), NotBefore: issued.Unix(),
+		ExpiresAt: issued.Add(AccessTTL).Unix(), ID: "clock"}
+	tok, err := SignAccessToken(k.kid, k.priv, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		offset time.Duration // verifier clock minus issuer clock
+		ok     bool
+	}{
+		{"verifier 29 s behind at issuance", -29 * time.Second, true},
+		{"verifier 31 s behind at issuance", -31 * time.Second, false},
+		{"verifier 29 s ahead at expiry", AccessTTL + 29*time.Second, true},
+		{"verifier 31 s ahead at expiry", AccessTTL + 31*time.Second, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The start-of-validity cases verify at issuance time plus offset;
+			// the end cases at issuance plus AccessTTL plus the offset.
+			at := issued.Add(tt.offset)
+			_, err := VerifyAccessToken(tok, k.lookup, at)
+			if (err == nil) != tt.ok {
+				t.Errorf("verify at %v: err = %v, want accepted = %v", at.Unix()-issued.Unix(), err, tt.ok)
+			}
+		})
+	}
+}

@@ -35,6 +35,8 @@ export interface ClusterNode {
   replicationLagMs?: number;
   /** Last replication error with this node as seen by the answering node */
   replicationError?: string;
+  /** Offset of that node's wall clock relative to the answering node, in milliseconds; positive means the node is ahead (ADR 0020). Estimated from GetStatus round trips of at most one second; absent for the answering node itself and while no fresh sample of the last two minutes exists. */
+  clockOffsetMs?: number;
   /**
      * Highest command version the node's binary supports, from the node registry (ADR 0018); absent until the node registered
      * @minimum 0

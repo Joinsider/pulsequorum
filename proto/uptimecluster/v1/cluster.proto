@@ -108,6 +108,9 @@ message GetStatusResponse {
   // Cluster address of the current leader; empty without leader. The admin
   // CLI sends its commands there (ADR 0019).
   string leader_address = 8;
+  // Wall clock of the callee in Unix milliseconds when it answered (ADR 0020).
+  // Callers estimate the clock offset from it.
+  int64 wall_clock_unix_ms = 9;
 }
 
 message RemoveNodeRequest {

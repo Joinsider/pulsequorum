@@ -302,6 +302,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Stream: hub, Tickets: tickets,
 		ClusterAdmin: clusterAdmin{host: host},
 		Replication:  host.Replication,
+		ClockOffsets: host.ClockOffsets,
 		Now:          clock,
 	}
 	if local != nil {

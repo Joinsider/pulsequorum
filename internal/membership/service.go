@@ -75,6 +75,9 @@ type Service struct {
 	// DialLeader returns a client for the leader at address (mTLS as voter).
 	DialLeader func(address string) (pb.ClusterServiceClient, func(), error)
 	Log        *slog.Logger
+	// Clock is the wall clock of this node, reported in GetStatus; nil means
+	// time.Now (ADR 0020).
+	Clock func() time.Time
 }
 
 var _ pb.ClusterServiceServer = (*Service)(nil)
@@ -280,8 +283,15 @@ func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatu
 	return &pb.GetStatusResponse{
 		NodeId: st.NodeID, RaftState: st.RaftState, AppliedIndex: st.AppliedIndex, CommitIndex: st.CommitIndex,
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
-		LeaderAddress: st.LeaderAddress,
+		LeaderAddress: st.LeaderAddress, WallClockUnixMs: s.now().UnixMilli(),
 	}, nil
+}
+
+func (s *Service) now() time.Time {
+	if s.Clock == nil {
+		return time.Now()
+	}
+	return s.Clock()
 }
 
 // RemoveNode removes a member on the leader for a follower that forwards a
