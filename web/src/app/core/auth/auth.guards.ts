@@ -30,3 +30,9 @@ export const adminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   return auth.canAdmin() ? true : inject(Router).createUrlTree(['/']);
 };
+
+/** Hides the platform admin area (/admin); convenience only, the server enforces the role (FA-UI-05). */
+export const platformAdminGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return auth.canPlatformAdmin() ? true : inject(Router).createUrlTree(['/']);
+};

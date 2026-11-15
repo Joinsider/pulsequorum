@@ -1,0 +1,98 @@
+{
+  "joinToken": {
+    "title": "Add a voter",
+    "intro": "Creates a one-time join token for a new voter. It is shown only once and expires after the chosen time.",
+    "ttl": "Valid for (minutes)",
+    "ttlHint": "{{ min }} to {{ max }} minutes",
+    "create": "Create token",
+    "token": "Join token",
+    "onceOnly": "Copy the token now. It is not shown again and is not stored anywhere in the UI.",
+    "copy": "Copy",
+    "copied": "Copied to the clipboard",
+    "expires": "Expires {{ when }}",
+    "howTo": "Save the token in a file on the new node and start it with an empty data directory and:",
+    "anyVoter": "<host:port of a voter>",
+    "fileHint": "JOIN_TOKEN_FILE keeps the token out of the process environment. See docs/betrieb/cluster.md.",
+    "done": "Done",
+    "error": {
+      "invalid": "The server rejected the request."
+    }
+  },
+  "error": {
+    "forbidden": "Only platform admins can administer the cluster.",
+    "unavailable": "The cluster is not available right now (no leader or no CA yet). Try again shortly.",
+    "generic": "The request failed."
+  },
+  "cluster": {
+    "title": "Cluster",
+    "refresh": "Refresh",
+    "addVoter": "Add voter",
+    "listLabel": "Cluster nodes",
+    "summary": {
+      "label": "Cluster summary",
+      "voters": "Voters",
+      "quorum": "Quorum",
+      "tolerates": "Tolerated failures",
+      "leader": "Leader",
+      "commandLevel": "Command level"
+    },
+    "noLeader": "No leader is known. Writes are refused until an election succeeds.",
+    "upgradePending": "A rolling update is in progress: not all voters support the same command version yet.",
+    "warningsLabel": "Quorum warnings",
+    "node": {
+      "voter": "Voter",
+      "nonVoter": "Non-voter",
+      "catchingUp": "catching up",
+      "leaderBadge": "Leader",
+      "selfBadge": "This node",
+      "healthLabel": "Health",
+      "address": "Address",
+      "health": {
+        "healthy": "Healthy",
+        "unhealthy": "Unhealthy",
+        "unknown": "Not registered"
+      },
+      "version": "Version",
+      "maxCommandVersion": "Max. command version",
+      "capabilities": "Capabilities",
+      "replicationLag": "Replication lag",
+      "replicationError": "Replication error: {{ error }}"
+    },
+    "actions": {
+      "remove": "Remove",
+      "replace": "Replace"
+    },
+    "blocked": {
+      "leader": "The leader cannot remove itself. Stop its container so another voter takes over, then remove it.",
+      "lastVoter": "The last voter cannot be removed."
+    },
+    "risk": {
+      "noReserve": "Fewer than three voters remain: the cluster has no failure reserve.",
+      "even": "An even number of voters adds no fault tolerance. An odd number is recommended."
+    },
+    "impact": {
+      "votersLeft": "Voters afterwards: {{ count }}",
+      "tolerates": "Tolerated failures afterwards: {{ count }}"
+    },
+    "remove": {
+      "title": "Remove node",
+      "text": "Remove “{{ name }}” from the cluster? It stops taking part in the Raft group and no longer receives replicated data.",
+      "confirm": "Remove node"
+    },
+    "replace": {
+      "title": "Replace node",
+      "text": "“{{ name }}” is removed from the cluster first. Then you add a new voter with a join token.",
+      "warnReserve": "Until the new node has joined, the cluster has less failure reserve.",
+      "warnData": "Do not reuse the old node's data directory. The new node must start with an empty data directory and gets a new node ID.",
+      "joinHint": "Start the new node with an empty data directory. Do not reuse the data directory of the removed node.",
+      "confirm": "Remove and replace"
+    },
+    "saved": {
+      "removed": "Node removed. Voters afterwards: {{ count }}."
+    },
+    "error": {
+      "notMember": "This node is not a member of the cluster.",
+      "conflict": "The cluster refused the change because of its current state."
+    }
+  }
+}

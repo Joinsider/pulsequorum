@@ -3,7 +3,7 @@
 
 import { Routes } from '@angular/router';
 import { provideTranslocoScope } from '@jsverse/transloco';
-import { adminGuard, authGuard, guestGuard } from './core/auth/auth.guards';
+import { adminGuard, authGuard, guestGuard, platformAdminGuard } from './core/auth/auth.guards';
 
 /**
  * Every feature is lazy-loaded and owns its translation scope
@@ -81,6 +81,12 @@ export const routes: Routes = [
         canActivate: [adminGuard],
         providers: [provideTranslocoScope('users')],
         loadChildren: () => import('./features/users/users.routes').then((m) => m.routes),
+      },
+      {
+        path: 'admin',
+        canActivate: [platformAdminGuard],
+        providers: [provideTranslocoScope('admin')],
+        loadChildren: () => import('./features/admin/admin.routes').then((m) => m.routes),
       },
     ],
   },

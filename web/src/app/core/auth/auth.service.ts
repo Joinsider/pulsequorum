@@ -47,6 +47,8 @@ export class AuthService {
     this.hasRole('tenant-editor', 'tenant-admin', 'platform-admin'),
   );
   readonly canAdmin = computed(() => this.hasRole('tenant-admin', 'platform-admin'));
+  /** Cluster administration (FA-UI-05); the server allows it to platform admins only. */
+  readonly canPlatformAdmin = computed(() => this.hasRole('platform-admin'));
 
   constructor() {
     inject(DestroyRef).onDestroy(() => clearTimeout(this.refreshTimer));

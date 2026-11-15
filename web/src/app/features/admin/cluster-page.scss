@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The UptimeCluster Authors
+
+:host {
+  display: block;
+}
+
+.state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  color: var(--muted);
+}
+
+.state--error {
+  color: var(--danger);
+}
+
+.detail {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.banner--info {
+  border-color: var(--status-maintenance);
+}
+
+.banner--warn {
+  border-color: var(--status-degraded);
+  color: var(--status-degraded);
+}
+
+.warnings {
+  list-style: none;
+  padding-left: 1rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+
+  li + li {
+    margin-top: 0.25rem;
+  }
+}
+
+.wrap {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+
+  > div {
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    min-width: 0;
+  }
+
+  dt {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  dd {
+    margin: 0.25rem 0 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+}
+
+.nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.node--leader {
+  border-color: var(--status-up);
+}
+
+.node__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  min-width: 0;
+}
+
+.node__title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.node__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.node__id {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.chip,
+.badge {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+
+.chip--voter {
+  border-color: currentColor;
+}
+
+.badge--leader {
+  color: var(--status-up);
+  border-color: currentColor;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+
+  dt {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  dd {
+    margin: 0.125rem 0 0;
+    min-width: 0;
+  }
+}
+
+.health--healthy {
+  color: var(--status-up);
+}
+
+.health--unhealthy {
+  color: var(--status-down);
+}
+
+.health--unknown {
+  color: var(--muted);
+}
+
+.lag--warn {
+  color: var(--status-degraded);
+}
+
+.lag--critical {
+  color: var(--status-down);
+  font-weight: 600;
+}
+
+.error-text {
+  display: block;
+  color: var(--danger);
+}
+
+.node__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}

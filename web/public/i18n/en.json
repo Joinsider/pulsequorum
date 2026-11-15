@@ -5,6 +5,7 @@
     "channels": "Notification channels",
     "maintenance": "Maintenance",
     "users": "Users",
+    "cluster": "Cluster",
     "account": "Account"
   },
   "shell": {

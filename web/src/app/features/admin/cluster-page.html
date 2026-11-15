@@ -1,0 +1,175 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('admin.cluster.title')">
+    <button mat-stroked-button type="button" (click)="load()">
+      <app-icon name="refresh" size="1.125rem" />
+      {{ t('admin.cluster.refresh') }}
+    </button>
+    <button mat-flat-button type="button" (click)="addVoter()">
+      <app-icon name="add" size="1.125rem" />
+      {{ t('admin.cluster.addVoter') }}
+    </button>
+  </app-page-header>
+
+  @if (!data()) {
+    @if (loading()) {
+      <p class="state" role="status">{{ t('common.loading') }}</p>
+    } @else if (loadError(); as key) {
+      <p class="state state--error" role="alert">
+        {{ t(key) }}
+        <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+      </p>
+    }
+  } @else if (data(); as list) {
+    @if (loadError(); as key) {
+      <p class="state state--error" role="alert">
+        {{ t(key) }}
+        <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+      </p>
+    }
+    @if (actionError(); as err) {
+      <p class="state state--error" role="alert">
+        {{ t(err.key) }}
+        @if (err.detail) {
+          <span class="detail">{{ err.detail }}</span>
+        }
+      </p>
+    }
+
+    @if (list.upgradePending) {
+      <p class="banner banner--info" role="status">{{ t('admin.cluster.upgradePending') }}</p>
+    }
+    @if (!list.leaderId) {
+      <p class="banner banner--warn" role="alert">{{ t('admin.cluster.noLeader') }}</p>
+    }
+    @if (list.warnings.length > 0) {
+      <ul class="banner banner--warn warnings" [attr.aria-label]="t('admin.cluster.warningsLabel')">
+        @for (warning of list.warnings; track warning) {
+          <li>{{ warning }}</li>
+        }
+      </ul>
+    }
+
+    @if (summary(); as s) {
+      <dl class="summary" [attr.aria-label]="t('admin.cluster.summary.label')">
+        <div>
+          <dt>{{ t('admin.cluster.summary.voters') }}</dt>
+          <dd>{{ s.voters }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('admin.cluster.summary.quorum') }}</dt>
+          <dd>{{ s.quorum }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('admin.cluster.summary.tolerates') }}</dt>
+          <dd>{{ s.tolerates }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('admin.cluster.summary.leader') }}</dt>
+          <dd class="wrap">{{ s.leaderLabel ?? '–' }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('admin.cluster.summary.commandLevel') }}</dt>
+          <dd>{{ s.commandLevel ?? '–' }}</dd>
+        </div>
+      </dl>
+    }
+
+    @if (rows().length === 0) {
+      <p class="state">{{ t('common.empty') }}</p>
+    } @else {
+      <ul class="nodes" [attr.aria-label]="t('admin.cluster.listLabel')">
+        @for (row of rows(); track row.node.id) {
+          <li class="node" [class.node--leader]="row.node.leader" data-testid="cluster-node">
+            <div class="node__head">
+              <div class="node__title">
+                <span class="node__name">{{ row.name }}</span>
+                <code class="node__id">{{ row.node.id }}</code>
+              </div>
+              <div class="badges">
+                @if (row.node.voter) {
+                  <span class="chip chip--voter">{{ t('admin.cluster.node.voter') }}</span>
+                } @else {
+                  <span class="chip">
+                    {{ t('admin.cluster.node.nonVoter') }} ({{
+                      t('admin.cluster.node.catchingUp')
+                    }})
+                  </span>
+                }
+                @if (row.node.leader) {
+                  <span class="badge badge--leader">{{ t('admin.cluster.node.leaderBadge') }}</span>
+                }
+                @if (row.node.self) {
+                  <span class="badge">{{ t('admin.cluster.node.selfBadge') }}</span>
+                }
+              </div>
+            </div>
+
+            <dl class="facts">
+              <div>
+                <dt>{{ t('admin.cluster.node.address') }}</dt>
+                <dd class="wrap">{{ row.node.address }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.healthLabel') }}</dt>
+                <dd [class]="'health health--' + row.health">
+                  {{ t('admin.cluster.node.health.' + row.health) }}
+                </dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.version') }}</dt>
+                <dd class="wrap">{{ row.node.version ?? '–' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.maxCommandVersion') }}</dt>
+                <dd>{{ row.node.maxCommandVersion ?? '–' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.capabilities') }}</dt>
+                <dd class="wrap">{{ row.node.capabilities?.join(', ') || '–' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.replicationLag') }}</dt>
+                <dd [class]="'lag lag--' + row.lagSeverity">
+                  {{ row.lagText ?? '–' }}
+                  @if (row.node.replicationError; as error) {
+                    <span class="wrap error-text">
+                      {{ t('admin.cluster.node.replicationError', { error }) }}
+                    </span>
+                  }
+                </dd>
+              </div>
+            </dl>
+
+            <div class="node__actions">
+              <span [matTooltip]="row.impact.blockedKey ? t(row.impact.blockedKey) : ''">
+                <button
+                  mat-stroked-button
+                  type="button"
+                  [disabled]="!!row.impact.blockedKey || busy()"
+                  [attr.aria-label]="t('admin.cluster.actions.remove') + ': ' + row.name"
+                  (click)="remove(row)"
+                >
+                  <app-icon name="delete" size="1.125rem" />
+                  {{ t('admin.cluster.actions.remove') }}
+                </button>
+              </span>
+              <span [matTooltip]="row.impact.blockedKey ? t(row.impact.blockedKey) : ''">
+                <button
+                  mat-stroked-button
+                  type="button"
+                  [disabled]="!!row.impact.blockedKey || busy()"
+                  [attr.aria-label]="t('admin.cluster.actions.replace') + ': ' + row.name"
+                  (click)="replace(row)"
+                >
+                  <app-icon name="refresh" size="1.125rem" />
+                  {{ t('admin.cluster.actions.replace') }}
+                </button>
+              </span>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+</div>

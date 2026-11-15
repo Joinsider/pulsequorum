@@ -1,0 +1,98 @@
+{
+  "joinToken": {
+    "title": "Voter hinzufügen",
+    "intro": "Erzeugt ein einmaliges Join-Token für einen neuen Voter. Es wird nur einmal angezeigt und läuft nach der gewählten Zeit ab.",
+    "ttl": "Gültig für (Minuten)",
+    "ttlHint": "{{ min }} bis {{ max }} Minuten",
+    "create": "Token erzeugen",
+    "token": "Join-Token",
+    "onceOnly": "Kopiere das Token jetzt. Es wird nicht noch einmal angezeigt und in der Oberfläche nirgends gespeichert.",
+    "copy": "Kopieren",
+    "copied": "In die Zwischenablage kopiert",
+    "expires": "Läuft ab: {{ when }}",
+    "howTo": "Speichere das Token auf dem neuen Node in einer Datei und starte ihn mit leerem Datenverzeichnis und:",
+    "anyVoter": "<host:port eines Voters>",
+    "fileHint": "Mit JOIN_TOKEN_FILE steht das Token nicht in der Prozessumgebung. Siehe docs/betrieb/cluster.md.",
+    "done": "Fertig",
+    "error": {
+      "invalid": "Der Server hat die Anfrage abgelehnt."
+    }
+  },
+  "error": {
+    "forbidden": "Nur Plattform-Admins können den Cluster verwalten.",
+    "unavailable": "Der Cluster ist gerade nicht verfügbar (kein Leader oder noch keine CA). Bitte gleich erneut versuchen.",
+    "generic": "Die Anfrage ist fehlgeschlagen."
+  },
+  "cluster": {
+    "title": "Cluster",
+    "refresh": "Aktualisieren",
+    "addVoter": "Voter hinzufügen",
+    "listLabel": "Cluster-Nodes",
+    "summary": {
+      "label": "Cluster-Übersicht",
+      "voters": "Voter",
+      "quorum": "Quorum",
+      "tolerates": "Ausfallsicher gegen",
+      "leader": "Leader",
+      "commandLevel": "Befehlsstufe"
+    },
+    "noLeader": "Kein Leader bekannt. Schreibzugriffe werden abgelehnt, bis eine Wahl gelingt.",
+    "upgradePending": "Ein rollierendes Update läuft: noch nicht alle Voter unterstützen dieselbe Befehlsversion.",
+    "warningsLabel": "Quorum-Warnungen",
+    "node": {
+      "voter": "Voter",
+      "nonVoter": "Nicht-Voter",
+      "catchingUp": "holt auf",
+      "leaderBadge": "Leader",
+      "selfBadge": "Dieser Node",
+      "healthLabel": "Zustand",
+      "address": "Adresse",
+      "health": {
+        "healthy": "Gesund",
+        "unhealthy": "Nicht gesund",
+        "unknown": "Nicht registriert"
+      },
+      "version": "Version",
+      "maxCommandVersion": "Max. Befehlsversion",
+      "capabilities": "Fähigkeiten",
+      "replicationLag": "Replikationsverzug",
+      "replicationError": "Replikationsfehler: {{ error }}"
+    },
+    "actions": {
+      "remove": "Entfernen",
+      "replace": "Ersetzen"
+    },
+    "blocked": {
+      "leader": "Der Leader kann sich nicht selbst entfernen. Stoppe seinen Container, damit ein anderer Voter übernimmt, und entferne ihn dann.",
+      "lastVoter": "Der letzte Voter kann nicht entfernt werden."
+    },
+    "risk": {
+      "noReserve": "Es bleiben weniger als drei Voter: Der Cluster hat keine Ausfallreserve.",
+      "even": "Eine gerade Anzahl Voter bringt keine zusätzliche Ausfallsicherheit. Eine ungerade Anzahl wird empfohlen."
+    },
+    "impact": {
+      "votersLeft": "Voter danach: {{ count }}",
+      "tolerates": "Ausfallsicher danach gegen: {{ count }}"
+    },
+    "remove": {
+      "title": "Node entfernen",
+      "text": "„{{ name }}“ aus dem Cluster entfernen? Er nimmt dann nicht mehr an der Raft-Gruppe teil und erhält keine replizierten Daten mehr.",
+      "confirm": "Node entfernen"
+    },
+    "replace": {
+      "title": "Node ersetzen",
+      "text": "„{{ name }}“ wird zuerst aus dem Cluster entfernt. Danach fügst du mit einem Join-Token einen neuen Voter hinzu.",
+      "warnReserve": "Bis der neue Node beigetreten ist, hat der Cluster eine geringere Ausfallreserve.",
+      "warnData": "Verwende das Datenverzeichnis des alten Nodes nicht erneut. Der neue Node muss mit einem leeren Datenverzeichnis starten und bekommt eine neue Node-ID.",
+      "joinHint": "Starte den neuen Node mit leerem Datenverzeichnis. Das Datenverzeichnis des entfernten Nodes darf nicht wiederverwendet werden.",
+      "confirm": "Entfernen und ersetzen"
+    },
+    "saved": {
+      "removed": "Node entfernt. Voter danach: {{ count }}."
+    },
+    "error": {
+      "notMember": "Dieser Node ist kein Mitglied des Clusters.",
+      "conflict": "Der Cluster hat die Änderung wegen seines aktuellen Zustands abgelehnt."
+    }
+  }
+}

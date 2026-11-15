@@ -90,7 +90,9 @@
   >
     <mat-nav-list class="nav">
       @for (item of navItems; track item.path) {
-        @if (!item.adminOnly || auth.canAdmin()) {
+        @if (
+          (!item.adminOnly || auth.canAdmin()) && (!item.platformOnly || auth.canPlatformAdmin())
+        ) {
           <a
             mat-list-item
             [routerLink]="item.path"

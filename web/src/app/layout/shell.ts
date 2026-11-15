@@ -32,6 +32,8 @@ interface NavItem {
   labelKey: string;
   icon: IconName;
   adminOnly?: boolean;
+  /** Platform admins only (cluster administration, FA-UI-05). */
+  platformOnly?: boolean;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -40,6 +42,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/channels', labelKey: 'nav.channels', icon: 'notifications' },
   { path: '/maintenance', labelKey: 'nav.maintenance', icon: 'build' },
   { path: '/users', labelKey: 'nav.users', icon: 'group', adminOnly: true },
+  { path: '/admin/cluster', labelKey: 'nav.cluster', icon: 'hub', platformOnly: true },
   { path: '/account', labelKey: 'nav.account', icon: 'person' },
 ];
 
