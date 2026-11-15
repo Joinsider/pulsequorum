@@ -568,3 +568,32 @@ func StatusCode(err error) int {
 	}
 	return 0
 }
+
+// UpdateMonitor replaces the writable part of a monitor (PUT /monitors/{id}).
+func (c *Client) UpdateMonitor(ctx context.Context, id string, in MonitorInput) (Monitor, error) {
+	var m Monitor
+	_, err := c.Do(ctx, http.MethodPut, "/monitors/"+url.PathEscape(id), nil, in, &m)
+	return m, err
+}
+
+// DeleteMonitor deletes a monitor (DELETE /monitors/{id}, 204).
+func (c *Client) DeleteMonitor(ctx context.Context, id string) error {
+	_, err := c.Do(ctx, http.MethodDelete, "/monitors/"+url.PathEscape(id), nil, nil, nil)
+	return err
+}
+
+// MaintenanceWindowInput is the writable part of a maintenance window.
+type MaintenanceWindowInput struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	MonitorIDs  []string `json:"monitorIds"`
+	Schedule    any      `json:"schedule"`
+	Active      bool     `json:"active"`
+}
+
+// CreateMaintenance creates a maintenance window (POST /maintenance).
+func (c *Client) CreateMaintenance(ctx context.Context, in MaintenanceWindowInput) (MaintenanceWindow, error) {
+	var w MaintenanceWindow
+	_, err := c.Do(ctx, http.MethodPost, "/maintenance", nil, in, &w)
+	return w, err
+}

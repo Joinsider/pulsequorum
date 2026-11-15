@@ -123,7 +123,7 @@ func runAS02(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Voter 2 joins", "listed as voter by the leader",
 		fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
-	if err := ensureLoginWorks(ctx, env, cl, 2); err != nil {
+	if err := requireLogin(ctx, env, cl, 2); err != nil {
 		return err
 	}
 
@@ -135,7 +135,7 @@ func runAS02(ctx context.Context, env *Env) error {
 	joinEnd := time.Now()
 	rep.Check("Voter 3 joins", "listed as voter by the leader",
 		fmt.Sprintf("joined after %s", joinEnd.Sub(join3Start).Round(time.Second)), true)
-	if err := ensureLoginWorks(ctx, env, cl, 3); err != nil {
+	if err := requireLogin(ctx, env, cl, 3); err != nil {
 		return err
 	}
 
@@ -290,32 +290,18 @@ func waitUntil(ctx context.Context, t time.Time) error {
 	}
 }
 
-// ensureLoginWorks checks that a freshly joined voter answers logins. Known
-// product issue: a voter that starts before its replicated state has arrived
-// creates no access-token signing key ("no signing key available", HTTP 500)
-// and never retries. A restart reloads the key from the replicated state.
-// The restart is recorded as an INFO step, so the report shows it.
-func ensureLoginWorks(ctx context.Context, env *Env, cl *harness.Cluster, i int) error {
+// requireLogin checks that a freshly joined voter answers logins within
+// loginGrace. There is no restart workaround: a voter that never answers
+// fails the step (the product must load its signing key after the join).
+func requireLogin(ctx context.Context, env *Env, cl *harness.Cluster, i int) error {
 	rep := env.Rep
 	name := cl.Names().Voter(i)
+	started := time.Now()
 	ok, lastErr := pollUntil(ctx, loginGrace, 2*time.Second, func() (bool, error) {
 		return loginOK(ctx, cl, i)
 	})
-	if ok {
-		rep.Check("Login on "+name, "login answers 200", "200", true)
-		return nil
-	}
-	rep.Info("Login on "+name+" after join", "login answers 200",
-		fmt.Sprintf("not within %s: %s; restarting %s", loginGrace, errText(lastErr), name))
-	if err := cl.Restart(ctx, i); err != nil {
-		rep.Check("Restart "+name, "voter healthy again", err.Error(), false)
-		return err
-	}
-	ok, lastErr = pollUntil(ctx, loginGrace, 2*time.Second, func() (bool, error) {
-		return loginOK(ctx, cl, i)
-	})
-	rep.Check("Login on "+name+" after restart", "login answers 200",
-		fmt.Sprintf("login ok: %v%s", ok, errSuffix(lastErr)), ok)
+	rep.Check("Login on "+name, "login answers 200 within "+loginGrace.String(),
+		fmt.Sprintf("login ok: %v after %s%s", ok, time.Since(started).Round(time.Second), errSuffix(lastErr)), ok)
 	if !ok {
 		return fmt.Errorf("%s does not answer logins", name)
 	}
@@ -332,13 +318,6 @@ func loginOK(ctx context.Context, cl *harness.Cluster, i int) (bool, error) {
 		return false, err
 	}
 	return true, nil
-}
-
-func errText(err error) string {
-	if err == nil {
-		return "no error"
-	}
-	return err.Error()
 }
 
 // allMonitorsHaveProducer reports whether every monitor has at least one

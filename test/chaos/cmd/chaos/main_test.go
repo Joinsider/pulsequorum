@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -52,8 +54,14 @@ func TestSelectScenarios(t *testing.T) {
 	for _, s := range all {
 		ids = append(ids, s.ID)
 	}
-	if strings.Join(ids, ",") != "as02,selftest" {
-		t.Errorf("all = %v", ids)
+	// New scenario files are added over time; check order and membership only.
+	if !sort.StringsAreSorted(ids) {
+		t.Errorf("all = %v, want sorted by ID", ids)
+	}
+	for _, want := range []string{"as02", "selftest"} {
+		if !slices.Contains(ids, want) {
+			t.Errorf("all = %v, missing %s", ids, want)
+		}
 	}
 
 	one, err := selectScenarios(" AS02 , as02")
