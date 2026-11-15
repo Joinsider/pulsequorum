@@ -4,7 +4,7 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | UptimeCluster (Arbeitstitel, E20) |
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Status** | Freigegeben (ADRs 0001–0015 Accepted) |
 | **Datum** | 2026-10-22 |
 | **Grundlage** | [Konzept v0.3](../uptime-cluster-konzept.md), Recherche zu Pitfalls (Kap. 12) |
@@ -18,6 +18,7 @@
 | 1.0-draft | 2026-10-19 | Erstfassung aus Konzept v0.3 und Pitfall-Recherche |
 | 1.1 | 2026-10-19 | Präzisierungen aus den Spikes gemäß ADR 0012 und 0013 (FA-NODE-03/05/06, FA-CLU-03/06/08/09/10/13, FA-REP-01/03/07, PF-24) |
 | 1.2 | 2026-10-22 | Geheimnisse in Monitor-Konfigurationen gemäß ADR 0015 (FA-SEC-SEC, FA-API-06) |
+| 1.3 | 2026-11-15 | Teststrategie 13.1: Clock-Skew als Integrationstest statt im Container gemäß ADR 0020 |
 
 ---
 
@@ -792,7 +793,7 @@ Ergebnis der Recherche (Okt. 2026). Jede Zeile nennt Problem, Bedeutung für Upt
 | Unit | Checker, Konsens-Regeln, Uptime-Berechnung, Scheduler-Jitter, Templates, SSRF-Filter (inkl. Fuzzing) | `go test`, `testing/fuzz`, Vitest |
 | Integration | Repository gegen SQLite (und PostgreSQL ab P5) mit gemeinsamer Suite; Mandanten-Isolation; API-Contract gegen OpenAPI | `go test`, Testcontainers |
 | Determinismus | Raft-Log-Replay auf zwei FSMs → identischer Dump; Rollups auf zwei Votern identisch | `go test` |
-| Cluster/Chaos | 3/5 Voter + Probes in Docker: Node-Kill, Partition (2\|1), Latenz, Clock-Skew, Datenverzeichnis löschen, Rolling Update | Docker Compose + Skripte (ggf. toxiproxy) |
+| Cluster/Chaos | 3/5 Voter + Probes in Containern: Node-Kill, Partition (2\|1), Latenz, Datenverzeichnis löschen, Rolling Update, Recovery-Runbook; Clock-Skew als Integrationstest mit je Node versetzter Uhr, weil Container die Wanduhr des Hosts teilen (ADR 0020) | `test/chaos` (Podman/Docker, Sidecar mit iptables/netem), `go test` |
 | E2E | Kernabläufe in der SPA, Client-Failover | Playwright |
 | Last | 1.000 Monitore, 20-s-Intervalle, Retention-Lauf | eigener Last-Generator + Ziel-Mock |
 | Sicherheit | `govulncheck`, `npm audit`, Lizenzprüfung, Berechtigungsmatrix-Test | CI |
