@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The UptimeCluster Authors
 
-package main
+package fake
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 )
 
 func TestNtfyRecorderRecordsShoutrrrMessage(t *testing.T) {
-	rec := newNtfyRecorder()
+	rec := NewRecorder()
 	srv := httptest.NewServer(rec)
 	t.Cleanup(srv.Close)
 
@@ -27,7 +27,7 @@ func TestNtfyRecorderRecordsShoutrrrMessage(t *testing.T) {
 	}
 	// The same URL shape the driver puts into the notification channel.
 	shoutURL := "ntfy://" + u.Host + "/as01-test?scheme=http"
-	sender, err := shoutrrr.CreateSender(shoutURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, shoutURL)
 	if err != nil {
 		t.Fatalf("CreateSender: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestNtfyRecorderRecordsShoutrrrMessage(t *testing.T) {
 }
 
 func TestNtfyRecorderRejectsNonPost(t *testing.T) {
-	srv := httptest.NewServer(newNtfyRecorder())
+	srv := httptest.NewServer(NewRecorder())
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/topic")
@@ -74,15 +74,15 @@ func TestNtfyRecorderRejectsNonPost(t *testing.T) {
 }
 
 func TestNtfyRecorderWaitForFiltersBySinceAndMatch(t *testing.T) {
-	rec := newNtfyRecorder()
+	rec := NewRecorder()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	rec.msgs = []ntfyMessage{
+	rec.msgs = []Message{
 		{At: base.Add(-time.Second), Path: "/t", Body: "DOWN: x"},    // before since
 		{At: base.Add(time.Second), Path: "/other", Body: "DOWN: x"}, // other topic
 		{At: base.Add(2 * time.Second), Path: "/t", Body: "UP: x"},   // wrong event
 		{At: base.Add(3 * time.Second), Path: "/t", Body: "DOWN: x"}, // match
 	}
-	match := func(m ntfyMessage) bool { return m.Path == "/t" && strings.Contains(m.Body, "DOWN: x") }
+	match := func(m Message) bool { return m.Path == "/t" && strings.Contains(m.Body, "DOWN: x") }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -96,10 +96,10 @@ func TestNtfyRecorderWaitForFiltersBySinceAndMatch(t *testing.T) {
 }
 
 func TestNtfyRecorderWaitForTimesOut(t *testing.T) {
-	rec := newNtfyRecorder()
+	rec := NewRecorder()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
-	if _, ok := rec.WaitFor(ctx, time.Now(), func(ntfyMessage) bool { return true }); ok {
+	if _, ok := rec.WaitFor(ctx, time.Now(), func(Message) bool { return true }); ok {
 		t.Error("WaitFor returned a message from an empty recorder")
 	}
 }

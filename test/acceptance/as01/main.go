@@ -36,6 +36,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/joinsider/uptimecluster/test/internal/fake"
+	"github.com/joinsider/uptimecluster/test/internal/ucapi"
 )
 
 // Limits accepted by the node's API (api/openapi.yaml, MonitorInput).
@@ -110,7 +113,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		fmt.Fprintln(stderr, "as01:", err)
+		_, _ = fmt.Fprintln(stderr, "as01:", err)
 		return 2
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -124,7 +127,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	if runErr != nil {
 		logger.Error("scenario stopped", "err", runErr)
 	}
-	fmt.Fprint(stdout, rep.Markdown())
+	_, _ = fmt.Fprint(stdout, rep.Markdown())
 	if runErr != nil || rep.Failed() {
 		return 1
 	}
@@ -140,9 +143,9 @@ type scenario struct {
 	opts       options
 	rep        *report
 	log        *slog.Logger
-	ntfy       *ntfyRecorder
-	target     *targetServer
-	api        *apiClient
+	ntfy       *fake.Recorder
+	target     *fake.Target
+	api        *ucapi.Client
 	topic      string
 	ntfyURL    string
 	targetURL  string
@@ -160,9 +163,9 @@ func newScenario(opts options, rep *report, log *slog.Logger) *scenario {
 		opts:   opts,
 		rep:    rep,
 		log:    log,
-		ntfy:   newNtfyRecorder(),
-		target: &targetServer{},
-		api:    newAPIClient(opts.base, opts.user, opts.password),
+		ntfy:   fake.NewRecorder(),
+		target: fake.NewTarget(),
+		api:    ucapi.New(opts.base, opts.user, opts.password),
 	}
 	return s
 }
@@ -185,7 +188,7 @@ func (s *scenario) run(ctx context.Context) error {
 	s.rep.Add("Start fake ntfy and target", "both listeners bound",
 		fmt.Sprintf("ntfy :%d, target :%d", ntfyPort, targetPort), true)
 
-	if err := s.api.Health(ctx); err != nil {
+	if _, err := s.api.Health(ctx); err != nil {
 		return s.fail("Node reachable", "GET /health answers 200", err.Error(), err)
 	}
 	s.rep.Add("Node reachable", "GET /health answers 200", "200", true)
@@ -298,20 +301,20 @@ func (s *scenario) setupAdmin(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			s.api.password = pw
+			s.api.Password = pw
 			s.generatedPassword = true
 		}
-		err := s.api.Setup(ctx, s.opts.setupToken)
+		err := s.api.Setup(ctx, s.opts.setupToken, "AS-01 acceptance")
 		if err == nil {
 			s.rep.Add("Admin set up", "201, admin logged in", fmt.Sprintf("user %q created", s.opts.user), true)
 			return nil
 		}
-		var ae *apiError
+		var ae *ucapi.APIError
 		if !errors.As(err, &ae) || (ae.Status != http.StatusForbidden && ae.Status != http.StatusConflict) {
 			return s.fail("Admin set up", "201, admin logged in", err.Error(), err)
 		}
 		s.log.Info("setup not possible, trying login", "status", ae.Status)
-		s.api.token = ""
+		s.api.Token = ""
 	}
 	if s.generatedPassword {
 		err := errors.New("node already has an admin; pass its password with -password")
@@ -409,8 +412,8 @@ func (s *scenario) checkDown(ctx context.Context) error {
 
 // openIncidents lists open incidents of the monitor, polling briefly for the
 // incident that is created together with the DOWN decision.
-func (s *scenario) openIncidents(ctx context.Context) ([]incident, error) {
-	var found []incident
+func (s *scenario) openIncidents(ctx context.Context) ([]ucapi.Incident, error) {
+	var found []ucapi.Incident
 	_, lastErr := poll(ctx, 30*time.Second, time.Second, func(c context.Context) (bool, error) {
 		items, err := s.api.OpenIncidents(c, s.monitorID)
 		if err != nil {
@@ -470,7 +473,7 @@ func (s *scenario) checkRecovery(ctx context.Context) error {
 			fmt.Sprintf("not received within %s", limit))
 	}
 
-	var inc incident
+	var inc ucapi.Incident
 	var lastErr error
 	ok, _ = poll(ctx, limit, time.Second, func(c context.Context) (bool, error) {
 		i, err := s.api.GetIncident(c, s.incidentID)
@@ -497,10 +500,10 @@ func (s *scenario) checkRecovery(ctx context.Context) error {
 // matchEvent matches a recorded ntfy message for this run's topic and
 // monitor. Shoutrrr sends the Text() body, which starts with "DOWN: <name>"
 // or "UP: <name>".
-func (s *scenario) matchEvent(label string) func(ntfyMessage) bool {
+func (s *scenario) matchEvent(label string) func(fake.Message) bool {
 	wantPath := "/" + s.topic
 	needle := label + ": " + s.monitorNm
-	return func(m ntfyMessage) bool {
+	return func(m fake.Message) bool {
 		return m.Path == wantPath && strings.Contains(m.Body, needle)
 	}
 }

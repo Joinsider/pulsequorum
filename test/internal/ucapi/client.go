@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The UptimeCluster Authors
 
-package main
+// Package ucapi is a minimal client for the UptimeCluster REST API
+// (api/openapi.yaml). It covers the operations the acceptance and chaos
+// drivers need. Secrets (access token, password, join tokens) are never
+// included in errors.
+package ucapi
 
 import (
 	"bytes"
@@ -16,86 +20,249 @@ import (
 	"time"
 )
 
-// apiBasePath is the REST prefix of the node (api/openapi.yaml, servers.url).
-const apiBasePath = "/api/v1"
+// APIBasePath is the REST prefix of a node (api/openapi.yaml, servers.url).
+const APIBasePath = "/api/v1"
 
-// apiClient is a minimal client for the parts of the REST API that AS-01
-// uses. Secrets (access token, password) are never included in errors.
-type apiClient struct {
-	base     string // node base URL without trailing slash
-	http     *http.Client
-	token    string
-	user     string
-	password string
+// maxResponseBody bounds how much of one response is read.
+const maxResponseBody = 4 << 20
+
+// Client talks to one node. Token is the access token; when it is empty and a
+// password is known, the client logs in before the first authenticated call
+// and again after a 401 (the access token is short-lived).
+type Client struct {
+	// Base is the node base URL without trailing slash, e.g. http://127.0.0.1:8080.
+	Base     string
+	HTTP     *http.Client
+	Token    string
+	User     string
+	Password string
 }
 
-// apiError is a non-2xx answer. Detail is the Problem detail, truncated.
-type apiError struct {
+// APIError is a non-2xx answer. Detail is the problem detail, truncated.
+type APIError struct {
 	Status int
 	Detail string
 }
 
-func (e *apiError) Error() string {
+func (e *APIError) Error() string {
 	if e.Detail == "" {
 		return fmt.Sprintf("HTTP %d", e.Status)
 	}
 	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Detail)
 }
 
-func newAPIClient(base, user, password string) *apiClient {
-	return &apiClient{
-		base:     strings.TrimRight(base, "/"),
-		http:     &http.Client{Timeout: 15 * time.Second},
-		user:     user,
-		password: password,
+// New returns a client for the node at base. The HTTP timeout is 15 s.
+func New(base, user, password string) *Client {
+	return &Client{
+		Base:     strings.TrimRight(base, "/"),
+		HTTP:     &http.Client{Timeout: 15 * time.Second},
+		User:     user,
+		Password: password,
 	}
 }
 
-// Wire types. Only the fields AS-01 reads are declared.
+// Wire types. Only the fields the drivers read or compare are declared.
 
-type tokenResponse struct {
+// TokenResponse is the answer of setup and login.
+type TokenResponse struct {
 	AccessToken string    `json:"accessToken"`
 	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
-type notificationChannel struct {
-	ID string `json:"id"`
+// Health is the answer of GET /health.
+type Health struct {
+	Status   string `json:"status"`
+	Role     string `json:"role"`
+	NodeName string `json:"nodeName"`
+	Version  string `json:"version"`
+	Commit   string `json:"commit"`
 }
 
-type deliveryResult struct {
+// User is a local user of the tenant.
+type User struct {
+	ID          string    `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Role        string    `json:"role"`
+	Disabled    bool      `json:"disabled"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// NotificationChannel is a notification channel (secrets masked by the node).
+type NotificationChannel struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Kind      string    `json:"kind"`
+	MaskedURL string    `json:"maskedUrl"`
+	Webhook   any       `json:"webhook,omitempty"`
+	Events    []string  `json:"events"`
+	IsDefault bool      `json:"isDefault"`
+	State     string    `json:"state"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// DeliveryResult is the answer of a synchronous channel test.
+type DeliveryResult struct {
 	Delivered  bool   `json:"delivered"`
 	Error      string `json:"error"`
 	DurationMs int    `json:"durationMs"`
 }
 
-type monitor struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+// Assignment decides which nodes run a monitor's checks (api/openapi.yaml).
+type Assignment struct {
+	Mode  string   `json:"mode"`
+	Count int      `json:"count,omitempty"`
+	Nodes []string `json:"nodes,omitempty"`
 }
 
-type incident struct {
-	ID         string     `json:"id"`
-	MonitorID  string     `json:"monitorId"`
-	StartedAt  time.Time  `json:"startedAt"`
-	ResolvedAt *time.Time `json:"resolvedAt"`
-	Cause      string     `json:"cause"`
-	Confirmed  bool       `json:"confirmed"`
+// MonitorInput is the writable part of a monitor (MonitorInput in the API).
+type MonitorInput struct {
+	Name                   string         `json:"name"`
+	Description            string         `json:"description,omitempty"`
+	Type                   string         `json:"type"`
+	Config                 map[string]any `json:"config"`
+	IntervalSeconds        int            `json:"intervalSeconds"`
+	TimeoutSeconds         int            `json:"timeoutSeconds,omitempty"`
+	Retries                int            `json:"retries"`
+	RecoveryThreshold      int            `json:"recoveryThreshold,omitempty"`
+	ResendIntervalMinutes  int            `json:"resendIntervalMinutes"`
+	Assignment             *Assignment    `json:"assignment,omitempty"`
+	ConsensusPolicy        string         `json:"consensusPolicy,omitempty"`
+	Tags                   []string       `json:"tags,omitempty"`
+	NotificationChannelIDs []string       `json:"notificationChannelIds"`
+	Paused                 bool           `json:"paused"`
 }
 
-type incidentPage struct {
-	Items []incident `json:"items"`
+// Monitor is a monitor including its consensus status.
+type Monitor struct {
+	MonitorInput
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	StatusSince time.Time  `json:"statusSince"`
+	LastCheckAt *time.Time `json:"lastCheckAt"`
+	LatencyMs   *int       `json:"lastLatencyMs"`
+	Uptime24h   *float64   `json:"uptime24h"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
-type uptimeStats struct {
+// MonitorPage is one page of monitors.
+type MonitorPage struct {
+	Items      []Monitor `json:"items"`
+	NextCursor *string   `json:"nextCursor"`
+}
+
+// Heartbeat is the result of one check on one node.
+type Heartbeat struct {
+	NodeID     string    `json:"nodeId"`
+	TS         time.Time `json:"ts"`
+	Status     string    `json:"status"`
+	LatencyMs  int       `json:"latencyMs"`
+	ErrorClass string    `json:"errorClass"`
+	Message    string    `json:"message"`
+}
+
+// HeartbeatPage is one page of heartbeats.
+type HeartbeatPage struct {
+	Items      []Heartbeat `json:"items"`
+	NextCursor *string     `json:"nextCursor"`
+}
+
+// HeartbeatQuery selects heartbeats of one monitor. A zero From or To leaves
+// that side open; an empty Node means the consensus view.
+type HeartbeatQuery struct {
+	From time.Time
+	To   time.Time
+	Node string
+}
+
+// Incident is an outage of one monitor.
+type Incident struct {
+	ID          string     `json:"id"`
+	MonitorID   string     `json:"monitorId"`
+	MonitorName string     `json:"monitorName"`
+	StartedAt   time.Time  `json:"startedAt"`
+	ResolvedAt  *time.Time `json:"resolvedAt"`
+	Cause       string     `json:"cause"`
+	ErrorClass  string     `json:"errorClass"`
+	Confirmed   bool       `json:"confirmed"`
+}
+
+// IncidentPage is one page of incidents.
+type IncidentPage struct {
+	Items      []Incident `json:"items"`
+	NextCursor *string    `json:"nextCursor"`
+}
+
+// UptimeStats is the answer of GET /monitors/{id}/uptime.
+type UptimeStats struct {
 	UptimePercent *float64 `json:"uptimePercent"`
 }
 
-// do sends one request. On 401 it logs in again once when a password is known
-// (the access token is short-lived) and retries.
-func (c *apiClient) do(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
+// MaintenanceWindow is a maintenance window (MaintenanceWindow in the API).
+type MaintenanceWindow struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	MonitorIDs  []string  `json:"monitorIds"`
+	Schedule    any       `json:"schedule"`
+	Active      bool      `json:"active"`
+	NextStart   any       `json:"nextStart,omitempty"`
+	InProgress  bool      `json:"inProgress,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// JoinToken is the one-time token of a new node. Token is a secret.
+type JoinToken struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Role      string    `json:"role"`
+	TenantID  string    `json:"tenantId"`
+}
+
+// ClusterNode is one member of the Raft configuration as seen by the node
+// that answered the request.
+type ClusterNode struct {
+	ID                string   `json:"id"`
+	Address           string   `json:"address"`
+	Voter             bool     `json:"voter"`
+	Leader            bool     `json:"leader"`
+	Self              bool     `json:"self"`
+	Name              string   `json:"name"`
+	Version           string   `json:"version"`
+	Capabilities      []string `json:"capabilities"`
+	Healthy           *bool    `json:"healthy"`
+	ReplicationLagMs  *int64   `json:"replicationLagMs"`
+	ReplicationError  string   `json:"replicationError"`
+	MaxCommandVersion int      `json:"maxCommandVersion"`
+}
+
+// ClusterNodeList is the answer of GET /admin/nodes.
+type ClusterNodeList struct {
+	Nodes          []ClusterNode `json:"nodes"`
+	LeaderID       string        `json:"leaderId"`
+	Warnings       []string      `json:"warnings"`
+	CommandLevel   int           `json:"commandLevel"`
+	UpgradePending bool          `json:"upgradePending"`
+}
+
+// NodeRemoval is the answer of DELETE /admin/nodes/{id}.
+type NodeRemoval struct {
+	VotersLeft int      `json:"votersLeft"`
+	Warnings   []string `json:"warnings"`
+}
+
+// Do sends one request. method and path are relative to APIBasePath. On 401
+// it logs in again once when a password is known and retries. out may be nil.
+func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
+	if c.Token == "" && c.Password != "" && needsAuth(path) {
+		if err := c.Login(ctx); err != nil {
+			return 0, fmt.Errorf("login before %s %s: %w", method, path, err)
+		}
+	}
 	status, err := c.send(ctx, method, path, query, body, out)
-	var ae *apiError
-	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.password != "" && path != "/auth/login" {
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.Password != "" && path != "/auth/login" {
 		if lerr := c.Login(ctx); lerr != nil {
 			return status, fmt.Errorf("re-login after 401 failed: %w", lerr)
 		}
@@ -104,8 +271,17 @@ func (c *apiClient) do(ctx context.Context, method, path string, query url.Value
 	return status, err
 }
 
-func (c *apiClient) send(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
-	u := c.base + apiBasePath + path
+// needsAuth reports whether a path requires a logged-in user.
+func needsAuth(path string) bool {
+	switch path {
+	case "/health", "/auth/setup", "/auth/login":
+		return false
+	}
+	return true
+}
+
+func (c *Client) send(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
+	u := c.Base + APIBasePath + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
 	}
@@ -125,20 +301,20 @@ func (c *apiClient) send(ctx context.Context, method, path string, query url.Val
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	if c.token != "" && path != "/auth/setup" && path != "/auth/login" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.Token != "" && needsAuth(path) {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return resp.StatusCode, &apiError{Status: resp.StatusCode, Detail: problemDetail(raw)}
+		return resp.StatusCode, &APIError{Status: resp.StatusCode, Detail: problemDetail(raw)}
 	}
 	if out != nil && len(raw) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -169,43 +345,51 @@ func problemDetail(raw []byte) string {
 }
 
 // Health checks GET /health.
-func (c *apiClient) Health(ctx context.Context) error {
-	_, err := c.send(ctx, http.MethodGet, "/health", nil, nil, nil)
-	return err
+func (c *Client) Health(ctx context.Context) (Health, error) {
+	var h Health
+	_, err := c.Do(ctx, http.MethodGet, "/health", nil, nil, &h)
+	return h, err
 }
 
 // Setup creates the first admin with the one-time setup token (FA-AUTH-01).
 // On success the returned access token is kept for later calls.
-func (c *apiClient) Setup(ctx context.Context, setupToken string) error {
-	var tr tokenResponse
+func (c *Client) Setup(ctx context.Context, setupToken, displayName string) error {
+	var tr TokenResponse
 	body := map[string]string{
 		"setupToken":  setupToken,
-		"username":    c.user,
-		"displayName": "AS-01 acceptance",
-		"password":    c.password,
+		"username":    c.User,
+		"displayName": displayName,
+		"password":    c.Password,
 	}
 	if _, err := c.send(ctx, http.MethodPost, "/auth/setup", nil, body, &tr); err != nil {
 		return err
 	}
-	c.token = tr.AccessToken
+	c.Token = tr.AccessToken
 	return nil
 }
 
 // Login authenticates with the configured user and password.
-func (c *apiClient) Login(ctx context.Context) error {
-	var tr tokenResponse
-	body := map[string]string{"username": c.user, "password": c.password}
+func (c *Client) Login(ctx context.Context) error {
+	var tr TokenResponse
+	body := map[string]string{"username": c.User, "password": c.Password}
 	if _, err := c.send(ctx, http.MethodPost, "/auth/login", nil, body, &tr); err != nil {
 		return err
 	}
-	c.token = tr.AccessToken
+	c.Token = tr.AccessToken
 	return nil
+}
+
+// ListUsers lists the users of the tenant.
+func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	var users []User
+	_, err := c.Do(ctx, http.MethodGet, "/users", nil, nil, &users)
+	return users, err
 }
 
 // CreateChannel creates a shoutrrr notification channel that is attached to
 // new monitors by default.
-func (c *apiClient) CreateChannel(ctx context.Context, name, shoutrrrURL string, events []string) (notificationChannel, error) {
-	var ch notificationChannel
+func (c *Client) CreateChannel(ctx context.Context, name, shoutrrrURL string, events []string) (NotificationChannel, error) {
+	var ch NotificationChannel
 	body := map[string]any{
 		"name":      name,
 		"kind":      "shoutrrr",
@@ -213,58 +397,174 @@ func (c *apiClient) CreateChannel(ctx context.Context, name, shoutrrrURL string,
 		"events":    events,
 		"isDefault": true,
 	}
-	_, err := c.do(ctx, http.MethodPost, "/notifications", nil, body, &ch)
+	_, err := c.Do(ctx, http.MethodPost, "/notifications", nil, body, &ch)
 	return ch, err
 }
 
+// ListChannels lists the notification channels (secrets masked).
+func (c *Client) ListChannels(ctx context.Context) ([]NotificationChannel, error) {
+	var chs []NotificationChannel
+	_, err := c.Do(ctx, http.MethodGet, "/notifications", nil, nil, &chs)
+	return chs, err
+}
+
 // TestChannel sends the channel's test message synchronously.
-func (c *apiClient) TestChannel(ctx context.Context, channelID string) (deliveryResult, error) {
-	var res deliveryResult
-	_, err := c.do(ctx, http.MethodPost, "/notifications/"+url.PathEscape(channelID)+"/test", nil, nil, &res)
+func (c *Client) TestChannel(ctx context.Context, channelID string) (DeliveryResult, error) {
+	var res DeliveryResult
+	_, err := c.Do(ctx, http.MethodPost, "/notifications/"+url.PathEscape(channelID)+"/test", nil, nil, &res)
 	return res, err
 }
 
 // CreateMonitor creates an HTTP monitor with the given interval and retries.
-func (c *apiClient) CreateMonitor(ctx context.Context, name, targetURL string, intervalSeconds, retries int, channelIDs []string) (monitor, error) {
-	var m monitor
-	body := map[string]any{
-		"name":                   name,
-		"type":                   "http",
-		"config":                 map[string]any{"url": targetURL},
-		"intervalSeconds":        intervalSeconds,
-		"retries":                retries,
-		"notificationChannelIds": channelIDs,
-	}
-	_, err := c.do(ctx, http.MethodPost, "/monitors", nil, body, &m)
+func (c *Client) CreateMonitor(ctx context.Context, name, targetURL string, intervalSeconds, retries int, channelIDs []string) (Monitor, error) {
+	return c.CreateMonitorInput(ctx, MonitorInput{
+		Name:                   name,
+		Type:                   "http",
+		Config:                 map[string]any{"url": targetURL},
+		IntervalSeconds:        intervalSeconds,
+		Retries:                retries,
+		NotificationChannelIDs: channelIDs,
+	})
+}
+
+// CreateMonitorInput creates a monitor from a complete input.
+func (c *Client) CreateMonitorInput(ctx context.Context, in MonitorInput) (Monitor, error) {
+	var m Monitor
+	_, err := c.Do(ctx, http.MethodPost, "/monitors", nil, in, &m)
 	return m, err
 }
 
 // GetMonitor reads one monitor including its consensus status.
-func (c *apiClient) GetMonitor(ctx context.Context, id string) (monitor, error) {
-	var m monitor
-	_, err := c.do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(id), nil, nil, &m)
+func (c *Client) GetMonitor(ctx context.Context, id string) (Monitor, error) {
+	var m Monitor
+	_, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(id), nil, nil, &m)
 	return m, err
 }
 
-// OpenIncidents lists unresolved incidents of one monitor.
-func (c *apiClient) OpenIncidents(ctx context.Context, monitorID string) ([]incident, error) {
-	q := url.Values{"monitorId": {monitorID}, "open": {"true"}}
-	var page incidentPage
-	_, err := c.do(ctx, http.MethodGet, "/incidents", q, nil, &page)
+// ListMonitors lists all monitors, following the cursor until the end.
+func (c *Client) ListMonitors(ctx context.Context) ([]Monitor, error) {
+	var all []Monitor
+	cursor := ""
+	for pages := 0; pages < 1000; pages++ {
+		q := url.Values{"limit": {"500"}}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var page MonitorPage
+		if _, err := c.Do(ctx, http.MethodGet, "/monitors", q, nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == nil || *page.NextCursor == "" {
+			return all, nil
+		}
+		cursor = *page.NextCursor
+	}
+	return nil, errors.New("monitor list does not end")
+}
+
+// ListHeartbeats lists the heartbeats of one monitor in the query window,
+// following the cursor until the end.
+func (c *Client) ListHeartbeats(ctx context.Context, monitorID string, hq HeartbeatQuery) ([]Heartbeat, error) {
+	var all []Heartbeat
+	cursor := ""
+	for pages := 0; pages < 10000; pages++ {
+		q := url.Values{"limit": {"5000"}}
+		if !hq.From.IsZero() {
+			q.Set("from", hq.From.UTC().Format(time.RFC3339Nano))
+		}
+		if !hq.To.IsZero() {
+			q.Set("to", hq.To.UTC().Format(time.RFC3339Nano))
+		}
+		if hq.Node != "" {
+			q.Set("node", hq.Node)
+		}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var page HeartbeatPage
+		if _, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(monitorID)+"/heartbeats", q, nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == nil || *page.NextCursor == "" {
+			return all, nil
+		}
+		cursor = *page.NextCursor
+	}
+	return nil, errors.New("heartbeat list does not end")
+}
+
+// ListIncidents lists incidents, optionally only those of one monitor and
+// only unresolved ones.
+func (c *Client) ListIncidents(ctx context.Context, monitorID string, openOnly bool) ([]Incident, error) {
+	q := url.Values{}
+	if monitorID != "" {
+		q.Set("monitorId", monitorID)
+	}
+	if openOnly {
+		q.Set("open", "true")
+	}
+	var page IncidentPage
+	_, err := c.Do(ctx, http.MethodGet, "/incidents", q, nil, &page)
 	return page.Items, err
 }
 
+// OpenIncidents lists unresolved incidents of one monitor.
+func (c *Client) OpenIncidents(ctx context.Context, monitorID string) ([]Incident, error) {
+	return c.ListIncidents(ctx, monitorID, true)
+}
+
 // GetIncident reads one incident.
-func (c *apiClient) GetIncident(ctx context.Context, id string) (incident, error) {
-	var inc incident
-	_, err := c.do(ctx, http.MethodGet, "/incidents/"+url.PathEscape(id), nil, nil, &inc)
+func (c *Client) GetIncident(ctx context.Context, id string) (Incident, error) {
+	var inc Incident
+	_, err := c.Do(ctx, http.MethodGet, "/incidents/"+url.PathEscape(id), nil, nil, &inc)
 	return inc, err
 }
 
 // Uptime24h returns the 24 h uptime percentage of a monitor, nil if no data.
-func (c *apiClient) Uptime24h(ctx context.Context, monitorID string) (*float64, error) {
-	var st uptimeStats
+func (c *Client) Uptime24h(ctx context.Context, monitorID string) (*float64, error) {
+	var st UptimeStats
 	q := url.Values{"range": {"24h"}}
-	_, err := c.do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(monitorID)+"/uptime", q, nil, &st)
+	_, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(monitorID)+"/uptime", q, nil, &st)
 	return st.UptimePercent, err
+}
+
+// ListMaintenance lists the maintenance windows.
+func (c *Client) ListMaintenance(ctx context.Context) ([]MaintenanceWindow, error) {
+	var ws []MaintenanceWindow
+	_, err := c.Do(ctx, http.MethodGet, "/maintenance", nil, nil, &ws)
+	return ws, err
+}
+
+// ListClusterNodes reads the cluster members (platform admins only).
+func (c *Client) ListClusterNodes(ctx context.Context) (ClusterNodeList, error) {
+	var list ClusterNodeList
+	_, err := c.Do(ctx, http.MethodGet, "/admin/nodes", nil, nil, &list)
+	return list, err
+}
+
+// CreateJoinToken creates a one-time join token for a new node of the given
+// role ("voter" or "probe") that is valid for ttlMinutes.
+func (c *Client) CreateJoinToken(ctx context.Context, role string, ttlMinutes int) (JoinToken, error) {
+	var tok JoinToken
+	body := map[string]any{"role": role, "ttlMinutes": ttlMinutes}
+	_, err := c.Do(ctx, http.MethodPost, "/admin/join-tokens", nil, body, &tok)
+	return tok, err
+}
+
+// RemoveClusterNode removes a member and revokes its certificates.
+func (c *Client) RemoveClusterNode(ctx context.Context, nodeID string) (NodeRemoval, error) {
+	var res NodeRemoval
+	_, err := c.Do(ctx, http.MethodDelete, "/admin/nodes/"+url.PathEscape(nodeID), nil, nil, &res)
+	return res, err
+}
+
+// StatusCode returns the HTTP status of an error from this package, or 0.
+func StatusCode(err error) int {
+	var ae *APIError
+	if errors.As(err, &ae) {
+		return ae.Status
+	}
+	return 0
 }
