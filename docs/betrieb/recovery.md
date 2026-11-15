@@ -10,7 +10,7 @@ Dieses Runbook beschreibt die Befehle unter `uptimecluster admin` (ADR 0019, FA-
 
 ## Quorumverlust
 
-**Woran man ihn erkennt:** Kein Node ist Leader, Schreibzugriffe enden mit 503 (`no leader available`), die Logs zeigen wiederholte Wahlen. Checks laufen weiter, Ergebnisse werden lokal gespeichert (NFA-REL-06).
+**Woran man ihn erkennt:** Kein Node ist Leader, Schreibzugriffe enden mit 503 (`no leader available`), die Logs zeigen wiederholte Wahlen. Auch eine neue Anmeldung endet mit 503, weil sie eine Sitzung im Raft-Zustand anlegt; bestehende Access-Tokens funktionieren für Lesezugriffe bis zu ihrem Ablauf (15 min). Checks laufen weiter, Ergebnisse werden lokal gespeichert (NFA-REL-06).
 
 **Erst prüfen, ob die ausgefallenen Nodes zurückkommen können.** Kommt die Mehrheit der Voter wieder, stellt sich das Quorum von selbst wieder her, ohne Datenverlust. `recover` ist nur für den Fall gedacht, dass die Mehrheit **dauerhaft** verloren ist.
 

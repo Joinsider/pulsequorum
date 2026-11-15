@@ -78,7 +78,7 @@ Voter werden einzeln aktualisiert, der Cluster bleibt dabei verfügbar (FA-CLU-1
 
 1. Nur auf die **nächste Minor-Version** aktualisieren. Wer eine Minor-Version überspringt, muss erst auf die dazwischenliegende aktualisieren.
 2. Einen Voter stoppen, das neue Image starten und warten, bis er in der Node-Liste wieder gesund ist und seine neue Version zeigt. Dann den nächsten Voter. Den Leader zuletzt aktualisieren ist nicht nötig, aber üblich.
-3. Während des Updates zeigt die Node-Liste `upgradePending: true`. Funktionen, die eine neuere Befehlsversion brauchen, antworten so lange mit 503 und `Retry-After`.
+3. Unterstützen die Voter während des Updates unterschiedliche Befehlsversionen (`maxCommandVersion`), zeigt die Node-Liste `upgradePending: true`. Funktionen, die eine neuere Befehlsversion brauchen, antworten so lange mit 503 und `Retry-After`. Unterscheiden sich nur die Softwareversionen (`version`) bei gleicher Befehlsversion, bleibt `upgradePending` auf `false`: Es gibt dann nichts freizuschalten.
 4. Sobald alle Voter die neue Version melden, hebt der Leader die **Befehlsversion des Clusters** (`commandLevel`) innerhalb weniger Sekunden an. Erst dann sind die neuen Funktionen aktiv.
 
 **Zurück auf die alte Version** geht nur, solange `commandLevel` noch nicht angehoben ist. Danach startet ein älteres Binary nicht mehr (`state requires command version …`). Ein Rollback ist dann nur über ein Backup möglich. Wer sich die Rückkehr offenhalten will, aktualisiert zuerst einen einzelnen Voter und prüft ihn, bevor er den letzten Voter aktualisiert.
