@@ -635,3 +635,29 @@ func TestCanAssignRole(t *testing.T) {
 		})
 	}
 }
+
+// TestLoginReloadsMissingSigningKey covers a voter that loaded its keys before
+// it had caught up with the leader: it had no signing key, and logins failed
+// until the hourly maintenance. A login now reloads the keys, at most once
+// per reloadMinInterval.
+func TestLoginReloadsMissingSigningKey(t *testing.T) {
+	f := newLocalFixture(t)
+	f.createUser("alice", string(RoleTenantAdmin), false)
+
+	late := NewLocal(LocalOptions{State: f.state, Cluster: f.node, Keyring: f.local.opts.Keyring,
+		Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return f.now }})
+	// As if the boot reload had found no key a moment ago.
+	late.keys, late.lastReload = map[string]signingKey{}, f.now
+
+	if _, err := late.Login(f.ctx, "alice", testPassword, testIP); err == nil {
+		t.Fatal("login right after an empty reload succeeded, want the rate limit to hold")
+	}
+	f.now = f.now.Add(reloadMinInterval + time.Second)
+	tokens, err := late.Login(f.ctx, "alice", testPassword, testIP)
+	if err != nil {
+		t.Fatalf("login after the reload interval: %v", err)
+	}
+	if tokens.AccessToken == "" {
+		t.Error("empty access token")
+	}
+}

@@ -39,7 +39,10 @@ const (
 	accountFreeFailures = 5
 	ipFreeFailures      = 20
 	reloadMinInterval   = 10 * time.Second
-	applyTimeout        = 5 * time.Second
+	// keyRetryInterval is how often key maintenance retries while this node
+	// has no active signing key.
+	keyRetryInterval = 5 * time.Second
+	applyTimeout     = 5 * time.Second
 )
 
 // Errors of the local authentication. Callers map them to one generic message
@@ -172,6 +175,21 @@ func (l *Local) active() (string, signingKey, bool) {
 	return kid, best, kid != ""
 }
 
+// reloadIfStale reloads the signing keys unless the last reload is more
+// recent than reloadMinInterval, so a burst of requests reloads only once.
+func (l *Local) reloadIfStale(ctx context.Context) error {
+	l.mu.RLock()
+	stale := l.opts.Now().Sub(l.lastReload) > reloadMinInterval
+	l.mu.RUnlock()
+	if !stale {
+		return nil
+	}
+	if err := l.ReloadKeys(ctx); err != nil {
+		return fmt.Errorf("reload signing keys: %w", err)
+	}
+	return nil
+}
+
 // lookup is the KeyLookup for verification. An unknown key ID triggers a
 // rate-limited reload (a new key from another voter, FA-AUTH-02).
 func (l *Local) lookup(ctx context.Context) KeyLookup {
@@ -246,9 +264,9 @@ func (l *Local) EnsureSigningKey(ctx context.Context) error {
 
 // RunKeyMaintenance keeps the signing keys current: the leader rotates them,
 // every node reloads them regularly.
+// While no active key is loaded, for example on a voter that has not caught
+// up with the leader yet, it retries every keyRetryInterval instead.
 func (l *Local) RunKeyMaintenance(ctx context.Context, isLeader func() bool, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
 		var err error
 		if isLeader() {
@@ -259,10 +277,14 @@ func (l *Local) RunKeyMaintenance(ctx context.Context, isLeader func() bool, int
 		if err != nil && ctx.Err() == nil {
 			l.opts.Logger.Warn("signing key maintenance failed", "err", err)
 		}
+		wait := interval
+		if _, _, ok := l.active(); !ok {
+			wait = min(interval, keyRetryInterval)
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(wait):
 		}
 	}
 }
@@ -379,17 +401,24 @@ func (l *Local) startSession(ctx context.Context, u store.User) (Tokens, error) 
 	if _, err := l.apply(ctx, cmd); err != nil {
 		return Tokens{}, err
 	}
-	access, accessExp, err := l.issue(u)
+	access, accessExp, err := l.issue(ctx, u)
 	if err != nil {
 		return Tokens{}, err
 	}
 	return Tokens{AccessToken: access, AccessExpires: accessExp, RefreshToken: refresh, RefreshExpires: expires}, nil
 }
 
-func (l *Local) issue(u store.User) (string, time.Time, error) {
+func (l *Local) issue(ctx context.Context, u store.User) (string, time.Time, error) {
 	kid, key, ok := l.active()
 	if !ok {
-		return "", time.Time{}, errors.New("no signing key available")
+		// A voter that started before it had caught up with the leader
+		// loaded no key; the leader's key has usually arrived by now.
+		if err := l.reloadIfStale(ctx); err != nil {
+			return "", time.Time{}, err
+		}
+		if kid, key, ok = l.active(); !ok {
+			return "", time.Time{}, errors.New("no signing key available")
+		}
 	}
 	now := l.opts.Now()
 	exp := now.Add(AccessTTL)
@@ -432,7 +461,7 @@ func (l *Local) Refresh(ctx context.Context, refreshToken string) (Tokens, error
 	if err != nil {
 		return Tokens{}, ErrInvalidSession
 	}
-	access, accessExp, err := l.issue(u)
+	access, accessExp, err := l.issue(ctx, u)
 	if err != nil {
 		return Tokens{}, err
 	}

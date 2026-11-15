@@ -346,6 +346,15 @@ func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, 
 	if local == nil {
 		return true
 	}
+	// Only the leader creates keys and the setup token. A voter that just
+	// joined may not have caught up yet: it would see no key and no user.
+	// It loads the leader's key through the key maintenance instead.
+	if !n.IsLeader() {
+		if err := local.ReloadKeys(bootCtx); err != nil && ctx.Err() == nil {
+			log.Warn("could not load the access token signing keys yet", "err", err)
+		}
+		return true
+	}
 	if err := local.EnsureSigningKey(bootCtx); err != nil && ctx.Err() == nil {
 		log.Error("could not create the access token signing key", "err", err)
 	}
