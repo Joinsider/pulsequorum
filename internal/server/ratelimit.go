@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/ratelimit"
@@ -32,6 +33,11 @@ func newLimits() *limits {
 	l := &limits{auth: ratelimit.New(authRate, authBurst), public: ratelimit.New(publicRate, publicBurst)}
 	l.auth.Limit, l.public.Limit = rateLimitKeys, rateLimitKeys
 	return l
+}
+
+// setClock sets the clock of both limiters; nil keeps time.Now.
+func (l *limits) setClock(now func() time.Time) {
+	l.auth.Now, l.public.Now = now, now
 }
 
 // limiterFor returns the limiter of an unauthenticated endpoint, or nil.

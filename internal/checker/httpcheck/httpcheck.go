@@ -63,7 +63,7 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 		return checker.Result{Status: checker.StatusDown, Message: err.Error(), ErrorClass: checker.ClassInternal}
 	}
 
-	obs := &observer{start: start}
+	obs := &observer{start: start, now: func() time.Time { return c.clock(env) }}
 	transport := c.transport(env, cfg, obs)
 	defer transport.CloseIdleConnections()
 
@@ -109,7 +109,7 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 
 	res := checker.Result{Status: checker.StatusUp, LatencyMs: latency, Message: resp.Status, Details: details}
 	if info := obs.tlsInfo(); info != nil && *cfg.TLSExpiryWarningDays > 0 {
-		left := info.notAfter.Sub(c.clock()).Hours() / 24
+		left := info.notAfter.Sub(c.clock(env)).Hours() / 24
 		if left < float64(*cfg.TLSExpiryWarningDays) {
 			res.Status = checker.StatusDegraded
 			res.Message = fmt.Sprintf("TLS certificate expires in %.0f days (%s)", left, info.notAfter.UTC().Format(time.DateOnly))
@@ -118,11 +118,17 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 	return res
 }
 
-func (c *Checker) clock() time.Time {
-	if c.now != nil {
+// clock is the clock for TLS expiry: the test override, then the node clock
+// of env, then time.Now.
+func (c *Checker) clock(env *checker.Env) time.Time {
+	switch {
+	case c.now != nil:
 		return c.now()
+	case env != nil && env.Now != nil:
+		return env.Now()
+	default:
+		return time.Now()
 	}
-	return time.Now()
 }
 
 func (c *Checker) transport(env *checker.Env, cfg *Config, obs *observer) *http.Transport {
@@ -178,7 +184,7 @@ func (c *Checker) handshake(ctx context.Context, raw net.Conn, host string, cfg 
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true, //nolint:gosec // G402: the chain and host are verified in VerifyConnection
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			info, err := c.verify(cs, host)
+			info, err := c.verify(cs, host, obs.now)
 			obs.setTLS(info, err)
 			if err != nil && !cfg.IgnoreTLSErrors {
 				return &checker.TLSError{Err: err}
@@ -242,7 +248,7 @@ type tlsInfo struct {
 
 // verify checks the chain against the trust store and the host name the
 // connection was made for, and returns the earliest expiry in the chain.
-func (c *Checker) verify(cs tls.ConnectionState, host string) (*tlsInfo, error) {
+func (c *Checker) verify(cs tls.ConnectionState, host string, now func() time.Time) (*tlsInfo, error) {
 	if len(cs.PeerCertificates) == 0 {
 		return nil, errors.New("server sent no certificate")
 	}
@@ -255,7 +261,7 @@ func (c *Checker) verify(cs tls.ConnectionState, host string) (*tlsInfo, error) 
 		DNSName:       host,
 		Intermediates: inter,
 		Roots:         c.RootCAs,
-		CurrentTime:   c.clock(),
+		CurrentTime:   now(),
 	})
 
 	certs := cs.PeerCertificates
@@ -327,6 +333,8 @@ func ms(d time.Duration) int { return int(d.Milliseconds()) }
 // callbacks may run on other goroutines, hence the mutex.
 type observer struct {
 	start time.Time
+	// now is the clock for TLS verification and expiry.
+	now func() time.Time
 
 	mu         sync.Mutex
 	dnsStart   time.Time

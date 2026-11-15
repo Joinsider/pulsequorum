@@ -139,6 +139,9 @@ type HealthWatcher struct {
 	Node  *cluster.Node
 	State store.State
 	Log   *slog.Logger
+	// Now is the wall clock of this node; nil means time.Now. It must be the
+	// clock the heartbeat observations are stamped with (ADR 0020).
+	Now func() time.Time
 
 	tracker HealthTracker
 	// leader is true between BecameLeader and the next step down.
@@ -155,12 +158,20 @@ func (w *HealthWatcher) Observe(peerID string, ok bool, at time.Time) {
 	w.tracker.Failed(peerID, at)
 }
 
+// now returns the clock of the watcher.
+func (w *HealthWatcher) now() time.Time {
+	if w.Now == nil {
+		return time.Now()
+	}
+	return w.Now()
+}
+
 // Run decides on health changes every healthInterval until ctx ends.
 func (w *HealthWatcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
 	for {
-		w.tick(ctx, time.Now())
+		w.tick(ctx, w.now())
 		select {
 		case <-ctx.Done():
 			return

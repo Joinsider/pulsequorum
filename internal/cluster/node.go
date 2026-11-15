@@ -80,6 +80,11 @@ type Config struct {
 	// 0 means CommandVersion.
 	MaxCommandVersion uint32
 
+	// Clock is the wall clock of this node: it stamps IssuedAtMs and the time
+	// of heartbeat observations. Nil means time.Now. Tests give each node its
+	// own skewed clock (ADR 0020). Raft's own timing stays on the monotonic clock.
+	Clock func() time.Time
+
 	// Forwarder sends commands of followers to the leader. Nil means that a
 	// follower does not forward and returns ErrNotApplied (FA-CLU-05).
 	Forwarder Forwarder
@@ -109,6 +114,7 @@ type Node struct {
 	fsm    *FSM
 	bolt   *raftboltdb.BoltStore
 	logger *slog.Logger
+	clock  func() time.Time
 
 	// observers are the Raft observers of OnPeerResumed; done ends their
 	// goroutines at Shutdown.
@@ -214,7 +220,10 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		return nil, fmt.Errorf("start raft: %w", err)
 	}
 
-	n := &Node{cfg: cfg, raft: r, fsm: fsm, bolt: bolt, logger: log, done: make(chan struct{})}
+	n := &Node{cfg: cfg, raft: r, fsm: fsm, bolt: bolt, logger: log, done: make(chan struct{}), clock: cfg.Clock}
+	if n.clock == nil {
+		n.clock = time.Now
+	}
 	if existing {
 		log.Info("resuming from existing raft state", "node_id", cfg.NodeID,
 			"applied_index", fsm.AppliedIndex(), "skip_snapshot_restore", rc.NoSnapshotRestoreOnStart)
@@ -297,6 +306,9 @@ func (n *Node) checkCommandLevel(ctx context.Context, cmd *pb.Command) error {
 	return nil
 }
 
+// now returns the wall clock of this node (Config.Clock).
+func (n *Node) now() time.Time { return n.clock() }
+
 // IsLeader reports whether this node currently leads.
 func (n *Node) IsLeader() bool { return n.raft.State() == raft.Leader }
 
@@ -346,6 +358,8 @@ func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) 
 		if n.raft.State() == raft.Leader {
 			return n.ApplyLocal(ctx, cmd)
 		}
+		// LastContact is taken from the monotonic clock, so it is compared with
+		// time.Now and not with the node clock (ADR 0020).
 		if leaderContactStale(n.raft.LastContact(), time.Now(), n.heartbeatTimeout()) {
 			return ApplyResult{}, fmt.Errorf("%w: no recent contact with the leader", ErrNotApplied)
 		}
@@ -399,7 +413,7 @@ func (n *Node) ApplyLocal(ctx context.Context, cmd *pb.Command) (ApplyResult, er
 	if err := n.checkCommandLevel(ctx, cmd); err != nil {
 		return ApplyResult{}, err
 	}
-	cmd.IssuedAtMs = time.Now().UnixMilli()
+	cmd.IssuedAtMs = n.now().UnixMilli()
 	data, err := proto.Marshal(cmd)
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("%w: encode command: %w", ErrNotApplied, err)
@@ -655,9 +669,9 @@ func (n *Node) OnHeartbeat(fn func(peerID string, ok bool, at time.Time)) {
 			case o := <-ch:
 				switch d := o.Data.(type) {
 				case raft.FailedHeartbeatObservation:
-					fn(string(d.PeerID), false, time.Now())
+					fn(string(d.PeerID), false, n.now())
 				case raft.ResumedHeartbeatObservation:
-					fn(string(d.PeerID), true, time.Now())
+					fn(string(d.PeerID), true, n.now())
 				}
 			}
 		}

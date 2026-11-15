@@ -313,6 +313,27 @@ func tlsServer(t *testing.T, cert tls.Certificate) *httptest.Server {
 	return srv
 }
 
+// ADR 0020: TLS expiry is judged by the node clock (checker.Env.Now). A node
+// whose clock is 88 days ahead sees a 90-day certificate with 2 days left.
+func TestTLSExpiryUsesNodeClock(t *testing.T) {
+	ca := newCA(t)
+	c := &Checker{RootCAs: ca.pool}
+	srv := tlsServer(t, ca.leaf(t, time.Now().Add(90*24*time.Hour), "127.0.0.1"))
+	raw, err := json.Marshal(map[string]any{"url": srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ahead := &checker.Env{Dialer: env.Dialer, Now: func() time.Time { return time.Now().Add(88 * 24 * time.Hour) }}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res := c.Check(ctx, ahead, raw)
+	expect(t, res, checker.StatusDegraded, "")
+	if !strings.Contains(res.Message, "expires in") {
+		t.Errorf("message = %q", res.Message)
+	}
+	expect(t, run(t, c, 5*time.Second, map[string]any{"url": srv.URL}), checker.StatusUp, "")
+}
+
 func TestTLS(t *testing.T) {
 	ca := newCA(t)
 	c := &Checker{RootCAs: ca.pool}

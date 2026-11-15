@@ -290,3 +290,24 @@ func TestNextRun(t *testing.T) {
 		}
 	}
 }
+
+// ADR 0020: the start time of a check, which becomes the heartbeat timestamp,
+// comes from the clock of the node; the schedule follows the same clock.
+func TestClockStampsOutcomes(t *testing.T) {
+	const skew = 90 * time.Second
+	reg := checker.NewRegistry()
+	reg.Register(&fakeChecker{})
+	rec := &recorder{}
+	s := New(Options{Registry: reg, Env: &checker.Env{}, Sink: rec, Unit: unit,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:    func() time.Time { return time.Now().Add(skew) }})
+	s.Sync([]store.Monitor{monitor("m1", 5, 4, `{"key":"m1"}`, 1)})
+	stop := start(t, s)
+	eventually(t, func() bool { return rec.count("m1") >= 2 }, "monitor did not run twice")
+	stop()
+
+	o, _ := rec.last("m1")
+	if d := o.Started.Sub(time.Now().Add(skew)); d < -time.Second || d > time.Second {
+		t.Errorf("Started = %v, want the node clock (off by %v)", o.Started, d)
+	}
+}

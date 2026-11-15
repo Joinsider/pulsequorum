@@ -9,6 +9,7 @@ package checker
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // Status is the outcome of a single check on a single node.
@@ -85,6 +86,9 @@ type Env struct {
 	// ICMPMode is the ICMP socket mode detected at startup: "privileged",
 	// "unprivileged" or "off" (FA-CHK-31).
 	ICMPMode string
+	// Now is the wall clock of the node, used for certificate validity and
+	// expiry decisions; nil means time.Now. Latencies stay monotonic (ADR 0020).
+	Now func() time.Time
 }
 
 // Checker is a monitor type plugin.

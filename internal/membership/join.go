@@ -39,6 +39,8 @@ type JoinOptions struct {
 	MaxCommandVersion uint32
 	Cert              *clusterpki.NodeCert
 	Log               *slog.Logger
+	// Clock is the wall clock of the joining node; nil means time.Now (ADR 0020).
+	Clock func() time.Time
 }
 
 // Joined is the result of a successful join.
@@ -146,7 +148,7 @@ func install(opts JoinOptions, key *ecdsa.PrivateKey, resp *pb.JoinResponse, pin
 	if err != nil {
 		return fmt.Errorf("join: %w", err)
 	}
-	v := pki.Verifier{ClusterID: resp.GetClusterId(), Roots: func() []*x509.Certificate { return []*x509.Certificate{ca} }}
+	v := pki.Verifier{ClusterID: resp.GetClusterId(), Roots: func() []*x509.Certificate { return []*x509.Certificate{ca} }, Now: opts.Clock}
 	id, err := v.Verify([]*x509.Certificate{leaf}, x509.ExtKeyUsageClientAuth)
 	if err != nil {
 		return fmt.Errorf("join: %w", err)

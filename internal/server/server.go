@@ -44,8 +44,10 @@ func New(cfg config.Config, log *slog.Logger, ui http.Handler) *Server {
 }
 
 // WithAPI provides the services behind the REST API. It must be called before Run.
+// The clock of the API (deps.Now) also drives the rate limits (ADR 0020).
 func (s *Server) WithAPI(deps api.Deps) *Server {
 	s.api = deps
+	s.limits.setClock(deps.Now)
 	return s
 }
 

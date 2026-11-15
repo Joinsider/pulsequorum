@@ -60,6 +60,9 @@ type Options struct {
 	// Resolve returns the configuration with its secrets decrypted (ADR 0015);
 	// nil uses the stored configuration as it is.
 	Resolve func(ctx context.Context, m store.Monitor) (json.RawMessage, error)
+	// Now is the wall clock for the schedule and the start time of a check
+	// (heartbeat timestamps); nil means time.Now. Durations stay monotonic (ADR 0020).
+	Now func() time.Time
 }
 
 // Stats are counters for metrics and tests.
@@ -101,6 +104,9 @@ func New(opts Options) *Scheduler {
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
 	return &Scheduler{opts: opts, sem: make(chan struct{}, opts.MaxConcurrent), entries: map[string]*entry{}}
 }
@@ -188,8 +194,8 @@ func (s *Scheduler) loop(ctx context.Context, e *entry) {
 
 	interval := time.Duration(e.monitor.IntervalSeconds) * s.opts.Unit
 	phase := Phase(e.monitor.ID, interval)
-	next := NextRun(time.Now(), interval, phase)
-	timer := time.NewTimer(time.Until(next))
+	next := NextRun(s.opts.Now(), interval, phase)
+	timer := time.NewTimer(next.Sub(s.opts.Now()))
 	defer timer.Stop()
 
 	for {
@@ -209,10 +215,10 @@ func (s *Scheduler) loop(ctx context.Context, e *entry) {
 		// Plan from the schedule, not from "now", so latency does not drift;
 		// after a long pause (e.g. suspend) jump to the next slot.
 		next = next.Add(interval)
-		if now := time.Now(); !next.After(now) {
+		if now := s.opts.Now(); !next.After(now) {
 			next = NextRun(now, interval, phase)
 		}
-		timer.Reset(time.Until(next))
+		timer.Reset(next.Sub(s.opts.Now()))
 	}
 }
 
@@ -239,7 +245,7 @@ func (s *Scheduler) run(ctx context.Context, e *entry, scheduled time.Time) {
 	checkCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	started := time.Now()
+	started := s.opts.Now()
 	res := s.execute(checkCtx, m)
 	if ctx.Err() != nil {
 		return // monitor removed or node shutting down; the result is meaningless

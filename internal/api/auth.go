@@ -56,7 +56,7 @@ func (h *Handlers) setRefreshCookie(ctx context.Context, token string, expires t
 		c.MaxAge = -1
 	} else {
 		c.Expires = expires.UTC()
-		c.MaxAge = int(time.Until(expires).Seconds())
+		c.MaxAge = int(expires.Sub(h.deps.Now()).Seconds())
 	}
 	http.SetCookie(w, c)
 }

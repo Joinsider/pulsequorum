@@ -181,7 +181,7 @@ func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
 
 	var sessionEnd <-chan time.Time
 	if !ticket.SessionEnd.IsZero() {
-		t := time.NewTimer(time.Until(ticket.SessionEnd))
+		t := time.NewTimer(ticket.SessionEnd.Sub(h.deps.Now()))
 		defer t.Stop()
 		sessionEnd = t.C
 	}

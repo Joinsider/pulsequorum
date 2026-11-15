@@ -110,6 +110,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
+	// clock is the wall clock of this node (ADR 0020). Tests replace it per
+	// node to simulate clock skew; the binary always uses the system clock.
+	clock := time.Now
 	// A halted FSM or a foreign master key stops the whole process (FA-CLU-13).
 	ctx, stop := context.WithCancelCause(ctx)
 	defer stop(nil)
@@ -145,7 +148,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// Join before the master key is loaded: a joining voter takes the
 	// cluster's key instead of generating its own (ADR 0011).
 	prepared, err := clusterhost.Prepare(ctx, cfg.DataDir, nodeID, cfg.NodeName, cfg.ClusterAdvertise, version.Version,
-		clusterhost.JoinOptions{Seeds: cfg.ClusterJoin, Token: joinToken, ExternalKEK: cfg.MasterKey != "" || cfg.MasterKeyFile != ""}, log)
+		clusterhost.JoinOptions{Seeds: cfg.ClusterJoin, Token: joinToken, ExternalKEK: cfg.MasterKey != "" || cfg.MasterKeyFile != "", Clock: clock}, log)
 	if err != nil {
 		return err
 	}
@@ -173,6 +176,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
+		Clock: clock,
 	})
 	if err != nil {
 		return err
@@ -204,7 +208,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	var local *auth.Local
 	if cfg.AuthMode == config.AuthLocal {
-		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log})
+		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log, Now: clock})
 	}
 	bg.Go(func() {
 		if bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) {
@@ -237,21 +241,22 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Dialer:    &checker.Dialer{Policy: policy},
 		UserAgent: "UptimeCluster/" + version.Version,
 		ICMPMode:  icmpMode,
+		Now:       clock,
 	}
 	sender := alert.NewSender(checkEnv.Dialer, log)
 	dispatcher := alert.NewDispatcher(alert.DispatcherOptions{
 		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
-		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log,
+		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log, Now: clock,
 	})
 	maint := maintenance.NewController(maintenance.ControllerOptions{
-		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log,
+		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log, Now: clock,
 	})
 	agg := aggregator.New(aggregator.Options{
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
 		Maintenance: maint.InMaintenance, Logger: log,
 	})
 	sink := scheduler.Sinks{heartbeats, agg, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
-	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log,
+	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log, Now: clock,
 		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
 			return configsecret.ResolveMonitor(ctx, keyring, m)
 		}})
@@ -271,6 +276,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Vacuum:    func(ctx context.Context) error { return metrics.DB().IncrementalVacuum(ctx, 0) },
 		// Late heartbeats of other voters are waited for before rollup and compaction (FA-REP-03).
 		ReplicatedUntil: host.Replication.ReplicatedUntil,
+		Now:             clock,
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
@@ -287,13 +293,16 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if !webui.Built() {
 		log.Warn("frontend is not embedded in this binary; build with `make build`")
 	}
+	tickets := auth.NewTickets()
+	tickets.Now = clock
 	apiDeps := api.Deps{
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
-		Stream: hub, Tickets: auth.NewTickets(),
+		Stream: hub, Tickets: tickets,
 		ClusterAdmin: clusterAdmin{host: host},
 		Replication:  host.Replication,
+		Now:          clock,
 	}
 	if local != nil {
 		apiDeps.Local, apiDeps.Authenticator = local, local

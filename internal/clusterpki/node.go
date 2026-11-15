@@ -104,6 +104,9 @@ type NodeCert struct {
 	DataDir string
 	NodeID  string
 	Holder  pki.Holder
+	// Now is the wall clock for renewal decisions; nil uses time.Now. Tests
+	// set it to simulate clock skew between nodes (ADR 0020).
+	Now func() time.Time
 
 	// mu guards key, leaf and ca: handshakes read them while renewal
 	// replaces them.
@@ -339,6 +342,13 @@ func (n *NodeCert) EnsureSelf(ctx context.Context, a *Authority, isLeader bool, 
 	return n.Renew(ctx, now, issue)
 }
 
+func (n *NodeCert) now() time.Time {
+	if n.Now != nil {
+		return n.Now()
+	}
+	return time.Now()
+}
+
 // RunRenewal checks every interval whether the certificate is due and
 // renews it through the issuer chosen at that moment (FA-PKI-03).
 func (n *NodeCert) RunRenewal(ctx context.Context, issuer func() IssueFunc, interval time.Duration, log *slog.Logger) {
@@ -350,7 +360,7 @@ func (n *NodeCert) RunRenewal(ctx context.Context, issuer func() IssueFunc, inte
 			return
 		case <-ticker.C:
 		}
-		if err := n.Renew(ctx, time.Now(), issuer()); err != nil && ctx.Err() == nil {
+		if err := n.Renew(ctx, n.now(), issuer()); err != nil && ctx.Err() == nil {
 			log.Warn("renewing the node certificate failed", "err", err)
 		}
 	}

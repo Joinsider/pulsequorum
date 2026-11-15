@@ -76,7 +76,7 @@ func RunKeyRotation(ctx context.Context, n *Node, state store.State, kek *secret
 			continue
 		}
 		key, ok, err := activeKey(ctx, state)
-		if err != nil || !ok || time.Since(time.UnixMilli(key.CreatedMs)) < maxAge {
+		if err != nil || !ok || n.now().Sub(time.UnixMilli(key.CreatedMs)) < maxAge {
 			continue
 		}
 		if err := RotateSecretKey(ctx, n, kek, "rotate:"+key.KeyID); err != nil {

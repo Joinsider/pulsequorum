@@ -54,6 +54,8 @@ type JoinOptions struct {
 	// MaxCommandVersion is the command version announced at join. Zero means
 	// cluster.CommandVersion; a test override (ADR 0018).
 	MaxCommandVersion uint32
+	// Clock is the wall clock of the joining node; nil means time.Now (ADR 0020).
+	Clock func() time.Time
 }
 
 // Prepared is the result of Prepare.
@@ -73,7 +75,7 @@ type Prepared struct {
 // a cluster certificate: a node that joined before but crashed before Raft
 // stored anything must not found a cluster of its own.
 func Prepare(ctx context.Context, dataDir, nodeID, name, advertise, version string, join JoinOptions, log *slog.Logger) (Prepared, error) {
-	cert := &clusterpki.NodeCert{DataDir: dataDir, NodeID: nodeID}
+	cert := &clusterpki.NodeCert{DataDir: dataDir, NodeID: nodeID, Now: join.Clock}
 	if err := cert.Load(); err != nil {
 		return Prepared{}, err
 	}
@@ -91,7 +93,7 @@ func Prepare(ctx context.Context, dataDir, nodeID, name, advertise, version stri
 	log.Info("joining the cluster", "seeds", join.Seeds, "node_id", nodeID, "advertise", advertise)
 	joined, err := membership.Join(ctx, membership.JoinOptions{
 		Seeds: join.Seeds, Token: join.Token, NodeID: nodeID, Name: name, Address: advertise, Version: version, Cert: cert, Log: log,
-		MaxCommandVersion: join.MaxCommandVersion,
+		MaxCommandVersion: join.MaxCommandVersion, Clock: join.Clock,
 	})
 	if err != nil {
 		return Prepared{}, err
@@ -152,6 +154,11 @@ type Options struct {
 	// version this node applies and announces (ADR 0018). Zero means
 	// cluster.CommandVersion. Tests use it to simulate an older binary.
 	MaxCommandVersion uint32
+	// Clock is the wall clock of this node for certificate validity, command
+	// timestamps, heartbeat observations and replication decisions. Nil means
+	// time.Now. The multi-node tests give each node its own skewed clock
+	// (ADR 0020).
+	Clock func() time.Time
 }
 
 // Host is the running cluster side of a voter.
@@ -170,8 +177,10 @@ type Host struct {
 	// (ADR 0018).
 	Level *membership.LevelWatcher
 
-	state     store.State
-	self      store.Node
+	state store.State
+	self  store.Node
+	// clock is the wall clock of this node (Options.Clock).
+	clock     func() time.Time
 	mux       *clusternet.Mux
 	grpc      *grpc.Server
 	advertise string
@@ -190,16 +199,22 @@ type Host struct {
 
 // Start opens the cluster port and starts Raft on it with mTLS.
 func Start(ctx context.Context, opts Options) (*Host, error) {
+	clock := opts.Clock
+	if clock == nil {
+		clock = time.Now
+	}
 	h := &Host{
 		Cert:        opts.Prepared.Cert,
 		Revocations: &clusterpki.Revocations{},
-		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring},
+		Authority:   &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
 		log:         opts.Log,
 		advertise:   opts.Advertise,
 		dataDir:     opts.DataDir,
 		state:       opts.State,
 		self:        selfNode(opts),
+		clock:       clock,
 	}
+	h.Cert.Now = clock
 	if err := h.Revocations.Reload(ctx, opts.State); err != nil {
 		return nil, err
 	}
@@ -208,6 +223,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		ClusterIDFunc: h.clusterID,
 		Revoked:       h.Revocations.Revoked,
 		RevokedNode:   h.Revocations.RevokedNode,
+		Now:           clock,
 	}
 	h.sec = clusternet.Security{Holder: &h.Cert.Holder, Verifier: verifier}
 	mux, err := clusternet.Listen(opts.ListenAddr, opts.Advertise, h.sec, opts.Log)
@@ -226,6 +242,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		RaftLogLevel:      opts.RaftLogLevel,
 		RaftLogJSON:       opts.RaftLogJSON,
 		MaxCommandVersion: opts.MaxCommandVersion,
+		Clock:             clock,
 	}, opts.State, opts.OnFatal)
 	if err != nil {
 		_ = mux.Close()
@@ -234,7 +251,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.Node = node
 	h.Authority.Cluster = node
 	h.Manager = &membership.Manager{Raft: node, Status: h.status, DialLeader: h.dial, Log: opts.Log}
-	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log}
+	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log, Now: clock}
 	h.Level = &membership.LevelWatcher{Node: node, State: opts.State, Log: opts.Log}
 	node.OnHeartbeat(h.Health.Observe)
 	h.Replication = replication.New(replication.Options{
@@ -244,6 +261,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Dial:                func(address string) (*grpc.ClientConn, error) { return clusternet.DialVoter(address, h.sec) },
 		Log:                 opts.Log,
 		AntiEntropyInterval: opts.ReplicationInterval,
+		Now:                 clock,
 	})
 	// A peer that resumes heartbeats or joins the configuration gets an
 	// immediate anti-entropy pass (ADR 0012 B6). Followers do not see these
@@ -278,7 +296,7 @@ func (h *Host) Bootstrap(ctx context.Context) error {
 	if err := h.Authority.Ensure(ctx, h.Node.IsLeader()); err != nil {
 		return fmt.Errorf("cluster CA: %w", err)
 	}
-	if err := h.Cert.EnsureSelf(ctx, h.Authority, h.Node.IsLeader(), time.Now()); err != nil {
+	if err := h.Cert.EnsureSelf(ctx, h.Authority, h.Node.IsLeader(), h.clock()); err != nil {
 		return fmt.Errorf("node certificate: %w", err)
 	}
 	if leaf := h.Cert.Leaf(); leaf != nil {

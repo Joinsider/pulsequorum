@@ -371,7 +371,7 @@ func (h *Handlers) TestMonitor(ctx context.Context, req gen.TestMonitorRequestOb
 	if err != nil {
 		return nil, fmt.Errorf("resolve secrets of monitor %s: %w", m.ID, err)
 	}
-	started := time.Now()
+	started := h.deps.Now()
 	res := c.Check(checkCtx, h.deps.CheckEnv, cfg)
 	return gen.TestMonitor200JSONResponse(toAPICheckResult(res, h.deps.NodeID, started)), nil
 }
