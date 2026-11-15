@@ -46,6 +46,7 @@ type options struct {
 	image          string
 	build          string
 	version        string
+	fromRef        string
 	voters         int
 	portBase       int
 	fakeListenBase int
@@ -67,6 +68,7 @@ func parseOptions(args []string, output io.Writer) (options, error) {
 	fs.StringVar(&o.image, "image", harness.DefaultImage, "voter image")
 	fs.StringVar(&o.build, "build", "auto", "build images from the repository: auto (if missing), always, never")
 	fs.StringVar(&o.version, "version", "chaos", "VERSION build argument of the voter image")
+	fs.StringVar(&o.fromRef, "from-ref", "HEAD", "git ref the old voter image of AS-09 is built from (the new one uses the working tree)")
 	fs.IntVar(&o.voters, "voters", 3, "voter slots per scenario (1 to 5)")
 	fs.IntVar(&o.portBase, "port-base", 18100, "voter i publishes its HTTP port on 127.0.0.1:port-base+i")
 	fs.IntVar(&o.fakeListenBase, "fake-listen-base", defaultFakeListenBase, "host port of the fake ntfy server; the HTTP target uses the next port")
@@ -214,6 +216,7 @@ func run(ctx context.Context, opts options, selected []Scenario, log *slog.Logge
 			NtfyPort:   ntfySrv.Port(),
 			TargetPort: targetSrv.Port(),
 			Rep:        rep,
+			FromRef:    opts.fromRef,
 		}
 		sctx, cancel := context.WithTimeout(ctx, scenarioTimeout)
 		runErr := s.Run(sctx, env)

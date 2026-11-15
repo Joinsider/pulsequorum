@@ -170,7 +170,9 @@ func (r *Runtime) ImageExists(ctx context.Context, image string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if IsNotFound(err) {
+	// podman answers "failed to find image" for a missing image, docker "no such image".
+	var ce *CommandError
+	if IsNotFound(err) || (errors.As(err, &ce) && strings.Contains(strings.ToLower(ce.Stderr), "failed to find image")) {
 		return false, nil
 	}
 	return false, err

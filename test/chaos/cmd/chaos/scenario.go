@@ -48,6 +48,8 @@ type Env struct {
 	NtfyPort   int
 	TargetPort int
 	Rep        *harness.Report
+	// FromRef is the git ref the old voter image of AS-09 is built from.
+	FromRef string
 
 	clusters []*harness.Cluster
 }
