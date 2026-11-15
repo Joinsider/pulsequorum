@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-15 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | Pflichtenheft 13.1 (Cluster/Chaos), FA-PKI-03, FA-OBS-01, FA-UPT-02, Kap. 3 (NTP Pflicht), Kap. 9 Cluster-Ansicht, PF-11, ADR 0012, AP-2.9 |
@@ -107,3 +107,4 @@ Vorgeschlagen wird **Option A**.
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-15 | Proposed | Claude | |
+| 2026-11-15 | Accepted | Projektinhaber | im Chat bestätigt |

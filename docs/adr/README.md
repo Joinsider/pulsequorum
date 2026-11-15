@@ -25,4 +25,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0017](0017-zuweisung-von-monitoren.md) | Zuweisung von Monitoren an Nodes, Node-Register und Node-Gesundheit | Accepted | 2026-10-23 |
 | [0018](0018-rolling-updates-und-feature-gates.md) | Rolling Updates: Befehlsversionen, Feature-Gate und Expand/Contract | Accepted | 2026-10-23 |
 | [0019](0019-recovery-cli.md) | Recovery-CLI: Quorumverlust und Admin-Passwort | Accepted | 2026-10-25 |
-| [0020](0020-uhrversatz-messen-und-testen.md) | Uhrversatz zwischen Nodes messen und testen | Proposed | 2026-11-15 |
+| [0020](0020-uhrversatz-messen-und-testen.md) | Uhrversatz zwischen Nodes messen und testen | Accepted | 2026-11-15 |
