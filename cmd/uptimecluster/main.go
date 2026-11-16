@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	// All voters evaluate maintenance time zones with the same embedded database.
@@ -171,12 +172,21 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
+	// The aggregator needs the Raft node, which exists only after Start. Stored
+	// heartbeats that arrive before it is set are not observed; the leader
+	// rebuild reads them from the store (ADR 0021).
+	var aggPtr atomic.Pointer[aggregator.Aggregator]
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
 		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
 		Clock: clock,
+		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
+			if a := aggPtr.Load(); a != nil {
+				a.Observe(hbs)
+			}
+		},
 	})
 	if err != nil {
 		return err
@@ -251,11 +261,19 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	maint := maintenance.NewController(maintenance.ControllerOptions{
 		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log, Now: clock,
 	})
+	// Responsible nodes of a monitor (ADR 0017); shared by the aggregator and the assignment syncer.
+	assigner := scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)}
+	// The aggregator evaluates only on the leader, from the heartbeats it observes (ADR 0021).
 	agg := aggregator.New(aggregator.Options{
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
-		Maintenance: maint.InMaintenance, Logger: log,
+		IsLeader:    raftNode.IsLeader,
+		Registry:    func(ctx context.Context) ([]store.Node, error) { return state.ListNodes(ctx) },
+		Assigner:    assigner,
+		Maintenance: maint.InMaintenance, Now: clock, Logger: log,
 	})
-	sink := scheduler.Sinks{heartbeats, agg, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
+	aggPtr.Store(agg)
+	heartbeats.SetOnStored(agg.Observe)
+	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log, Now: clock,
 		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
 			return configsecret.ResolveMonitor(ctx, keyring, m)
@@ -283,7 +301,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// The scheduler runs only the monitors assigned to this node; the aggregator
 	// keeps all monitors, because it tracks results of other nodes too (ADR 0017).
 	assigned := scheduler.AssignmentSyncer{
-		Target: sched, NodeID: nodeID, Assigner: scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)},
+		Target: sched, NodeID: nodeID, Assigner: assigner,
 		Registry: func() ([]store.Node, error) { return state.ListNodes(ctx) }, Log: log,
 	}
 	bg.Go(func() {

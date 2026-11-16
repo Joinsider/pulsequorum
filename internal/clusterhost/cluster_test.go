@@ -49,6 +49,8 @@ type testNode struct {
 	// clockInterval is the period of the clock offset measurement; zero keeps
 	// the default.
 	clockInterval time.Duration
+	// onStored receives the heartbeats that replication stored (Options.OnHeartbeatsStored).
+	onStored func([]store.Heartbeat)
 }
 
 func freeAddr(t *testing.T) string {
@@ -147,6 +149,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
 		Name:    "n", Version: "test", Capabilities: n.caps,
 		MaxCommandVersion: n.maxVersion, Clock: n.clock, ClockInterval: n.clockInterval,
+		OnHeartbeatsStored: n.onStored,
 	})
 	if err != nil {
 		// The state is not registered for cleanup yet; close it here.
