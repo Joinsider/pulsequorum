@@ -232,3 +232,43 @@ func TestJoinTokenSources(t *testing.T) {
 		t.Errorf("both sources: error = %v, want a JOIN_TOKEN error", err)
 	}
 }
+
+// TestSelfCheck covers SELF_CHECK_TARGETS and SELF_HEALTH_FAIL_RATIO (ADR 0022):
+// entries are trimmed, blank entries are skipped, invalid entries are named.
+func TestSelfCheck(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil || cfg.SelfCheckTargets != nil || cfg.SelfHealthFailRatio != 0.5 {
+		t.Fatalf("defaults = %v, %v, %v; want no targets, ratio 0.5", cfg.SelfCheckTargets, cfg.SelfHealthFailRatio, err)
+	}
+
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME":              "n1",
+		"SELF_CHECK_TARGETS":     " 1.1.1.1:443 , ,https://example.com/ping?x=1,http://example.org ",
+		"SELF_HEALTH_FAIL_RATIO": "1",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"1.1.1.1:443", "https://example.com/ping?x=1", "http://example.org"}
+	if strings.Join(cfg.SelfCheckTargets, " ") != strings.Join(want, " ") {
+		t.Errorf("SelfCheckTargets = %q, want %q", cfg.SelfCheckTargets, want)
+	}
+	if cfg.SelfHealthFailRatio != 1 {
+		t.Errorf("SelfHealthFailRatio = %v, want 1", cfg.SelfHealthFailRatio)
+	}
+
+	invalidTargets := []string{"nohostport", "host:", "host:0", "host:70000", "ftp://example.com", "https://", "https://u:p@example.com"}
+	for _, bad := range invalidTargets {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "SELF_CHECK_TARGETS": "1.1.1.1:443," + bad}))
+		if err == nil || !strings.Contains(err.Error(), "SELF_CHECK_TARGETS") || !strings.Contains(err.Error(), bad) {
+			t.Errorf("SELF_CHECK_TARGETS entry %q: error = %v, want error naming the entry", bad, err)
+		}
+	}
+
+	for _, bad := range []string{"0", "-0.1", "1.5", "abc", "NaN"} {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "SELF_HEALTH_FAIL_RATIO": bad}))
+		if err == nil || !strings.Contains(err.Error(), "SELF_HEALTH_FAIL_RATIO") {
+			t.Errorf("SELF_HEALTH_FAIL_RATIO=%q: error = %v, want SELF_HEALTH_FAIL_RATIO error", bad, err)
+		}
+	}
+}

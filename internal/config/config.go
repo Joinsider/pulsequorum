@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 )
 
 // Role is the role a node runs in.
@@ -80,9 +82,15 @@ type Config struct {
 	AuthCookieDomain string
 	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
 	AlertMaxAttempts int
-	LogLevel         slog.Level
-	LogFormat        string
-	ShutdownTimeout  time.Duration
+	// SelfCheckTargets are the raw, trimmed SELF_CHECK_TARGETS entries (ADR 0022);
+	// empty disables the connectivity self-check. Parse them with selfcheck.ParseTargets.
+	SelfCheckTargets []string
+	// SelfHealthFailRatio is the share of deviating heartbeats at which a node
+	// counts as impaired, in (0, 1] (ADR 0022).
+	SelfHealthFailRatio float64
+	LogLevel            slog.Level
+	LogFormat           string
+	ShutdownTimeout     time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -248,6 +256,22 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("ALERT_MAX_ATTEMPTS: must be a whole number from 1 to 100, got %q", attemptsRaw))
 	}
 	cfg.AlertMaxAttempts = attempts
+
+	for _, raw := range strings.Split(getenv("SELF_CHECK_TARGETS"), ",") {
+		if raw = strings.TrimSpace(raw); raw != "" {
+			cfg.SelfCheckTargets = append(cfg.SelfCheckTargets, raw)
+		}
+	}
+	if _, err := selfcheck.ParseTargets(cfg.SelfCheckTargets); err != nil {
+		errs = append(errs, fmt.Errorf("SELF_CHECK_TARGETS: %w", err))
+	}
+
+	ratioRaw := get("SELF_HEALTH_FAIL_RATIO", "0.5")
+	ratio, err := strconv.ParseFloat(ratioRaw, 64)
+	if err != nil || !(ratio > 0 && ratio <= 1) {
+		errs = append(errs, fmt.Errorf("SELF_HEALTH_FAIL_RATIO: must be a number greater than 0 and at most 1, got %q", ratioRaw))
+	}
+	cfg.SelfHealthFailRatio = ratio
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {

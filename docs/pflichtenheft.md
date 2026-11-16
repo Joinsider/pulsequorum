@@ -648,6 +648,8 @@ Protobuf-Definitionen in `proto/`:
 | `RETENTION_HOURLY_DAYS` | `365` | Aufbewahrung Stunden-Rollups in Tagen |
 | `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung Tages-Rollups in Tagen (`0` = unbegrenzt) |
 | `ALERT_MAX_ATTEMPTS` | `10` | Maximale Zustellversuche je Alert und Kanal (FA-ALR-03) |
+| `SELF_CHECK_TARGETS` | leer | Referenzziele der Node-Selbstgesundheit, kommagetrennt (`host:port` für TCP, `https://…` für HTTP-HEAD); leer = Signal aus (FA-CON-04, ADR 0022) |
+| `SELF_HEALTH_FAIL_RATIO` | `0.5` | Schwellwert der Abweichungsquote, ab der ein Node als gestört gilt (FA-CON-04, ADR 0022) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |

@@ -57,6 +57,8 @@ Alle Variablen werden beim Start gelesen. Ungültige Werte beenden den Start mit
 | `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung der Tagesaggregate in Tagen; `0` = unbegrenzt. |
 | `AUTH_COOKIE_DOMAIN` | leer | `Domain` des Refresh-Cookies. Leer = nur für den aufgerufenen Host. Nur bei Subdomain-Setups nötig. |
 | `ALERT_MAX_ATTEMPTS` | `10` | Zustellversuche je Alarm und Kanal, von 1 bis 100. |
+| `SELF_CHECK_TARGETS` | leer | Referenzziele der Selbstprüfung des Nodes, kommagetrennt: `host:port` (TCP) oder `https://…` (HTTP-HEAD; jede Antwort zählt). Schlagen alle fehl, gilt der Node als gestört, sofern die anderen Nodes gesund sind. Empfehlung: 2 bis 3 unabhängige Ziele. Leer = aus. |
+| `SELF_HEALTH_FAIL_RATIO` | `0.5` | Anteil fehlgeschlagener Checks, ab dem ein Node als gestört gilt (Wert über 0 bis 1). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` oder `error`. |
 | `LOG_FORMAT` | `json` | `json` oder `text`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Wartezeit beim Herunterfahren für laufende Hintergrundarbeit. |
