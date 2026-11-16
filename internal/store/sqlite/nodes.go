@@ -62,19 +62,41 @@ func (t *stateTx) PutNode(ctx context.Context, n store.Node) error {
 		return fmt.Errorf("put node %s: encode labels: %w", n.ID, err)
 	}
 	return mapErr(t.q.PutNode(ctx, statedb.PutNodeParams{
-		ID:                n.ID,
-		Name:              n.Name,
-		Role:              n.Role,
-		CapabilitiesJson:  string(capsJSON),
-		LabelsJson:        string(labelsJSON),
-		Region:            n.Region,
-		Version:           n.Version,
-		MaxCommandVersion: int64(n.MaxCommandVersion),
-		Healthy:           boolToInt(n.Healthy),
-		HealthChangedMs:   n.HealthChangedMs,
-		RegisteredMs:      n.RegisteredMs,
-		UpdatedMs:         n.UpdatedMs,
+		ID:                    n.ID,
+		Name:                  n.Name,
+		Role:                  n.Role,
+		CapabilitiesJson:      string(capsJSON),
+		LabelsJson:            string(labelsJSON),
+		Region:                n.Region,
+		Version:               n.Version,
+		MaxCommandVersion:     int64(n.MaxCommandVersion),
+		Healthy:               boolToInt(n.Healthy),
+		HealthChangedMs:       n.HealthChangedMs,
+		RegisteredMs:          n.RegisteredMs,
+		UpdatedMs:             n.UpdatedMs,
+		ConnectivityImpaired:  boolToInt(n.ConnectivityImpaired),
+		ConnectivityReason:    n.ConnectivityReason,
+		ConnectivityChangedMs: n.ConnectivityChangedMs,
 	}))
+}
+
+// SetNodeConnectivity records the connectivity of a registered node (ADR 0022).
+// It sets the time of the change as UpdatedMs too, like a health change does.
+func (t *stateTx) SetNodeConnectivity(ctx context.Context, nodeID string, impaired bool, reason string, atMs int64) error {
+	n, err := t.q.SetNodeConnectivity(ctx, statedb.SetNodeConnectivityParams{
+		ConnectivityImpaired:  boolToInt(impaired),
+		ConnectivityReason:    reason,
+		ConnectivityChangedMs: atMs,
+		UpdatedMs:             atMs,
+		ID:                    nodeID,
+	})
+	if err != nil {
+		return mapErr(err)
+	}
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 // DeleteNode removes a registry entry; an unknown ID is not an error.
@@ -99,17 +121,20 @@ func nodeFromRow(r statedb.Node) (store.Node, error) {
 		return store.Node{}, fmt.Errorf("decode node %s: max command version %d out of range", r.ID, r.MaxCommandVersion)
 	}
 	return store.Node{
-		ID:                r.ID,
-		Name:              r.Name,
-		Role:              r.Role,
-		Capabilities:      caps,
-		Labels:            nonNilMap(labels),
-		Region:            r.Region,
-		Version:           r.Version,
-		MaxCommandVersion: uint32(r.MaxCommandVersion),
-		Healthy:           r.Healthy != 0,
-		HealthChangedMs:   r.HealthChangedMs,
-		RegisteredMs:      r.RegisteredMs,
-		UpdatedMs:         r.UpdatedMs,
+		ID:                    r.ID,
+		Name:                  r.Name,
+		Role:                  r.Role,
+		Capabilities:          caps,
+		Labels:                nonNilMap(labels),
+		Region:                r.Region,
+		Version:               r.Version,
+		MaxCommandVersion:     uint32(r.MaxCommandVersion),
+		Healthy:               r.Healthy != 0,
+		HealthChangedMs:       r.HealthChangedMs,
+		ConnectivityImpaired:  r.ConnectivityImpaired != 0,
+		ConnectivityReason:    r.ConnectivityReason,
+		ConnectivityChangedMs: r.ConnectivityChangedMs,
+		RegisteredMs:          r.RegisteredMs,
+		UpdatedMs:             r.UpdatedMs,
 	}, nil
 }

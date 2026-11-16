@@ -212,6 +212,21 @@ describe('ClusterPage', () => {
     expect(cardFor('frankfurt-1').querySelector('.lag')?.textContent?.trim()).toBe('–');
   });
 
+  it('shows the connectivity badge with its reason only while impaired (ADR 0022)', async () => {
+    const impaired: ClusterNode = {
+      ...NODES[2],
+      connectivityImpaired: true,
+      connectivityReason: 'reference',
+    };
+    api.listClusterNodes.mockReturnValue(of(listOf([NODES[0], NODES[1], impaired, NODES[3]])));
+    await render();
+
+    const badge = cardFor('cologne-1').querySelector('.badge--connectivity');
+    expect(badge?.textContent).toContain('admin.cluster.node.connectivity.impaired');
+    expect(badge?.textContent).toContain('admin.cluster.node.connectivity.reasons.reference');
+    expect(cardFor('berlin-1').querySelector('.badge--connectivity')).toBeNull();
+  });
+
   it('shows server warnings as they are and the upgrade banner', async () => {
     api.listClusterNodes.mockReturnValue(
       of({

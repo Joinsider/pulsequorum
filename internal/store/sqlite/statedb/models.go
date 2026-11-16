@@ -120,18 +120,21 @@ type MonitorTag struct {
 }
 
 type Node struct {
-	ID                string
-	Name              string
-	Role              string
-	CapabilitiesJson  string
-	LabelsJson        string
-	Region            string
-	Version           string
-	MaxCommandVersion int64
-	Healthy           int64
-	HealthChangedMs   int64
-	RegisteredMs      int64
-	UpdatedMs         int64
+	ID                    string
+	Name                  string
+	Role                  string
+	CapabilitiesJson      string
+	LabelsJson            string
+	Region                string
+	Version               string
+	MaxCommandVersion     int64
+	Healthy               int64
+	HealthChangedMs       int64
+	RegisteredMs          int64
+	UpdatedMs             int64
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
 }
 
 type NotificationChannel struct {

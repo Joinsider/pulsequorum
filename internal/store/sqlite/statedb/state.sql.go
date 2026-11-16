@@ -483,7 +483,7 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes WHERE id = ?
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
@@ -502,6 +502,9 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 		&i.HealthChangedMs,
 		&i.RegisteredMs,
 		&i.UpdatedMs,
+		&i.ConnectivityImpaired,
+		&i.ConnectivityReason,
+		&i.ConnectivityChangedMs,
 	)
 	return i, err
 }
@@ -1409,7 +1412,7 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes ORDER BY id
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms FROM nodes ORDER BY id
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -1434,6 +1437,9 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.HealthChangedMs,
 			&i.RegisteredMs,
 			&i.UpdatedMs,
+			&i.ConnectivityImpaired,
+			&i.ConnectivityReason,
+			&i.ConnectivityChangedMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1791,8 +1797,9 @@ func (q *Queries) PruneStatusHistory(ctx context.Context, arg PruneStatusHistory
 
 const putNode = `-- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
-                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
+                   connectivity_impaired, connectivity_reason, connectivity_changed_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -1804,22 +1811,28 @@ ON CONFLICT (id) DO UPDATE SET
     healthy = excluded.healthy,
     health_changed_ms = excluded.health_changed_ms,
     registered_ms = excluded.registered_ms,
-    updated_ms = excluded.updated_ms
+    updated_ms = excluded.updated_ms,
+    connectivity_impaired = excluded.connectivity_impaired,
+    connectivity_reason = excluded.connectivity_reason,
+    connectivity_changed_ms = excluded.connectivity_changed_ms
 `
 
 type PutNodeParams struct {
-	ID                string
-	Name              string
-	Role              string
-	CapabilitiesJson  string
-	LabelsJson        string
-	Region            string
-	Version           string
-	MaxCommandVersion int64
-	Healthy           int64
-	HealthChangedMs   int64
-	RegisteredMs      int64
-	UpdatedMs         int64
+	ID                    string
+	Name                  string
+	Role                  string
+	CapabilitiesJson      string
+	LabelsJson            string
+	Region                string
+	Version               string
+	MaxCommandVersion     int64
+	Healthy               int64
+	HealthChangedMs       int64
+	RegisteredMs          int64
+	UpdatedMs             int64
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
 }
 
 func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
@@ -1836,6 +1849,9 @@ func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
 		arg.HealthChangedMs,
 		arg.RegisteredMs,
 		arg.UpdatedMs,
+		arg.ConnectivityImpaired,
+		arg.ConnectivityReason,
+		arg.ConnectivityChangedMs,
 	)
 	return err
 }
@@ -1965,6 +1981,34 @@ type SetFSMMetaParams struct {
 func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
 	_, err := q.db.ExecContext(ctx, setFSMMeta, arg.Key, arg.Value)
 	return err
+}
+
+const setNodeConnectivity = `-- name: SetNodeConnectivity :execrows
+UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,
+                 connectivity_changed_ms = ?, updated_ms = ?
+WHERE id = ?
+`
+
+type SetNodeConnectivityParams struct {
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
+	UpdatedMs             int64
+	ID                    string
+}
+
+func (q *Queries) SetNodeConnectivity(ctx context.Context, arg SetNodeConnectivityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setNodeConnectivity,
+		arg.ConnectivityImpaired,
+		arg.ConnectivityReason,
+		arg.ConnectivityChangedMs,
+		arg.UpdatedMs,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setUserLastLogin = `-- name: SetUserLastLogin :execrows

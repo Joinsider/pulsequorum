@@ -40,6 +40,8 @@ func minVersion(cmd *pb.Command) uint32 {
 		*pb.Command_SetNodeHealth,
 		*pb.Command_SetFeatureLevel:
 		return 2
+	case *pb.Command_SetNodeConnectivity:
+		return 3
 	}
 	return 0
 }

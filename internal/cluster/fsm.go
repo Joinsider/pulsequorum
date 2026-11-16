@@ -253,6 +253,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRegisterNode(ctx, tx, cmd, p.RegisterNode)
 	case *pb.Command_SetNodeHealth:
 		return applySetNodeHealth(ctx, tx, cmd, p.SetNodeHealth)
+	case *pb.Command_SetNodeConnectivity:
+		return applySetNodeConnectivity(ctx, tx, cmd, p.SetNodeConnectivity)
 	case *pb.Command_SetFeatureLevel:
 		return applySetFeatureLevel(ctx, tx, cmd, p.SetFeatureLevel)
 	case nil:

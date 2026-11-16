@@ -19,6 +19,7 @@ export * from './checkResult';
 export * from './checkResultDetails';
 export * from './checkStatus';
 export * from './clusterNode';
+export * from './clusterNodeConnectivityReason';
 export * from './clusterNodeList';
 export * from './conflictResponse';
 export * from './consensusPolicy';

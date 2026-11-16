@@ -114,6 +114,14 @@
                 <dt>{{ t('admin.cluster.node.healthLabel') }}</dt>
                 <dd [class]="'health health--' + row.health">
                   {{ t('admin.cluster.node.health.' + row.health) }}
+                  @if (row.node.connectivityImpaired) {
+                    <span class="badge badge--connectivity">
+                      {{ t('admin.cluster.node.connectivity.impaired') }}
+                      @if (row.node.connectivityReason; as reason) {
+                        ({{ t('admin.cluster.node.connectivity.reasons.' + reason) }})
+                      }
+                    </span>
+                  }
                 </dd>
               </div>
               <div>

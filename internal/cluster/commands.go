@@ -13,19 +13,37 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // CommandVersion is the highest Command.version this binary can apply.
 // It is raised together with a feature gate (FA-CLU-12). Version 2 adds
-// RegisterNode and SetNodeHealth (ADR 0017).
-const CommandVersion = 2
+// RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022).
+const CommandVersion = 3
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this
 // version are always allowed.
 const BaseCommandLevel = 2
+
+// NewSetNodeConnectivity builds the command that records a connectivity change
+// of a node (ADR 0022). Only the leader proposes it, and only on a change.
+//
+// The request ID is random per command, not derived from the change: the FSM
+// deduplicates request IDs for 24 hours, so a repeated flip of the same node
+// would otherwise return the stored result without being applied. A retry of
+// the same command keeps its request ID, because the caller reuses the command.
+func NewSetNodeConnectivity(nodeID string, impaired bool, reason string) *pb.Command {
+	return stamp(&pb.Command{
+		RequestId: uuid.NewString(),
+		Payload: &pb.Command_SetNodeConnectivity{SetNodeConnectivity: &pb.SetNodeConnectivity{
+			NodeId: nodeID, Impaired: impaired, Reason: reason,
+		}},
+	})
+}
 
 // EffectiveCommandLevel returns the command level the cluster may use, given
 // the level stored in state.db (0 if unset).

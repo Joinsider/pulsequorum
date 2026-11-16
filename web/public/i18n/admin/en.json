@@ -46,6 +46,13 @@
       "leaderBadge": "Leader",
       "selfBadge": "This node",
       "healthLabel": "Health",
+      "connectivity": {
+        "impaired": "Connectivity impaired",
+        "reasons": {
+          "reference": "reference targets",
+          "deviation": "deviation"
+        }
+      },
       "address": "Address",
       "health": {
         "healthy": "Healthy",

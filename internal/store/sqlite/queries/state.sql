@@ -445,8 +445,9 @@ SELECT * FROM nodes ORDER BY id;
 
 -- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
-                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
+                   connectivity_impaired, connectivity_reason, connectivity_changed_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -458,7 +459,15 @@ ON CONFLICT (id) DO UPDATE SET
     healthy = excluded.healthy,
     health_changed_ms = excluded.health_changed_ms,
     registered_ms = excluded.registered_ms,
-    updated_ms = excluded.updated_ms;
+    updated_ms = excluded.updated_ms,
+    connectivity_impaired = excluded.connectivity_impaired,
+    connectivity_reason = excluded.connectivity_reason,
+    connectivity_changed_ms = excluded.connectivity_changed_ms;
+
+-- name: SetNodeConnectivity :execrows
+UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,
+                 connectivity_changed_ms = ?, updated_ms = ?
+WHERE id = ?;
 
 -- name: DeleteNode :execrows
 DELETE FROM nodes WHERE id = ?;

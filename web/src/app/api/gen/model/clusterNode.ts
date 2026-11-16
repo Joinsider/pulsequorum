@@ -10,6 +10,7 @@
  *
  * OpenAPI spec version: 0.1.0
  */
+import type { ClusterNodeConnectivityReason } from './clusterNodeConnectivityReason';
 
 export interface ClusterNode {
   id: string;
@@ -42,4 +43,8 @@ export interface ClusterNode {
      * @minimum 0
      */
   maxCommandVersion?: number;
+  /** Connectivity as the leader decided it (ADR 0022): true when the node's reference targets fail or its heartbeats deviate from the peers; absent until the node registered */
+  connectivityImpaired?: boolean;
+  /** Why the connectivity is impaired (ADR 0022); absent unless it is impaired */
+  connectivityReason?: ClusterNodeConnectivityReason;
 }

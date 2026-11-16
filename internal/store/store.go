@@ -476,6 +476,9 @@ type StateTx interface {
 	PutNode(ctx context.Context, n Node) error
 	// DeleteNode removes a registry entry; an unknown ID is not an error.
 	DeleteNode(ctx context.Context, id string) error
+	// SetNodeConnectivity records the connectivity of a registered node and
+	// the time of the change (ADR 0022). An unknown node is ErrNotFound.
+	SetNodeConnectivity(ctx context.Context, nodeID string, impaired bool, reason string, atMs int64) error
 
 	// CountUsers returns the number of users of all tenants.
 	CountUsers(ctx context.Context) (int, error)
@@ -588,8 +591,14 @@ type Node struct {
 	// HealthChangedMs is the command time of the last health change, or of
 	// the first registration.
 	HealthChangedMs int64
-	RegisteredMs    int64
-	UpdatedMs       int64
+	// ConnectivityImpaired is the connectivity state the leader decided (ADR 0022).
+	ConnectivityImpaired bool
+	// ConnectivityReason is "reference" or "deviation" while impaired, else empty.
+	ConnectivityReason string
+	// ConnectivityChangedMs is the command time of the last connectivity change.
+	ConnectivityChangedMs int64
+	RegisteredMs          int64
+	UpdatedMs             int64
 }
 
 // HasCapability reports whether the node has the capability; "" is always true.

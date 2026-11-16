@@ -1371,6 +1371,13 @@ components:
           format: int32
           minimum: 0
           description: "Highest command version the node's binary supports, from the node registry (ADR 0018); absent until the node registered"
+        connectivityImpaired:
+          type: boolean
+          description: "Connectivity as the leader decided it (ADR 0022): true when the node's reference targets fail or its heartbeats deviate from the peers; absent until the node registered"
+        connectivityReason:
+          type: string
+          enum: [reference, deviation]
+          description: "Why the connectivity is impaired (ADR 0022); absent unless it is impaired"
     ClusterNodeList:
       type: object
       required: [nodes, leaderId, warnings]

@@ -45,6 +45,7 @@ message Command {
     RevokeCertificate revoke_certificate = 23;
     RevokeNode revoke_node = 24;
     SetNodeHealth set_node_health = 25;
+    SetNodeConnectivity set_node_connectivity = 26;
   }
 }
 
@@ -181,6 +182,15 @@ message RegisterNode {
 message SetNodeHealth {
   string node_id = 1;
   bool healthy = 2;
+}
+
+// SetNodeConnectivity records a change of the connectivity of a node (ADR 0022).
+// Only the leader proposes it, and only on a change. reason is "reference" or
+// "deviation" while impaired is true, and empty otherwise.
+message SetNodeConnectivity {
+  string node_id = 1;
+  bool impaired = 2;
+  string reason = 3;
 }
 
 // SetFeatureLevel raises the command version the cluster may use (FA-CLU-12).

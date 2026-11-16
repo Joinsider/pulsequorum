@@ -46,6 +46,8 @@ func TestMinVersion(t *testing.T) {
 		{"register node", &pb.Command{Payload: &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{}}}, 2},
 		{"set node health", &pb.Command{Payload: &pb.Command_SetNodeHealth{SetNodeHealth: &pb.SetNodeHealth{}}}, 2},
 		{"set feature level", &pb.Command{Payload: &pb.Command_SetFeatureLevel{SetFeatureLevel: &pb.SetFeatureLevel{Level: 3}}}, 2},
+		{"set node connectivity", &pb.Command{Payload: &pb.Command_SetNodeConnectivity{SetNodeConnectivity: &pb.SetNodeConnectivity{}}}, 3},
+		{"constructor set node connectivity", NewSetNodeConnectivity("node-1", true, "reference"), 3},
 		{"constructor register node", NewRegisterNode("r", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 2},
 		{"constructor delete monitor", NewDeleteMonitor("r", "default", "m1"), 1},
 		{"constructor set feature level", NewSetFeatureLevel("r", 3), 2},
