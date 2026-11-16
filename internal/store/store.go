@@ -123,6 +123,11 @@ const (
 	EventUp       = "up"
 	EventDegraded = "degraded"
 	EventPartial  = "partial"
+	// EventFlapping starts and ends a flapping period (FA-ALR-06, ADR 0023).
+	EventFlapping = "flapping"
+	// EventChannelFailed reports another channel of the tenant that failed
+	// permanently or gave up (FA-ALR-05, ADR 0023).
+	EventChannelFailed = "channel_failed"
 )
 
 // NotificationChannel is a target for alerts (FA-ALR-01). URLEnc and the

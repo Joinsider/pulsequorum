@@ -148,6 +148,17 @@ type AlertPayload struct {
 	// Reminder counts repeated DOWN alerts; 0 for the change itself.
 	Reminder  int  `json:"reminder,omitempty"`
 	Confirmed bool `json:"confirmed"`
+	// Flapping is true when a flapping period starts and false at its end;
+	// both use Event "flapping". ChangeCount is the number of status changes
+	// in the flapping window (start) or during the period (end) (ADR 0023).
+	Flapping    bool `json:"flapping,omitempty"`
+	ChangeCount int  `json:"changeCount,omitempty"`
+	// ChannelID, ChannelName and ChannelError describe the failed channel of
+	// an Event "channel_failed" (FA-ALR-05). ChannelError is masked like the
+	// channel's last_error and holds no secrets.
+	ChannelID    string `json:"channelId,omitempty"`
+	ChannelName  string `json:"channelName,omitempty"`
+	ChannelError string `json:"channelError,omitempty"`
 }
 
 // TenantDocument is the JSON document of a tenant inside PutEntity.
