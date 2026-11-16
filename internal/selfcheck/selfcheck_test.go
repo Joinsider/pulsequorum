@@ -57,7 +57,7 @@ func TestParseTargets(t *testing.T) {
 		{name: "port not numeric", entries: []string{"host:http"}, wantErr: "host:http"},
 		{name: "other scheme", entries: []string{"ftp://example.com"}, wantErr: "ftp://example.com"},
 		{name: "https without host", entries: []string{"https://"}, wantErr: "https://"},
-		{name: "user info", entries: []string{"https://u:p@example.com"}, wantErr: "https://u:p@example.com"},
+		{name: "user info", entries: []string{"https://u:p@example.com"}, wantErr: "https://u:p@example.com"}, //nolint:gosec // G101: deliberate test credential, userinfo in a URL must be rejected
 		{name: "fragment", entries: []string{"https://example.com/#x"}, wantErr: "https://example.com/#x"},
 		{
 			name:    "all bad entries are reported",
@@ -208,7 +208,7 @@ func TestRoundRecovers(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot reuse port: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	p.round(context.Background())
 	if p.Status().Failed {
 		t.Fatal("second round should recover")

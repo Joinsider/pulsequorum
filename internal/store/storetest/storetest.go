@@ -2746,7 +2746,7 @@ func testNodeConnectivity(t *testing.T, s store.State) {
 	if !got.ConnectivityImpaired || got.ConnectivityReason != "deviation" || got.ConnectivityChangedMs != 400 || got.UpdatedMs != 400 {
 		t.Errorf("after SetNodeConnectivity: %+v", got)
 	}
-	if got.Healthy != true || got.HealthChangedMs != 100 {
+	if !got.Healthy || got.HealthChangedMs != 100 {
 		t.Errorf("SetNodeConnectivity changed the health: %+v", got)
 	}
 	if err := set(false, "", 500); err != nil {

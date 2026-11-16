@@ -492,7 +492,7 @@ func TestApplierUnreadableSecretFailsRow(t *testing.T) {
 
 // downChanges applies DOWN to the first n of the monitors m1..mTotal at the
 // same instant, and completes the deliveries after each change.
-func (r *rig) downChanges(total, n int) (singles, summaries int) {
+func (r *rig) downChanges(_, n int) (singles, summaries int) {
 	r.t.Helper()
 	for i := 1; i <= n; i++ {
 		r.down(fmt.Sprintf("m%d", i), 2000)

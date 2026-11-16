@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"sort"
 	"sync"
@@ -172,7 +173,7 @@ func (c *consensusCluster) setup(statuses ...store.CheckStatus) {
 		c.t.Fatal(err)
 	}
 	for i, cn := range c.nodes {
-		cn.status.Store(int32(statuses[i]))
+		cn.status.Store(statusWord(statuses[i]))
 		c.startAggregator(cn)
 	}
 	for _, cn := range c.nodes {
@@ -246,10 +247,19 @@ func sleepUntil(ctx context.Context, at time.Time) bool {
 	}
 }
 
+// statusWord converts a CheckStatus to the int32 kept in the feed. The check
+// makes the narrowing explicit; CheckStatus is a small enum and always fits.
+func statusWord(s store.CheckStatus) int32 {
+	if s < math.MinInt32 || s > math.MaxInt32 {
+		panic(fmt.Sprintf("store.CheckStatus %d does not fit into int32", s))
+	}
+	return int32(s)
+}
+
 // report sets the status every voter reports from its next slot on.
 func (c *consensusCluster) report(status store.CheckStatus) {
 	for _, cn := range c.live() {
-		cn.status.Store(int32(status))
+		cn.status.Store(statusWord(status))
 	}
 }
 

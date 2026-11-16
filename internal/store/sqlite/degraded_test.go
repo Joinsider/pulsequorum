@@ -155,9 +155,9 @@ func TestUnconfirmedAlertResolve(t *testing.T) {
 			switch {
 			case tc.wantErr == nil && err != nil:
 				t.Fatalf("resolve: %v", err)
-			case tc.wantErr == errAny && err == nil:
+			case errors.Is(tc.wantErr, errAny) && err == nil:
 				t.Fatal("resolve: want error")
-			case tc.wantErr != nil && tc.wantErr != errAny && !errors.Is(err, tc.wantErr):
+			case tc.wantErr != nil && !errors.Is(tc.wantErr, errAny) && !errors.Is(err, tc.wantErr):
 				t.Fatalf("resolve: %v, want %v", err, tc.wantErr)
 			}
 		})

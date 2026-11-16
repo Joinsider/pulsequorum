@@ -18,8 +18,8 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// Outcomes of the node-local log besides the delivery outcomes of
-// alert.LocalOutcomeSent and alert.LocalOutcomeFailed (ADR 0024, section 4).
+// OutcomeSuppressed is an outcome of the node-local log besides the delivery
+// outcomes alert.LocalOutcomeSent and alert.LocalOutcomeFailed (ADR 0024, section 4).
 const OutcomeSuppressed = "suppressed"
 
 // Flood guard (ADR 0024, PF-28): a flood needs at least floodMinMonitors DOWN

@@ -287,7 +287,7 @@ func TestLeaderChangeAlerting(t *testing.T) {
 		name string
 		run  func(t *testing.T, c *alertCluster)
 	}{
-		{"acked entry is not redelivered after leader stops", func(t *testing.T, c *alertCluster) {
+		{"acked entry is not redelivered after leader stops", func(_ *testing.T, c *alertCluster) {
 			c.setup(nil)
 			leader := c.waitLeader()
 			key := downKey(c.down())
@@ -348,7 +348,7 @@ func TestLeaderChangeAlerting(t *testing.T) {
 			c.waitDelivered(key)
 			c.wantSends(key, 1, 2)
 		}},
-		{"recovery after leader change: one UP per channel", func(t *testing.T, c *alertCluster) {
+		{"recovery after leader change: one UP per channel", func(_ *testing.T, c *alertCluster) {
 			c.setup(nil)
 			leader := c.waitLeader()
 			since := c.down()

@@ -10,6 +10,9 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
+// nodeLetters names the nodes of a report string, one letter per node.
+const nodeLetters = "abcdefghijklmnopqrstuvwxyz"
+
 // reportsOf builds one heartbeat per letter: U = UP, D = DOWN, G = DEGRADED.
 func reportsOf(s string) []store.Heartbeat {
 	out := make([]store.Heartbeat, 0, len(s))
@@ -23,7 +26,7 @@ func reportsOf(s string) []store.Heartbeat {
 		case 'G':
 			st = store.CheckDegraded
 		}
-		out = append(out, store.Heartbeat{NodeID: string(rune('a' + i)), Status: st})
+		out = append(out, store.Heartbeat{NodeID: string(nodeLetters[i]), Status: st})
 	}
 	return out
 }
