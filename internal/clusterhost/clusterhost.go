@@ -194,6 +194,7 @@ type Host struct {
 	clock         func() time.Time
 	clocks        clockTracker
 	selfChecks    selfCheckTracker
+	peerViews     peerViewTracker
 	clockInterval time.Duration
 	mux           *clusternet.Mux
 	grpc          *grpc.Server
