@@ -339,7 +339,7 @@ func (a *Aggregator) rebuild(ctx context.Context, w *watch, nowMs int64) error {
 	if w.start(first) < from {
 		first++
 	}
-	hbs, err := a.loadHeartbeats(ctx, m.TenantID, m.ID, w.start(first)-2*w.intervalMs+1)
+	hbs, err := a.loadHeartbeats(ctx, m.TenantID, m.ID, w.start(first)-2*w.intervalMs+1, 0)
 	if err != nil {
 		return fmt.Errorf("load heartbeats: %w", err)
 	}
@@ -353,10 +353,11 @@ func (a *Aggregator) rebuild(ctx context.Context, w *watch, nowMs int64) error {
 	return nil
 }
 
-// loadHeartbeats reads the heartbeats of all nodes of a monitor from fromMs on.
-func (a *Aggregator) loadHeartbeats(ctx context.Context, tenantID, monitorID string, fromMs int64) ([]store.Heartbeat, error) {
+// loadHeartbeats reads the heartbeats of all nodes of a monitor from fromMs on,
+// up to toMs if it is not zero (the store reads without bound for zero).
+func (a *Aggregator) loadHeartbeats(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]store.Heartbeat, error) {
 	var out []store.Heartbeat
-	q := store.HeartbeatQuery{MonitorID: monitorID, FromMs: fromMs}
+	q := store.HeartbeatQuery{MonitorID: monitorID, FromMs: fromMs, ToMs: toMs}
 	for {
 		page, err := a.opts.Metrics.ListHeartbeats(ctx, tenantID, q)
 		if err != nil {
@@ -377,17 +378,16 @@ func (a *Aggregator) evaluate(ctx context.Context, w *watch, k int64, responsibl
 	reports := w.reporters(k, responsible)
 	startMs := w.start(k)
 	a.recordDeviation(w, k, w.allReporters(k), startMs)
-	target := consensus(w.m.ConsensusPolicy, reports)
-	w.t.observe(target, startMs)
-	to, since, change := w.t.next(target, startMs, w.m.Retries, w.m.RecoveryThreshold)
+	to, since, change := decide(w.t, w.m, startMs, reports)
 	if !change {
 		return nil
 	}
 
 	m := w.m
-	c := cluster.StateChange{TenantID: m.TenantID, MonitorID: m.ID, From: w.t.status, To: to, SinceMs: since}
+	c := cluster.StateChange{TenantID: m.TenantID, MonitorID: m.ID, From: w.t.status, To: to, SinceMs: since,
+		Reporters: nodeIDs(reports), SenderNodeID: a.opts.NodeID}
 	if to == store.StatusDown {
-		c.Incident = incidentOf(reports)
+		c.Incident = incidentOf(uuid.NewString(), reports)
 	}
 	applyCtx, cancel := context.WithTimeout(ctx, applyTimeout)
 	_, err := a.opts.Cluster.Apply(applyCtx, cluster.NewSetMonitorState(c))
@@ -410,11 +410,11 @@ func (a *Aggregator) evaluate(ctx context.Context, w *watch, k int64, responsibl
 	return nil
 }
 
-// incidentOf opens an incident for a change to DOWN (FA-INC-01). The affected
-// nodes are those that reported DOWN in the triggering round; cause and error
-// class come from the first of them by node ID.
-func incidentOf(reports []store.Heartbeat) *store.Incident {
-	inc := &store.Incident{ID: uuid.NewString()}
+// incidentOf opens the incident with the given ID for a change to DOWN
+// (FA-INC-01). The affected nodes are those that reported DOWN in the
+// triggering round; cause and error class come from the first of them by node ID.
+func incidentOf(id string, reports []store.Heartbeat) *store.Incident {
+	inc := &store.Incident{ID: id}
 	for _, r := range reports {
 		if r.Status != store.CheckDown {
 			continue

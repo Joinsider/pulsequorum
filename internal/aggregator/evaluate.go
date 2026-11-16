@@ -3,7 +3,11 @@
 
 package aggregator
 
-import "github.com/joinsider/uptimecluster/internal/store"
+import (
+	"slices"
+
+	"github.com/joinsider/uptimecluster/internal/store"
+)
 
 // streak counts consecutive evaluation rounds of the same kind.
 type streak struct {
@@ -91,4 +95,29 @@ func (t *tracker) next(target store.MonitorStatus, startMs int64, retries, recov
 		return "", 0, false
 	}
 	return target, startMs, true
+}
+
+// decide applies one round starting at startMs with the given reports to the
+// tracker t (ADR 0021): the consensus of the reports, then the streaks and the
+// retry and recovery rules. It returns the new status, its start, and whether
+// the round changes the status. It does not set t.status; the caller does once
+// the change is recorded. Live evaluation and Reevaluate both use it.
+func decide(t *tracker, m store.Monitor, startMs int64, reports []store.Heartbeat) (store.MonitorStatus, int64, bool) {
+	target := consensus(m.ConsensusPolicy, reports)
+	t.observe(target, startMs)
+	return t.next(target, startMs, m.Retries, m.RecoveryThreshold)
+}
+
+// nodeIDs returns the sorted, unique node IDs of the reports. It is nil without
+// reports.
+func nodeIDs(reports []store.Heartbeat) []string {
+	if len(reports) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(reports))
+	for _, r := range reports {
+		ids = append(ids, r.NodeID)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
 }

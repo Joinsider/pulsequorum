@@ -262,6 +262,21 @@ func TestRetriesCountRoundsNotReports(t *testing.T) {
 	}
 }
 
+// TestProposalCarriesReportersAndSender checks that a proposed change names the
+// nodes of its deciding round and this node as sender (FA-ALR-11, ADR 0024).
+func TestProposalCarriesReportersAndSender(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckDown), r.hb("n2", 0, 100, store.CheckDown))
+	r.tick(r.slot(0) + 15000) // n3 is missing: the round is decided at its deadline
+	r.f.expect(store.StatusDown, r.slot(0))
+	r.wantCommands(1)
+	set := r.rec.cmds[0].GetSetMonitorState()
+	if !equalStrings(set.GetReporters(), []string{"n1", "n2"}) || set.GetSenderNodeId() != nodeID {
+		t.Fatalf("reporters = %v, sender = %q, want [n1 n2] and %q", set.GetReporters(), set.GetSenderNodeId(), nodeID)
+	}
+}
+
 // TestPartialWithOneDown checks that one DOWN of three under majority is PARTIAL.
 func TestPartialWithOneDown(t *testing.T) {
 	r := newRig(t, doc(0, 1, false))
