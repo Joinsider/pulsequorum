@@ -163,6 +163,9 @@ func (f *FSM) Apply(l *raft.Log) any {
 		if err != nil {
 			return err
 		}
+		if err := recordIssuedAt(ctx, tx, &cmd); err != nil {
+			return err
+		}
 		res = ApplyResult{Index: l.Index, Result: result}
 		return f.finish(ctx, tx, l.Index, &cmd, store.DedupEntry{Result: result})
 	})
@@ -259,6 +262,12 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applySetFeatureLevel(ctx, tx, cmd, p.SetFeatureLevel)
 	case *pb.Command_ClearMonitorFlapping:
 		return applyClearMonitorFlapping(ctx, tx, cmd, p.ClearMonitorFlapping)
+	case *pb.Command_ReportDegradedAlerts:
+		return applyReportDegradedAlerts(ctx, tx, cmd, p.ReportDegradedAlerts)
+	case *pb.Command_ResolveUnconfirmedAlerts:
+		return applyResolveUnconfirmedAlerts(ctx, tx, cmd, p.ResolveUnconfirmedAlerts)
+	case *pb.Command_RecordMonitorHistory:
+		return applyRecordMonitorHistory(ctx, tx, cmd, p.RecordMonitorHistory)
 	case nil:
 		return nil, invalid("command without payload")
 	default:

@@ -19,7 +19,16 @@ import (
 func (s *StateStore) ListNodes(ctx context.Context) ([]store.Node, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	rows, err := s.q.ListNodes(ctx)
+	return listNodes(ctx, s.q)
+}
+
+// ListNodes returns the node registry inside the transaction (ADR 0024).
+func (t *stateTx) ListNodes(ctx context.Context) ([]store.Node, error) {
+	return listNodes(ctx, t.q)
+}
+
+func listNodes(ctx context.Context, q *statedb.Queries) ([]store.Node, error) {
+	rows, err := q.ListNodes(ctx)
 	if err != nil {
 		return nil, mapErr(err)
 	}

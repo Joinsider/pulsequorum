@@ -47,6 +47,9 @@ message Command {
     SetNodeHealth set_node_health = 25;
     SetNodeConnectivity set_node_connectivity = 26;
     ClearMonitorFlapping clear_monitor_flapping = 27;
+    ReportDegradedAlerts report_degraded_alerts = 28;
+    ResolveUnconfirmedAlerts resolve_unconfirmed_alerts = 29;
+    RecordMonitorHistory record_monitor_history = 30;
   }
 }
 
@@ -109,6 +112,11 @@ message SetMonitorState {
   string expected_status = 5;
   // Required for a change to DOWN: the incident to open.
   IncidentStart incident = 6;
+  // Node IDs that reported in the deciding slot, set by the leader (FA-ALR-11).
+  // Empty below command level 5.
+  repeated string reporters = 7;
+  // Node that proposed the change.
+  string sender_node_id = 8;
 }
 
 // IncidentStart describes the cause of an incident.
@@ -259,4 +267,76 @@ message RevokeCertificate {
 // re-join with a new token gets a certificate that is valid again.
 message RevokeNode {
   string node_id = 1;
+}
+
+// ReportDegradedAlerts stores the alerts a node sent while it was degraded
+// (FA-ALR-10, ADR 0024). The node sends them after the quorum returned, in
+// blocks of at most 100 entries. The FSM stores them idempotently by
+// (node_id, local_id) in unconfirmed_alerts.
+message ReportDegradedAlerts {
+  string node_id = 1;
+  repeated DegradedAlertEntry entries = 2;
+}
+
+// DegradedAlertEntry is one alert of the local degraded log of a node.
+message DegradedAlertEntry {
+  // ID in the local log of the reporting node; unique per node.
+  int64 local_id = 1;
+  string tenant_id = 2;
+  string monitor_id = 3;
+  string channel_id = 4;
+  // Status announced by the alert (DOWN or UP).
+  string status = 5;
+  int64 since_ms = 6;
+  // Time the node sent the alert, UTC milliseconds.
+  int64 sent_ms = 7;
+  // "sent", "failed" or "suppressed".
+  string outcome = 8;
+  // Voters the node could reach, and voters in total, when it sent the alert.
+  int32 reachable = 9;
+  int32 total = 10;
+  // Node IDs of the partition that reported the change.
+  repeated string reporters = 11;
+}
+
+// ResolveUnconfirmedAlerts stores the verdicts of the leader on unconfirmed
+// alerts after the quorum returned (FA-ALR-10, ADR 0024). The FSM applies only
+// open entries and creates outbox entries for them, depending on the verdict.
+message ResolveUnconfirmedAlerts {
+  repeated UnconfirmedVerdict verdicts = 1;
+}
+
+// UnconfirmedVerdict is the judgement of one unconfirmed alert.
+message UnconfirmedVerdict {
+  string node_id = 1;
+  int64 local_id = 2;
+  // "confirmed", "false_alarm" or "unverifiable".
+  string verdict = 3;
+  // Whether the FSM sends a notification for this verdict. Decided by the
+  // leader, which knows whether the channel already received a confirmed alert.
+  bool notify = 4;
+}
+
+// RecordMonitorHistory replaces the consensus status history of a monitor in
+// [from_ms, to_ms) after a gap was re-evaluated (FA-UPT-07, ADR 0024). The FSM
+// closes the gap with incidents marked as reevaluated and sends no alerts.
+// The tenant is set by Command.tenant_id.
+message RecordMonitorHistory {
+  string monitor_id = 1;
+  // Status the leader saw before the gap; the FSM rejects the command with a
+  // conflict if the stored status differs.
+  string expected_status = 2;
+  int64 from_ms = 3;
+  int64 to_ms = 4;
+  repeated HistoryEntry entries = 5;
+}
+
+// HistoryEntry is one status change of a re-evaluated gap.
+message HistoryEntry {
+  int64 since_ms = 1;
+  string status = 2;
+  // Required for DOWN entries: the incident the period belongs to.
+  string incident_id = 3;
+  string cause = 4;
+  string error_class = 5;
 }

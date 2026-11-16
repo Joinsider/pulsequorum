@@ -45,6 +45,7 @@ type Incident struct {
 	ErrorClass        string
 	AffectedNodesJson string
 	Confirmed         int64
+	Reevaluated       int64
 }
 
 type JoinToken struct {
@@ -215,6 +216,24 @@ type Tenant struct {
 	Suspended    int64
 	CreatedMs    int64
 	UpdatedMs    int64
+}
+
+type UnconfirmedAlert struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int64
+	Total      int64
+	Reporters  string
+	ReportedMs int64
+	Verdict    string
+	ResolvedMs int64
 }
 
 type User struct {

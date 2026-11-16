@@ -300,6 +300,54 @@ type Incident struct {
 	// AffectedNodes are the IDs of the nodes that reported DOWN.
 	AffectedNodes []string
 	Confirmed     bool
+	// Reevaluated is true for an incident added to a gap in the history after
+	// the quorum returned (FA-UPT-07, ADR 0024). It never caused a notification.
+	Reevaluated bool
+}
+
+// Verdicts of an unconfirmed alert, judged by the leader after the quorum
+// returned (FA-ALR-10, ADR 0024).
+const (
+	VerdictConfirmed    = "confirmed"
+	VerdictFalseAlarm   = "false_alarm"
+	VerdictUnverifiable = "unverifiable"
+)
+
+// UnconfirmedAlert is an alert a voter sent while it was degraded, reported to
+// the leader after the quorum returned (ADR 0024). Verdict and ResolvedMs are
+// empty while the alert is open.
+type UnconfirmedAlert struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int
+	Total      int
+	Reporters  []string
+	ReportedMs int64
+	Verdict    string
+	ResolvedMs int64
+}
+
+// DegradedAlert is a row of the node-local log of alerts a voter sent while it
+// was degraded (ADR 0024). It is not replicated.
+type DegradedAlert struct {
+	ID        int64
+	TenantID  string
+	MonitorID string
+	ChannelID string
+	Status    string
+	SinceMs   int64
+	SentMs    int64
+	Outcome   string
+	Reachable int
+	Total     int
+	Reporters []string
 }
 
 // IncidentCursor is the keyset position after which ListIncidents continues.
@@ -373,6 +421,10 @@ type State interface {
 	// GetSession returns the refresh token with the hash or ErrNotFound.
 	GetSession(ctx context.Context, tokenHash string) (Session, error)
 
+	// ListOpenUnconfirmedAlerts returns the alerts without verdict ordered by
+	// since time, node and local ID (ADR 0024).
+	ListOpenUnconfirmedAlerts(ctx context.Context, limit int) ([]UnconfirmedAlert, error)
+
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
 	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
@@ -401,6 +453,9 @@ type State interface {
 	// CommandLevel returns the command version the cluster may use (ADR 0018),
 	// 0 if it was never set.
 	CommandLevel(ctx context.Context) (uint32, error)
+	// LastIssuedAt returns the command time of the last applied command, 0 if
+	// none was applied (ADR 0024).
+	LastIssuedAt(ctx context.Context) (int64, error)
 
 	// Update runs fn in one write transaction. Only the Raft FSM calls it, so
 	// that every replica applies the same changes (ADR 0005, FA-CLU-07).
@@ -410,6 +465,8 @@ type State interface {
 // StateTx writes data class A inside State.Update. Implementations must not read
 // the clock or a random source: timestamps and IDs come with the records.
 type StateTx interface {
+	// ListNodes returns the node registry ordered by node ID (ADR 0017).
+	ListNodes(ctx context.Context) ([]Node, error)
 	PutTenant(ctx context.Context, t Tenant) error
 	GetTenant(ctx context.Context, id string) (Tenant, error)
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
@@ -455,10 +512,29 @@ type StateTx interface {
 	// the last one, which still defines the status at beforeMs.
 	PruneStatusHistory(ctx context.Context, tenantID, monitorID string, beforeMs int64) error
 	// OpenIncident stores a new incident; a second open incident of the same
-	// monitor is ErrConflict.
+	// monitor is ErrConflict. A non-zero ResolvedMs stores a closed incident,
+	// which is how re-evaluated gaps are recorded (ADR 0024).
 	OpenIncident(ctx context.Context, inc Incident) error
 	// ResolveIncident ends the open incident of a monitor, if there is one.
 	ResolveIncident(ctx context.Context, tenantID, monitorID string, resolvedMs int64) error
+	// ReplaceStatusHistory deletes the changes of a monitor in [fromMs, toMs)
+	// and stores entries instead (FA-UPT-07, ADR 0024). An entry outside the
+	// interval is an error.
+	ReplaceStatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64, entries []StatusChange) error
+
+	// InsertUnconfirmedAlerts stores reported alerts. An alert whose node and
+	// local ID are already stored is left unchanged (ADR 0024).
+	InsertUnconfirmedAlerts(ctx context.Context, alerts []UnconfirmedAlert) error
+	// GetUnconfirmedAlert returns a stored alert or ErrNotFound.
+	GetUnconfirmedAlert(ctx context.Context, nodeID string, localID int64) (UnconfirmedAlert, error)
+	// ResolveUnconfirmedAlert stores the verdict of an open alert. An unknown
+	// alert is ErrNotFound, an alert that already has a verdict is ErrConflict.
+	// verdict is one of the Verdict constants.
+	ResolveUnconfirmedAlert(ctx context.Context, nodeID string, localID int64, verdict string, resolvedMs int64) error
+	// SetLastIssuedAt stores the command time of the last applied command (ADR 0024).
+	SetLastIssuedAt(ctx context.Context, ms int64) error
+	// LastIssuedAt returns the stored command time, 0 if none (ADR 0024).
+	LastIssuedAt(ctx context.Context) (int64, error)
 
 	// PutSecretKey creates a DEK or updates its wrapping or retirement; the
 	// creation time of an existing key is kept.
@@ -822,4 +898,15 @@ type Metrics interface {
 	// data before an interrupted compaction (FA-UPT-04).
 	CompactHeartbeats(ctx context.Context, minutes []LatencyMinute, deleted []HeartbeatKey) error
 	DeleteLatencyMinutesBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
+
+	// InsertDegradedAlert appends an alert to the node-local degraded log and
+	// returns its ID (ADR 0024). a.ID is ignored.
+	InsertDegradedAlert(ctx context.Context, a DegradedAlert) (int64, error)
+	// ListUnreportedDegradedAlerts returns up to limit alerts not yet reported
+	// to the leader, ordered by ID.
+	ListUnreportedDegradedAlerts(ctx context.Context, limit int) ([]DegradedAlert, error)
+	// MarkDegradedAlertsReported records that the alerts reached the leader.
+	MarkDegradedAlertsReported(ctx context.Context, ids []int64) error
+	// PruneDegradedAlerts deletes the alerts sent before beforeMs and returns the number deleted.
+	PruneDegradedAlerts(ctx context.Context, beforeMs int64) (int64, error)
 }

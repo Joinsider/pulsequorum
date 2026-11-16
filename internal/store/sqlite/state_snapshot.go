@@ -48,6 +48,7 @@ var fingerprintTables = []struct{ name, orderBy string }{
 	{"revoked_certs", "serial"},
 	{"revoked_nodes", "node_id"},
 	{"nodes", "id"},
+	{"unconfirmed_alerts", "node_id, local_id"},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.
@@ -222,6 +223,15 @@ func (s *StateStore) Fingerprint(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("fingerprint: %w", err)
 	}
 	_, _ = fmt.Fprintf(h, "command_level:%d\x1e", level)
+	// The command time is part of the state from the first command on (ADR 0024).
+	// It is hashed only when set, so that fingerprints of older state stay equal.
+	issuedAt, err := lastIssuedAt(ctx, statedb.New(tx))
+	if err != nil {
+		return "", fmt.Errorf("fingerprint: %w", err)
+	}
+	if issuedAt != 0 {
+		_, _ = fmt.Fprintf(h, "%s:%d\x1e", metaLastIssuedAt, issuedAt)
+	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 

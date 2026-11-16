@@ -141,8 +141,9 @@ UPDATE monitor_states SET flapping = sqlc.arg(flapping), flapping_since_ms = sql
 WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id);
 
 -- name: InsertIncident :exec
-INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+-- resolved_ms is 0 for an open incident; a re-evaluated gap is stored closed.
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, resolved_ms, cause, error_class, affected_nodes_json, confirmed, reevaluated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ResolveIncident :execrows
 UPDATE incidents SET resolved_ms = sqlc.arg(resolved_ms)
@@ -169,6 +170,12 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)
        OR (i.started_ms = sqlc.arg(before_started_ms) AND i.id < sqlc.arg(before_id)))
 ORDER BY i.started_ms DESC, i.id DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: DeleteStatusHistoryBetween :exec
+-- Removes the changes in [from_ms, to_ms) of one monitor (FA-UPT-07).
+DELETE FROM monitor_status_history
+WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id)
+  AND since_ms >= sqlc.arg(from_ms) AND since_ms < sqlc.arg(to_ms);
 
 -- name: UpsertStatusHistory :exec
 -- A second change at the same instant (PENDING, then DOWN dated back to the
@@ -487,3 +494,22 @@ WHERE id = ?;
 
 -- name: DeleteNode :execrows
 DELETE FROM nodes WHERE id = ?;
+
+-- name: InsertUnconfirmedAlert :exec
+-- A report of an already stored alert changes nothing: the first copy wins.
+INSERT INTO unconfirmed_alerts (node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms,
+                                outcome, reachable, total, reporters, reported_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (node_id, local_id) DO NOTHING;
+
+-- name: GetUnconfirmedAlert :one
+SELECT * FROM unconfirmed_alerts WHERE node_id = ? AND local_id = ?;
+
+-- name: ResolveUnconfirmedAlert :execrows
+UPDATE unconfirmed_alerts SET verdict = sqlc.arg(verdict), resolved_ms = sqlc.arg(resolved_ms)
+WHERE node_id = sqlc.arg(node_id) AND local_id = sqlc.arg(local_id) AND verdict = '';
+
+-- name: ListOpenUnconfirmedAlerts :many
+SELECT * FROM unconfirmed_alerts WHERE verdict = ''
+ORDER BY since_ms, node_id, local_id
+LIMIT sqlc.arg(row_limit);

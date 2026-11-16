@@ -22,8 +22,9 @@ import (
 // CommandVersion is the highest Command.version this binary can apply.
 // It is raised together with a feature gate (FA-CLU-12). Version 2 adds
 // RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022),
-// version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023).
-const CommandVersion = 4
+// version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023),
+// version 5 the degraded-mode commands and the sender view of alerts (ADR 0024).
+const CommandVersion = 5
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this
@@ -175,6 +176,22 @@ type AlertPayload struct {
 	ChannelID    string `json:"channelId,omitempty"`
 	ChannelName  string `json:"channelName,omitempty"`
 	ChannelError string `json:"channelError,omitempty"`
+	// Sender is the view of the node that sent the alert (FA-ALR-11, ADR 0024).
+	// Set from command level 5 on.
+	Sender *AlertSender `json:"sender,omitempty"`
+	// Verdict is "confirmed" or "false_alarm" for a correction of an alert sent
+	// while the cluster was degraded (FA-ALR-10, ADR 0024).
+	Verdict string `json:"verdict,omitempty"`
+}
+
+// AlertSender describes which part of the cluster the sending node saw when it
+// decided the alert (FA-ALR-11, ADR 0024).
+type AlertSender struct {
+	NodeID          string   `json:"nodeId"`
+	ReachableVoters int      `json:"reachableVoters"`
+	TotalVoters     int      `json:"totalVoters"`
+	Reporters       []string `json:"reporters,omitempty"`
+	Confirmed       bool     `json:"confirmed"`
 }
 
 // TenantDocument is the JSON document of a tenant inside PutEntity.
@@ -338,6 +355,10 @@ type StateChange struct {
 	SinceMs   int64
 	// Incident is required for a change to DOWN.
 	Incident *store.Incident
+	// Reporters are the nodes of the deciding slot and SenderNodeID the node
+	// that proposed the change (ADR 0024). The FSM reads them from level 5 on.
+	Reporters    []string
+	SenderNodeID string
 }
 
 // NewSetMonitorState builds the command for a status change. The request ID is
@@ -349,6 +370,8 @@ func NewSetMonitorState(c StateChange) *pb.Command {
 		Confirmed:      true,
 		SinceMs:        c.SinceMs,
 		ExpectedStatus: string(c.From),
+		Reporters:      slices.Clone(c.Reporters),
+		SenderNodeId:   c.SenderNodeID,
 	}
 	if c.Incident != nil {
 		set.Incident = &pb.IncidentStart{
@@ -363,6 +386,91 @@ func NewSetMonitorState(c StateChange) *pb.Command {
 		TenantId:  c.TenantID,
 		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
 		Payload:   &pb.Command_SetMonitorState{SetMonitorState: set},
+	})
+}
+
+// HistoryChange is one status change of a re-evaluated gap (FA-UPT-07, ADR 0024).
+// IncidentID, Cause and ErrorClass are required or used for DOWN changes only.
+type HistoryChange struct {
+	SinceMs    int64
+	Status     store.MonitorStatus
+	IncidentID string
+	Cause      string
+	ErrorClass string
+}
+
+// AlertVerdict is the judgement of the leader on one unconfirmed alert (ADR 0024).
+// Notify tells the FSM whether to send a notification for it.
+type AlertVerdict struct {
+	NodeID  string
+	LocalID int64
+	Verdict string
+	Notify  bool
+}
+
+// NewReportDegradedAlerts builds the command that stores the alerts a node sent
+// while it was degraded (FA-ALR-10, ADR 0024). The request ID is derived from
+// the first and last local ID of the block, so a retry of the same block is
+// deduplicated. The FSM stores entries idempotently, so a different block with
+// the same IDs cannot change state either.
+func NewReportDegradedAlerts(nodeID string, alerts []store.DegradedAlert) *pb.Command {
+	entries := make([]*pb.DegradedAlertEntry, 0, len(alerts))
+	for _, a := range alerts {
+		entries = append(entries, &pb.DegradedAlertEntry{
+			LocalId: a.ID, TenantId: a.TenantID, MonitorId: a.MonitorID, ChannelId: a.ChannelID,
+			Status: a.Status, SinceMs: a.SinceMs, SentMs: a.SentMs, Outcome: a.Outcome,
+			Reachable: int32(a.Reachable), Total: int32(a.Total), Reporters: slices.Clone(a.Reporters), //nolint:gosec // voter counts are small
+		})
+	}
+	var requestID string
+	if len(alerts) > 0 {
+		requestID = fmt.Sprintf("degraded-report:%s:%d:%d", nodeID, alerts[0].ID, alerts[len(alerts)-1].ID)
+	} else {
+		requestID = fmt.Sprintf("degraded-report:%s:none", nodeID)
+	}
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_ReportDegradedAlerts{ReportDegradedAlerts: &pb.ReportDegradedAlerts{
+			NodeId: nodeID, Entries: entries,
+		}},
+	})
+}
+
+// NewResolveUnconfirmedAlerts builds the command that stores the verdicts on
+// unconfirmed alerts (FA-ALR-10, ADR 0024). The request ID is random, as the
+// verdicts of a batch are judged once: a repeated verdict is skipped by the FSM.
+func NewResolveUnconfirmedAlerts(verdicts []AlertVerdict) *pb.Command {
+	items := make([]*pb.UnconfirmedVerdict, 0, len(verdicts))
+	for _, v := range verdicts {
+		items = append(items, &pb.UnconfirmedVerdict{NodeId: v.NodeID, LocalId: v.LocalID, Verdict: v.Verdict, Notify: v.Notify})
+	}
+	return stamp(&pb.Command{
+		RequestId: uuid.NewString(),
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_ResolveUnconfirmedAlerts{ResolveUnconfirmedAlerts: &pb.ResolveUnconfirmedAlerts{
+			Verdicts: items,
+		}},
+	})
+}
+
+// NewRecordMonitorHistory builds the command that replaces the history of
+// monitorID in [fromMs, toMs) with the re-evaluated changes (FA-UPT-07, ADR 0024).
+// The request ID is derived from the gap, so a retry is deduplicated.
+func NewRecordMonitorHistory(tenantID, monitorID string, expected store.MonitorStatus, fromMs, toMs int64, changes []HistoryChange) *pb.Command {
+	entries := make([]*pb.HistoryEntry, 0, len(changes))
+	for _, c := range changes {
+		entries = append(entries, &pb.HistoryEntry{
+			SinceMs: c.SinceMs, Status: string(c.Status), IncidentId: c.IncidentID, Cause: c.Cause, ErrorClass: c.ErrorClass,
+		})
+	}
+	return stamp(&pb.Command{
+		RequestId: fmt.Sprintf("history:%s:%d:%d", monitorID, fromMs, toMs),
+		TenantId:  tenantID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_RecordMonitorHistory{RecordMonitorHistory: &pb.RecordMonitorHistory{
+			MonitorId: monitorID, ExpectedStatus: string(expected), FromMs: fromMs, ToMs: toMs, Entries: entries,
+		}},
 	})
 }
 

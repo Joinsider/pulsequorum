@@ -4,6 +4,21 @@
 
 package metricsdb
 
+type DegradedAlert struct {
+	ID        int64
+	TenantID  string
+	MonitorID string
+	ChannelID string
+	Status    string
+	SinceMs   int64
+	SentMs    int64
+	Outcome   string
+	Reachable int64
+	Total     int64
+	Reporters string
+	Reported  int64
+}
+
 type Heartbeat struct {
 	NodeID      string
 	Incarnation string

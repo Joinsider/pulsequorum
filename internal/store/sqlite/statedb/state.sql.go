@@ -159,6 +159,30 @@ func (q *Queries) DeleteNode(ctx context.Context, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
+const deleteStatusHistoryBetween = `-- name: DeleteStatusHistoryBetween :exec
+DELETE FROM monitor_status_history
+WHERE tenant_id = ?1 AND monitor_id = ?2
+  AND since_ms >= ?3 AND since_ms < ?4
+`
+
+type DeleteStatusHistoryBetweenParams struct {
+	TenantID  string
+	MonitorID string
+	FromMs    int64
+	ToMs      int64
+}
+
+// Removes the changes in [from_ms, to_ms) of one monitor (FA-UPT-07).
+func (q *Queries) DeleteStatusHistoryBetween(ctx context.Context, arg DeleteStatusHistoryBetweenParams) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusHistoryBetween,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.FromMs,
+		arg.ToMs,
+	)
+	return err
+}
+
 const deleteUser = `-- name: DeleteUser :execrows
 DELETE FROM users WHERE tenant_id = ? AND id = ?
 `
@@ -313,7 +337,7 @@ func (q *Queries) GetFSMMeta(ctx context.Context, key string) (int64, error) {
 }
 
 const getIncident = `-- name: GetIncident :one
-SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, i.reevaluated, m.name AS monitor_name
 FROM incidents i
 JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
 WHERE i.tenant_id = ?1 AND i.id = ?2
@@ -342,6 +366,7 @@ func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIn
 		&i.Incident.ErrorClass,
 		&i.Incident.AffectedNodesJson,
 		&i.Incident.Confirmed,
+		&i.Incident.Reevaluated,
 		&i.MonitorName,
 	)
 	return i, err
@@ -575,6 +600,38 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 	return i, err
 }
 
+const getUnconfirmedAlert = `-- name: GetUnconfirmedAlert :one
+SELECT node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported_ms, verdict, resolved_ms FROM unconfirmed_alerts WHERE node_id = ? AND local_id = ?
+`
+
+type GetUnconfirmedAlertParams struct {
+	NodeID  string
+	LocalID int64
+}
+
+func (q *Queries) GetUnconfirmedAlert(ctx context.Context, arg GetUnconfirmedAlertParams) (UnconfirmedAlert, error) {
+	row := q.db.QueryRowContext(ctx, getUnconfirmedAlert, arg.NodeID, arg.LocalID)
+	var i UnconfirmedAlert
+	err := row.Scan(
+		&i.NodeID,
+		&i.LocalID,
+		&i.TenantID,
+		&i.MonitorID,
+		&i.ChannelID,
+		&i.Status,
+		&i.SinceMs,
+		&i.SentMs,
+		&i.Outcome,
+		&i.Reachable,
+		&i.Total,
+		&i.Reporters,
+		&i.ReportedMs,
+		&i.Verdict,
+		&i.ResolvedMs,
+	)
+	return i, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms FROM users WHERE tenant_id = ? AND id = ?
 `
@@ -752,8 +809,8 @@ func (q *Queries) InsertDedup(ctx context.Context, arg InsertDedupParams) error 
 }
 
 const insertIncident = `-- name: InsertIncident :exec
-INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, resolved_ms, cause, error_class, affected_nodes_json, confirmed, reevaluated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertIncidentParams struct {
@@ -761,22 +818,27 @@ type InsertIncidentParams struct {
 	ID                string
 	MonitorID         string
 	StartedMs         int64
+	ResolvedMs        int64
 	Cause             string
 	ErrorClass        string
 	AffectedNodesJson string
 	Confirmed         int64
+	Reevaluated       int64
 }
 
+// resolved_ms is 0 for an open incident; a re-evaluated gap is stored closed.
 func (q *Queries) InsertIncident(ctx context.Context, arg InsertIncidentParams) error {
 	_, err := q.db.ExecContext(ctx, insertIncident,
 		arg.TenantID,
 		arg.ID,
 		arg.MonitorID,
 		arg.StartedMs,
+		arg.ResolvedMs,
 		arg.Cause,
 		arg.ErrorClass,
 		arg.AffectedNodesJson,
 		arg.Confirmed,
+		arg.Reevaluated,
 	)
 	return err
 }
@@ -955,6 +1017,49 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const insertUnconfirmedAlert = `-- name: InsertUnconfirmedAlert :exec
+INSERT INTO unconfirmed_alerts (node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms,
+                                outcome, reachable, total, reporters, reported_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (node_id, local_id) DO NOTHING
+`
+
+type InsertUnconfirmedAlertParams struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int64
+	Total      int64
+	Reporters  string
+	ReportedMs int64
+}
+
+// A report of an already stored alert changes nothing: the first copy wins.
+func (q *Queries) InsertUnconfirmedAlert(ctx context.Context, arg InsertUnconfirmedAlertParams) error {
+	_, err := q.db.ExecContext(ctx, insertUnconfirmedAlert,
+		arg.NodeID,
+		arg.LocalID,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.ChannelID,
+		arg.Status,
+		arg.SinceMs,
+		arg.SentMs,
+		arg.Outcome,
+		arg.Reachable,
+		arg.Total,
+		arg.Reporters,
+		arg.ReportedMs,
+	)
+	return err
+}
+
 const insertUser = `-- name: InsertUser :exec
 INSERT INTO users (
     tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms
@@ -1107,7 +1212,7 @@ func (q *Queries) ListClusterCAs(ctx context.Context) ([]ClusterCa, error) {
 }
 
 const listIncidents = `-- name: ListIncidents :many
-SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, i.reevaluated, m.name AS monitor_name
 FROM incidents i
 JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
 WHERE i.tenant_id = ?1
@@ -1167,6 +1272,7 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			&i.Incident.ErrorClass,
 			&i.Incident.AffectedNodesJson,
 			&i.Incident.Confirmed,
+			&i.Incident.Reevaluated,
 			&i.MonitorName,
 		); err != nil {
 			return nil, err
@@ -1454,6 +1560,51 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.ConnectivityImpaired,
 			&i.ConnectivityReason,
 			&i.ConnectivityChangedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenUnconfirmedAlerts = `-- name: ListOpenUnconfirmedAlerts :many
+SELECT node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported_ms, verdict, resolved_ms FROM unconfirmed_alerts WHERE verdict = ''
+ORDER BY since_ms, node_id, local_id
+LIMIT ?1
+`
+
+func (q *Queries) ListOpenUnconfirmedAlerts(ctx context.Context, rowLimit int64) ([]UnconfirmedAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenUnconfirmedAlerts, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UnconfirmedAlert{}
+	for rows.Next() {
+		var i UnconfirmedAlert
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.LocalID,
+			&i.TenantID,
+			&i.MonitorID,
+			&i.ChannelID,
+			&i.Status,
+			&i.SinceMs,
+			&i.SentMs,
+			&i.Outcome,
+			&i.Reachable,
+			&i.Total,
+			&i.Reporters,
+			&i.ReportedMs,
+			&i.Verdict,
+			&i.ResolvedMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1925,6 +2076,31 @@ type ResolveIncidentParams struct {
 
 func (q *Queries) ResolveIncident(ctx context.Context, arg ResolveIncidentParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, resolveIncident, arg.ResolvedMs, arg.TenantID, arg.MonitorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const resolveUnconfirmedAlert = `-- name: ResolveUnconfirmedAlert :execrows
+UPDATE unconfirmed_alerts SET verdict = ?1, resolved_ms = ?2
+WHERE node_id = ?3 AND local_id = ?4 AND verdict = ''
+`
+
+type ResolveUnconfirmedAlertParams struct {
+	Verdict    string
+	ResolvedMs int64
+	NodeID     string
+	LocalID    int64
+}
+
+func (q *Queries) ResolveUnconfirmedAlert(ctx context.Context, arg ResolveUnconfirmedAlertParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, resolveUnconfirmedAlert,
+		arg.Verdict,
+		arg.ResolvedMs,
+		arg.NodeID,
+		arg.LocalID,
+	)
 	if err != nil {
 		return 0, err
 	}

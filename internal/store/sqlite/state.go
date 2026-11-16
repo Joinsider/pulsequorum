@@ -561,10 +561,12 @@ func (t *stateTx) OpenIncident(ctx context.Context, inc store.Incident) error {
 		ID:                inc.ID,
 		MonitorID:         inc.MonitorID,
 		StartedMs:         inc.StartedMs,
+		ResolvedMs:        inc.ResolvedMs,
 		Cause:             inc.Cause,
 		ErrorClass:        inc.ErrorClass,
 		AffectedNodesJson: string(affected),
 		Confirmed:         boolToInt(inc.Confirmed),
+		Reevaluated:       boolToInt(inc.Reevaluated),
 	}))
 }
 
@@ -596,6 +598,7 @@ func incidentFromRow(r statedb.Incident, monitorName string) (store.Incident, er
 		ErrorClass:    r.ErrorClass,
 		AffectedNodes: nodes,
 		Confirmed:     r.Confirmed != 0,
+		Reevaluated:   r.Reevaluated != 0,
 	}, nil
 }
 

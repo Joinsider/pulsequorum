@@ -44,6 +44,10 @@ func minVersion(cmd *pb.Command) uint32 {
 		return 3
 	case *pb.Command_ClearMonitorFlapping:
 		return 4
+	case *pb.Command_ReportDegradedAlerts,
+		*pb.Command_ResolveUnconfirmedAlerts,
+		*pb.Command_RecordMonitorHistory:
+		return 5
 	}
 	return 0
 }

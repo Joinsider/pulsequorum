@@ -105,6 +105,9 @@ func handleFlapping(ctx context.Context, tx store.StateTx, cmd *pb.Command, set 
 		Status: string(to), PreviousStatus: string(cur.Status), SinceMs: since,
 		Confirmed: set.GetConfirmed(), Flapping: true, ChangeCount: count,
 	}
+	if p.Sender, err = senderView(ctx, tx, set); err != nil {
+		return false, err
+	}
 	if err := enqueueAlerts(ctx, tx, issuedAt, m, p); err != nil {
 		return false, err
 	}
