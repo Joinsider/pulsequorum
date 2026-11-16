@@ -1,8 +1,8 @@
 # ADR 0021: Konsens-Bewertung auf dem Leader in Bewertungsrunden
 
 | | |
-|---|---|
-| **Status** | Proposed |
+| --- | --- |
+| **Status** | Accepted |
 | **Datum** | 2026-11-16 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-CON-01/02/03/05/06, FA-INC-01, NFA-REL-03, Konzept 7.2 und 9.1 (E2), ADR 0005, 0006, 0017 |
@@ -12,6 +12,7 @@
 Bis P2 bewertet jeder Voter nur seine eigenen Ergebnisse (`internal/aggregator`) und schlägt Statuswechsel per `SetMonitorState` vor. Mit mehreren zuständigen Nodes widersprechen sich diese Vorschläge; der Konflikt-Check der FSM (`expected_status`) verhindert nur das Schlimmste. FA-CON-06 verlangt die Bewertung auf dem Leader, FA-CON-01/02/05 den Konsens nach `consensusPolicy` (`majority` | `any` | `all`, im Datenmodell und in der OpenAPI schon vorhanden) mit den Status PARTIAL und UNKNOWN.
 
 Offen ist, **was eine Bewertung ist**. Davon hängt FA-CON-03 ab („erst nach `retries + 1` aufeinanderfolgenden negativen Bewertungen DOWN“). Randbedingungen:
+
 - Alle Nodes prüfen einen Monitor zur selben Wanduhrzeit: `Phase(monitorID, interval) + k · interval` (`internal/scheduler`). Heartbeats eines Durchlaufs tragen also fast denselben Zeitstempel.
 - Fremde Heartbeats erreichen den Leader per Push (Best Effort, Sekunden) oder Anti-Entropie (≤ 30 s), eigene sofort.
 - Ein neuer Leader muss den Zählerstand (Retries) aus den replizierten Heartbeats rekonstruieren können (NFA-REL-03), ohne zusätzliche Raft-Schreibvorgänge je Check.
@@ -19,15 +20,18 @@ Offen ist, **was eine Bewertung ist**. Davon hängt FA-CON-03 ab („erst nach `
 ## Optionen
 
 ### Option A: Bewertung bei jedem eintreffenden Heartbeat
+
 - Vorteile: Einfach, minimale Latenz.
 - Nachteile: Mit n Nodes zählen Retries n-mal so schnell; das Ergebnis hängt von der Ankunftsreihenfolge ab, ein neuer Leader kommt zu einem anderen Zählerstand; ein verspäteter Heartbeat kann einen bereits entschiedenen Durchlauf umwerfen.
 
 ### Option B: Bewertungsrunde je Check-Durchlauf (Slot)
+
 - Der Leader bewertet jeden Durchlauf k eines Monitors genau einmal, sobald alle zuständigen Nodes für k gemeldet haben, spätestens zu einer Frist.
 - Vorteile: Retries behalten die Bedeutung aus P1 (Anzahl Intervalle). Die Bewertung ist eine reine Funktion der Heartbeats je Slot; ein neuer Leader rechnet dasselbe nach. Keine zusätzlichen Raft-Schreibvorgänge.
 - Nachteile: Erkennung wartet auf den langsamsten Melder bis zur Frist (wenige Sekunden). Slot-Zuordnung hängt an der Phase und bricht bei Intervalländerung neu an.
 
 ### Option C: Jeder Node bewertet lokal, der Leader kombiniert Vorschläge
+
 - Vorteile: Lokale Retries wie bisher.
 - Nachteile: Ein Raft-Befehl je Node und Wechsel, doppelte Hysterese (lokal und global), schwer nachvollziehbar; widerspricht FA-CON-06.
 
@@ -46,7 +50,7 @@ Offen ist, **was eine Bewertung ist**. Davon hängt FA-CON-03 ab („erst nach `
 **Konsens** über die n meldenden Nodes, d davon DOWN, g davon DEGRADED:
 
 | Ergebnis | Bedingung |
-|---|---|
+| --- | --- |
 | keine Meldung | n = 0 |
 | negativ | `majority`: d > n/2 · `any`: d ≥ 1 · `all`: d = n |
 | PARTIAL (positiv) | Regel nicht erfüllt, d ≥ 1 |
@@ -56,6 +60,7 @@ Offen ist, **was eine Bewertung ist**. Davon hängt FA-CON-03 ab („erst nach `
 Bei `majority` mit 2 Meldern und 1 DOWN ergibt sich also PARTIAL.
 
 **Statuswechsel** wie in P1 (`tracker.next`), nur mit dem Slot-Ergebnis statt des eigenen Ergebnisses: `retries + 1` negative Slots → DOWN (davor PENDING), `recoveryThreshold` positive Slots beenden DOWN; PARTIAL, DEGRADED und UP sind positive Ergebnisse und wechseln aus UP/PENDING sofort.
+
 - **UNKNOWN:** n = 0 setzt UNKNOWN ohne Retries (die 2-Intervall-Frist ist schon die Hysterese). **Ausnahme:** Aus DOWN und PENDING heraus bleibt der Status bestehen; fehlende Meldungen zählen weder als DOWN noch als Erholung, der Incident bleibt offen. Damit ändert sich die FSM nicht (sie schließt den Incident bei jedem Verlassen von DOWN) und es entsteht kein Recovery-Alert ohne Messung.
 - **Incident:** `AffectedNodes` = die Nodes, die im auslösenden Slot DOWN meldeten; Ursache und Fehlerklasse vom ersten davon nach Node-ID (deterministisch).
 - Wartung, Pause und `expected_status` wie bisher.
@@ -75,3 +80,4 @@ Bei `majority` mit 2 Meldern und 1 DOWN ergibt sich also PARTIAL.
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-16 | Proposed | Claude | |
+| 2026-11-16 | Accepted | Projektinhaber | im Chat angenommen, eingetragen durch Claude |
