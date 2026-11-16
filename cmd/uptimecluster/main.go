@@ -35,6 +35,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterhost"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
+	"github.com/joinsider/uptimecluster/internal/degraded"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/membership"
 	"github.com/joinsider/uptimecluster/internal/node"
@@ -197,7 +198,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// The aggregator needs the Raft node, which exists only after Start. Stored
 	// heartbeats that arrive before it is set are not observed; the leader
 	// rebuild reads them from the store (ADR 0021).
-	var aggPtr atomic.Pointer[aggregator.Aggregator]
+	var aggPtr, degradedAggPtr atomic.Pointer[aggregator.Aggregator]
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
 		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
@@ -207,6 +208,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		SelfCheck: selfProber.Status,
 		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
 			if a := aggPtr.Load(); a != nil {
+				a.Observe(hbs)
+			}
+			if a := degradedAggPtr.Load(); a != nil {
 				a.Observe(hbs)
 			}
 		},
@@ -295,17 +299,79 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		},
 		FailRatio: cfg.SelfHealthFailRatio, Now: clock, Logger: log,
 	})
+	registry := func(ctx context.Context) ([]store.Node, error) { return state.ListNodes(ctx) }
+	// Reconciliation after the quorum returned (ADR 0024, sections 6 and 7). The
+	// gap job is created after the aggregator, which it re-evaluates with.
+	var gapJob *degraded.GapJob
 	// The aggregator evaluates only on the leader, from the heartbeats it observes (ADR 0021).
+	// It waits for the gap job of the leadership: the history must be corrected first (ADR 0024).
 	agg := aggregator.New(aggregator.Options{
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
-		IsLeader:    raftNode.IsLeader,
-		Registry:    func(ctx context.Context) ([]store.Node, error) { return state.ListNodes(ctx) },
+		IsLeader:    func() bool { return raftNode.IsLeader() && gapJob != nil && gapJob.Done() },
+		Registry:    registry,
 		Assigner:    assigner,
 		Exclude:     assessor.Exclude,
 		Maintenance: maint.InMaintenance, Now: clock, Logger: log,
 	})
 	aggPtr.Store(agg)
 	heartbeats.SetOnStored(agg.Observe)
+
+	// Degraded mode (ADR 0024): without a leader, the reachable voter with the
+	// smallest ID of the partition decides and sends the alerts itself.
+	selfCheckFailed := func() bool {
+		st := selfProber.Status()
+		return st.Configured && st.Failed
+	}
+	detector := degraded.New(degraded.Options{
+		NodeID: nodeID, LeaderID: host.LeaderID, CaughtUp: host.CaughtUp,
+		Voters: func(ctx context.Context) ([]string, error) {
+			nodes, err := state.ListNodes(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var voters []string
+			for _, n := range nodes {
+				if n.Role == store.NodeRoleVoter {
+					voters = append(voters, n.ID)
+				}
+			}
+			return voters, nil
+		},
+		Peers: host.PeerViews, SelfCheckFailed: selfCheckFailed,
+		// 0 in the configuration disables the degraded mode; a negative value does so for the detector.
+		After: disabledIfZero(cfg.DegradedAfter), Now: clock, Logger: log,
+	})
+	overlay := degraded.NewOverlay(state)
+	localDispatcher := alert.NewLocalDispatcher(alert.LocalDispatcherOptions{
+		Sender: sender, BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log,
+	})
+	degradedApplier := degraded.NewApplier(degraded.ApplierOptions{
+		NodeID: nodeID, State: state, Overlay: overlay, Metrics: metrics, Detector: detector.State,
+		SelfCheckFailed: selfCheckFailed, Keyring: keyring, Dispatcher: localDispatcher,
+		BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log,
+	})
+	// The degraded aggregator evaluates the same slots as the live one, but
+	// only on the sender, and records the statuses in the overlay (ADR 0024, section 3).
+	degradedAgg := aggregator.New(aggregator.Options{
+		State: overlay, Metrics: metrics, Cluster: degradedApplier, NodeID: nodeID,
+		IsLeader: detector.IsSender,
+		Registry: registry, Assigner: assigner,
+		Maintenance: maint.InMaintenance, Now: clock, Logger: log.With("component", "degraded"),
+	})
+	degradedAggPtr.Store(degradedAgg)
+	heartbeats.SetOnStored(degradedAgg.Observe)
+	reporter := degraded.NewReporter(degraded.ReporterOptions{
+		NodeID: nodeID, Detector: detector.State, LeaderID: host.LeaderID, CaughtUp: host.CaughtUp,
+		CommandLevel: raftNode.CommandLevel, Proposer: raftNode, Metrics: metrics, Now: clock, Logger: log,
+	})
+	gapJob = degraded.NewGapJob(degraded.GapOptions{
+		NodeID: nodeID, State: state, Reevaluator: agg, Proposer: raftNode, IsLeader: raftNode.IsLeader,
+		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Now: clock, Logger: log,
+	})
+	judge := degraded.NewJudge(degraded.JudgeOptions{
+		State: state, Proposer: raftNode, IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel,
+		GapDone: gapJob.Done, RetentionRaw: cfg.RetentionRaw, Now: clock, Logger: log,
+	})
 	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log, Now: clock,
 		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
@@ -313,6 +379,25 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
+	bg.Go(func() { detector.Run(ctx) })
+	bg.Go(func() { localDispatcher.Run(ctx) })
+	bg.Go(func() { degradedAgg.Run(ctx) })
+	bg.Go(func() {
+		// Leaving the sender role drops the statuses decided locally (ADR 0024, section 3).
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-detector.Changes():
+				if !detector.IsSender() {
+					overlay.Reset()
+				}
+			}
+		}
+	})
+	bg.Go(func() { reporter.Run(ctx) })
+	bg.Go(func() { gapJob.Run(ctx) })
+	bg.Go(func() { judge.Run(ctx) })
 	bg.Go(func() { selfProber.Run(ctx) })
 	bg.Go(func() { assessor.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
@@ -357,7 +442,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
-		Stream: hub, Tickets: tickets,
+		Degraded: detector,
+		Stream:   hub, Tickets: tickets,
 		ClusterAdmin: clusterAdmin{host: host},
 		Replication:  host.Replication,
 		ClockOffsets: host.ClockOffsets,
@@ -372,6 +458,16 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return cause
 	}
 	return err
+}
+
+// disabledIfZero maps the configured DEGRADED_AFTER to the detector option: a
+// zero duration disables the degraded mode, which the detector expresses as a
+// negative value (its zero value means the default).
+func disabledIfZero(after time.Duration) time.Duration {
+	if after == 0 {
+		return -1
+	}
+	return after
 }
 
 // bootstrapCluster creates the default tenant and the first data key once a

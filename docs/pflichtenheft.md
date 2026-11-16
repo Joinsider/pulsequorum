@@ -650,6 +650,7 @@ Protobuf-Definitionen in `proto/`:
 | `ALERT_MAX_ATTEMPTS` | `10` | Maximale Zustellversuche je Alert und Kanal (FA-ALR-03) |
 | `SELF_CHECK_TARGETS` | leer | Referenzziele der Node-Selbstgesundheit, kommagetrennt (`host:port` für TCP, `https://…` für HTTP-HEAD); leer = Signal aus (FA-CON-04, ADR 0022) |
 | `SELF_HEALTH_FAIL_RATIO` | `0.5` | Schwellwert der Abweichungsquote, ab der ein Node als gestört gilt (FA-CON-04, ADR 0022) |
+| `DEGRADED_AFTER` | `15s` | Dauer ohne bekannten Leader, ab der ein Voter in den Degraded-Modus geht und unbestätigt alarmiert; `0` schaltet den Versand im Degraded-Modus ab (FA-ALR-10, ADR 0024) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |

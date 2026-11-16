@@ -60,6 +60,7 @@ Alle Variablen werden beim Start gelesen. Ungültige Werte beenden den Start mit
 | `ALERT_BUNDLE_WINDOW` | `30s` | Bündelungsfenster je Shoutrrr-Kanal: Alarme, die in diesem Fenster fällig werden, gehen als eine Nachricht raus. `0` schaltet die Bündelung aus. Webhooks werden nie gebündelt. |
 | `SELF_CHECK_TARGETS` | leer | Referenzziele der Selbstprüfung des Nodes, kommagetrennt: `host:port` (TCP) oder `https://…` (HTTP-HEAD; jede Antwort zählt). Schlagen alle fehl, gilt der Node als gestört, sofern die anderen Nodes gesund sind. Empfehlung: 2 bis 3 unabhängige Ziele. Leer = aus. |
 | `SELF_HEALTH_FAIL_RATIO` | `0.5` | Anteil fehlgeschlagener Checks, ab dem ein Node als gestört gilt (Wert über 0 bis 1). |
+| `DEGRADED_AFTER` | `15s` | Dauer ohne bekannten Leader, ab der ein Voter ohne Quorum unbestätigt alarmiert. `0` schaltet das aus. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` oder `error`. |
 | `LOG_FORMAT` | `json` | `json` oder `text`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Wartezeit beim Herunterfahren für laufende Hintergrundarbeit. |

@@ -31,6 +31,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.AlertMaxAttempts != 10 {
 		t.Errorf("AlertMaxAttempts = %d, want 10", cfg.AlertMaxAttempts)
 	}
+	if cfg.DegradedAfter != 15*time.Second {
+		t.Errorf("DegradedAfter = %v, want 15s", cfg.DegradedAfter)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -272,5 +275,39 @@ func TestSelfCheck(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "SELF_HEALTH_FAIL_RATIO") {
 			t.Errorf("SELF_HEALTH_FAIL_RATIO=%q: error = %v, want SELF_HEALTH_FAIL_RATIO error", bad, err)
 		}
+	}
+}
+
+// TestDegradedAfter covers DEGRADED_AFTER (ADR 0024): a duration of 0 or more,
+// where 0 disables the degraded mode.
+func TestDegradedAfter(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "default", value: "", want: 15 * time.Second},
+		{name: "custom", value: "30s", want: 30 * time.Second},
+		{name: "disabled", value: "0", want: 0},
+		{name: "not a duration", value: "soon", wantErr: true},
+		{name: "negative", value: "-1s", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "DEGRADED_AFTER": tc.value}))
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "DEGRADED_AFTER") {
+					t.Fatalf("error = %v, want DEGRADED_AFTER error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.DegradedAfter != tc.want {
+				t.Errorf("DegradedAfter = %v, want %v", cfg.DegradedAfter, tc.want)
+			}
+		})
 	}
 }

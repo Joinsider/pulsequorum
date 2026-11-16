@@ -887,13 +887,24 @@ components:
     # --- System -------------------------------------------------------------
     Health:
       type: object
-      required: [status, role, nodeName, version, commit]
+      required: [status, role, nodeName, version, commit, degraded]
       properties:
         status: { type: string, enum: [ok] }
         role: { type: string, enum: [voter, probe] }
         nodeName: { type: string }
         version: { type: string }
         commit: { type: string }
+        degraded:
+          type: boolean
+          description: True while this voter has known no leader for DEGRADED_AFTER (ADR 0024)
+        degradedSince:
+          type: string
+          format: date-time
+          description: Start of the leaderless period, set while degraded
+        partition:
+          type: array
+          items: { type: string }
+          description: Sorted IDs of this voter and the reachable voters without a leader, set while degraded (ADR 0024)
 
     # --- Auth ---------------------------------------------------------------
     SetupRequest:
@@ -1290,6 +1301,9 @@ components:
         confirmed:
           type: boolean
           description: false if raised in degraded mode without quorum (phase 3)
+        reevaluated:
+          type: boolean
+          description: true if the incident was added to a gap in the history after the quorum returned (FA-UPT-07, ADR 0024)
     IncidentPage:
       type: object
       required: [items]

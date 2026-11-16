@@ -15,6 +15,7 @@ const HEALTH: Health = {
   nodeName: 'node-a',
   version: '1.2.3',
   commit: 'abc1234',
+  degraded: false,
 };
 
 function setup(result: Observable<Health>): ComponentFixture<StatusPage> {

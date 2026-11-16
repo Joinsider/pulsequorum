@@ -91,9 +91,13 @@ type Config struct {
 	// SelfHealthFailRatio is the share of deviating heartbeats at which a node
 	// counts as impaired, in (0, 1] (ADR 0022).
 	SelfHealthFailRatio float64
-	LogLevel            slog.Level
-	LogFormat           string
-	ShutdownTimeout     time.Duration
+	// DegradedAfter is how long a voter may know no leader before it enters the
+	// degraded mode (DEGRADED_AFTER, ADR 0024). Zero disables the degraded
+	// mode, so nothing is sent without quorum.
+	DegradedAfter   time.Duration
+	LogLevel        slog.Level
+	LogFormat       string
+	ShutdownTimeout time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -282,6 +286,13 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("SELF_HEALTH_FAIL_RATIO: must be a number greater than 0 and at most 1, got %q", ratioRaw))
 	}
 	cfg.SelfHealthFailRatio = ratio
+
+	degradedRaw := get("DEGRADED_AFTER", "15s")
+	degradedAfter, err := time.ParseDuration(degradedRaw)
+	if err != nil || degradedAfter < 0 {
+		errs = append(errs, fmt.Errorf("DEGRADED_AFTER: must be a duration of 0 or more, got %q", degradedRaw))
+	}
+	cfg.DegradedAfter = degradedAfter
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
