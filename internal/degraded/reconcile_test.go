@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -583,7 +584,17 @@ type rjGapRig struct {
 	prop   *rjProposer
 	leader *bool
 	job    *GapJob
-	peers  []replication.PeerStatus
+
+	pmu   sync.Mutex
+	peers []replication.PeerStatus
+	views map[string]PeerView
+}
+
+// setPeers replaces the replication status and the peer views of the rig.
+func (rig *rjGapRig) setPeers(peers []replication.PeerStatus, views map[string]PeerView) {
+	rig.pmu.Lock()
+	defer rig.pmu.Unlock()
+	rig.peers, rig.views = peers, views
 }
 
 func newRjGapRig(t *testing.T, monitors ...store.Monitor) *rjGapRig {
@@ -599,8 +610,17 @@ func newRjGapRig(t *testing.T, monitors ...store.Monitor) *rjGapRig {
 		NodeID: testNode, State: rig.st, Reevaluator: rig.reeval, Proposer: rig.prop,
 		IsLeader:     func() bool { return *rig.leader },
 		CommandLevel: rjCmdLevel(cluster.DegradedCommandLevel),
-		Replication:  func() []replication.PeerStatus { return rig.peers },
-		Tick:         time.Millisecond, CatchUpWait: 20 * time.Millisecond,
+		Replication: func() []replication.PeerStatus {
+			rig.pmu.Lock()
+			defer rig.pmu.Unlock()
+			return slices.Clone(rig.peers)
+		},
+		Peers: func() map[string]PeerView {
+			rig.pmu.Lock()
+			defer rig.pmu.Unlock()
+			return maps.Clone(rig.views)
+		},
+		Tick: time.Millisecond, CatchUpWait: 20 * time.Millisecond,
 		Now: func() time.Time { return rjBase }, Logger: rjLogger(),
 	})
 	// Run samples once at its start; the tests start from that sample.
@@ -771,15 +791,159 @@ func TestGapJobDoneResetsAfterLeadershipLoss(t *testing.T) {
 	}
 }
 
-func TestGapJobWaitsForCatchUpWithinBound(t *testing.T) {
+// reachable is a peer view that answered just now.
+func reachable(now time.Time) PeerView { return PeerView{AnsweredAt: now} }
+
+func TestGapJobNoGapDoesNotWait(t *testing.T) {
+	// Normal leader changes: the last command is recent, or none is known.
+	for _, lastSeen := range []time.Time{rjBase.Add(-2 * time.Second), {}} {
+		rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+		rig.job.opts.CatchUpWait = time.Hour // any wait would hang the test
+		if lastSeen.IsZero() {
+			rig.job.lastSeen = 0
+		} else {
+			rig.job.lastSeen = rjMs(lastSeen)
+		}
+		rig.setPeers(nil, map[string]PeerView{"node-b": reachable(rjBase)})
+		rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
+		rig.lead(t)
+		if !rig.job.Done() {
+			t.Errorf("lastSeen %v: Done() = false, want true at once without a suspected gap", lastSeen)
+		}
+		if len(rig.reeval.requests) != 0 {
+			t.Errorf("lastSeen %v: re-evaluated without a suspected gap", lastSeen)
+		}
+	}
+}
+
+func TestGapJobMinAge(t *testing.T) {
+	// A command 10 min old suspects a gap with the default 5 s minimum age, but not with 1 h.
+	cases := []struct {
+		name    string
+		minAge  time.Duration
+		wantGap bool
+	}{
+		{name: "default", minAge: 0, wantGap: true},
+		{name: "longer minimum", minAge: time.Hour, wantGap: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+			rig.job.opts.MinAge = tc.minAge
+			if tc.minAge == 0 {
+				rig.job.opts.MinAge = 0 // NewGapJob applies the default
+				rig.job = NewGapJob(rig.job.opts)
+			}
+			rig.job.lastSeen = rjMs(rjBase.Add(-10 * time.Minute))
+			rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
+			rig.lead(t)
+			if !rig.job.Done() {
+				t.Fatal("Done() = false, want true")
+			}
+			if got := len(rig.reeval.requests) == 1; got != tc.wantGap {
+				t.Errorf("gap re-evaluated = %v, want %v", got, tc.wantGap)
+			}
+		})
+	}
+}
+
+func TestGapJobTriggersReachablePeersOnSuspectedGap(t *testing.T) {
 	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
-	// A connected peer that never completed a round after the leadership start.
-	rig.peers = []replication.PeerStatus{{ID: "node-b", Connected: true, CaughtUpAt: rjBase.Add(-time.Hour)}}
+	rig.setPeers(nil, map[string]PeerView{
+		"node-c": reachable(rjBase),
+		"node-a": reachable(rjBase),
+		"node-b": reachable(rjBase.Add(-time.Minute)), // not reachable
+	})
+	var mu sync.Mutex
+	var triggered []string
+	rig.job.opts.Trigger = func(id string) {
+		mu.Lock()
+		defer mu.Unlock()
+		triggered = append(triggered, id)
+	}
+	rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
+	rig.job.opts.CatchUpWait = 30 * time.Millisecond // the peers never catch up in this test
+	rig.lead(t)
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(triggered, []string{"node-a", "node-c"}) {
+		t.Errorf("triggered %v, want the reachable peers [node-a node-c]", triggered)
+	}
+}
+
+func TestGapJobDoesNotTriggerWithoutGap(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.setPeers(nil, map[string]PeerView{"node-a": reachable(rjBase)})
+	called := false
+	rig.job.opts.Trigger = func(string) { called = true }
+	rig.job.lastSeen = 0
+	rig.lead(t)
+	if called {
+		t.Error("triggered a peer without a suspected gap")
+	}
+	if !rig.job.Done() {
+		t.Error("Done() = false, want true without a gap")
+	}
+}
+
+func TestGapJobWaitsForReachablePeerWithoutStream(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.job.opts.CatchUpWait = 5 * time.Second
+	rig.job.opts.Tick = time.Millisecond
+	// Reachable, but its push stream is not connected and it never caught up.
+	rig.setPeers([]replication.PeerStatus{{ID: "node-b"}}, map[string]PeerView{"node-b": reachable(rjBase)})
+	rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
+
+	*rig.leader = true
+	finished := make(chan struct{})
+	go func() {
+		rig.job.tick(context.Background())
+		close(finished)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if rig.job.Done() {
+		t.Error("Done() = true while the reachable peer is not caught up")
+	}
+	rig.reeval.mu.Lock()
+	requests := len(rig.reeval.requests)
+	rig.reeval.mu.Unlock()
+	if requests != 0 {
+		t.Errorf("re-evaluated %d times while waiting, want none", requests)
+	}
+
+	// The peer completes an anti-entropy round after the leadership start.
+	rig.setPeers([]replication.PeerStatus{{ID: "node-b", Connected: false, CaughtUpAt: rjBase.Add(time.Second)}}, map[string]PeerView{"node-b": reachable(rjBase)})
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job did not finish after the peer caught up")
+	}
+	if !rig.job.Done() || len(rig.reeval.requests) != 1 {
+		t.Errorf("done %v, gap requests %d; want done after one re-evaluation", rig.job.Done(), len(rig.reeval.requests))
+	}
+}
+
+func TestGapJobDoesNotWaitForUnreachablePeer(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.job.opts.CatchUpWait = time.Hour // a wait would hang the test
+	// Not answered for a minute: not reachable, so not waited for.
+	rig.setPeers([]replication.PeerStatus{{ID: "node-b"}}, map[string]PeerView{"node-b": reachable(rjBase.Add(-time.Minute))})
 	rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
 	rig.lead(t)
-	// The wait times out and the gap is re-evaluated anyway.
 	if !rig.job.Done() || len(rig.reeval.requests) != 1 {
-		t.Errorf("done %v, gap requests %d; want done after the bounded wait", rig.job.Done(), len(rig.reeval.requests))
+		t.Errorf("done %v, gap requests %d; want done without waiting for the unreachable peer", rig.job.Done(), len(rig.reeval.requests))
+	}
+}
+
+func TestGapJobWaitIsCapped(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.job.opts.CatchUpWait = 30 * time.Millisecond
+	rig.setPeers([]replication.PeerStatus{{ID: "node-b", Connected: true}}, map[string]PeerView{"node-b": reachable(rjBase)})
+	rig.reeval.changes["m1"] = []aggregator.Change{{SinceMs: rjMs(rjBase.Add(-20 * time.Minute)), Status: store.StatusDown, Incident: &store.Incident{ID: "x"}}}
+	rig.lead(t)
+	// The peer never caught up: the cap ends the wait and the gap is re-evaluated anyway.
+	if !rig.job.Done() || len(rig.reeval.requests) != 1 {
+		t.Errorf("done %v, gap requests %d; want done after the cap", rig.job.Done(), len(rig.reeval.requests))
 	}
 }
 
@@ -800,28 +964,6 @@ func TestGapJobSamplesWhileNotLeader(t *testing.T) {
 	rig.lead(t)
 	if rig.job.lastSeen != rjMs(rjBase.Add(-30*time.Minute)) {
 		t.Errorf("lastSeen %d changed while leader", rig.job.lastSeen)
-	}
-}
-
-func TestCaughtUp(t *testing.T) {
-	since := rjBase
-	cases := []struct {
-		name  string
-		peers []replication.PeerStatus
-		want  bool
-	}{
-		{name: "no peers", want: true},
-		{name: "disconnected peer is ignored", peers: []replication.PeerStatus{{ID: "b"}}, want: true},
-		{name: "connected and caught up after start", peers: []replication.PeerStatus{{ID: "b", Connected: true, CaughtUpAt: since.Add(time.Second)}}, want: true},
-		{name: "connected, round before start", peers: []replication.PeerStatus{{ID: "b", Connected: true, CaughtUpAt: since.Add(-time.Second)}}},
-		{name: "connected, never caught up", peers: []replication.PeerStatus{{ID: "b", Connected: true}}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := caughtUp(tc.peers, since); got != tc.want {
-				t.Errorf("caughtUp = %v, want %v", got, tc.want)
-			}
-		})
 	}
 }
 

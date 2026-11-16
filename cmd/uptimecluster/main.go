@@ -366,7 +366,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	gapJob = degraded.NewGapJob(degraded.GapOptions{
 		NodeID: nodeID, State: state, Reevaluator: agg, Proposer: raftNode, IsLeader: raftNode.IsLeader,
-		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Now: clock, Logger: log,
+		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews,
+		Trigger: host.Replication.Trigger, Now: clock, Logger: log,
 	})
 	judge := degraded.NewJudge(degraded.JudgeOptions{
 		State: state, Proposer: raftNode, IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel,

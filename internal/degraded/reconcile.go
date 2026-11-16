@@ -40,6 +40,10 @@ const (
 
 	gapTick        = time.Second
 	gapCatchUpWait = 2 * time.Minute
+	// gapMinAge is the age of the last applied command from which on a
+	// leadership change suspects a gap. Shorter gaps are covered by the live
+	// rebuild, which looks back at least three slots after the leader grace.
+	gapMinAge = 5 * time.Second
 	// gapMaxLength bounds the re-evaluated gap (ADR 0024, section 7).
 	gapMaxLength = 24 * time.Hour
 	gapPageSize  = 500
@@ -425,6 +429,17 @@ type GapOptions struct {
 	CommandLevel func(ctx context.Context) (uint32, error)
 	// Replication returns the state of the replication to the peers.
 	Replication func() []replication.PeerStatus
+	// MinAge is the age of the last command from which a gap is suspected.
+	// Zero means gapMinAge.
+	MinAge time.Duration
+	// Trigger requests an anti-entropy round with a peer (see
+	// replication.Replicator.Trigger). It is called once for every reachable
+	// peer when a gap is suspected. Nil means none.
+	Trigger func(nodeID string)
+	// Peers returns what this node knows about the peer voters (see
+	// clusterhost.Host.PeerViews). Nil means there are no peers to wait for.
+	// A peer counts as reachable if it answered within DefaultReachableWithin.
+	Peers func() map[string]PeerView
 	// Tick is the sampling and polling period, default 1 s.
 	Tick time.Duration
 	// CatchUpWait bounds the wait for the anti-entropy round of every connected
@@ -459,6 +474,9 @@ func NewGapJob(opts GapOptions) *GapJob {
 	}
 	if opts.CatchUpWait <= 0 {
 		opts.CatchUpWait = gapCatchUpWait
+	}
+	if opts.MinAge <= 0 {
+		opts.MinAge = gapMinAge
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -541,6 +559,17 @@ func (g *GapJob) run(ctx context.Context) {
 		g.setDone(true)
 		return
 	}
+	if !g.suspectsGap() {
+		g.setDone(true)
+		return
+	}
+	// Ask every reachable peer for a fresh round now, instead of waiting for
+	// the periodic anti-entropy pass.
+	if g.opts.Trigger != nil {
+		for _, id := range g.reachablePeers() {
+			g.opts.Trigger(id)
+		}
+	}
 	if !g.awaitCatchUp(ctx) {
 		return
 	}
@@ -585,11 +614,21 @@ func (g *GapJob) run(ctx context.Context) {
 	g.setDone(true)
 }
 
-// awaitCatchUp waits until every connected peer completed an anti-entropy round
-// after the leadership start, at most CatchUpWait. It returns false if the
-// context ends or leadership is lost.
+// suspectsGap reports whether the last applied command is old enough to hide a
+// gap. Without a known command time, or with a recent one, there is none.
+func (g *GapJob) suspectsGap() bool {
+	if g.lastSeen == 0 {
+		return false
+	}
+	return g.opts.Now().Sub(time.UnixMilli(g.lastSeen)) >= g.opts.MinAge
+}
+
+// awaitCatchUp waits until every reachable peer completed an anti-entropy round
+// after the leadership start, at most CatchUpWait. The push stream does not
+// count: a restarted peer is reachable before its stream is connected. It
+// returns false if the context ends or leadership is lost.
 func (g *GapJob) awaitCatchUp(ctx context.Context) bool {
-	if g.opts.Replication == nil {
+	if g.opts.Peers == nil {
 		return true
 	}
 	deadline := time.NewTimer(g.opts.CatchUpWait)
@@ -597,14 +636,14 @@ func (g *GapJob) awaitCatchUp(ctx context.Context) bool {
 	ticker := time.NewTicker(g.opts.Tick)
 	defer ticker.Stop()
 	for {
-		if caughtUp(g.opts.Replication(), g.leaderSince) {
+		if g.caughtUp() {
 			return true
 		}
 		select {
 		case <-ctx.Done():
 			return false
 		case <-deadline.C:
-			g.opts.Logger.Warn("degraded: peers not caught up in time, re-evaluating the gap anyway", "wait", g.opts.CatchUpWait)
+			g.opts.Logger.Warn("degraded: reachable peers not caught up in time, re-evaluating the gap anyway", "wait", g.opts.CatchUpWait)
 			return true
 		case <-ticker.C:
 			if !g.opts.IsLeader() {
@@ -614,15 +653,40 @@ func (g *GapJob) awaitCatchUp(ctx context.Context) bool {
 	}
 }
 
-// caughtUp reports whether every connected peer completed an anti-entropy round
-// that started after since.
-func caughtUp(peers []replication.PeerStatus, since time.Time) bool {
-	for _, p := range peers {
-		if p.Connected && !p.CaughtUpAt.After(since) {
+// caughtUp reports whether every reachable peer completed an anti-entropy round
+// that started after the leadership start. Peers without a replication status
+// are waited for as well.
+func (g *GapJob) caughtUp() bool {
+	status := map[string]replication.PeerStatus{}
+	if g.opts.Replication != nil {
+		for _, p := range g.opts.Replication() {
+			status[p.ID] = p
+		}
+	}
+	for _, id := range g.reachablePeers() {
+		if !status[id].CaughtUpAt.After(g.leaderSince) {
 			return false
 		}
 	}
 	return true
+}
+
+// reachablePeers returns the IDs of the peers that answered within
+// DefaultReachableWithin, sorted.
+func (g *GapJob) reachablePeers() []string {
+	if g.opts.Peers == nil {
+		return nil
+	}
+	now := g.opts.Now()
+	var ids []string
+	for id, v := range g.opts.Peers() {
+		if v.AnsweredAt.IsZero() || now.Sub(v.AnsweredAt) > DefaultReachableWithin {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // reevaluate corrects the history of one monitor. It writes the gap before the
