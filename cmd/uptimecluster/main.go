@@ -271,10 +271,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		ICMPMode:  icmpMode,
 		Now:       clock,
 	}
-	sender := alert.NewSender(checkEnv.Dialer, log)
+	sender := alert.NewSender(checkEnv.Dialer, log).WithClock(clock)
 	dispatcher := alert.NewDispatcher(alert.DispatcherOptions{
 		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
 		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log, Now: clock,
+		BundleWindow: cfg.AlertBundleWindow,
 	})
 	maint := maintenance.NewController(maintenance.ControllerOptions{
 		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log, Now: clock,

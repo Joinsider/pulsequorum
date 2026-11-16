@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // placeholder matches {{name}} with optional spaces.
@@ -26,7 +27,11 @@ var placeholder = regexp.MustCompile(`\{\{\s*([a-zA-Z][a-zA-Z0-9.]*)\s*\}\}`)
 var Variables = []string{
 	"alertId", "event", "status", "previousStatus", "since", "sinceMs", "cause", "errorClass",
 	"incidentId", "reminder", "confirmed", "message", "monitor.id", "monitor.name", "monitor.type", "tenant.id",
+	"flapping", "changeCount", "channel.id", "channel.name", "channel.error",
 }
+
+// flappingWindow names the window of the flapping rule (ADR 0023, FA-ALR-06).
+const flappingWindow = "30 min"
 
 func values(p cluster.AlertPayload) map[string]any {
 	return map[string]any{
@@ -46,6 +51,11 @@ func values(p cluster.AlertPayload) map[string]any {
 		"monitor.name":   p.MonitorName,
 		"monitor.type":   p.MonitorType,
 		"tenant.id":      p.TenantID,
+		"flapping":       p.Flapping,
+		"changeCount":    p.ChangeCount,
+		"channel.id":     p.ChannelID,
+		"channel.name":   p.ChannelName,
+		"channel.error":  p.ChannelError,
 	}
 }
 
@@ -53,7 +63,10 @@ func values(p cluster.AlertPayload) map[string]any {
 const DefaultTemplate = `{"alertId":"{{alertId}}","event":"{{event}}","status":"{{status}}",` +
 	`"previousStatus":"{{previousStatus}}","since":"{{since}}","monitor":{"id":"{{monitor.id}}",` +
 	`"name":"{{monitor.name}}","type":"{{monitor.type}}"},"cause":"{{cause}}","errorClass":"{{errorClass}}",` +
-	`"incidentId":"{{incidentId}}","reminder":"{{reminder}}","confirmed":"{{confirmed}}","message":"{{message}}"}`
+	`"incidentId":"{{incidentId}}","reminder":"{{reminder}}","confirmed":"{{confirmed}}",` +
+	`"flapping":"{{flapping}}","changeCount":"{{changeCount}}",` +
+	`"channel":{"id":"{{channel.id}}","name":"{{channel.name}}","error":"{{channel.error}}"},` +
+	`"message":"{{message}}"}`
 
 // ValidateTemplate checks that a template is JSON and uses known placeholders
 // only (FA-ALR-07: invalid templates are rejected when saving).
@@ -164,6 +177,12 @@ func substitute(v any, vals map[string]any) any {
 
 // Text is the human-readable alert used by Shoutrrr and the {{message}} placeholder.
 func Text(p cluster.AlertPayload) string {
+	switch p.Event {
+	case store.EventFlapping:
+		return flappingText(p)
+	case store.EventChannelFailed:
+		return channelFailedText(p)
+	}
 	var b strings.Builder
 	switch p.Event {
 	case "down":
@@ -187,4 +206,87 @@ func Text(p cluster.AlertPayload) string {
 		b.WriteString("\n⚠ unconfirmed – cluster degraded")
 	}
 	return b.String()
+}
+
+// flappingText announces the start (Flapping) or the end of a flapping period.
+func flappingText(p cluster.AlertPayload) string {
+	if p.Flapping {
+		return fmt.Sprintf("⚠ %s is flapping: %d changes in %s, alerts suppressed\nSince %s",
+			p.MonitorName, p.ChangeCount, flappingWindow, sinceText(p.SinceMs))
+	}
+	return fmt.Sprintf("🟢 %s stable again, status %s, %d changes\nSince %s",
+		p.MonitorName, p.Status, p.ChangeCount, sinceText(p.SinceMs))
+}
+
+// channelFailedText tells the admin that another channel stopped working
+// (FA-ALR-05). The error is already masked by the FSM and holds no secrets.
+func channelFailedText(p cluster.AlertPayload) string {
+	if p.ChannelError == "" {
+		return fmt.Sprintf("⚠ Notification channel %s failed", p.ChannelName)
+	}
+	return fmt.Sprintf("⚠ Notification channel %s failed: %s", p.ChannelName, p.ChannelError)
+}
+
+// title is the Shoutrrr title of a single alert.
+func title(p cluster.AlertPayload) string {
+	switch p.Event {
+	case store.EventFlapping:
+		if p.Flapping {
+			return "Flapping: " + p.MonitorName
+		}
+		return "Stable: " + p.MonitorName
+	case store.EventChannelFailed:
+		return "Channel failed: " + p.ChannelName
+	}
+	return fmt.Sprintf("%s: %s", p.Status, p.MonitorName)
+}
+
+// BundleTitle is the header and Shoutrrr title of a bundle of alerts (ADR 0023).
+func BundleTitle(ps []cluster.AlertPayload) string {
+	for _, p := range ps {
+		if !isStatusEvent(p.Event) {
+			return fmt.Sprintf("%d alerts", len(ps))
+		}
+	}
+	return fmt.Sprintf("%d status changes", len(ps))
+}
+
+// BundleText renders several alerts of one Shoutrrr channel as one message: a
+// header and one line per alert with monitor, status or event, and time.
+func BundleText(ps []cluster.AlertPayload) string {
+	var b strings.Builder
+	b.WriteString(BundleTitle(ps))
+	for _, p := range ps {
+		b.WriteString("\n- " + bundleLine(p))
+	}
+	return b.String()
+}
+
+func bundleLine(p cluster.AlertPayload) string {
+	switch p.Event {
+	case store.EventFlapping:
+		if p.Flapping {
+			return fmt.Sprintf("%s: flapping, %d changes in %s, alerts suppressed", p.MonitorName, p.ChangeCount, flappingWindow)
+		}
+		return fmt.Sprintf("%s: stable again, status %s, %d changes", p.MonitorName, p.Status, p.ChangeCount)
+	case store.EventChannelFailed:
+		return fmt.Sprintf("channel %s failed: %s", p.ChannelName, p.ChannelError)
+	}
+	line := fmt.Sprintf("%s: %s", p.MonitorName, strings.ToUpper(p.Event))
+	if p.Reminder > 0 {
+		line += fmt.Sprintf(" (reminder %d)", p.Reminder)
+	}
+	return line + " at " + sinceText(p.SinceMs)
+}
+
+func isStatusEvent(event string) bool {
+	switch event {
+	case "down", "up", "degraded", "partial":
+		return true
+	}
+	return false
+}
+
+func sinceText(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04:05 MST")
 }

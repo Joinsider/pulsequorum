@@ -93,6 +93,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"alert attempts not a number", map[string]string{"ALERT_MAX_ATTEMPTS": "many"}, "ALERT_MAX_ATTEMPTS"},
 		{"alert attempts zero", map[string]string{"ALERT_MAX_ATTEMPTS": "0"}, "ALERT_MAX_ATTEMPTS"},
 		{"alert attempts above limit", map[string]string{"ALERT_MAX_ATTEMPTS": "101"}, "ALERT_MAX_ATTEMPTS"},
+		{"alert bundle window not a duration", map[string]string{"ALERT_BUNDLE_WINDOW": "soon"}, "ALERT_BUNDLE_WINDOW"},
+		{"alert bundle window negative", map[string]string{"ALERT_BUNDLE_WINDOW": "-5s"}, "ALERT_BUNDLE_WINDOW"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

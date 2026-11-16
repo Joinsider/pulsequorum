@@ -82,6 +82,9 @@ type Config struct {
 	AuthCookieDomain string
 	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
 	AlertMaxAttempts int
+	// AlertBundleWindow bundles the alerts of one Shoutrrr channel that fall due
+	// within this window into one message; 0 disables bundling (ADR 0023).
+	AlertBundleWindow time.Duration
 	// SelfCheckTargets are the raw, trimmed SELF_CHECK_TARGETS entries (ADR 0022);
 	// empty disables the connectivity self-check. Parse them with selfcheck.ParseTargets.
 	SelfCheckTargets []string
@@ -256,6 +259,13 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("ALERT_MAX_ATTEMPTS: must be a whole number from 1 to 100, got %q", attemptsRaw))
 	}
 	cfg.AlertMaxAttempts = attempts
+
+	bundleRaw := get("ALERT_BUNDLE_WINDOW", "30s")
+	bundleWindow, err := time.ParseDuration(bundleRaw)
+	if err != nil || bundleWindow < 0 {
+		errs = append(errs, fmt.Errorf("ALERT_BUNDLE_WINDOW: must be a duration of 0 or more, got %q", bundleRaw))
+	}
+	cfg.AlertBundleWindow = bundleWindow
 
 	for _, raw := range strings.Split(getenv("SELF_CHECK_TARGETS"), ",") {
 		if raw = strings.TrimSpace(raw); raw != "" {
