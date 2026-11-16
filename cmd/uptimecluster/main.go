@@ -425,12 +425,13 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bg.Go(func() { sched.Run(ctx) })
 	// The scheduler runs only the monitors assigned to this node; the aggregator
 	// keeps all monitors, because it tracks results of other nodes too (ADR 0017).
+	// The degraded aggregator needs the same monitors, or it never evaluates (ADR 0024).
 	assigned := scheduler.AssignmentSyncer{
 		Target: sched, NodeID: nodeID, Assigner: assigner,
 		Registry: func() ([]store.Node, error) { return state.ListNodes(ctx) }, Log: log,
 	}
 	bg.Go(func() {
-		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg)
+		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg, degradedAgg)
 	})
 
 	if !webui.Built() {
