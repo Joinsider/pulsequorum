@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ func invalidChannel(detail string) *Problem {
 // channelDocument validates the input and encrypts its secrets for the
 // channel id. current is nil on create; on update an omitted URL or a value
 // containing the mask keeps the stored secret.
-func (h *Handlers) channelDocument(id string, in *gen.NotificationChannelInput, current *store.NotificationChannel) (cluster.ChannelDocument, error) {
+func (h *Handlers) channelDocument(ctx context.Context, id string, in *gen.NotificationChannelInput, current *store.NotificationChannel) (cluster.ChannelDocument, error) {
 	if in == nil {
 		return cluster.ChannelDocument{}, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
 	}
@@ -41,6 +42,16 @@ func (h *Handlers) channelDocument(id string, in *gen.NotificationChannelInput, 
 		return cluster.ChannelDocument{}, invalidChannel("name must have 1 to 200 characters")
 	}
 	doc := cluster.ChannelDocument{Name: name, Kind: string(in.Kind), Events: []string{store.EventDown, store.EventUp}}
+	if in.Events == nil {
+		// New channels also get flapping and channel_failed once the cluster supports them (ADR 0023).
+		level, err := h.deps.State.CommandLevel(ctx)
+		if err != nil {
+			return cluster.ChannelDocument{}, fmt.Errorf("read command level: %w", err)
+		}
+		if cluster.EffectiveCommandLevel(level) >= cluster.FlappingCommandLevel {
+			doc.Events = append(doc.Events, store.EventFlapping, store.EventChannelFailed)
+		}
+	}
 	if in.Events != nil {
 		doc.Events = make([]string, 0, len(*in.Events))
 		for _, e := range *in.Events {

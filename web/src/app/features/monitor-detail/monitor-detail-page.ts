@@ -33,6 +33,7 @@ import { confirm } from '../../shared/confirm-dialog';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header';
 import { RelativeTimePipe } from '../../shared/relative-time.pipe';
+import { FlappingBadge } from '../../shared/status/flapping-badge';
 import { StatusBadge } from '../../shared/status/status-badge';
 import { UptimeBar } from '../../shared/uptime-bar/uptime-bar';
 import {
@@ -76,6 +77,7 @@ import {
     NgxEchartsDirective,
     TranslocoDirective,
     PageHeader,
+    FlappingBadge,
     StatusBadge,
     UptimeBar,
     Icon,

@@ -54,7 +54,7 @@ func (h *Handlers) CreateNotificationChannel(ctx context.Context, req gen.Create
 	if err != nil {
 		return nil, err
 	}
-	doc, err := h.channelDocument(id.String(), req.Body, nil)
+	doc, err := h.channelDocument(ctx, id.String(), req.Body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (h *Handlers) UpdateNotificationChannel(ctx context.Context, req gen.Update
 	if err != nil {
 		return nil, err
 	}
-	doc, err := h.channelDocument(current.ID, req.Body, &current)
+	doc, err := h.channelDocument(ctx, current.ID, req.Body, &current)
 	if err != nil {
 		return nil, err
 	}

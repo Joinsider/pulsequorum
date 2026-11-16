@@ -67,6 +67,8 @@ export const EVENT_ORDER: readonly NotificationEvent[] = [
   NotificationEvent.up,
   NotificationEvent.degraded,
   NotificationEvent.partial,
+  NotificationEvent.flapping,
+  NotificationEvent.channel_failed,
 ];
 
 /** Selected events in API order. */
@@ -85,5 +87,7 @@ export function eventFlags(
     up: events.includes(NotificationEvent.up),
     degraded: events.includes(NotificationEvent.degraded),
     partial: events.includes(NotificationEvent.partial),
+    flapping: events.includes(NotificationEvent.flapping),
+    channel_failed: events.includes(NotificationEvent.channel_failed),
   };
 }

@@ -102,6 +102,11 @@ type MonitorState struct {
 	// Confirmed is false if the change was made without quorum (phase 3).
 	Confirmed bool
 	SinceMs   int64
+	// Flapping is true while the monitor flaps (FA-ALR-06, ADR 0023);
+	// FlappingSinceMs is the time the period started. Only SetMonitorFlapping
+	// writes them, so PutMonitorState keeps them.
+	Flapping        bool
+	FlappingSinceMs int64
 }
 
 // Channel kinds (E7).
@@ -436,8 +441,16 @@ type StateTx interface {
 
 	// GetMonitorState returns the stored state or ErrNotFound.
 	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)
-	// PutMonitorState stores the state and records it in the status history.
+	// PutMonitorState stores the status, confirmation and since time and records
+	// the change in the status history. The flapping fields are not changed.
 	PutMonitorState(ctx context.Context, tenantID, monitorID string, st MonitorState) error
+	// SetMonitorFlapping stores the flapping flag and its start time of a monitor
+	// with a state, or ErrNotFound.
+	SetMonitorFlapping(ctx context.Context, tenantID, monitorID string, flapping bool, sinceMs int64) error
+	// StatusChangesSince returns the status history of a monitor from fromMs on, ordered by time.
+	StatusChangesSince(ctx context.Context, tenantID, monitorID string, fromMs int64) ([]StatusChange, error)
+	// ListChannels returns the tenant's channels ordered by name.
+	ListChannels(ctx context.Context, tenantID string) ([]NotificationChannel, error)
 	// PruneStatusHistory deletes a monitor's changes before beforeMs except
 	// the last one, which still defines the status at beforeMs.
 	PruneStatusHistory(ctx context.Context, tenantID, monitorID string, beforeMs int64) error

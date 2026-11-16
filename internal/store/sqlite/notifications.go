@@ -67,7 +67,7 @@ func (t *stateTx) GetMonitor(ctx context.Context, tenantID, id string) (store.Mo
 		return store.Monitor{}, mapErr(err)
 	}
 	m, err := monitorWithTags(ctx, t.q, row.Monitor)
-	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs)
+	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs, row.StateFlapping, row.StateFlappingSinceMs)
 	return m, err
 }
 
@@ -135,6 +135,22 @@ func (t *stateTx) DeleteChannel(ctx context.Context, tenantID, id string) error 
 
 func (t *stateTx) GetChannel(ctx context.Context, tenantID, id string) (store.NotificationChannel, error) {
 	return getChannel(ctx, t.q, tenantID, id)
+}
+
+func (t *stateTx) ListChannels(ctx context.Context, tenantID string) ([]store.NotificationChannel, error) {
+	rows, err := t.q.ListChannels(ctx, tenantID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.NotificationChannel, 0, len(rows))
+	for _, r := range rows {
+		c, err := channelFromRow(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 func (t *stateTx) SetChannelState(ctx context.Context, tenantID, id, state, lastError string) error {

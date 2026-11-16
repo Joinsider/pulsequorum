@@ -257,6 +257,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applySetNodeConnectivity(ctx, tx, cmd, p.SetNodeConnectivity)
 	case *pb.Command_SetFeatureLevel:
 		return applySetFeatureLevel(ctx, tx, cmd, p.SetFeatureLevel)
+	case *pb.Command_ClearMonitorFlapping:
+		return applyClearMonitorFlapping(ctx, tx, cmd, p.ClearMonitorFlapping)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -331,7 +333,11 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("channel document: %v", err)
 		}
-		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt)
+		extended, err := flappingEnabled(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, extended)
 		if err != nil {
 			return nil, err
 		}
@@ -510,8 +516,16 @@ func applySetMonitorState(ctx context.Context, tx store.StateTx, cmd *pb.Command
 	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
 		return nil, err
 	}
-	if err := notifyStateChange(ctx, tx, cmd, set, cur.Status, to, since); err != nil {
+	// Flapping decides whether the change notifies at all (ADR 0023, 4); the
+	// status itself is written in any case.
+	suppressed, err := handleFlapping(ctx, tx, cmd, set, cur, to, since)
+	if err != nil {
 		return nil, storeError(err)
+	}
+	if !suppressed {
+		if err := notifyStateChange(ctx, tx, cmd, set, cur.Status, to, since); err != nil {
+			return nil, storeError(err)
+		}
 	}
 	return json.Marshal(StateResult{Status: to})
 }

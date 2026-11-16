@@ -26,6 +26,11 @@ export type Monitor = MonitorInput & ({
      * @nullable
      */
   uptime24h?: number | null;
+  /**
+     * True while the monitor flaps: six status changes within 30 min. Its
+     * alerts are then summarized (FA-ALR-06).
+     */
+  readonly flapping?: boolean;
   createdAt: string;
   updatedAt: string;
 });

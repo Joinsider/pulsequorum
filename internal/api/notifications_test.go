@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -385,4 +386,34 @@ func TestMonitorChannelAssignment(t *testing.T) {
 			t.Errorf("channels after delete = %v, want none", got.NotificationChannelIds)
 		}
 	})
+}
+
+// TestDefaultChannelEventsFollowCommandLevel: new channels get the flapping and
+// channel-failed events only once the cluster command level is 4 (ADR 0023).
+func TestDefaultChannelEventsFollowCommandLevel(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	body := map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL}
+
+	created := createChannel(t, e, admin, body)
+	if len(created.Events) != 2 {
+		t.Fatalf("events at level 0 = %v, want [down up]", created.Events)
+	}
+
+	if err := e.state.Update(ctx, func(tx store.StateTx) error { return tx.SetCommandLevel(ctx, 4) }); err != nil {
+		t.Fatal(err)
+	}
+	body["name"] = "ops-level-4"
+	created = createChannel(t, e, admin, body)
+	want := []gen.NotificationEvent{gen.NotificationEvent(store.EventDown), gen.NotificationEvent(store.EventUp),
+		gen.NotificationEvent(store.EventFlapping), gen.NotificationEvent(store.EventChannelFailed)}
+	// The store keeps the events sorted, so the order is not checked.
+	if len(created.Events) != len(want) {
+		t.Fatalf("events at level 4 = %v, want %v", created.Events, want)
+	}
+	for _, w := range want {
+		if !slices.Contains(created.Events, w) {
+			t.Errorf("events at level 4 = %v, missing %s", created.Events, w)
+		}
+	}
 }

@@ -28,7 +28,9 @@ ON CONFLICT (id) DO UPDATE SET
 SELECT sqlc.embed(m),
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.id = sqlc.arg(id);
@@ -37,7 +39,9 @@ WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.id = sqlc.arg(id);
 SELECT sqlc.embed(m),
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = sqlc.arg(tenant_id)
@@ -124,12 +128,17 @@ ON CONFLICT (key_id) DO UPDATE SET
 SELECT * FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?;
 
 -- name: UpsertMonitorState :exec
+-- The flapping columns are not touched: only SetMonitorFlapping writes them.
 INSERT INTO monitor_states (tenant_id, monitor_id, status, confirmed, since_ms)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (tenant_id, monitor_id) DO UPDATE SET
     status    = excluded.status,
     confirmed = excluded.confirmed,
     since_ms  = excluded.since_ms;
+
+-- name: SetMonitorFlapping :execrows
+UPDATE monitor_states SET flapping = sqlc.arg(flapping), flapping_since_ms = sqlc.arg(flapping_since_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id);
 
 -- name: InsertIncident :exec
 INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
@@ -365,6 +374,13 @@ UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? A
 
 -- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?;
+
+-- name: StatusChangesSince :many
+-- The changes at or after from_ms; the FSM counts flapping changes from them.
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = sqlc.arg(tenant_id) AND h.monitor_id = sqlc.arg(monitor_id)
+  AND h.since_ms >= sqlc.arg(from_ms)
+ORDER BY h.since_ms;
 
 -- name: StatusHistoryBatch :many
 -- StatusHistory of several monitors at once: per monitor, the changes in

@@ -18,7 +18,9 @@
     "down": "Ausgefallen",
     "up": "Wieder online",
     "degraded": "Beeinträchtigt",
-    "partial": "Teilweise ausgefallen"
+    "partial": "Teilweise ausgefallen",
+    "flapping": "Flattern",
+    "channel_failed": "Anderer Kanal ausgefallen"
   },
   "default": "Standard",
   "lastError": "Letzter Fehler",

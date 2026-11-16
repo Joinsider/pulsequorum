@@ -411,7 +411,9 @@ const getMonitor = `-- name: GetMonitor :one
 SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = ?1 AND m.id = ?2
@@ -423,10 +425,12 @@ type GetMonitorParams struct {
 }
 
 type GetMonitorRow struct {
-	Monitor        Monitor
-	StateStatus    string
-	StateConfirmed int64
-	StateSinceMs   int64
+	Monitor              Monitor
+	StateStatus          string
+	StateConfirmed       int64
+	StateSinceMs         int64
+	StateFlapping        int64
+	StateFlappingSinceMs int64
 }
 
 // Monitors and their state are written in the same FSM transaction; the
@@ -456,12 +460,14 @@ func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (GetMoni
 		&i.StateStatus,
 		&i.StateConfirmed,
 		&i.StateSinceMs,
+		&i.StateFlapping,
+		&i.StateFlappingSinceMs,
 	)
 	return i, err
 }
 
 const getMonitorState = `-- name: GetMonitorState :one
-SELECT tenant_id, monitor_id, status, confirmed, since_ms FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?
+SELECT tenant_id, monitor_id, status, confirmed, since_ms, flapping, flapping_since_ms FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?
 `
 
 type GetMonitorStateParams struct {
@@ -478,6 +484,8 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 		&i.Status,
 		&i.Confirmed,
 		&i.SinceMs,
+		&i.Flapping,
+		&i.FlappingSinceMs,
 	)
 	return i, err
 }
@@ -1329,7 +1337,9 @@ const listMonitors = `-- name: ListMonitors :many
 SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = ?1
@@ -1353,10 +1363,12 @@ type ListMonitorsParams struct {
 }
 
 type ListMonitorsRow struct {
-	Monitor        Monitor
-	StateStatus    string
-	StateConfirmed int64
-	StateSinceMs   int64
+	Monitor              Monitor
+	StateStatus          string
+	StateConfirmed       int64
+	StateSinceMs         int64
+	StateFlapping        int64
+	StateFlappingSinceMs int64
 }
 
 func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]ListMonitorsRow, error) {
@@ -1397,6 +1409,8 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 			&i.StateStatus,
 			&i.StateConfirmed,
 			&i.StateSinceMs,
+			&i.StateFlapping,
+			&i.StateFlappingSinceMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1983,6 +1997,31 @@ func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
 	return err
 }
 
+const setMonitorFlapping = `-- name: SetMonitorFlapping :execrows
+UPDATE monitor_states SET flapping = ?1, flapping_since_ms = ?2
+WHERE tenant_id = ?3 AND monitor_id = ?4
+`
+
+type SetMonitorFlappingParams struct {
+	Flapping        int64
+	FlappingSinceMs int64
+	TenantID        string
+	MonitorID       string
+}
+
+func (q *Queries) SetMonitorFlapping(ctx context.Context, arg SetMonitorFlappingParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setMonitorFlapping,
+		arg.Flapping,
+		arg.FlappingSinceMs,
+		arg.TenantID,
+		arg.MonitorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setNodeConnectivity = `-- name: SetNodeConnectivity :execrows
 UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,
                  connectivity_changed_ms = ?, updated_ms = ?
@@ -2027,6 +2066,48 @@ func (q *Queries) SetUserLastLogin(ctx context.Context, arg SetUserLastLoginPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const statusChangesSince = `-- name: StatusChangesSince :many
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = ?1 AND h.monitor_id = ?2
+  AND h.since_ms >= ?3
+ORDER BY h.since_ms
+`
+
+type StatusChangesSinceParams struct {
+	TenantID  string
+	MonitorID string
+	FromMs    int64
+}
+
+type StatusChangesSinceRow struct {
+	SinceMs int64
+	Status  string
+}
+
+// The changes at or after from_ms; the FSM counts flapping changes from them.
+func (q *Queries) StatusChangesSince(ctx context.Context, arg StatusChangesSinceParams) ([]StatusChangesSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusChangesSince, arg.TenantID, arg.MonitorID, arg.FromMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatusChangesSinceRow{}
+	for rows.Next() {
+		var i StatusChangesSinceRow
+		if err := rows.Scan(&i.SinceMs, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const statusHistory = `-- name: StatusHistory :many
@@ -2405,6 +2486,7 @@ type UpsertMonitorStateParams struct {
 	SinceMs   int64
 }
 
+// The flapping columns are not touched: only SetMonitorFlapping writes them.
 func (q *Queries) UpsertMonitorState(ctx context.Context, arg UpsertMonitorStateParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMonitorState,
 		arg.TenantID,

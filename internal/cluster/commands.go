@@ -21,8 +21,9 @@ import (
 
 // CommandVersion is the highest Command.version this binary can apply.
 // It is raised together with a feature gate (FA-CLU-12). Version 2 adds
-// RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022).
-const CommandVersion = 3
+// RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022),
+// version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023).
+const CommandVersion = 4
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this
@@ -41,6 +42,21 @@ func NewSetNodeConnectivity(nodeID string, impaired bool, reason string) *pb.Com
 		RequestId: uuid.NewString(),
 		Payload: &pb.Command_SetNodeConnectivity{SetNodeConnectivity: &pb.SetNodeConnectivity{
 			NodeId: nodeID, Impaired: impaired, Reason: reason,
+		}},
+	})
+}
+
+// NewClearMonitorFlapping builds the command that ends the flapping period
+// started at expectedSinceMs (ADR 0023). The request ID is derived from the
+// period, so a retry of the same period is deduplicated, and a later period
+// gets its own ID.
+func NewClearMonitorFlapping(tenantID, monitorID string, expectedSinceMs int64) *pb.Command {
+	return stamp(&pb.Command{
+		RequestId: fmt.Sprintf("flapping-clear:%s:%d", monitorID, expectedSinceMs),
+		TenantId:  tenantID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_ClearMonitorFlapping{ClearMonitorFlapping: &pb.ClearMonitorFlapping{
+			MonitorId: monitorID, ExpectedSinceMs: expectedSinceMs,
 		}},
 	})
 }

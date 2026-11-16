@@ -19,4 +19,6 @@ export const NotificationEvent = {
   up: 'up',
   degraded: 'degraded',
   partial: 'partial',
+  flapping: 'flapping',
+  channel_failed: 'channel_failed',
 } as const;

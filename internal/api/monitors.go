@@ -713,6 +713,7 @@ func toAPIMonitor(m store.Monitor) gen.Monitor {
 	}
 	policy := gen.ConsensusPolicy(m.ConsensusPolicy)
 	tags := m.Tags
+	flapping := m.State.Flapping
 	if tags == nil {
 		tags = []string{}
 	}
@@ -741,6 +742,7 @@ func toAPIMonitor(m store.Monitor) gen.Monitor {
 		NotificationChannelIds: &channelIDs,
 		Status:                 gen.MonitorStatus(m.State.Status),
 		StatusSince:            time.UnixMilli(m.State.SinceMs).UTC(),
+		Flapping:               &flapping,
 		CreatedAt:              time.UnixMilli(m.CreatedMs).UTC(),
 		UpdatedAt:              time.UnixMilli(m.UpdatedMs).UTC(),
 	}

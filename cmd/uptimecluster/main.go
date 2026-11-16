@@ -317,6 +317,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bg.Go(func() { assessor.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
 	bg.Go(func() { maint.Run(ctx) })
+	// Ends flapping periods after 30 min without a status change (FA-ALR-06, ADR 0023).
+	flapping := alert.NewFlappingWatcher(alert.FlappingWatcherOptions{
+		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Now: clock, Logger: log,
+	})
+	bg.Go(func() { flapping.Run(ctx) })
 	bg.Go(func() {
 		configsecret.RunMigration(ctx, configsecret.MigrationOptions{
 			State: state, Cluster: raftNode, Keyring: keyring, Schemas: &configsecret.Schemas{Registry: checker.Default},

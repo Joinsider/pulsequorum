@@ -103,6 +103,10 @@ func applyEnqueueAlert(ctx context.Context, tx store.StateTx, cmd *pb.Command, e
 	if m.State.Status != store.StatusDown || m.State.SinceMs != e.GetDownSinceMs() {
 		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is no longer in that DOWN period", m.ID)}
 	}
+	if m.State.Flapping {
+		// A flapping monitor sends its summary only; reminders wait (ADR 0023, 4).
+		return json.Marshal(PutResult{})
+	}
 	p := AlertPayload{
 		AlertID:  fmt.Sprintf("%s:reminder:%d", alertKey(m.ID, m.State.SinceMs, store.StatusDown), e.GetReminder()),
 		TenantID: m.TenantID, MonitorID: m.ID, MonitorName: m.Name, MonitorType: m.Type, Event: store.EventDown,
@@ -150,8 +154,24 @@ func applyAckAlertDelivery(ctx context.Context, tx store.StateTx, cmd *pb.Comman
 		return nil, err
 	}
 	if channelState != "" {
+		prev, err := tx.GetChannel(ctx, a.TenantID, a.ChannelID)
+		if err != nil {
+			return nil, storeError(err)
+		}
 		if err := tx.SetChannelState(ctx, a.TenantID, a.ChannelID, channelState, channelErr); err != nil {
 			return nil, err
+		}
+		enabled, err := flappingEnabled(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		// Only a channel that fails notifies; recovery does not (ADR 0023, 5).
+		if enabled && channelState != store.ChannelOK && prev.State != channelState {
+			failed := prev
+			failed.State, failed.LastError = channelState, channelErr
+			if err := notifyChannelFailed(ctx, tx, cmd, a, failed); err != nil {
+				return nil, storeError(err)
+			}
 		}
 	}
 	if err := tx.PruneAlerts(ctx, now-alertRetention.Milliseconds()); err != nil {
@@ -161,7 +181,10 @@ func applyAckAlertDelivery(ctx context.Context, tx store.StateTx, cmd *pb.Comman
 }
 
 // channelFromDocument validates a channel document; secrets must be encrypted.
-func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64) (store.NotificationChannel, error) {
+//
+// extended admits the events of command level 4 (ADR 0023); below that level
+// they are unknown, as before.
+func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64, extended bool) (store.NotificationChannel, error) {
 	switch {
 	case tenantID == "":
 		return store.NotificationChannel{}, invalid("channel command without tenant")
@@ -178,6 +201,10 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 	for _, e := range doc.Events {
 		switch e {
 		case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
+		case store.EventFlapping, store.EventChannelFailed:
+			if !extended {
+				return store.NotificationChannel{}, invalid("event %q", e)
+			}
 		default:
 			return store.NotificationChannel{}, invalid("event %q", e)
 		}

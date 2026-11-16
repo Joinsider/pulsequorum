@@ -46,6 +46,7 @@ message Command {
     RevokeNode revoke_node = 24;
     SetNodeHealth set_node_health = 25;
     SetNodeConnectivity set_node_connectivity = 26;
+    ClearMonitorFlapping clear_monitor_flapping = 27;
   }
 }
 
@@ -196,6 +197,15 @@ message SetNodeConnectivity {
 // SetFeatureLevel raises the command version the cluster may use (FA-CLU-12).
 message SetFeatureLevel {
   uint32 level = 1;
+}
+
+// ClearMonitorFlapping ends a flapping period of a monitor (FA-ALR-06, ADR 0023).
+// The leader proposes it after a quiet period. The FSM clears the period only if
+// it still is the one the leader saw (expected_since_ms), otherwise it rejects
+// the command as a conflict.
+message ClearMonitorFlapping {
+  string monitor_id = 1;
+  int64 expected_since_ms = 2;
 }
 
 // NodeInfo describes a voter or probe.

@@ -42,6 +42,9 @@
           <dt>{{ t('monitorDetail.meta.status') }}</dt>
           <dd>
             <app-status-badge [status]="m.status" />
+            @if (m.flapping) {
+              <app-flapping-badge />
+            }
             <span class="muted">
               {{
                 t('monitorDetail.meta.statusSince', {

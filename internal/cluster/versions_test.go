@@ -51,6 +51,8 @@ func TestMinVersion(t *testing.T) {
 		{"constructor register node", NewRegisterNode("r", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 2},
 		{"constructor delete monitor", NewDeleteMonitor("r", "default", "m1"), 1},
 		{"constructor set feature level", NewSetFeatureLevel("r", 3), 2},
+		{"clear monitor flapping", &pb.Command{Payload: &pb.Command_ClearMonitorFlapping{ClearMonitorFlapping: &pb.ClearMonitorFlapping{}}}, 4},
+		{"constructor clear monitor flapping", NewClearMonitorFlapping("t1", "m1", 1000), 4},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

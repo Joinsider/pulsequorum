@@ -94,6 +94,9 @@
           <tr>
             <td class="cell cell--status" [attr.data-label]="t('dashboard.columns.status')">
               <app-status-badge [status]="row.monitor.status" />
+              @if (row.monitor.flapping) {
+                <app-flapping-badge />
+              }
             </td>
             <th scope="row" class="cell cell--name">
               <a class="name" [routerLink]="['/monitors', row.monitor.id]">{{

@@ -1067,6 +1067,13 @@ components:
               format: double
               nullable: true
               description: Percentage 0–100, null if no data
+            flapping:
+              type: boolean
+              readOnly: true
+              default: false
+              description: |
+                True while the monitor flaps: six status changes within 30 min. Its
+                alerts are then summarized (FA-ALR-06).
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
     MonitorPage:
@@ -1161,7 +1168,7 @@ components:
       enum: [shoutrrr, webhook]
     NotificationEvent:
       type: string
-      enum: [down, up, degraded, partial]
+      enum: [down, up, degraded, partial, flapping, channel_failed]
     WebhookConfig:
       type: object
       required: [url]
@@ -1192,6 +1199,9 @@ components:
           type: array
           items: { $ref: "#/components/schemas/NotificationEvent" }
           default: [down, up]
+          description: |
+            Omitted on create: `down` and `up`, plus `flapping` and `channel_failed`
+            once the cluster command level is 4 or higher (ADR 0023).
         isDefault:
           type: boolean
           default: false

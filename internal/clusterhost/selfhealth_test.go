@@ -120,9 +120,9 @@ func TestSelfHealExcludesDeviatingVoter(t *testing.T) {
 	defer cancel()
 	c := startConsensusCluster(ctx, t)
 	defer c.shutdown()
-	eventually(t, "command level 3", 30*time.Second, func() bool {
+	eventually(t, "command level ≥ 3 (SetNodeConnectivity)", 30*time.Second, func() bool {
 		level, err := c.nodes[0].host.Node.CommandLevel(ctx)
-		return err == nil && level == 3
+		return err == nil && level >= 3
 	})
 
 	for _, id := range []string{selfhealMajority, selfhealAny} {

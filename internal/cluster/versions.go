@@ -42,6 +42,8 @@ func minVersion(cmd *pb.Command) uint32 {
 		return 2
 	case *pb.Command_SetNodeConnectivity:
 		return 3
+	case *pb.Command_ClearMonitorFlapping:
+		return 4
 	}
 	return 0
 }

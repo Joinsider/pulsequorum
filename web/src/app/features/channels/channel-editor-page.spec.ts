@@ -144,7 +144,7 @@ describe('ChannelEditorPage', () => {
       name: 'Mail',
       kind: 'shoutrrr',
       url: 'gotify://gotify.local/a%2Fb',
-      events: ['down', 'up'],
+      events: ['down', 'up', 'flapping', 'channel_failed'],
     });
   });
 
@@ -172,6 +172,8 @@ describe('ChannelEditorPage', () => {
       up: false,
       degraded: false,
       partial: false,
+      flapping: false,
+      channel_failed: false,
     });
     page['shoutrrrChoice'].setValue('expert');
     page['expertUrl'].setValue('ntfy://ntfy.sh/t');

@@ -33,7 +33,8 @@
     "PENDING": "Ausstehend",
     "MAINTENANCE": "Wartung",
     "PAUSED": "Pausiert",
-    "UNKNOWN": "Unbekannt"
+    "UNKNOWN": "Unbekannt",
+    "flapping": "Flattert"
   },
   "uptimeBar": {
     "label": "Verfügbarkeitsverlauf",

@@ -33,7 +33,8 @@
     "PENDING": "Pending",
     "MAINTENANCE": "Maintenance",
     "PAUSED": "Paused",
-    "UNKNOWN": "Unknown"
+    "UNKNOWN": "Unknown",
+    "flapping": "Flapping"
   },
   "uptimeBar": {
     "label": "Uptime history",

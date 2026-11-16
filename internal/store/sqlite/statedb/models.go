@@ -99,11 +99,13 @@ type MonitorChannel struct {
 }
 
 type MonitorState struct {
-	TenantID  string
-	MonitorID string
-	Status    string
-	Confirmed int64
-	SinceMs   int64
+	TenantID        string
+	MonitorID       string
+	Status          string
+	Confirmed       int64
+	SinceMs         int64
+	Flapping        int64
+	FlappingSinceMs int64
 }
 
 type MonitorStatusHistory struct {

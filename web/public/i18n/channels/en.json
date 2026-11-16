@@ -18,7 +18,9 @@
     "down": "Down",
     "up": "Up",
     "degraded": "Degraded",
-    "partial": "Partial"
+    "partial": "Partial",
+    "flapping": "Flapping",
+    "channel_failed": "Another channel failed"
   },
   "default": "Default",
   "lastError": "Last error",

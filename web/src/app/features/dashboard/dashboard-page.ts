@@ -23,6 +23,7 @@ import { LiveStreamService } from '../../core/stream/live-stream.service';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header';
 import { RelativeTimePipe } from '../../shared/relative-time.pipe';
+import { FlappingBadge } from '../../shared/status/flapping-badge';
 import { StatusBadge } from '../../shared/status/status-badge';
 import { statusColorVar } from '../../shared/status/status-colors';
 import {
@@ -59,6 +60,7 @@ export interface DashboardRow {
     Icon,
     PageHeader,
     RelativeTimePipe,
+    FlappingBadge,
     StatusBadge,
   ],
   templateUrl: './dashboard-page.html',
