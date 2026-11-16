@@ -516,12 +516,19 @@ func (d *Dispatcher) failure(attempt int, permanent bool, msg string, retryAfter
 
 // backoff returns min(30 s * 2^(attempt-1), 1 h) scaled by a factor in [0.8, 1.2).
 func (d *Dispatcher) backoff(attempt int) time.Duration {
+	return backoffDelay(attempt, d.opts.Jitter())
+}
+
+// backoffDelay is the retry delay after attempt failed attempts. jitter is in
+// [0,1) and selects the factor in [0.8, 1.2) (ADR 0014). It is shared with the
+// degraded mode's local dispatcher.
+func backoffDelay(attempt int, jitter float64) time.Duration {
 	base := retryBase
 	for i := 1; i < attempt && base < retryMax; i++ {
 		base *= 2
 	}
 	base = min(base, retryMax)
-	return time.Duration(float64(base) * (0.8 + 0.4*d.opts.Jitter()))
+	return time.Duration(float64(base) * (0.8 + 0.4*jitter))
 }
 
 // EnqueueReminders proposes the repeated DOWN alert of every monitor that is
