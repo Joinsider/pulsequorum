@@ -133,6 +133,10 @@ type Options struct {
 	State      *sqlite.StateStore
 	// Metrics holds the heartbeats that the replication exchanges (FA-REP-01).
 	Metrics store.Metrics
+	// OnHeartbeatsStored is called with the heartbeats that replication stored
+	// (pushes and anti-entropy pages), see replication.Options.OnStored. It
+	// must not block (ADR 0021). Nil means no callback.
+	OnHeartbeatsStored func([]store.Heartbeat)
 	// ReplicationInterval is the period of the anti-entropy pass per peer.
 	// Zero means the default of the replication package; tests use short ones.
 	ReplicationInterval time.Duration
@@ -271,6 +275,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Log:                 opts.Log,
 		AntiEntropyInterval: opts.ReplicationInterval,
 		Now:                 clock,
+		OnStored:            opts.OnHeartbeatsStored,
 	})
 	// A peer that resumes heartbeats or joins the configuration gets an
 	// immediate anti-entropy pass (ADR 0012 B6). Followers do not see these
@@ -283,7 +288,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
 	})
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
-		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, Log: opts.Log,
+		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, OnStored: opts.OnHeartbeatsStored, Log: opts.Log,
 	})
 	h.wg.Go(func() {
 		if err := mux.Serve(); err != nil {

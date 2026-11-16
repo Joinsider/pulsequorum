@@ -31,9 +31,10 @@ type HeartbeatWriter struct {
 
 	seq   atomic.Uint64
 	queue chan store.Heartbeat
-	// onStored is called with every batch stored successfully (push to the
-	// peers). It must not block; see SetOnStored.
-	onStored func([]store.Heartbeat)
+	// onStored are called with every batch stored successfully, in
+	// registration order (push to the peers, leader aggregation per ADR 0021).
+	// They must not block; see SetOnStored.
+	onStored []func([]store.Heartbeat)
 }
 
 var _ Sink = (*HeartbeatWriter)(nil)
@@ -51,9 +52,13 @@ func NewHeartbeatWriter(ctx context.Context, metrics store.Metrics, nodeID strin
 }
 
 // SetOnStored registers fn to receive every batch after it was stored. fn must
-// not block, because the writer runs on. It must be set before Run starts.
+// not block, because the writer runs on; ADR 0021. The slice is only valid
+// during the call, so fn must copy what it keeps. Several functions may be
+// registered; they are called in registration order. Register before Run starts.
 func (w *HeartbeatWriter) SetOnStored(fn func([]store.Heartbeat)) {
-	w.onStored = fn
+	if fn != nil {
+		w.onStored = append(w.onStored, fn)
+	}
 }
 
 // Record implements Sink. It blocks only if the queue is full, which applies
@@ -129,8 +134,8 @@ func (w *HeartbeatWriter) flush(ctx context.Context, batch []store.Heartbeat) {
 	for {
 		_, err := w.metrics.InsertHeartbeats(ctx, batch)
 		if err == nil {
-			if w.onStored != nil {
-				w.onStored(batch)
+			for _, fn := range w.onStored {
+				fn(batch)
 			}
 			return
 		}

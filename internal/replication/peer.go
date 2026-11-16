@@ -307,6 +307,9 @@ func (w *worker) fetchStream(ctx context.Context, client pb.ReplicationServiceCl
 			if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 				return fmt.Errorf("store page of %s/%s: %w", key.node, key.inc, err)
 			}
+			if w.r.opts.OnStored != nil {
+				w.r.opts.OnStored(hbs)
+			}
 		}
 		// Every seq up to next exists on the peer, and the page holds all of them (ADR 0012 B2).
 		if err := m.AdvanceStreamPosition(ctx, store.StreamPosition{NodeID: key.node, Incarnation: key.inc, Seq: next}); err != nil {
