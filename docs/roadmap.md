@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P3 – HA-Logik (P1 und P2 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-3.2 Node-Selbstgesundheit (Design klären, ggf. ADR) |
+| **Wartet auf Projektinhaber** | Review ADR 0022 (Node-Selbstgesundheit) |
+| **Nächster Schritt (Claude)** | AP-3.2 nach Annahme von ADR 0022 |
 
 ---
 
@@ -98,7 +98,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP | Inhalt | Anforderungen | Status |
 |----|--------|---------------|--------|
 | AP-3.1 | Konsens-Status (majority/any/all), PARTIAL, UNKNOWN, Bewertung auf dem Leader | FA-CON-01/02/05/06 | ✅ Nach ADR 0021: Aggregator bewertet nur auf dem Leader (nach 10 s Karenz) je Check-Slot aus den Heartbeats aller zuständigen Nodes (`scheduler.Assigner`, Filter `Exclude` für AP-3.2). Eingang über `OnStored` am lokalen Writer, an Push und Anti-Entropie (`clusterhost.Options.OnHeartbeatsStored`); kein `scheduler.Sink` mehr. Konsens als reine Funktion (`majority`/`any`/`all`, PARTIAL positiv, DEGRADED nach derselben Regel), Melder je Slot k = jüngster Heartbeat aus Slot k oder k−1 (älter gilt als fehlend), niemand meldet → UNKNOWN, aus DOWN/PENDING bleibt der Status. Bewertung sobald alle gemeldet haben, sonst zur Frist `timeout + 5 s`. Neuer Leader baut die Streaks aus `metrics.db` nach und schlägt fällige Wechsel vor. Incident mit allen DOWN meldenden Nodes. Tests: Konsens-Tabelle (vollständig bis 4 Nodes), Slots, Spät-Ankunft, Retries je Runde, Mandantengrenze, Leaderwechsel; Integrationstest 3 Voter (PARTIAL, genau ein DOWN mit allen Nodes, UP nach Leaderwechsel). Umsetzung durch Haiku-Agenten; Melder-Fenster vom Hauptagenten korrigiert. Offen: jeder eingehende Batch prüft alle Monitore (Dirty-Set bei vielen Monitoren), Selbstgesundheit (AP-3.2) |
-| AP-3.2 | Node-Selbstgesundheit (Referenzziele, Ausschluss aus Bewertung) | FA-CON-04 | ⬜ |
+| AP-3.2 | Node-Selbstgesundheit (Referenzziele, Ausschluss aus Bewertung) | FA-CON-04 | ⛔ blockiert (ADR 0022) |
 | AP-3.3 | Leader-Alerting mit Dedup über Raft, Fortsetzung der Outbox nach Leaderwechsel | FA-ALR-03 | ✅ Outbox und Dispatcher auf dem Leader seit AP-1.8 (ADR 0014). Nachweis `TestLeaderChangeAlerting` (3 Voter, Dispatcher je Node, zwei Kanäle): zugestellter DOWN wird nach Leaderwechsel nicht wiederholt; blockierter Versand ohne Ack → neuer Leader stellt genau einmal zu; Versand ohne committeten Ack → höchstens zwei Zustellungen; DOWN und UP über verschiedene Leader je genau einmal. Gefundener Fehler behoben: ein abgesetzter Leader setzte den laufenden Batch (bis 50 Einträge) fort; `DeliverDue` prüft die Leaderschaft jetzt vor jedem Eintrag. Umsetzung durch Haiku-Agenten |
 | AP-3.4 | Rate-Limits, Bündelung, dauerhafte Fehler, Flapping | FA-ALR-04..06 | ⬜ |
 | AP-3.5 | Degraded-Modus, Absender-Sicht, Korrektur nach Quorum-Rückkehr, Neubewertung | FA-ALR-10/11, FA-UPT-07 | ⬜ |
