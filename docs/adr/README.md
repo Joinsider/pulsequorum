@@ -28,4 +28,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0020](0020-uhrversatz-messen-und-testen.md) | Uhrversatz zwischen Nodes messen und testen | Accepted | 2026-11-15 |
 | [0021](0021-konsens-bewertung-auf-dem-leader.md) | Konsens-Bewertung auf dem Leader in Bewertungsrunden | Accepted | 2026-11-16 |
 | [0022](0022-node-selbstgesundheit.md) | Node-Selbstgesundheit (Konnektivität) und Ausschluss aus der Bewertung | Accepted | 2026-11-16 |
-| [0023](0023-alert-drosselung-buendelung-flapping.md) | Alert-Drosselung, Bündelung, dauerhafte Fehler und Flapping | Proposed | 2026-11-16 |
+| [0023](0023-alert-drosselung-buendelung-flapping.md) | Alert-Drosselung, Bündelung, dauerhafte Fehler und Flapping | Accepted | 2026-11-16 |
