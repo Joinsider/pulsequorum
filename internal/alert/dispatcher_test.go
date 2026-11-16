@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,5 +447,63 @@ func TestDisabledChannelFailsPendingEntries(t *testing.T) {
 	ch, err = f.state.GetChannel(f.ctx, cluster.DefaultTenantID, testChannelID)
 	if err != nil || ch.State != store.ChannelDisabled || ch.LastError != "webhook answered 401 Unauthorized" {
 		t.Errorf("channel = %+v, %v; want still disabled with its error", ch, err)
+	}
+}
+
+// stepDownSender loses leadership during its first send, as a node does when
+// Raft hands the leadership over while a batch is running.
+type stepDownSender struct {
+	leader *atomic.Bool
+	calls  atomic.Int32
+}
+
+func (s *stepDownSender) Send(context.Context, Target, cluster.AlertPayload) error {
+	s.calls.Add(1)
+	s.leader.Store(false)
+	return nil
+}
+
+// TestDeliverDueStopsAfterLeadershipLoss checks that a node which lost
+// leadership during a batch sends nothing more; the entries stay pending for
+// the new leader (FA-ALR-03).
+func TestDeliverDueStopsAfterLeadershipLoss(t *testing.T) {
+	f := newFixture(t)
+	f.channel(testChannelID, store.ChannelWebhook, "https://hooks.example.com/a")
+	f.channel("ch2", store.ChannelWebhook, "https://hooks.example.com/b")
+	f.monitor("web", 0, testChannelID, "ch2")
+	since := time.Now().UnixMilli() + 1000
+	f.setState(store.StatusPending, store.StatusDown, since, "11111111-1111-1111-1111-111111111111")
+	clk := &clock{t: time.Now().Add(time.Minute)}
+
+	var leader atomic.Bool
+	leader.Store(true)
+	s := &stepDownSender{leader: &leader}
+	d := NewDispatcher(DispatcherOptions{
+		State: f.state, Cluster: f.node, Keyring: f.kr, Sender: s,
+		IsLeader: leader.Load, Logger: slog.New(slog.DiscardHandler),
+		Now: clk.now, Jitter: func() float64 { return 0.5 },
+		Concurrency: 1, // one entry at a time, so the step-down happens between sends
+	})
+	if err := d.DeliverDue(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.calls.Load(); got != 1 {
+		t.Fatalf("sends = %d, want 1 after losing leadership", got)
+	}
+	var delivered, pending int
+	for _, ch := range []string{testChannelID, "ch2"} {
+		a, err := f.state.GetAlert(f.ctx, fmt.Sprintf("%s:%d:DOWN", testMonitorID, since), ch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch a.State {
+		case store.AlertDelivered:
+			delivered++
+		case store.AlertPending:
+			pending++
+		}
+	}
+	if delivered != 1 || pending != 1 {
+		t.Errorf("delivered = %d, pending = %d; want one of each", delivered, pending)
 	}
 }

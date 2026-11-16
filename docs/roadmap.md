@@ -14,7 +14,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |---|---|
 | **Aktive Phase** | P3 – HA-Logik (P1 und P2 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
 | **Wartet auf Projektinhaber** | Review ADR 0021 (Konsens-Bewertung auf dem Leader) |
-| **Nächster Schritt (Claude)** | AP-3.3 Leader-Alerting nach Leaderwechsel absichern (ADR 0014); AP-3.1/3.2 nach Annahme von ADR 0021 |
+| **Nächster Schritt (Claude)** | AP-3.1 Konsens-Bewertung auf dem Leader (ADR 0021) |
 
 ---
 
@@ -99,7 +99,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 |----|--------|---------------|--------|
 | AP-3.1 | Konsens-Status (majority/any/all), PARTIAL, UNKNOWN, Bewertung auf dem Leader | FA-CON-01/02/05/06 | ⛔ blockiert (ADR 0021) |
 | AP-3.2 | Node-Selbstgesundheit (Referenzziele, Ausschluss aus Bewertung) | FA-CON-04 | ⛔ blockiert (ADR 0021) |
-| AP-3.3 | Leader-Alerting mit Dedup über Raft, Fortsetzung der Outbox nach Leaderwechsel | FA-ALR-03 | 🔄 Outbox und Dispatcher auf dem Leader stehen seit AP-1.8 (ADR 0014); Nachweis über Leaderwechsel in Arbeit |
+| AP-3.3 | Leader-Alerting mit Dedup über Raft, Fortsetzung der Outbox nach Leaderwechsel | FA-ALR-03 | ✅ Outbox und Dispatcher auf dem Leader seit AP-1.8 (ADR 0014). Nachweis `TestLeaderChangeAlerting` (3 Voter, Dispatcher je Node, zwei Kanäle): zugestellter DOWN wird nach Leaderwechsel nicht wiederholt; blockierter Versand ohne Ack → neuer Leader stellt genau einmal zu; Versand ohne committeten Ack → höchstens zwei Zustellungen; DOWN und UP über verschiedene Leader je genau einmal. Gefundener Fehler behoben: ein abgesetzter Leader setzte den laufenden Batch (bis 50 Einträge) fort; `DeliverDue` prüft die Leaderschaft jetzt vor jedem Eintrag. Umsetzung durch Haiku-Agenten |
 | AP-3.4 | Rate-Limits, Bündelung, dauerhafte Fehler, Flapping | FA-ALR-04..06 | ⬜ |
 | AP-3.5 | Degraded-Modus, Absender-Sicht, Korrektur nach Quorum-Rückkehr, Neubewertung | FA-ALR-10/11, FA-UPT-07 | ⬜ |
 | AP-3.6 | Selbstüberwachung, Systemalerts, Prometheus-Metriken | FA-OBS-01/02, FA-REP-05/06, FA-PKI-06 | ⬜ |

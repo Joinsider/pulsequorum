@@ -156,10 +156,13 @@ func (d *Dispatcher) DeliverDue(ctx context.Context) error {
 	sem := make(chan struct{}, d.opts.Concurrency)
 	var wg sync.WaitGroup
 	for _, a := range due {
-		if ctx.Err() != nil {
+		sem <- struct{}{}
+		// Checked after the slot is free: a node that lost leadership while
+		// the batch was running leaves the rest to the new leader (ADR 0014).
+		if ctx.Err() != nil || !d.opts.IsLeader() {
+			<-sem
 			break
 		}
-		sem <- struct{}{}
 		wg.Add(1)
 		go func() {
 			defer func() {
