@@ -7,6 +7,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 )
 
 // Timings of the clock offset measurement (ADR 0020).
@@ -79,6 +81,43 @@ func (h *Host) ClockOffsets() map[string]int64 {
 	return h.clocks.offsets(h.clock())
 }
 
+// PeerSelfChecks returns the self-check state of each peer voter as the last
+// GetStatus answer reported it, by node ID (ADR 0022). Only peers with an
+// answer in the last clockMaxAge appear.
+func (h *Host) PeerSelfChecks() map[string]selfcheck.Remote {
+	return h.selfChecks.snapshot(h.clock())
+}
+
+// selfCheckTracker keeps the last self-check answer per peer.
+type selfCheckTracker struct {
+	mu      sync.Mutex
+	remotes map[string]selfcheck.Remote
+}
+
+func (t *selfCheckTracker) record(peerID string, r selfcheck.Remote) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.remotes == nil {
+		t.remotes = map[string]selfcheck.Remote{}
+	}
+	t.remotes[peerID] = r
+}
+
+// snapshot returns a copy of the answers received within clockMaxAge of now.
+func (t *selfCheckTracker) snapshot(now time.Time) map[string]selfcheck.Remote {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]selfcheck.Remote, len(t.remotes))
+	for id, r := range t.remotes {
+		if now.Sub(r.ReceivedAt) > clockMaxAge {
+			delete(t.remotes, id)
+			continue
+		}
+		out[id] = r
+	}
+	return out
+}
+
 // watchClocks measures the offset of every peer voter every
 // clockSampleInterval until ctx ends. Every voter measures, not only the
 // leader, because the node list is answered by any voter.
@@ -108,6 +147,15 @@ func (h *Host) measureClocks(ctx context.Context) {
 		if err != nil || st.GetWallClockUnixMs() == 0 { // zero: a binary without the field
 			continue
 		}
+		// The self-check answer rides on the same poll (ADR 0022). Its age is
+		// taken on the peer's clock, so a skewed clock does not distort it.
+		h.selfChecks.record(p.ID, selfcheck.Remote{
+			Status: selfcheck.Status{
+				Configured: st.GetSelfCheckConfigured(), Failed: st.GetSelfCheckFailed(), AtMs: st.GetSelfCheckAtMs(),
+			},
+			ReceivedAt: t1,
+			Age:        time.Duration(st.GetWallClockUnixMs()-st.GetSelfCheckAtMs()) * time.Millisecond,
+		})
 		offset, ok := estimateOffset(t0, t1, time.UnixMilli(st.GetWallClockUnixMs()))
 		if !ok {
 			h.log.Debug("clock sample discarded: round trip too long", "peer", p.ID, "rtt", t1.Sub(t0))

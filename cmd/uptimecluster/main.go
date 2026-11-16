@@ -41,6 +41,8 @@ import (
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
+	"github.com/joinsider/uptimecluster/internal/selfhealth"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
@@ -171,6 +173,26 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		capabilities = append(capabilities, icmpcheck.Capability)
 	}
 
+	// Node self-check (ADR 0022): the reference targets are probed through the
+	// same SSRF-aware dialer as the checkers, so they obey the same address policy.
+	var policy checker.AddressPolicy
+	if cfg.SSRFProtectionEnabled() {
+		policy = checker.BlockPrivate{}
+	}
+	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
+	dialer := &checker.Dialer{Policy: policy}
+	selfTargets, err := selfcheck.ParseTargets(cfg.SelfCheckTargets)
+	if err != nil {
+		return fmt.Errorf("SELF_CHECK_TARGETS: %w", err)
+	}
+	selfProber, err := selfcheck.New(selfcheck.Options{Targets: selfTargets, Dialer: dialer, Now: clock, Logger: log})
+	if err != nil {
+		return err
+	}
+	if len(selfTargets) > 0 {
+		log.Info("node self-check enabled", "targets", len(selfTargets))
+	}
+
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
 	// The aggregator needs the Raft node, which exists only after Start. Stored
 	// heartbeats that arrive before it is set are not observed; the leader
@@ -181,7 +203,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
-		Clock: clock,
+		Clock:     clock,
+		SelfCheck: selfProber.Status,
 		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
 			if a := aggPtr.Load(); a != nil {
 				a.Observe(hbs)
@@ -242,13 +265,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	// Stored heartbeats are pushed to the other voters without blocking the writer.
 	heartbeats.SetOnStored(host.Replication.Publish)
-	var policy checker.AddressPolicy
-	if cfg.SSRFProtectionEnabled() {
-		policy = checker.BlockPrivate{}
-	}
-	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
 	checkEnv := &checker.Env{
-		Dialer:    &checker.Dialer{Policy: policy},
+		Dialer:    dialer,
 		UserAgent: "UptimeCluster/" + version.Version,
 		ICMPMode:  icmpMode,
 		Now:       clock,
@@ -263,12 +281,26 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	// Responsible nodes of a monitor (ADR 0017); shared by the aggregator and the assignment syncer.
 	assigner := scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)}
+	// The leader decides which voters are impaired in their connectivity (ADR 0022).
+	// Its deviation statistics come from the aggregator, which is created after it.
+	assessor := selfhealth.New(selfhealth.Options{
+		NodeID: nodeID, IsLeader: raftNode.IsLeader, Registry: state, Cluster: raftNode,
+		Self: selfProber.Status, Peers: host.PeerSelfChecks,
+		Deviation: func(sinceMs int64) map[string]aggregator.DeviationStats {
+			if a := aggPtr.Load(); a != nil {
+				return a.Deviation(sinceMs)
+			}
+			return nil
+		},
+		FailRatio: cfg.SelfHealthFailRatio, Now: clock, Logger: log,
+	})
 	// The aggregator evaluates only on the leader, from the heartbeats it observes (ADR 0021).
 	agg := aggregator.New(aggregator.Options{
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
 		IsLeader:    raftNode.IsLeader,
 		Registry:    func(ctx context.Context) ([]store.Node, error) { return state.ListNodes(ctx) },
 		Assigner:    assigner,
+		Exclude:     assessor.Exclude,
 		Maintenance: maint.InMaintenance, Now: clock, Logger: log,
 	})
 	aggPtr.Store(agg)
@@ -280,6 +312,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
+	bg.Go(func() { selfProber.Run(ctx) })
+	bg.Go(func() { assessor.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
 	bg.Go(func() { maint.Run(ctx) })
 	bg.Go(func() {

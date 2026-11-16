@@ -21,6 +21,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -78,6 +79,9 @@ type Service struct {
 	// Clock is the wall clock of this node, reported in GetStatus; nil means
 	// time.Now (ADR 0020).
 	Clock func() time.Time
+	// SelfCheck returns the latest result of the reference targets of this
+	// node (ADR 0022). Nil means no targets are configured.
+	SelfCheck func() selfcheck.Status
 }
 
 var _ pb.ClusterServiceServer = (*Service)(nil)
@@ -280,10 +284,15 @@ func (s *Service) stillMember(ctx context.Context, peer pki.Identity) error {
 // GetStatus reports this node's Raft state (ADR 0012 A3/A9).
 func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatusResponse, error) {
 	st := s.Node.Status()
+	var sc selfcheck.Status
+	if s.SelfCheck != nil {
+		sc = s.SelfCheck()
+	}
 	return &pb.GetStatusResponse{
 		NodeId: st.NodeID, RaftState: st.RaftState, AppliedIndex: st.AppliedIndex, CommitIndex: st.CommitIndex,
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
 		LeaderAddress: st.LeaderAddress, WallClockUnixMs: s.now().UnixMilli(),
+		SelfCheckConfigured: sc.Configured, SelfCheckFailed: sc.Failed, SelfCheckAtMs: sc.AtMs,
 	}, nil
 }
 

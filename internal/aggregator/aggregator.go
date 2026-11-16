@@ -94,6 +94,9 @@ type Aggregator struct {
 	leaderSince time.Time // zero while not leader
 	registry    []store.Node
 	registryAt  time.Time
+	// deviations and deviationSeen hold the slots counted for Deviation (ADR 0022).
+	deviations    []deviationEvent
+	deviationSeen map[deviationKey]int64
 }
 
 // errSuperseded means the status changed meanwhile (conflict, deletion, or no
@@ -118,7 +121,7 @@ func New(opts Options) *Aggregator {
 		opts.Unit = time.Second
 	}
 	return &Aggregator{opts: opts, observed: make(chan []store.Heartbeat, observeQueueSize),
-		watches: map[monitorKey]*watch{}}
+		watches: map[monitorKey]*watch{}, deviationSeen: map[deviationKey]int64{}}
 }
 
 // Observe passes heartbeats that were stored (local, replicated or by
@@ -373,6 +376,7 @@ func (a *Aggregator) loadHeartbeats(ctx context.Context, tenantID, monitorID str
 func (a *Aggregator) evaluate(ctx context.Context, w *watch, k int64, responsible []string) error {
 	reports := w.reporters(k, responsible)
 	startMs := w.start(k)
+	a.recordDeviation(w, k, w.allReporters(k), startMs)
 	target := consensus(w.m.ConsensusPolicy, reports)
 	w.t.observe(target, startMs)
 	to, since, change := w.t.next(target, startMs, w.m.Retries, w.m.RecoveryThreshold)

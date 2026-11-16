@@ -27,6 +27,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
@@ -166,6 +167,9 @@ type Options struct {
 	// ClockInterval is the period of the clock offset measurement; zero means
 	// clockSampleInterval. Tests shorten it.
 	ClockInterval time.Duration
+	// SelfCheck returns the latest result of this node's reference targets
+	// (ADR 0022); it is reported in GetStatus. Nil means not configured.
+	SelfCheck func() selfcheck.Status
 }
 
 // Host is the running cluster side of a voter.
@@ -189,6 +193,7 @@ type Host struct {
 	// clock is the wall clock of this node (Options.Clock).
 	clock         func() time.Time
 	clocks        clockTracker
+	selfChecks    selfCheckTracker
 	clockInterval time.Duration
 	mux           *clusternet.Mux
 	grpc          *grpc.Server
@@ -286,6 +291,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
+		SelfCheck: opts.SelfCheck,
 	})
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
 		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, OnStored: opts.OnHeartbeatsStored, Log: opts.Log,

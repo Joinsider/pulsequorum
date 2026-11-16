@@ -247,3 +247,20 @@ func (p *Prober) probe(ctx context.Context, t Target) error {
 	}
 	return resp.Body.Close()
 }
+
+// Remote is the self-check state of a peer as the leader last received it
+// through GetStatus (ADR 0022). Ages are kept apart from the clocks: the peer
+// reports its own wall clock, so its round age does not depend on the skew.
+type Remote struct {
+	Status Status
+	// ReceivedAt is the local time at which the answer arrived.
+	ReceivedAt time.Time
+	// Age is how old the round was when the peer answered, on the peer's clock.
+	Age time.Duration
+}
+
+// AgeAt returns the age of the round at now (local clock): the age at the
+// answer plus the time since then.
+func (r Remote) AgeAt(now time.Time) time.Duration {
+	return r.Age + now.Sub(r.ReceivedAt)
+}

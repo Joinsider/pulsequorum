@@ -5,6 +5,7 @@ package aggregator
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/joinsider/uptimecluster/internal/scheduler"
@@ -140,6 +141,28 @@ func (w *watch) reporters(k int64, responsible []string) []store.Heartbeat {
 			out = append(out, hb)
 		}
 	}
+	return out
+}
+
+// allReporters returns the newest heartbeat of slot k (k-1 as in reporters)
+// of every node that reported, responsible or not, sorted by node ID. It feeds
+// the deviation statistics (ADR 0022).
+func (w *watch) allReporters(k int64) []store.Heartbeat {
+	lo, hi := w.start(k-1), w.start(k+1)
+	newest := map[string]store.Heartbeat{}
+	for _, hb := range w.hbs {
+		if hb.TsMs < lo || hb.TsMs >= hi || !countable(hb.Status) {
+			continue
+		}
+		if cur, ok := newest[hb.NodeID]; !ok || newerThan(hb, cur) {
+			newest[hb.NodeID] = hb
+		}
+	}
+	out := make([]store.Heartbeat, 0, len(newest))
+	for _, hb := range newest {
+		out = append(out, hb)
+	}
+	slices.SortFunc(out, func(a, b store.Heartbeat) int { return strings.Compare(a.NodeID, b.NodeID) })
 	return out
 }
 
