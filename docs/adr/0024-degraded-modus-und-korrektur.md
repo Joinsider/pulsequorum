@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-16 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-ALR-10/11, FA-UPT-07, NFA-REL-06, AS-04, PF-28, Konzept 9.3 (E8), ADR 0014 (Outbox), 0018 (Befehlsversionen), 0021 (Bewertung auf dem Leader), 0022 (Selbstgesundheit), 0023 (Drosselung) |
@@ -163,3 +163,4 @@ Zwei Fälle sind zu unterscheiden:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-16 | Proposed | Claude | |
+| 2026-11-16 | Accepted | Projektinhaber | im Chat angenommen („Annehmen, umsetzen“), eingetragen durch Claude |
