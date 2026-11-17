@@ -266,7 +266,7 @@ func TestPurgeTenantLeavesNoRows(t *testing.T) {
 			t.Errorf("table %s has %d orphan rows", table, orphans)
 		}
 		var remaining int
-		q = fmt.Sprintf(`SELECT COUNT(*) FROM "%s" AS x JOIN series AS s ON s.id = x.series_id WHERE s.tenant_id = ?`, table) //nolint:gosec // G201: fixed table names
+		q = fmt.Sprintf(`SELECT COUNT(*) FROM "%s" AS x JOIN series AS s ON s.id = x.series_id WHERE s.tenant_id = ?`, table)
 		if err := db.QueryRowContext(ctx, q, "tenant-a").Scan(&remaining); err != nil {
 			t.Fatal(err)
 		}
@@ -288,7 +288,7 @@ func purgeHeartbeats(tenantID string, count int) []store.Heartbeat {
 	out := make([]store.Heartbeat, 0, count)
 	for i := range count {
 		out = append(out, store.Heartbeat{
-			NodeID: "n1", Incarnation: "inc-" + tenantID, Seq: uint64(i + 1), //nolint:gosec // G115: small test values
+			NodeID: "n1", Incarnation: "inc-" + tenantID, Seq: uint64(i + 1),
 			TenantID: tenantID, MonitorID: "mon", TsMs: int64(i) * 1000, Status: store.CheckUp, LatencyMs: 10,
 		})
 	}

@@ -1845,7 +1845,7 @@ func testPlans(t *testing.T, s store.State) {
 		}
 		p, err := tx.GetPlan(ctx, "starter")
 		if err != nil || p.Name != "Starter 2" {
-			return fmt.Errorf("GetPlan in transaction = %+v, %v", p, err)
+			return fmt.Errorf("GetPlan in transaction = %+v, %w", p, err)
 		}
 		return nil
 	}); err != nil {
@@ -1906,15 +1906,15 @@ func testTenantSource(t *testing.T, s store.State) {
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		admin, err := tx.CountTenants(ctx, "admin")
 		if err != nil || admin != 1 {
-			return fmt.Errorf("CountTenants(admin) = %d, %v; want 1", admin, err)
+			return fmt.Errorf("CountTenants(admin) = %d, %w; want 1", admin, err)
 		}
 		boot, err := tx.CountTenants(ctx, "bootstrap")
 		if err != nil || boot != 1 {
-			return fmt.Errorf("CountTenants(bootstrap) = %d, %v; want 1", boot, err)
+			return fmt.Errorf("CountTenants(bootstrap) = %d, %w; want 1", boot, err)
 		}
 		n, err := tx.CountTenantsWithPlan(ctx, "default")
 		if err != nil || n != 2 {
-			return fmt.Errorf("CountTenantsWithPlan(default) = %d, %v; want 2", n, err)
+			return fmt.Errorf("CountTenantsWithPlan(default) = %d, %w; want 2", n, err)
 		}
 		return nil
 	}); err != nil {
@@ -1962,7 +1962,7 @@ func testTenantUsage(t *testing.T, s store.State) {
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		u, err := tx.TenantUsage(ctx, tenantB)
 		if err != nil || u != (store.TenantUsage{Monitors: 1, Channels: 1, MinIntervalSeconds: 10}) {
-			return fmt.Errorf("tx usage B = %+v, %v", u, err)
+			return fmt.Errorf("tx usage B = %+v, %w", u, err)
 		}
 		return nil
 	}); err != nil {
@@ -2024,7 +2024,7 @@ func testDeleteTenant(t *testing.T, s store.State) {
 
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		if err := tx.DeleteTenant(ctx, "ghost", 1); !errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("delete unknown tenant error = %v", err)
+			return fmt.Errorf("delete unknown tenant error = %w", err)
 		}
 		return tx.DeleteTenant(ctx, tenantA, 9999)
 	}); err != nil {
@@ -2091,11 +2091,11 @@ func testDeleteTenant(t *testing.T, s store.State) {
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		deleted, err := tx.IsTenantDeleted(ctx, tenantA)
 		if err != nil || !deleted {
-			return fmt.Errorf("IsTenantDeleted(A) = %v, %v; want true", deleted, err)
+			return fmt.Errorf("IsTenantDeleted(A) = %v, %w; want true", deleted, err)
 		}
 		deleted, err = tx.IsTenantDeleted(ctx, tenantB)
 		if err != nil || deleted {
-			return fmt.Errorf("IsTenantDeleted(B) = %v, %v; want false", deleted, err)
+			return fmt.Errorf("IsTenantDeleted(B) = %v, %w; want false", deleted, err)
 		}
 		return nil
 	}); err != nil {
@@ -2111,7 +2111,7 @@ func testDeleteTenant(t *testing.T, s store.State) {
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		n, err := tx.CountTenants(ctx, "bootstrap")
 		if err != nil || n != 1 {
-			return fmt.Errorf("CountTenants = %d, %v; want 1", n, err)
+			return fmt.Errorf("CountTenants = %d, %w; want 1", n, err)
 		}
 		return nil
 	}); err != nil {
