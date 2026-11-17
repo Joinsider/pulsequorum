@@ -33,7 +33,7 @@ describe('toOpenIdConfiguration', () => {
       startCheckSession: false,
       ignoreNonceAfterRefresh: true,
       triggerAuthorizationResultEvent: true,
-      autoUserInfo: false,
+      autoUserInfo: true,
       secureRoutes: [],
       historyCleanupOff: false,
       logLevel: LogLevel.Warn,

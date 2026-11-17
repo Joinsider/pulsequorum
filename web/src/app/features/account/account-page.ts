@@ -40,6 +40,9 @@ export class AccountPage {
   private readonly auth = inject(AuthService);
 
   protected readonly me = this.auth.me;
+  /** OIDC mode: the account name comes from the identity provider's claims, not the username. */
+  protected readonly oidc = computed(() => this.auth.mode() === 'oidc');
+  protected readonly displayName = this.auth.displayName;
   /**
    * Passwords of external identity providers are changed there, not here. In OIDC
    * mode the backend answers 409 to password changes, so the form stays hidden.

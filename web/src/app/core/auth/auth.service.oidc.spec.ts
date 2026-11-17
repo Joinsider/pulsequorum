@@ -44,6 +44,7 @@ function jwt(claims: Record<string, unknown>): string {
   return `${b64({ alg: 'RS256', kid: 'k1' })}.${b64(claims)}.signature`;
 }
 const inMinutes = (m: number) => Math.floor(Date.now() / 1000) + m * 60;
+const SUBJECT = 'd3c1f0a2-5b7e-4c59-9a7e-0f2c4b8e6a10';
 const ACCESS = jwt({ sub: 'u1', exp: inMinutes(15) });
 const RENEWED = jwt({ sub: 'u1', exp: inMinutes(30) });
 
@@ -330,6 +331,57 @@ describe('AuthService in OIDC mode', () => {
 
     expect(persisted()).not.toContain(RENEWED);
     expect(persisted()).not.toContain(ACCESS);
+  });
+
+  /** Signs in with an ID token whose claims are `claims` (plus the subject). */
+  async function signInWithClaims(claims: Record<string, unknown>): Promise<AuthService> {
+    const { auth, http } = setup();
+    oidc.checkAuth.mockReturnValue(of({ ...AUTHENTICATED, userData: { sub: SUBJECT, ...claims } }));
+    const done = auth.restore();
+    await flushMe(http);
+    await done;
+    return auth;
+  }
+
+  it.each([
+    [
+      'name',
+      { name: 'Alice Example', preferred_username: 'alice', email: 'a@example.test' },
+      'Alice Example',
+    ],
+    ['preferred_username', { preferred_username: 'alice', email: 'a@example.test' }, 'alice'],
+    ['email', { email: 'a@example.test' }, 'a@example.test'],
+    ['name, trimmed', { name: '  Alice Example ' }, 'Alice Example'],
+    [
+      'blank claims skipped',
+      { name: ' ', preferred_username: '', email: 'a@example.test' },
+      'a@example.test',
+    ],
+    ['non-string claims skipped', { name: 42, preferred_username: 'alice' }, 'alice'],
+  ])('shows the ID token claim by preference: %s', async (_case, claims, want) => {
+    const auth = await signInWithClaims(claims);
+    expect(auth.displayName()).toBe(want);
+  });
+
+  it('never shows the subject ID when no name claim exists; falls back to the profile', async () => {
+    const auth = await signInWithClaims({});
+    expect(auth.displayName()).toBe(ME.username);
+    expect(auth.displayName()).not.toBe(SUBJECT);
+  });
+
+  it('forgets the ID token claims on logout', async () => {
+    const auth = await signInWithClaims({ name: 'Alice Example' });
+    expect(auth.displayName()).toBe('Alice Example');
+
+    await auth.logout();
+
+    expect(auth.displayName()).toBe('');
+  });
+
+  it('keeps the ID token claims out of browser storage', async () => {
+    await signInWithClaims({ name: 'Alice Example', email: 'a@example.test' });
+    expect(persisted()).not.toContain('Alice Example');
+    expect(persisted()).not.toContain('a@example.test');
   });
 });
 

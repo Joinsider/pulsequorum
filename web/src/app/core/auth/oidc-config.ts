@@ -36,7 +36,9 @@ export function toOpenIdConfiguration(auth: AuthConfig, origin: string): OpenIdC
     startCheckSession: false,
     ignoreNonceAfterRefresh: true,
     triggerAuthorizationResultEvent: true,
-    autoUserInfo: false,
+    // Load the profile from userinfo: Zitadel and others put no name into the
+    // ID token. userData stays in memory (SplitSecurityStorage).
+    autoUserInfo: true,
     // Empty: the library's own auth interceptor is not used (its prefix match is unsafe).
     secureRoutes: [],
     historyCleanupOff: false,

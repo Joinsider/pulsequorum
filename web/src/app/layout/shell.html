@@ -63,11 +63,11 @@
 
   <button mat-button type="button" class="user-button" [matMenuTriggerFor]="userMenu">
     <app-icon name="person" size="1.25rem" />
-    <span class="user-name">{{ auth.me()?.displayName || auth.me()?.username }}</span>
+    <span class="user-name">{{ auth.displayName() }}</span>
   </button>
   <mat-menu #userMenu="matMenu">
     <div class="user-info" role="presentation">
-      <div class="user-info__name">{{ auth.me()?.displayName || auth.me()?.username }}</div>
+      <div class="user-info__name">{{ auth.displayName() }}</div>
       @if (auth.me()?.tenantName) {
         <div class="user-info__tenant">{{ auth.me()?.tenantName }}</div>
       }
@@ -90,9 +90,7 @@
   >
     <mat-nav-list class="nav">
       @for (item of navItems; track item.path) {
-        @if (
-          (!item.adminOnly || auth.canAdmin()) && (!item.platformOnly || auth.canPlatformAdmin())
-        ) {
+        @if (isVisible(item)) {
           <a
             mat-list-item
             [routerLink]="item.path"

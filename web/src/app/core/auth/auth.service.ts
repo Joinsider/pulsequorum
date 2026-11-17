@@ -58,6 +58,8 @@ export class AuthService {
 
   private readonly statusSignal = signal<AuthStatus>('unknown');
   private readonly meSignal = signal<Me | null>(null);
+  /** OIDC mode: the ID token claims, kept in memory only (NFA-SEC-04). */
+  private readonly claimsSignal = signal<IdTokenClaims | null>(null);
 
   readonly status = this.statusSignal.asReadonly();
   readonly me = this.meSignal.asReadonly();
@@ -71,6 +73,10 @@ export class AuthService {
   readonly canAdmin = computed(() => this.hasRole('tenant-admin', 'platform-admin'));
   /** Cluster administration (FA-UI-05); the server allows it to platform admins only. */
   readonly canPlatformAdmin = computed(() => this.hasRole('platform-admin'));
+  /** Name to show for the signed-in user; see {@link displayNameFor}. */
+  readonly displayName = computed(() =>
+    displayNameFor(this.mode(), this.claimsSignal(), this.meSignal()),
+  );
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -250,6 +256,8 @@ export class AuthService {
       const result = await firstValueFrom(oidc.checkAuth(undefined, OIDC_CONFIG_ID));
       if (result.isAuthenticated && this.cacheToken(result.accessToken)) {
         this.storage().clearRedirectState(OIDC_CONFIG_ID);
+        // With autoUserInfo, the library's userData holds the userinfo claims.
+        this.claimsSignal.set(isClaims(result.userData) ? result.userData : null);
         this.meSignal.set(await firstValueFrom(this.api.getMe()));
         this.statusSignal.set('authenticated');
         return;
@@ -358,6 +366,7 @@ export class AuthService {
     this.token = null;
     this.expiresAt = 0;
     this.meSignal.set(null);
+    this.claimsSignal.set(null);
     this.statusSignal.set('anonymous');
   }
 
@@ -374,6 +383,31 @@ export class AuthService {
       context: new HttpContext().set(SKIP_AUTH, true),
     };
   }
+}
+
+/** Claims of the OIDC ID token as the library reports them. */
+export type IdTokenClaims = Record<string, unknown>;
+
+/**
+ * Name to show for the signed-in user. OIDC mode prefers the identity provider's
+ * `name`, then `preferred_username`, then `email`; the server profile is the
+ * fallback, so the subject ID (`sub`) is shown only if nothing else exists.
+ * Local mode always uses the server profile.
+ */
+export function displayNameFor(mode: string, claims: IdTokenClaims | null, me: Me | null): string {
+  if (mode === 'oidc') {
+    for (const key of ['name', 'preferred_username', 'email']) {
+      const value = claims?.[key];
+      if (typeof value === 'string' && value.trim() !== '') {
+        return value.trim();
+      }
+    }
+  }
+  return me?.displayName || me?.username || '';
+}
+
+function isClaims(value: unknown): value is IdTokenClaims {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

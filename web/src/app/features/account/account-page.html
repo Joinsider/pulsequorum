@@ -6,10 +6,12 @@
     <section class="card" aria-labelledby="profile-heading">
       <h2 id="profile-heading" class="card__title">{{ t('account.profile.title') }}</h2>
       <dl class="profile">
-        <dt>{{ t('account.profile.username') }}</dt>
-        <dd>{{ m.username }}</dd>
+        @if (!oidc()) {
+          <dt>{{ t('account.profile.username') }}</dt>
+          <dd>{{ m.username }}</dd>
+        }
         <dt>{{ t('account.profile.displayName') }}</dt>
-        <dd>{{ m.displayName || t('account.profile.none') }}</dd>
+        <dd>{{ (oidc() ? displayName() : m.displayName) || t('account.profile.none') }}</dd>
         <dt>{{ t('account.profile.tenant') }}</dt>
         <dd>{{ m.tenantName || m.tenantId }}</dd>
         <dt>{{ t('account.profile.roles') }}</dt>

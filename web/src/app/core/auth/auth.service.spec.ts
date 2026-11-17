@@ -8,7 +8,8 @@ import { Component } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { authInterceptor } from './auth.interceptor';
-import { AuthService, safeReturnUrl } from './auth.service';
+import { Me } from '../../api/gen/model';
+import { AuthService, displayNameFor, safeReturnUrl } from './auth.service';
 
 @Component({ template: '' })
 class Blank {}
@@ -133,5 +134,37 @@ describe('safeReturnUrl', () => {
     ['/setup?x', '/'],
   ])('%s -> %s', (input, want) => {
     expect(safeReturnUrl(input)).toBe(want);
+  });
+});
+
+describe('displayNameFor', () => {
+  const profile: Me = {
+    id: 'u1',
+    username: 'alice',
+    displayName: 'Alice L.',
+    tenantId: 't1',
+    roles: ['tenant-viewer'],
+    authMode: 'oidc',
+  };
+  const noDisplayName: Me = { ...profile, displayName: undefined };
+
+  it.each([
+    ['local', { name: 'Claim Name' }, profile, 'Alice L.'],
+    ['local', null, noDisplayName, 'alice'],
+    [
+      'oidc',
+      { name: 'Full Name', preferred_username: 'p', email: 'e@x.test' },
+      profile,
+      'Full Name',
+    ],
+    ['oidc', { preferred_username: 'p', email: 'e@x.test' }, profile, 'p'],
+    ['oidc', { email: 'e@x.test' }, profile, 'e@x.test'],
+    ['oidc', { name: ' ', preferred_username: '', email: ' ' }, profile, 'Alice L.'],
+    ['oidc', { name: 7 }, profile, 'Alice L.'],
+    ['oidc', { sub: '8f0c2e6a-1111' }, noDisplayName, 'alice'],
+    ['oidc', null, profile, 'Alice L.'],
+    ['oidc', null, null, ''],
+  ])('%s, claims %j -> %s', (mode, claims, me, want) => {
+    expect(displayNameFor(mode, claims, me)).toBe(want);
   });
 });

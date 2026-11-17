@@ -34,6 +34,8 @@ interface NavItem {
   adminOnly?: boolean;
   /** Platform admins only (cluster administration, FA-UI-05). */
   platformOnly?: boolean;
+  /** Only with local password accounts (ADR 0008); hidden in OIDC mode. */
+  localOnly?: boolean;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -41,7 +43,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/incidents', labelKey: 'nav.incidents', icon: 'warning' },
   { path: '/channels', labelKey: 'nav.channels', icon: 'notifications' },
   { path: '/maintenance', labelKey: 'nav.maintenance', icon: 'build' },
-  { path: '/users', labelKey: 'nav.users', icon: 'group', adminOnly: true },
+  { path: '/users', labelKey: 'nav.users', icon: 'group', adminOnly: true, localOnly: true },
   { path: '/admin/cluster', labelKey: 'nav.cluster', icon: 'hub', platformOnly: true },
   {
     path: '/admin/system-channels',
@@ -127,6 +129,15 @@ export class Shell {
     ),
     { initialValue: null },
   );
+
+  /** Whether the navigation entry is offered to the current user; the server enforces every permission. */
+  protected isVisible(item: NavItem): boolean {
+    return (
+      (!item.adminOnly || this.auth.canAdmin()) &&
+      (!item.platformOnly || this.auth.canPlatformAdmin()) &&
+      (!item.localOnly || this.auth.mode() === 'local')
+    );
+  }
 
   protected toggleNav(): void {
     if (this.wide()) {

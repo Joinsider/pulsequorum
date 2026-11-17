@@ -28,7 +28,11 @@ describe('AccountPage', () => {
   let fixture: ComponentFixture<AccountPage>;
   let http: HttpTestingController;
 
-  function setup(profile: Me, mode: 'local' | 'oidc' = 'local') {
+  function setup(
+    profile: Me,
+    mode: 'local' | 'oidc' = 'local',
+    displayName = profile.displayName ?? profile.username,
+  ) {
     TestBed.configureTestingModule({
       imports: [
         AccountPage,
@@ -42,7 +46,11 @@ describe('AccountPage', () => {
         provideHttpClientTesting(),
         {
           provide: AuthService,
-          useValue: { me: signal(profile).asReadonly(), mode: signal(mode).asReadonly() },
+          useValue: {
+            me: signal(profile).asReadonly(),
+            mode: signal(mode).asReadonly(),
+            displayName: signal(displayName).asReadonly(),
+          },
         },
       ],
     });
@@ -78,6 +86,17 @@ describe('AccountPage', () => {
   }
 
   afterEach(() => http.verify());
+
+  it('shows the username in local mode', () => {
+    setup(LOCAL);
+    expect(text()).toContain('alice');
+  });
+
+  it('shows the identity provider name in OIDC mode, not the subject ID', () => {
+    setup({ ...LOCAL, username: 'd3c1f0a2-5b7e-4c59', authMode: 'oidc' }, 'oidc', 'Alice Example');
+    expect(text()).toContain('Alice Example');
+    expect(text()).not.toContain('d3c1f0a2-5b7e-4c59');
+  });
 
   it('hides the password form in OIDC mode, even for a local account', () => {
     setup(LOCAL, 'oidc');
