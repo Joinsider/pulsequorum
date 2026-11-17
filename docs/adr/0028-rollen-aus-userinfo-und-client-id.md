@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | ADR 0027, FA-AUTH-05..07, FA-AUTH-09, PF-31, RFC 9068 |
@@ -24,7 +24,7 @@ Folgen für ADR 0027:
 - Mit dem Standard `OIDC_REQUIRE_AZP=true` wird jedes PocketID-Token abgelehnt. Mit `false` wird gar kein Client geprüft.
 - Das Profil `generic` findet keinen Rollen-Claim. Jeder Nutzer bekommt deshalb 403.
 
-Andere verbreitete Anbieter verhalten sich ähnlich. Rollen nur im ID-Token oder unter `/userinfo` sind häufig.
+Zitadel v4.20.3 setzt bei Machine- und SPA-Tokens ebenfalls nur `client_id` und kein `azp` (gemessen im Test unter `deploy/oidc-dev/zitadel`). Andere verbreitete Anbieter verhalten sich ähnlich. Rollen nur im ID-Token oder unter `/userinfo` sind häufig.
 
 ## Optionen
 
@@ -92,3 +92,4 @@ Vorschlag: **1A und 2A, zusätzlich 2B als einfache Alternative.**
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-17 | Proposed | Claude | Befund aus dem Test gegen PocketID v2.19.3 und Keycloak 26.8.2 |
+| 2026-11-17 | Accepted | Projektinhaber | im Chat angenommen („Ja ADR 28 annehmen“), eingetragen durch Claude |
