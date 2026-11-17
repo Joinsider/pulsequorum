@@ -9,6 +9,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -29,6 +30,20 @@ const (
 
 // ErrUnauthenticated means no valid credentials were presented.
 var ErrUnauthenticated = errors.New("authentication required")
+
+// ErrForbidden means valid credentials that grant no access: no usable role,
+// an organization without tenant, or a suspended tenant (FA-AUTH-06). Errors
+// wrapping it are answered with 403; their message is shown to the caller and
+// must not contain token contents.
+var ErrForbidden = errors.New("access denied")
+
+// ErrAuthUnavailable means credentials cannot be checked right now, e.g. the
+// identity provider's keys were never loaded. It is answered with 503.
+var ErrAuthUnavailable = errors.New("authentication is temporarily unavailable")
+
+// ErrOpaqueToken rejects a bearer token that is not a JWT (FA-AUTH-05). It
+// wraps ErrUnauthenticated, so it is answered with 401 and this message.
+var ErrOpaqueToken = fmt.Errorf("%w: opaque access tokens are not supported; configure the identity provider to issue JWT access tokens", ErrUnauthenticated)
 
 // Principal is the authenticated caller.
 type Principal struct {

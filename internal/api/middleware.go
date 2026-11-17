@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -44,11 +45,25 @@ func authenticate(public map[string]bool, authn auth.Authenticator) gen.StrictMi
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 			p, err := authn.Authenticate(r)
 			if err != nil {
-				return nil, &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized", Detail: err.Error()}
+				return nil, authProblem(err)
 			}
 			return next(withHTTP(auth.WithPrincipal(ctx, p), w, r), w, r, request)
 		}
 	}
+}
+
+// authProblem maps an authentication error to a problem response. The
+// authenticators only return errors whose messages are safe to show.
+func authProblem(err error) *Problem {
+	switch {
+	case errors.Is(err, auth.ErrAuthUnavailable):
+		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable", Detail: auth.ErrAuthUnavailable.Error()}
+	case errors.Is(err, auth.ErrForbidden):
+		return &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: err.Error()}
+	case errors.Is(err, auth.ErrUnauthenticated):
+		return &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized", Detail: err.Error()}
+	}
+	return &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized", Detail: auth.ErrUnauthenticated.Error()}
 }
 
 type httpKey struct{}
