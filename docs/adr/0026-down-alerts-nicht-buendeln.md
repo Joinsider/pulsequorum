@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | NFA-REL-03, FA-ALR-04, ADR 0023 (Punkt 3, Bündelung), ADR 0024 (lokaler Dispatcher), Abnahme P3 (Befund 1) |
@@ -51,3 +51,4 @@ Projektinhaber hat im Chat entschieden: DOWN-Alerts werden nie zurückgehalten.
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-17 | Proposed | Claude | Richtung im Chat von Projektinhaber gewählt („DOWN nie zurückhalten“) |
+| 2026-11-17 | Accepted | Projektinhaber | im Chat angenommen („Annehmen, umsetzen“), eingetragen durch Claude |
