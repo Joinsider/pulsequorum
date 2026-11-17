@@ -5,7 +5,10 @@ package config
 
 import (
 	"log/slog"
+	"maps"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +81,6 @@ func TestLoadInvalid(t *testing.T) {
 	}{
 		{"role", map[string]string{"NODE_ROLE": "leader"}, "NODE_ROLE"},
 		{"auth mode", map[string]string{"AUTH_MODE": "ldap"}, "AUTH_MODE"},
-		{"zitadel not yet supported", map[string]string{"AUTH_MODE": "zitadel"}, "not supported yet"},
 		{"log level", map[string]string{"LOG_LEVEL": "loud"}, "LOG_LEVEL"},
 		{"log format", map[string]string{"LOG_FORMAT": "xml"}, "LOG_FORMAT"},
 		{"public url relative", map[string]string{"PUBLIC_URL": "mon1.example.com"}, "PUBLIC_URL"},
@@ -133,14 +135,28 @@ func TestClusterAdvertiseDefault(t *testing.T) {
 }
 
 func TestSSRFProtectionEnabled(t *testing.T) {
+	zitadel := OIDCConfig{Profile: ProfileZitadel}
+	generic := OIDCConfig{Profile: ProfileGeneric}
 	for _, tt := range []struct {
+		name    string
 		setting string
-		mode    AuthMode
+		cfg     Config
 		want    bool
-	}{{"auto", AuthLocal, false}, {"auto", AuthZitadel, true}, {"on", AuthLocal, true}, {"off", AuthZitadel, false}} {
-		if got := (Config{SSRFProtection: tt.setting, AuthMode: tt.mode}).SSRFProtectionEnabled(); got != tt.want {
-			t.Errorf("%s/%s = %v, want %v", tt.setting, tt.mode, got, tt.want)
-		}
+	}{
+		{"auto local", "auto", Config{AuthMode: AuthLocal}, false},
+		{"auto legacy zitadel value", "auto", Config{AuthMode: AuthZitadel}, true},
+		{"auto oidc zitadel profile", "auto", Config{AuthMode: AuthOIDC, OIDC: zitadel}, true},
+		{"auto oidc generic profile", "auto", Config{AuthMode: AuthOIDC, OIDC: generic}, false},
+		{"on local", "on", Config{AuthMode: AuthLocal}, true},
+		{"off zitadel profile", "off", Config{AuthMode: AuthOIDC, OIDC: zitadel}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			cfg.SSRFProtection = tt.setting
+			if got := cfg.SSRFProtectionEnabled(); got != tt.want {
+				t.Errorf("SSRFProtectionEnabled() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -446,4 +462,328 @@ func TestParseByteSize(t *testing.T) {
 			t.Errorf("parseByteSize(%q) = %d, want %d", tt.in, got, tt.want)
 		}
 	}
+}
+
+// genericOIDC is a complete AUTH_MODE=oidc environment with profile generic.
+func genericOIDC() map[string]string {
+	return map[string]string{
+		"NODE_NAME":        "n1",
+		"AUTH_MODE":        "oidc",
+		"OIDC_ISSUER":      "https://idp.example.com/realms/ops",
+		"OIDC_AUDIENCE":    "uptimecluster",
+		"OIDC_CLIENT_IDS":  "spa",
+		"OIDC_ROLES_CLAIM": "roles",
+	}
+}
+
+// zitadelOIDC is a complete AUTH_MODE=oidc environment with profile zitadel.
+func zitadelOIDC() map[string]string {
+	return map[string]string{
+		"NODE_NAME":               "n1",
+		"AUTH_MODE":               "oidc",
+		"OIDC_PROFILE":            "zitadel",
+		"OIDC_ISSUER":             "https://zitadel.example.com",
+		"OIDC_AUDIENCE":           "300000000000001",
+		"OIDC_CLIENT_IDS":         "300000000000002",
+		"ZITADEL_PLATFORM_ORG_ID": "300000000000003",
+	}
+}
+
+// with returns a copy of base with the key/value pairs in set applied. An
+// empty value unsets the variable.
+func with(base map[string]string, set ...string) map[string]string {
+	out := maps.Clone(base)
+	for i := 0; i+1 < len(set); i += 2 {
+		out[set[i]] = set[i+1]
+	}
+	return out
+}
+
+// expectErr loads m and checks the error: want "" means no error, otherwise
+// the error must contain want.
+func expectErr(t *testing.T, m map[string]string, want string) Config {
+	t.Helper()
+	cfg, err := Load(env(m))
+	if want == "" {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return cfg
+	}
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want containing %q", err, want)
+	}
+	return cfg
+}
+
+func TestOIDCBaseEnvironments(t *testing.T) {
+	cfg := expectErr(t, genericOIDC(), "")
+	if cfg.AuthMode != AuthOIDC || cfg.AuthModeAlias || cfg.OIDC.Profile != ProfileGeneric || cfg.OIDC.Tenancy != TenancySingle {
+		t.Errorf("generic: mode %q alias %v profile %q tenancy %q", cfg.AuthMode, cfg.AuthModeAlias, cfg.OIDC.Profile, cfg.OIDC.Tenancy)
+	}
+	cfg = expectErr(t, zitadelOIDC(), "")
+	if cfg.AuthMode != AuthOIDC || cfg.AuthModeAlias || cfg.OIDC.Profile != ProfileZitadel || cfg.OIDC.Tenancy != TenancySingle || cfg.OIDC.PlatformOrgID != "300000000000003" {
+		t.Errorf("zitadel: %+v", cfg.OIDC)
+	}
+}
+
+func TestOIDCRequiredVariables(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{"generic issuer missing", with(genericOIDC(), "OIDC_ISSUER", ""), "OIDC_ISSUER"},
+		{"generic audience missing", with(genericOIDC(), "OIDC_AUDIENCE", ""), "OIDC_AUDIENCE"},
+		{"generic client ids missing", with(genericOIDC(), "OIDC_CLIENT_IDS", ""), "OIDC_CLIENT_IDS"},
+		{"generic roles claim missing", with(genericOIDC(), "OIDC_ROLES_CLAIM", ""), "OIDC_ROLES_CLAIM"},
+		{"zitadel issuer missing", with(zitadelOIDC(), "OIDC_ISSUER", ""), "OIDC_ISSUER"},
+		{"zitadel audience missing", with(zitadelOIDC(), "OIDC_AUDIENCE", ""), "OIDC_AUDIENCE"},
+		{"zitadel client ids missing", with(zitadelOIDC(), "OIDC_CLIENT_IDS", ""), "OIDC_CLIENT_IDS"},
+		{"zitadel platform org missing", with(zitadelOIDC(), "ZITADEL_PLATFORM_ORG_ID", ""), "ZITADEL_PLATFORM_ORG_ID"},
+		{"unknown profile", with(genericOIDC(), "OIDC_PROFILE", "keycloak"), "OIDC_PROFILE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { expectErr(t, tt.env, tt.wantErr) })
+	}
+}
+
+func TestOIDCIssuer(t *testing.T) {
+	tests := []struct {
+		name      string
+		issuer    string
+		insecure  string
+		wantErr   string
+		wantValue string
+	}{
+		{"https", "https://idp.example.com/realms/ops", "", "", "https://idp.example.com/realms/ops"},
+		{"trailing slash kept", "https://idp.example.com/", "", "", "https://idp.example.com/"},
+		{"http with insecure flag", "http://localhost:8081/realms/dev", "true", "", "http://localhost:8081/realms/dev"},
+		{"http without insecure flag", "http://idp.example.com", "", "OIDC_ISSUER", ""},
+		{"http with insecure flag false", "http://idp.example.com", "false", "OIDC_ISSUER", ""},
+		{"relative", "idp.example.com/realms/ops", "", "OIDC_ISSUER", ""},
+		{"path only", "/realms/ops", "", "OIDC_ISSUER", ""},
+		{"no host", "https:///realms/ops", "", "OIDC_ISSUER", ""},
+		{"query", "https://idp.example.com/?tenant=x", "", "OIDC_ISSUER", ""},
+		{"empty query marker", "https://idp.example.com/?", "", "OIDC_ISSUER", ""},
+		{"fragment", "https://idp.example.com/#x", "", "OIDC_ISSUER", ""},
+		{"ftp scheme", "ftp://idp.example.com", "", "OIDC_ISSUER", ""},
+		{"insecure flag not a bool", "https://idp.example.com", "yes", "OIDC_INSECURE_HTTP", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, with(genericOIDC(), "OIDC_ISSUER", tt.issuer, "OIDC_INSECURE_HTTP", tt.insecure), tt.wantErr)
+			if tt.wantErr == "" && cfg.OIDC.Issuer != tt.wantValue {
+				t.Errorf("Issuer = %q, want %q", cfg.OIDC.Issuer, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestOIDCAlias(t *testing.T) {
+	tests := []struct {
+		name        string
+		env         map[string]string
+		wantErr     string
+		wantAlias   bool
+		wantProfile OIDCProfile
+	}{
+		{"alias without profile", with(zitadelOIDC(), "AUTH_MODE", "zitadel", "OIDC_PROFILE", ""), "", true, ProfileZitadel},
+		{"alias with matching profile", with(zitadelOIDC(), "AUTH_MODE", "zitadel"), "", true, ProfileZitadel},
+		{"alias with generic profile", with(zitadelOIDC(), "AUTH_MODE", "zitadel", "OIDC_PROFILE", "generic"), "OIDC_PROFILE", true, ProfileZitadel},
+		{"alias with unknown profile", with(zitadelOIDC(), "AUTH_MODE", "zitadel", "OIDC_PROFILE", "foo"), "OIDC_PROFILE", true, ProfileZitadel},
+		{"alias without platform org", with(zitadelOIDC(), "AUTH_MODE", "zitadel", "ZITADEL_PLATFORM_ORG_ID", ""), "ZITADEL_PLATFORM_ORG_ID", true, ProfileZitadel},
+		{"explicit oidc zitadel", zitadelOIDC(), "", false, ProfileZitadel},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr != "" {
+				return
+			}
+			if cfg.AuthMode != AuthOIDC || cfg.AuthModeAlias != tt.wantAlias || cfg.OIDC.Profile != tt.wantProfile {
+				t.Errorf("mode %q alias %v profile %q, want oidc alias %v profile %q", cfg.AuthMode, cfg.AuthModeAlias, cfg.OIDC.Profile, tt.wantAlias, tt.wantProfile)
+			}
+		})
+	}
+}
+
+func TestOIDCAlgorithms(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr string
+	}{
+		{"default", "", []string{"RS256"}, ""},
+		{"all supported", "RS256, ES256,EdDSA", []string{"RS256", "ES256", "EdDSA"}, ""},
+		{"unsupported", "HS256", nil, "OIDC_ALGORITHMS"},
+		{"none", "none", nil, "OIDC_ALGORITHMS"},
+		{"duplicate", "ES256,ES256", nil, "OIDC_ALGORITHMS"},
+		{"empty entry", "RS256,,ES256", nil, "OIDC_ALGORITHMS"},
+		{"trailing comma", "RS256,", nil, "OIDC_ALGORITHMS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, with(genericOIDC(), "OIDC_ALGORITHMS", tt.raw), tt.wantErr)
+			if tt.wantErr == "" && !slices.Equal(cfg.OIDC.Algorithms, tt.want) {
+				t.Errorf("Algorithms = %v, want %v", cfg.OIDC.Algorithms, tt.want)
+			}
+		})
+	}
+}
+
+func TestOIDCMaxTokenTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    time.Duration
+		wantErr string
+	}{
+		{"default", "", time.Hour, ""},
+		{"fifteen minutes", "15m", 15 * time.Minute, ""},
+		{"twelve hours", "12h", 12 * time.Hour, ""},
+		{"above twelve hours", "12h1s", 0, "OIDC_MAX_TOKEN_TTL"},
+		{"zero", "0s", 0, "OIDC_MAX_TOKEN_TTL"},
+		{"negative", "-1h", 0, "OIDC_MAX_TOKEN_TTL"},
+		{"not a duration", "soon", 0, "OIDC_MAX_TOKEN_TTL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, with(genericOIDC(), "OIDC_MAX_TOKEN_TTL", tt.raw), tt.wantErr)
+			if tt.wantErr == "" && cfg.OIDC.MaxTokenTTL != tt.want {
+				t.Errorf("MaxTokenTTL = %v, want %v", cfg.OIDC.MaxTokenTTL, tt.want)
+			}
+		})
+	}
+}
+
+func TestOIDCScopes(t *testing.T) {
+	zitadelDefaults := []string{
+		"openid", "profile", "offline_access",
+		"urn:zitadel:iam:user:resourceowner",
+		"urn:zitadel:iam:org:project:id:300000000000001:aud",
+		"urn:zitadel:iam:org:projects:roles",
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    []string
+		wantErr string
+	}{
+		{"generic default", genericOIDC(), []string{"openid", "profile", "offline_access"}, ""},
+		{"zitadel default with project id", zitadelOIDC(), zitadelDefaults, ""},
+		{"explicit space separated", with(genericOIDC(), "OIDC_SCOPES", "openid email"), []string{"openid", "email"}, ""},
+		{"explicit comma separated", with(genericOIDC(), "OIDC_SCOPES", "openid,email"), []string{"openid", "email"}, ""},
+		{"explicit without openid", with(genericOIDC(), "OIDC_SCOPES", "profile offline_access"), nil, "OIDC_SCOPES"},
+		{"explicit only separators", with(genericOIDC(), "OIDC_SCOPES", ", ,"), nil, "OIDC_SCOPES"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr == "" && !slices.Equal(cfg.OIDC.Scopes, tt.want) {
+				t.Errorf("Scopes = %v, want %v", cfg.OIDC.Scopes, tt.want)
+			}
+		})
+	}
+}
+
+func TestOIDCClientIDsAndFlags(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		check   func(OIDCConfig) bool
+		wantErr string
+	}{
+		{"client ids trimmed", with(genericOIDC(), "OIDC_CLIENT_IDS", " spa , cli "), func(c OIDCConfig) bool {
+			return slices.Equal(c.ClientIDs, []string{"spa", "cli"})
+		}, ""},
+		{"duplicate client id", with(genericOIDC(), "OIDC_CLIENT_IDS", "spa,spa"), nil, "OIDC_CLIENT_IDS"},
+		{"empty client id entry", with(genericOIDC(), "OIDC_CLIENT_IDS", "spa,,cli"), nil, "OIDC_CLIENT_IDS"},
+		{"require azp default", genericOIDC(), func(c OIDCConfig) bool { return c.RequireAZP }, ""},
+		{"require azp false", with(genericOIDC(), "OIDC_REQUIRE_AZP", "false"), func(c OIDCConfig) bool { return !c.RequireAZP }, ""},
+		{"require azp not a bool", with(genericOIDC(), "OIDC_REQUIRE_AZP", "no"), nil, "OIDC_REQUIRE_AZP"},
+		{"insecure http default off", genericOIDC(), func(c OIDCConfig) bool { return !c.InsecureHTTP }, ""},
+		{"audience kept", genericOIDC(), func(c OIDCConfig) bool { return c.Audience == "uptimecluster" }, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr == "" && !tt.check(cfg.OIDC) {
+				t.Errorf("unexpected OIDC config: %+v", cfg.OIDC)
+			}
+		})
+	}
+}
+
+func TestOIDCRolesGeneric(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantMap map[string]string
+		wantErr string
+	}{
+		{"claim dot path", with(genericOIDC(), "OIDC_ROLES_CLAIM", "realm_access.roles"), nil, ""},
+		{"claim empty segment", with(genericOIDC(), "OIDC_ROLES_CLAIM", "realm_access..roles"), nil, "OIDC_ROLES_CLAIM"},
+		{"claim leading dot", with(genericOIDC(), "OIDC_ROLES_CLAIM", ".roles"), nil, "OIDC_ROLES_CLAIM"},
+		{"claim trailing dot", with(genericOIDC(), "OIDC_ROLES_CLAIM", "roles."), nil, "OIDC_ROLES_CLAIM"},
+		{"role map", with(genericOIDC(), "OIDC_ROLE_MAP", "uptime-admins=tenant-admin, ops=tenant-editor,staff=tenant-viewer,platform=platform-admin"), map[string]string{
+			"uptime-admins": "tenant-admin", "ops": "tenant-editor", "staff": "tenant-viewer", "platform": "platform-admin",
+		}, ""},
+		{"role map unknown role", with(genericOIDC(), "OIDC_ROLE_MAP", "ops=superuser"), nil, "OIDC_ROLE_MAP"},
+		{"role map unknown role case", with(genericOIDC(), "OIDC_ROLE_MAP", "ops=Tenant-Admin"), nil, "OIDC_ROLE_MAP"},
+		{"role map entry without equals", with(genericOIDC(), "OIDC_ROLE_MAP", "ops"), nil, "OIDC_ROLE_MAP"},
+		{"role map empty key", with(genericOIDC(), "OIDC_ROLE_MAP", "=tenant-viewer"), nil, "OIDC_ROLE_MAP"},
+		{"role map duplicate key", with(genericOIDC(), "OIDC_ROLE_MAP", "ops=tenant-editor,ops=tenant-viewer"), nil, "OIDC_ROLE_MAP"},
+		{"role map empty entry", with(genericOIDC(), "OIDC_ROLE_MAP", "ops=tenant-editor,"), nil, "OIDC_ROLE_MAP"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr == "" && !maps.Equal(cfg.OIDC.RoleMap, tt.wantMap) {
+				t.Errorf("RoleMap = %v, want %v", cfg.OIDC.RoleMap, tt.wantMap)
+			}
+		})
+	}
+}
+
+func TestOIDCProfileSpecificVariables(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{"roles claim with zitadel", with(zitadelOIDC(), "OIDC_ROLES_CLAIM", "roles"), "OIDC_ROLES_CLAIM"},
+		{"role map with zitadel", with(zitadelOIDC(), "OIDC_ROLE_MAP", "ops=tenant-editor"), "OIDC_ROLE_MAP"},
+		{"tenancy with generic", with(genericOIDC(), "OIDC_TENANCY", "single"), "OIDC_TENANCY"},
+		{"platform org with generic", with(genericOIDC(), "ZITADEL_PLATFORM_ORG_ID", "300000000000003"), "ZITADEL_PLATFORM_ORG_ID"},
+		{"tenancy multi with zitadel", with(zitadelOIDC(), "OIDC_TENANCY", "multi"), ""},
+		{"tenancy invalid with zitadel", with(zitadelOIDC(), "OIDC_TENANCY", "many"), "OIDC_TENANCY"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { expectErr(t, tt.env, tt.wantErr) })
+	}
+	cfg := expectErr(t, with(zitadelOIDC(), "OIDC_TENANCY", "multi"), "")
+	if cfg.OIDC.Tenancy != TenancyMulti || cfg.OIDC.RolesClaim != "" || cfg.OIDC.RoleMap != nil {
+		t.Errorf("zitadel multi: %+v", cfg.OIDC)
+	}
+}
+
+func TestOIDCIgnoredInLocalMode(t *testing.T) {
+	cfg := expectErr(t, map[string]string{
+		"NODE_NAME":               "n1",
+		"OIDC_ISSUER":             "not a url",
+		"OIDC_PROFILE":            "keycloak",
+		"OIDC_ALGORITHMS":         "HS256",
+		"OIDC_TENANCY":            "many",
+		"OIDC_MAX_TOKEN_TTL":      "forever",
+		"ZITADEL_PLATFORM_ORG_ID": "300000000000003",
+	}, "")
+	if cfg.AuthMode != AuthLocal || !reflect.DeepEqual(cfg.OIDC, OIDCConfig{}) || cfg.AuthModeAlias {
+		t.Errorf("local mode: mode %q alias %v OIDC %+v, want zero OIDC", cfg.AuthMode, cfg.AuthModeAlias, cfg.OIDC)
+	}
+}
+
+func TestLoadRejectsUnknownAuthMode(t *testing.T) {
+	expectErr(t, map[string]string{"NODE_NAME": "n1", "AUTH_MODE": "ldap"}, "AUTH_MODE")
 }

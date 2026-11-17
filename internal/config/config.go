@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/joinsider/uptimecluster/internal/selfcheck"
 )
@@ -33,11 +34,65 @@ const (
 // AuthMode selects how users authenticate.
 type AuthMode string
 
-// Supported authentication modes.
+// Supported authentication modes. AuthZitadel is the legacy value of
+// AUTH_MODE=zitadel. Load maps it to AuthOIDC with the zitadel profile and
+// never returns it; it stays for callers that still reference it.
 const (
 	AuthLocal   AuthMode = "local"
+	AuthOIDC    AuthMode = "oidc"
 	AuthZitadel AuthMode = "zitadel"
 )
+
+// OIDCProfile selects where roles and tenants come from in an OIDC token (ADR 0027).
+type OIDCProfile string
+
+// Supported OIDC profiles.
+const (
+	ProfileGeneric OIDCProfile = "generic"
+	ProfileZitadel OIDCProfile = "zitadel"
+)
+
+// Tenancy selects how the zitadel profile maps tokens to tenants (ADR 0027).
+type Tenancy string
+
+// Supported tenancy modes of the zitadel profile.
+const (
+	TenancySingle Tenancy = "single"
+	TenancyMulti  Tenancy = "multi"
+)
+
+// OIDCConfig is the OpenID Connect configuration (ADR 0027). It is zero unless
+// AuthMode is AuthOIDC. Secrets do not occur here; the client IDs are public.
+type OIDCConfig struct {
+	// Profile is generic or zitadel (OIDC_PROFILE).
+	Profile OIDCProfile
+	// Issuer is the exact iss claim and discovery base, kept as given (OIDC_ISSUER).
+	Issuer string
+	// Audience must be contained in the aud claim (OIDC_AUDIENCE). With the
+	// zitadel profile it is the project ID.
+	Audience string
+	// ClientIDs are the accepted azp values; the first one is the SPA client (OIDC_CLIENT_IDS).
+	ClientIDs []string
+	// RequireAZP rejects tokens without azp when true (OIDC_REQUIRE_AZP).
+	RequireAZP bool
+	// Algorithms are the accepted signature algorithms, each RS256, ES256 or EdDSA (OIDC_ALGORITHMS).
+	Algorithms []string
+	// MaxTokenTTL is the largest allowed exp minus iat (OIDC_MAX_TOKEN_TTL).
+	MaxTokenTTL time.Duration
+	// Scopes are requested from the identity provider (OIDC_SCOPES). They
+	// always contain openid when set explicitly.
+	Scopes []string
+	// InsecureHTTP allows an http issuer, for development only (OIDC_INSECURE_HTTP).
+	InsecureHTTP bool
+	// RolesClaim is a dot path to the roles claim, generic profile only (OIDC_ROLES_CLAIM).
+	RolesClaim string
+	// RoleMap maps identity provider values to roles, generic profile only (OIDC_ROLE_MAP).
+	RoleMap map[string]string
+	// Tenancy is single or multi, zitadel profile only (OIDC_TENANCY). The generic profile is always single.
+	Tenancy Tenancy
+	// PlatformOrgID is the Zitadel organization of the platform, zitadel profile only (ZITADEL_PLATFORM_ORG_ID).
+	PlatformOrgID string
+}
 
 // Config is the validated node configuration.
 type Config struct {
@@ -73,6 +128,11 @@ type Config struct {
 	// multi-tenant (Zitadel) mode.
 	SSRFProtection string
 	AuthMode       AuthMode
+	// AuthModeAlias is set when AUTH_MODE=zitadel was given. The mode is then
+	// AuthOIDC with the zitadel profile; main logs a notice (ADR 0027).
+	AuthModeAlias bool
+	// OIDC is the OpenID Connect configuration (ADR 0027), zero unless AuthMode is AuthOIDC.
+	OIDC OIDCConfig
 	// RawCompaction compacts heartbeats older than 48 h (FA-UPT-04).
 	RawCompaction bool
 	// Retention of raw data, hourly and daily rollups (FA-UPT-05); 0 = forever.
@@ -150,11 +210,18 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	switch cfg.AuthMode {
-	case AuthLocal:
+	case AuthLocal, AuthOIDC:
 	case AuthZitadel:
-		errs = append(errs, errors.New("AUTH_MODE: zitadel is not supported yet"))
+		// Alias: AUTH_MODE=zitadel is oidc with the zitadel profile (ADR 0027).
+		cfg.AuthMode = AuthOIDC
+		cfg.AuthModeAlias = true
 	default:
-		errs = append(errs, fmt.Errorf("AUTH_MODE: must be %q or %q, got %q", AuthLocal, AuthZitadel, cfg.AuthMode))
+		errs = append(errs, fmt.Errorf("AUTH_MODE: must be %q, %q or %q, got %q", AuthLocal, AuthOIDC, AuthZitadel, cfg.AuthMode))
+	}
+	if cfg.AuthMode == AuthOIDC {
+		oidcCfg, oidcErrs := loadOIDC(get, cfg.AuthModeAlias)
+		cfg.OIDC = oidcCfg
+		errs = append(errs, oidcErrs...)
 	}
 
 	if cfg.NodeName == "" {
@@ -429,7 +496,260 @@ func ParseOrigin(raw string) (string, error) {
 }
 
 // SSRFProtectionEnabled reports whether check and notification targets in
-// private networks are blocked.
+// private networks are blocked. Auto enables it for the Zitadel profile, which
+// is the former zitadel mode; AuthZitadel is still honored for callers that
+// build a Config by hand.
 func (c Config) SSRFProtectionEnabled() bool {
-	return c.SSRFProtection == "on" || (c.SSRFProtection == "auto" && c.AuthMode == AuthZitadel)
+	zitadel := c.AuthMode == AuthZitadel || (c.AuthMode == AuthOIDC && c.OIDC.Profile == ProfileZitadel)
+	return c.SSRFProtection == "on" || (c.SSRFProtection == "auto" && zitadel)
+}
+
+// loadOIDC reads and validates the OIDC_* and ZITADEL_* variables for
+// AUTH_MODE=oidc (ADR 0027). alias is set when AUTH_MODE=zitadel selected the
+// mode, which fixes the profile to zitadel. Variables that belong to the other
+// profile are errors instead of being ignored.
+func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error) {
+	var errs []error
+	var err error
+	add := func(e error) {
+		if e != nil {
+			errs = append(errs, e)
+		}
+	}
+	fail := func(format string, args ...any) {
+		errs = append(errs, fmt.Errorf(format, args...))
+	}
+
+	var c OIDCConfig
+	profile := OIDCProfile(get("OIDC_PROFILE", ""))
+	switch {
+	case alias:
+		if profile != "" && profile != ProfileZitadel {
+			fail("OIDC_PROFILE: AUTH_MODE=zitadel implies profile %q, got %q", ProfileZitadel, profile)
+		}
+		profile = ProfileZitadel
+	case profile == "":
+		profile = ProfileGeneric
+	case profile != ProfileGeneric && profile != ProfileZitadel:
+		fail("OIDC_PROFILE: must be %q or %q, got %q", ProfileGeneric, ProfileZitadel, profile)
+		return c, errs
+	}
+	c.Profile = profile
+
+	c.InsecureHTTP, err = boolVar(get, "OIDC_INSECURE_HTTP", false)
+	add(err)
+
+	c.Issuer = get("OIDC_ISSUER", "")
+	if c.Issuer == "" {
+		fail("OIDC_ISSUER: required with AUTH_MODE=oidc")
+	} else if e := checkIssuer(c.Issuer, c.InsecureHTTP); e != nil {
+		fail("OIDC_ISSUER: %v", e)
+	}
+
+	c.Audience = get("OIDC_AUDIENCE", "")
+	if c.Audience == "" {
+		fail("OIDC_AUDIENCE: required with AUTH_MODE=oidc")
+	}
+
+	c.ClientIDs = splitList(get("OIDC_CLIENT_IDS", ""))
+	if len(c.ClientIDs) == 0 {
+		fail("OIDC_CLIENT_IDS: required with AUTH_MODE=oidc")
+	} else {
+		add(checkList("OIDC_CLIENT_IDS", c.ClientIDs))
+	}
+
+	c.RequireAZP, err = boolVar(get, "OIDC_REQUIRE_AZP", true)
+	add(err)
+
+	c.Algorithms = splitList(get("OIDC_ALGORITHMS", "RS256"))
+	add(checkList("OIDC_ALGORITHMS", c.Algorithms))
+	for _, alg := range c.Algorithms {
+		if alg != "" && !isOIDCAlgorithm(alg) {
+			fail("OIDC_ALGORITHMS: must be RS256, ES256 or EdDSA, got %q", alg)
+		}
+	}
+
+	ttlRaw := get("OIDC_MAX_TOKEN_TTL", "1h")
+	ttl, e := time.ParseDuration(ttlRaw)
+	if e != nil || ttl <= 0 || ttl > 12*time.Hour {
+		fail("OIDC_MAX_TOKEN_TTL: must be a duration above 0 and at most 12h, got %q", ttlRaw)
+	}
+	c.MaxTokenTTL = ttl
+
+	if scopesRaw := get("OIDC_SCOPES", ""); scopesRaw == "" {
+		c.Scopes = defaultScopes(profile, c.Audience)
+	} else {
+		c.Scopes = strings.FieldsFunc(scopesRaw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+		if !slices.Contains(c.Scopes, "openid") {
+			fail("OIDC_SCOPES: must contain openid, got %q", scopesRaw)
+		}
+	}
+
+	if profile == ProfileZitadel {
+		if get("OIDC_ROLES_CLAIM", "") != "" {
+			fail("OIDC_ROLES_CLAIM: not used with OIDC_PROFILE=zitadel, roles come from the project claim")
+		}
+		if get("OIDC_ROLE_MAP", "") != "" {
+			fail("OIDC_ROLE_MAP: not used with OIDC_PROFILE=zitadel")
+		}
+		c.Tenancy = Tenancy(get("OIDC_TENANCY", string(TenancySingle)))
+		if c.Tenancy != TenancySingle && c.Tenancy != TenancyMulti {
+			fail("OIDC_TENANCY: must be %q or %q, got %q", TenancySingle, TenancyMulti, c.Tenancy)
+		}
+		c.PlatformOrgID = get("ZITADEL_PLATFORM_ORG_ID", "")
+		if c.PlatformOrgID == "" {
+			fail("ZITADEL_PLATFORM_ORG_ID: required with OIDC_PROFILE=zitadel")
+		}
+		return c, errs
+	}
+
+	if get("OIDC_TENANCY", "") != "" {
+		fail("OIDC_TENANCY: only valid with OIDC_PROFILE=zitadel")
+	}
+	if get("ZITADEL_PLATFORM_ORG_ID", "") != "" {
+		fail("ZITADEL_PLATFORM_ORG_ID: only valid with OIDC_PROFILE=zitadel")
+	}
+	c.Tenancy = TenancySingle
+	c.RolesClaim = get("OIDC_ROLES_CLAIM", "")
+	switch {
+	case c.RolesClaim == "":
+		fail("OIDC_ROLES_CLAIM: required with OIDC_PROFILE=generic")
+	case !validClaimPath(c.RolesClaim):
+		fail("OIDC_ROLES_CLAIM: must be a dot path with non-empty segments, got %q", c.RolesClaim)
+	}
+	c.RoleMap, err = parseRoleMap(get("OIDC_ROLE_MAP", ""))
+	if err != nil {
+		fail("OIDC_ROLE_MAP: %v", err)
+	}
+	return c, errs
+}
+
+// boolVar reads a strict true or false, as the other boolean variables do.
+func boolVar(get func(key, def string) string, key string, def bool) (bool, error) {
+	switch v := get(key, strconv.FormatBool(def)); v {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return def, fmt.Errorf("%s: must be true or false, got %q", key, v)
+	}
+}
+
+// checkIssuer validates the form of OIDC_ISSUER: an absolute https URL, or http
+// when insecure is set, without query or fragment. The value itself is not
+// normalized, because the iss claim must match it exactly.
+func checkIssuer(raw string, insecure bool) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || !u.IsAbs() {
+		return fmt.Errorf("must be an absolute URL, got %q", raw)
+	}
+	switch {
+	case u.Scheme == "https":
+	case u.Scheme == "http" && insecure:
+	case u.Scheme == "http":
+		return fmt.Errorf("http requires OIDC_INSECURE_HTTP=true, got %q", raw)
+	default:
+		return fmt.Errorf("scheme must be https, got %q", raw)
+	}
+	if strings.ContainsAny(raw, "?#") {
+		return fmt.Errorf("must not contain a query or fragment, got %q", raw)
+	}
+	return nil
+}
+
+// splitList splits a comma-separated list and trims each entry. An empty raw
+// value yields nil.
+func splitList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
+}
+
+// checkList rejects empty and duplicate entries of a list.
+func checkList(key string, items []string) error {
+	seen := make(map[string]bool, len(items))
+	for _, item := range items {
+		if item == "" {
+			return fmt.Errorf("%s: must not contain empty entries", key)
+		}
+		if seen[item] {
+			return fmt.Errorf("%s: duplicate entry %q", key, item)
+		}
+		seen[item] = true
+	}
+	return nil
+}
+
+// isOIDCAlgorithm reports whether alg is a signature algorithm OIDC_ALGORITHMS accepts.
+func isOIDCAlgorithm(alg string) bool {
+	switch alg {
+	case "RS256", "ES256", "EdDSA":
+		return true
+	}
+	return false
+}
+
+// isOIDCRole reports whether role is one of the four platform roles.
+func isOIDCRole(role string) bool {
+	switch role {
+	case "platform-admin", "tenant-admin", "tenant-editor", "tenant-viewer":
+		return true
+	}
+	return false
+}
+
+// defaultScopes returns the scopes requested when OIDC_SCOPES is not set.
+// The zitadel profile adds the claims that carry the organization and the
+// project roles; the project ID is the audience.
+func defaultScopes(profile OIDCProfile, audience string) []string {
+	scopes := []string{"openid", "profile", "offline_access"}
+	if profile == ProfileZitadel {
+		scopes = append(scopes,
+			"urn:zitadel:iam:user:resourceowner",
+			"urn:zitadel:iam:org:project:id:"+audience+":aud",
+			"urn:zitadel:iam:org:projects:roles",
+		)
+	}
+	return scopes
+}
+
+// validClaimPath reports whether p is a dot path such as realm_access.roles
+// with non-empty segments.
+func validClaimPath(p string) bool {
+	for _, seg := range strings.Split(p, ".") {
+		if seg == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// parseRoleMap parses OIDC_ROLE_MAP in the form idpValue=role,idpValue2=role.
+// An empty value yields nil.
+func parseRoleMap(raw string) (map[string]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	m := make(map[string]string)
+	for _, entry := range strings.Split(raw, ",") {
+		idp, role, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		idp, role = strings.TrimSpace(idp), strings.TrimSpace(role)
+		if !ok || idp == "" {
+			return nil, fmt.Errorf("entries must be idpValue=role, got %q", entry)
+		}
+		if _, dup := m[idp]; dup {
+			return nil, fmt.Errorf("duplicate idpValue %q", idp)
+		}
+		if !isOIDCRole(role) {
+			return nil, fmt.Errorf("role for %q must be platform-admin, tenant-admin, tenant-editor or tenant-viewer, got %q", idp, role)
+		}
+		m[idp] = role
+	}
+	return m, nil
 }

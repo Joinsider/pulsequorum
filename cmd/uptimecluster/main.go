@@ -171,7 +171,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	log.Info("master key loaded", "source", kek.Source, "fingerprint", kek.Fingerprint)
-	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthZitadel {
+	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthOIDC && cfg.OIDC.Tenancy == config.TenancyMulti {
 		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
 	}
 
