@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@angular/build": "^22.2.3",
-    "@angular/cli": "^22.2.3",
+    "@angular/cli": "^22.2.7",
     "@angular/compiler-cli": "^22.2.0",
     "@material-symbols/svg-400": "^0.48.1",
     "@playwright/test": "1.64.0",
