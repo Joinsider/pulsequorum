@@ -274,6 +274,9 @@ WHERE state = 'pending' AND next_attempt_ms <= sqlc.arg(now_ms)
 ORDER BY next_attempt_ms, alert_key, channel_id
 LIMIT sqlc.arg(row_limit);
 
+-- name: CountPendingAlerts :one
+SELECT COUNT(*) FROM alert_outbox WHERE state = 'pending';
+
 -- name: PruneAlerts :exec
 DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?;
 

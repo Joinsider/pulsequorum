@@ -55,6 +55,18 @@ func (s *StateStore) DueAlerts(ctx context.Context, nowMs int64, limit int) ([]s
 	return out, nil
 }
 
+// CountPendingAlerts returns the number of outbox entries that are not delivered
+// yet (the uptimecluster_outbox_pending metric, ADR 0025).
+func (s *StateStore) CountPendingAlerts(ctx context.Context) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n, err := s.q.CountPendingAlerts(ctx)
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	return int(n), nil
+}
+
 // GetAlert returns one outbox entry.
 func (s *StateStore) GetAlert(ctx context.Context, alertKey, channelID string) (store.AlertDelivery, error) {
 	s.mu.RLock()

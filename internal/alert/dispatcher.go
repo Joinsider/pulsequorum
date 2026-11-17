@@ -83,6 +83,11 @@ type DispatcherOptions struct {
 	// alerts due in the window after a send wait and go out as one message at
 	// its end. Zero disables bundling.
 	BundleWindow time.Duration
+	// OnOutcome is called once per delivery attempt with the kind of the
+	// channel and the outcome (OutcomeSent, OutcomeThrottled or OutcomeFailed),
+	// for the delivery metrics (ADR 0025). It may be called concurrently. Nil
+	// means none.
+	OnOutcome func(kind, outcome string)
 }
 
 // Dispatcher delivers due outbox entries and repeats DOWN alerts (ADR 0014).
@@ -415,6 +420,7 @@ func (d *Dispatcher) runJob(ctx context.Context, j job) {
 			msg, permanent = "invalid alert payload", true
 		}
 		d.finish(ctx, a, attempt, d.failure(attempt, permanent, msg, 0), msg)
+		d.observe(j.ch.Kind, OutcomeFailed)
 	}
 	if len(live) == 0 {
 		return
@@ -439,6 +445,14 @@ func (d *Dispatcher) runJob(ctx context.Context, j job) {
 	for _, a := range live {
 		attempt := a.Attempts + 1
 		d.finish(ctx, a, attempt, d.outcome(attempt, res), res.msg)
+		d.observe(j.ch.Kind, outcomeOf(res))
+	}
+}
+
+// observe reports one delivery attempt to OnOutcome, if set.
+func (d *Dispatcher) observe(kind, outcome string) {
+	if d.opts.OnOutcome != nil {
+		d.opts.OnOutcome(kind, outcome)
 	}
 }
 

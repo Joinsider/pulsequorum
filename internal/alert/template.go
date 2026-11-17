@@ -18,6 +18,7 @@ import (
 
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/sysalert"
 )
 
 // placeholder matches {{name}} with optional spaces.
@@ -197,6 +198,8 @@ func Text(p cluster.AlertPayload) string {
 		return flappingText(p)
 	case store.EventChannelFailed:
 		return channelFailedText(p)
+	case store.EventSystem:
+		return systemText(p)
 	}
 	if s, ok := verdictSentence(p); ok {
 		if p.Verdict == store.VerdictFalseAlarm {
@@ -284,6 +287,29 @@ func channelFailedText(p cluster.AlertPayload) string {
 	return fmt.Sprintf("⚠ Notification channel %s failed: %s", p.ChannelName, p.ChannelError)
 }
 
+// systemText renders a system alert (FA-OBS-01, ADR 0025): what happened and
+// whether it started or ended. Only numbers and node IDs appear in it.
+func systemText(p cluster.AlertPayload) string {
+	s := p.System
+	if s == nil {
+		return "System alert"
+	}
+	var d map[string]float64
+	_ = json.Unmarshal(s.Details, &d)
+	switch {
+	case s.Kind == sysalert.KindQuorum && s.Active:
+		return fmt.Sprintf("Quorum lost: no leader, %d of %d voters reachable", int64(d["reachable"]), int64(d["total"]))
+	case s.Kind == sysalert.KindQuorum:
+		return fmt.Sprintf("Quorum restored after %d s", int64(d["gapSeconds"]))
+	case s.Active && s.Level > 0:
+		return fmt.Sprintf("System alert %s (%s), level %d", s.Kind, s.Subject, s.Level)
+	case s.Active:
+		return fmt.Sprintf("System alert %s (%s)", s.Kind, s.Subject)
+	default:
+		return fmt.Sprintf("System alert %s (%s) cleared", s.Kind, s.Subject)
+	}
+}
+
 // title is the Shoutrrr title of a single alert.
 func title(p cluster.AlertPayload) string {
 	switch p.Event {
@@ -294,6 +320,8 @@ func title(p cluster.AlertPayload) string {
 		return "Stable: " + p.MonitorName
 	case store.EventChannelFailed:
 		return "Channel failed: " + p.ChannelName
+	case store.EventSystem:
+		return systemText(p)
 	}
 	if s, ok := verdictSentence(p); ok {
 		return s
@@ -335,6 +363,8 @@ func bundleLine(p cluster.AlertPayload) string {
 		return fmt.Sprintf("%s: stable again, status %s, %d changes", p.MonitorName, p.Status, p.ChangeCount)
 	case store.EventChannelFailed:
 		return fmt.Sprintf("channel %s failed: %s", p.ChannelName, p.ChannelError)
+	case store.EventSystem:
+		return systemText(p)
 	}
 	if s, ok := verdictSentence(p); ok {
 		return s

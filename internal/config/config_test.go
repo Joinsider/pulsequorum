@@ -336,7 +336,7 @@ func TestMetrics(t *testing.T) {
 		}
 	}
 
-	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "a", "METRICS_TOKEN_FILE": "/run/secrets/m"}))
+	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "a", "METRICS_TOKEN_FILE": "/run/secrets/m"})) //nolint:gosec // G101: test value, not a credential
 	if err == nil || !strings.Contains(err.Error(), "METRICS_TOKEN_FILE") {
 		t.Errorf("both token sources: error = %v, want a METRICS_TOKEN error", err)
 	}
@@ -379,5 +379,71 @@ func TestResolveMetricsToken(t *testing.T) {
 				t.Errorf("token = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// ADR 0025: the thresholds of the system alerts have defaults and are validated.
+func TestSystemAlertThresholds(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ReplicationLagAlert != 5*time.Minute || cfg.ClockSkewAlert != 2*time.Second ||
+		cfg.DiskFreeAlert != 0.15 || cfg.WALSizeAlert != 512<<20 {
+		t.Errorf("defaults = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+	}
+
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME": "n1", "REPLICATION_LAG_ALERT": "90s", "CLOCK_SKEW_ALERT": "500ms",
+		"DISK_FREE_ALERT": "0.5", "WAL_SIZE_ALERT": "1GiB",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ReplicationLagAlert != 90*time.Second || cfg.ClockSkewAlert != 500*time.Millisecond ||
+		cfg.DiskFreeAlert != 0.5 || cfg.WALSizeAlert != 1<<30 {
+		t.Errorf("overrides = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+	}
+
+	invalid := map[string]string{
+		"REPLICATION_LAG_ALERT": "0s",
+		"CLOCK_SKEW_ALERT":      "-1s",
+		"DISK_FREE_ALERT":       "1",
+		"WAL_SIZE_ALERT":        "512MB",
+	}
+	for key, value := range invalid {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", key: value}))
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s=%q: error = %v, want it to name the key", key, value, err)
+		}
+	}
+}
+
+func TestParseByteSize(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    int64
+		wantErr bool
+	}{
+		{in: "512MiB", want: 512 << 20},
+		{in: " 2 KiB ", want: 2 << 10},
+		{in: "1GiB", want: 1 << 30},
+		{in: "4096", want: 4096},
+		{in: "0B", want: 0},
+		{in: "", wantErr: true},
+		{in: "MiB", wantErr: true},
+		{in: "-1MiB", wantErr: true},
+		{in: "10MB", wantErr: true},
+		{in: "9999999999999GiB", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := parseByteSize(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("parseByteSize(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("parseByteSize(%q) = %d, want %d", tt.in, got, tt.want)
+		}
 	}
 }

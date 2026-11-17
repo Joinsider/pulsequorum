@@ -11,6 +11,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/degraded"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/selfcheck"
+	"github.com/joinsider/uptimecluster/internal/sysalert"
 )
 
 // Timings of the clock offset measurement (ADR 0020).
@@ -232,6 +233,8 @@ func (h *Host) measurePeer(ctx context.Context, p replication.Peer) {
 	h.peerViews.record(p.ID, degraded.PeerView{
 		AnsweredAt: t1, LeaderID: st.GetLeaderId(), SelfCheckFailed: st.GetSelfCheckFailed(),
 	})
+	// The ADR 0025 signals ride on the same answer.
+	h.signals.record(p.ID, sysalert.FromStatus(p.ID, st, t1))
 	// The self-check answer rides on the same poll (ADR 0022). Its age is
 	// taken on the peer's clock, so a skewed clock does not distort it.
 	h.selfChecks.record(p.ID, selfcheck.Remote{

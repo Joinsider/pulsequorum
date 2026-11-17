@@ -170,6 +170,12 @@ type Options struct {
 	// SelfCheck returns the latest result of this node's reference targets
 	// (ADR 0022); it is reported in GetStatus. Nil means not configured.
 	SelfCheck func() selfcheck.Status
+	// DiskFreeRatio returns the free share of the data directory, negative if
+	// unknown; it is reported in GetStatus (ADR 0025). Nil means unknown.
+	DiskFreeRatio func() float64
+	// WALBytes returns the WAL sizes of state.db and metrics.db; it is reported
+	// in GetStatus (ADR 0025). Nil means unknown.
+	WALBytes func() (state, metrics int64)
 }
 
 // Host is the running cluster side of a voter.
@@ -191,10 +197,13 @@ type Host struct {
 	state store.State
 	self  store.Node
 	// clock is the wall clock of this node (Options.Clock).
-	clock         func() time.Time
-	clocks        clockTracker
-	selfChecks    selfCheckTracker
-	peerViews     peerViewTracker
+	clock      func() time.Time
+	clocks     clockTracker
+	selfChecks selfCheckTracker
+	peerViews  peerViewTracker
+	signals    signalTracker
+	// service answers GetStatus; SelfSignals asks it for this node's signals.
+	service       *membership.Service
 	clockInterval time.Duration
 	mux           *clusternet.Mux
 	grpc          *grpc.Server
@@ -289,11 +298,12 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	node.OnPeerResumed(h.Replication.Trigger)
 
 	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
-	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
+	h.service = &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
-		SelfCheck: opts.SelfCheck,
-	})
+		SelfCheck: opts.SelfCheck, Own: h.ownSignals(opts),
+	}
+	pb.RegisterClusterServiceServer(h.grpc, h.service)
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
 		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, OnStored: opts.OnHeartbeatsStored, Log: opts.Log,
 	})

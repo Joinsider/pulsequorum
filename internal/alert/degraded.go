@@ -22,6 +22,29 @@ const (
 	LocalOutcomeFailed = "failed"
 )
 
+// OutcomeThrottled is the outcome of an attempt that the receiver answered with
+// a wait (HTTP 429, Retry-After). It is reported to OnOutcome only.
+const OutcomeThrottled = "throttled"
+
+// OutcomeFailed and OutcomeSent name the outcome of one delivery attempt for
+// OnOutcome (ADR 0025, section 7).
+const (
+	OutcomeSent   = LocalOutcomeSent
+	OutcomeFailed = LocalOutcomeFailed
+)
+
+// outcomeOf labels the result of one attempt for OnOutcome.
+func outcomeOf(res result) string {
+	switch {
+	case res.delivered:
+		return OutcomeSent
+	case res.retryAfter > 0:
+		return OutcomeThrottled
+	default:
+		return OutcomeFailed
+	}
+}
+
 // localMaxAttempts is the default number of attempts of a local delivery.
 const localMaxAttempts = 5
 
@@ -58,7 +81,10 @@ type LocalDispatcherOptions struct {
 	Jitter func() float64
 	// Interval is the period in which due deliveries are checked (default 500 ms).
 	Interval time.Duration
-	Logger   *slog.Logger
+	// OnOutcome is called once per delivery attempt with the kind of the
+	// channel and the outcome (see DispatcherOptions.OnOutcome). Nil means none.
+	OnOutcome func(kind, outcome string)
+	Logger    *slog.Logger
 }
 
 // LocalDispatcher delivers the alerts of the degraded mode (ADR 0024). It keeps
@@ -251,6 +277,7 @@ func (d *LocalDispatcher) send(ctx context.Context, st *channelState, entries []
 	}
 	for _, e := range entries {
 		e.attempts++
+		d.observe(e.del.Target.Kind, outcomeOf(res))
 		switch {
 		case res.delivered:
 			d.finish(e, LocalOutcomeSent, nil)
@@ -262,6 +289,13 @@ func (d *LocalDispatcher) send(ctx context.Context, st *channelState, entries []
 			e.nextAttempt = d.opts.Now().Add(wait)
 			d.logFailure(e, res, true)
 		}
+	}
+}
+
+// observe reports one delivery attempt to OnOutcome, if set.
+func (d *LocalDispatcher) observe(kind, outcome string) {
+	if d.opts.OnOutcome != nil {
+		d.opts.OnOutcome(kind, outcome)
 	}
 }
 

@@ -78,6 +78,22 @@ func NewCheckpoint() *pb.Command {
 	})
 }
 
+// SystemTenantRequestID makes the creation of the system tenant idempotent: a
+// retry or a second leader is deduplicated by the FSM.
+const SystemTenantRequestID = "bootstrap:tenant:" + store.SystemTenantID
+
+// NewPutSystemTenant builds the command that creates the system tenant (ADR
+// 0025). The FSM accepts the reserved ID only from the system actor, so the
+// command carries it.
+func NewPutSystemTenant(requestID string) (*pb.Command, error) {
+	cmd, err := NewPutTenant(requestID, store.SystemTenantID, TenantDocument{Name: "System", Plan: "system"})
+	if err != nil {
+		return nil, err
+	}
+	cmd.Actor = &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
+	return cmd, nil
+}
+
 // currentCommandLevel returns the effective command level of the transaction.
 func currentCommandLevel(ctx context.Context, tx store.StateTx) (uint32, error) {
 	stored, err := tx.CommandLevel(ctx)

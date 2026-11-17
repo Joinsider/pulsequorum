@@ -5,6 +5,7 @@ package degraded
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/sysalert"
 )
 
 // Reconciliation after the quorum returned (ADR 0024, sections 4, 6 and 7):
@@ -440,6 +442,11 @@ type GapOptions struct {
 	// clusterhost.Host.PeerViews). Nil means there are no peers to wait for.
 	// A peer counts as reachable if it answered within DefaultReachableWithin.
 	Peers func() map[string]PeerView
+	// Degraded reports whether this node is in the degraded mode (ADR 0024).
+	// A finished gap is announced as restored (ADR 0025, section 5) only if the
+	// node was degraded while it had no leader: then a quorum-lost alert went
+	// out. A quiet cluster has old commands without any outage. Nil means never.
+	Degraded func() bool
 	// Tick is the sampling and polling period, default 1 s.
 	Tick time.Duration
 	// CatchUpWait bounds the wait for the anti-entropy round of every connected
@@ -462,6 +469,10 @@ type GapJob struct {
 	leader      bool
 	leaderSince time.Time
 	lastSeen    int64
+	// degradedSeen is set while the node has no leader and is degraded;
+	// afterDegraded is the value it had when this leadership began.
+	degradedSeen  bool
+	afterDegraded bool
 
 	mu   sync.Mutex
 	done bool
@@ -529,6 +540,7 @@ func (g *GapJob) tick(ctx context.Context) {
 		g.leader = true
 		g.leaderSince = g.opts.Now()
 		g.setDone(false)
+		g.afterDegraded, g.degradedSeen = g.degradedSeen, false
 	}
 	if g.Done() {
 		return
@@ -536,8 +548,12 @@ func (g *GapJob) tick(ctx context.Context) {
 	g.run(ctx)
 }
 
-// sample stores the command time of the last applied command.
+// sample stores the command time of the last applied command, and whether
+// the node is degraded.
 func (g *GapJob) sample(ctx context.Context) {
+	if g.opts.Degraded != nil && g.opts.Degraded() {
+		g.degradedSeen = true
+	}
 	v, err := g.opts.State.LastIssuedAt(ctx)
 	if err != nil {
 		g.opts.Logger.Warn("degraded: read last command time", "err", err)
@@ -611,7 +627,28 @@ func (g *GapJob) run(ctx context.Context) {
 	if ctx.Err() != nil || !g.opts.IsLeader() {
 		return
 	}
+	if g.afterDegraded && level >= cluster.SystemAlertCommandLevel {
+		g.announceRestored(ctx)
+	}
 	g.setDone(true)
+}
+
+// announceRestored closes the quorum alert of the outage (ADR 0025, section 5).
+// The restored alert is the clear of the system alert "quorum": it changes the
+// state only if the alert is active, so the leader first proposes it active and
+// then inactive. The active step also notifies, as the confirmed record of the
+// outage. A failure is logged; the gap itself is already corrected.
+func (g *GapJob) announceRestored(ctx context.Context) {
+	gapSeconds := int64(g.opts.Now().Sub(time.UnixMilli(g.lastSeen)) / time.Second)
+	details := json.RawMessage(fmt.Sprintf(`{"gapSeconds":%d}`, gapSeconds))
+	for _, active := range []bool{true, false} {
+		cmd := cluster.NewSetSystemAlert(sysalert.KindQuorum, sysalert.SubjectCluster, active, 0, details)
+		if _, err := g.opts.Proposer.Apply(ctx, cmd); err != nil {
+			g.opts.Logger.Warn("degraded: record quorum restored", "active", active, "err", err)
+			return
+		}
+	}
+	g.opts.Logger.Info("quorum restored", "gap_seconds", gapSeconds)
 }
 
 // suspectsGap reports whether the last applied command is old enough to hide a

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -102,9 +103,21 @@ type Config struct {
 	// Never log them. Read the token with ResolveMetricsToken.
 	MetricsToken     string
 	MetricsTokenFile string
-	LogLevel         slog.Level
-	LogFormat        string
-	ShutdownTimeout  time.Duration
+	// ReplicationLagAlert is the replication lag from which a system alert is
+	// raised (REPLICATION_LAG_ALERT, FA-REP-05, ADR 0025).
+	ReplicationLagAlert time.Duration
+	// ClockSkewAlert is the clock offset from which a system alert is raised
+	// (CLOCK_SKEW_ALERT, FA-OBS-01, ADR 0020, ADR 0025).
+	ClockSkewAlert time.Duration
+	// DiskFreeAlert is the free share of the data directory below which a
+	// system alert is raised (DISK_FREE_ALERT, FA-OBS-01, ADR 0025), in (0, 1).
+	DiskFreeAlert float64
+	// WALSizeAlert is the size in bytes of a WAL file above which a system
+	// alert is raised (WAL_SIZE_ALERT, FA-OBS-01, ADR 0025).
+	WALSizeAlert    int64
+	LogLevel        slog.Level
+	LogFormat       string
+	ShutdownTimeout time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -314,6 +327,27 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("METRICS_TOKEN and METRICS_TOKEN_FILE: set only one"))
 	}
 
+	cfg.ReplicationLagAlert, err = durationAbove(get("REPLICATION_LAG_ALERT", "5m"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("REPLICATION_LAG_ALERT: must be a duration above 0, got %q", getenv("REPLICATION_LAG_ALERT")))
+	}
+	cfg.ClockSkewAlert, err = durationAbove(get("CLOCK_SKEW_ALERT", "2s"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("CLOCK_SKEW_ALERT: must be a duration above 0, got %q", getenv("CLOCK_SKEW_ALERT")))
+	}
+	diskRaw := get("DISK_FREE_ALERT", "0.15")
+	disk, err := strconv.ParseFloat(diskRaw, 64)
+	if err != nil || !(disk > 0 && disk < 1) {
+		errs = append(errs, fmt.Errorf("DISK_FREE_ALERT: must be a number greater than 0 and less than 1, got %q", diskRaw))
+	}
+	cfg.DiskFreeAlert = disk
+	walRaw := get("WAL_SIZE_ALERT", "512MiB")
+	wal, err := parseByteSize(walRaw)
+	if err != nil || wal <= 0 {
+		errs = append(errs, fmt.Errorf("WAL_SIZE_ALERT: must be a size above 0 such as 512MiB (B, KiB, MiB or GiB), got %q", walRaw))
+	}
+	cfg.WALSizeAlert = wal
+
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
 		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: must be a positive duration, got %q", getenv("SHUTDOWN_TIMEOUT")))
@@ -323,6 +357,48 @@ func Load(getenv func(string) string) (Config, error) {
 	return cfg, errors.Join(errs...)
 }
 
+// durationAbove parses a duration that must be greater than floor.
+func durationAbove(raw string, floor time.Duration) (time.Duration, error) {
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if d <= floor {
+		return 0, fmt.Errorf("duration %v is not above %v", d, floor)
+	}
+	return d, nil
+}
+
+// byteUnits are the suffixes of parseByteSize, longest first so that "MiB" is
+// not read as "B".
+var byteUnits = []struct {
+	suffix string
+	factor int64
+}{
+	{"GiB", 1 << 30},
+	{"MiB", 1 << 20},
+	{"KiB", 1 << 10},
+	{"B", 1},
+}
+
+// parseByteSize parses a whole number of bytes with an optional binary unit,
+// such as "512MiB". A number without a unit counts bytes.
+func parseByteSize(raw string) (int64, error) {
+	s := strings.TrimSpace(raw)
+	factor := int64(1)
+	for _, u := range byteUnits {
+		if strings.HasSuffix(s, u.suffix) {
+			s, factor = strings.TrimSpace(strings.TrimSuffix(s, u.suffix)), u.factor
+			break
+		}
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 || n > math.MaxInt64/factor {
+		return 0, fmt.Errorf("invalid byte size %q", raw)
+	}
+	return n * factor, nil
+}
+
 // ResolveMetricsToken returns the bearer token of /metrics. A token file is
 // read and trimmed; an empty result means the endpoint is not protected by a
 // token. The returned value is a secret and must not be logged.
@@ -330,7 +406,7 @@ func (c Config) ResolveMetricsToken() (string, error) {
 	if c.MetricsTokenFile == "" {
 		return c.MetricsToken, nil
 	}
-	raw, err := os.ReadFile(c.MetricsTokenFile) //nolint:gosec // G304: the operator names the file
+	raw, err := os.ReadFile(c.MetricsTokenFile)
 	if err != nil {
 		return "", fmt.Errorf("METRICS_TOKEN_FILE: %w", err)
 	}

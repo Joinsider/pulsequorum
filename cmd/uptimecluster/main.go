@@ -50,6 +50,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/stream"
+	"github.com/joinsider/uptimecluster/internal/sysalert"
 	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
@@ -206,7 +207,16 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// rebuild reads them from the store (ADR 0021).
 	var aggPtr, degradedAggPtr atomic.Pointer[aggregator.Aggregator]
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
-		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
+		// The disk and WAL signals of GetStatus (ADR 0025, section 2).
+		DiskFreeRatio: func() float64 {
+			ratio, err := diskstat.FreeRatio(cfg.DataDir)
+			if err != nil {
+				return -1
+			}
+			return ratio
+		},
+		WALBytes: func() (int64, int64) { return walSize(state.DB()), walSize(metrics.DB()) },
+		NodeID:   nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
@@ -282,10 +292,17 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Now:       clock,
 	}
 	sender := alert.NewSender(checkEnv.Dialer, log).WithClock(clock)
+	// nodeMetrics is set before any dispatcher runs; the outcome hooks read it.
+	var nodeMetrics *ucmetrics.Metrics
+	outcomes := func(kind, outcome string) {
+		if nodeMetrics != nil {
+			nodeMetrics.AlertDelivered(kind, outcome)
+		}
+	}
 	dispatcher := alert.NewDispatcher(alert.DispatcherOptions{
 		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
 		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log, Now: clock,
-		BundleWindow: cfg.AlertBundleWindow,
+		BundleWindow: cfg.AlertBundleWindow, OnOutcome: outcomes,
 	})
 	maint := maintenance.NewController(maintenance.ControllerOptions{
 		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log, Now: clock,
@@ -349,7 +366,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	overlay := degraded.NewOverlay(state)
 	localDispatcher := alert.NewLocalDispatcher(alert.LocalDispatcherOptions{
-		Sender: sender, BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log,
+		Sender: sender, BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log, OnOutcome: outcomes,
 	})
 	degradedApplier := degraded.NewApplier(degraded.ApplierOptions{
 		NodeID: nodeID, State: state, Overlay: overlay, Metrics: metrics, Detector: detector.State,
@@ -373,7 +390,27 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	gapJob = degraded.NewGapJob(degraded.GapOptions{
 		NodeID: nodeID, State: state, Reevaluator: agg, Proposer: raftNode, IsLeader: raftNode.IsLeader,
 		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews,
-		Trigger: host.Replication.Trigger, Now: clock, Logger: log,
+		Trigger: host.Replication.Trigger, Degraded: func() bool { return detector.State().Degraded },
+		Now: clock, Logger: log,
+	})
+	// The sender of a degraded period announces the lost quorum to the system channels (ADR 0025, section 5).
+	quorumNotifier := degraded.NewQuorumNotifier(degraded.QuorumOptions{
+		NodeID: nodeID, State: state, Keyring: keyring, Dispatcher: localDispatcher, Detector: detector.State,
+		SelfCheckFailed: selfCheckFailed, Now: clock, Logger: log,
+	})
+	// The system alerts of the leader (ADR 0025, sections 3 and 4).
+	alertCollector := sysalert.New(sysalert.Options{
+		NodeID: nodeID, IsLeader: raftNode.IsLeader, State: state, CommandLevel: raftNode.CommandLevel,
+		Cluster: raftNode, Self: host.SelfSignals, Peers: host.PeerSignals, ClockOffsets: host.ClockOffsets,
+		Thresholds: sysalert.Thresholds{
+			ReplicationLag: cfg.ReplicationLagAlert, ClockSkew: cfg.ClockSkewAlert,
+			DiskFree: cfg.DiskFreeAlert, WALSize: cfg.WALSizeAlert,
+		},
+		Now: clock, Logger: log,
+	})
+	systemJobs := sysalert.NewJobs(sysalert.JobOptions{
+		IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel, State: state, Cluster: raftNode,
+		Now: clock, Logger: log,
 	})
 	judge := degraded.NewJudge(degraded.JudgeOptions{
 		State: state, Proposer: raftNode, IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel,
@@ -381,7 +418,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
 	// Prometheus metrics (ADR 0025, section 7). The sources are read on each scrape.
-	nodeMetrics := ucmetrics.New(ucmetrics.Sources{
+	nodeMetrics = ucmetrics.New(ucmetrics.Sources{
 		RaftState: func() string { return raftNode.Status().RaftState },
 		RaftIndexes: func() (applied, commit uint64, lastContact time.Duration) {
 			st := raftNode.Status()
@@ -412,10 +449,23 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 				"metrics": dbFileSizes(metrics.DB()),
 			}
 		},
-		DiskFree: func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
-		// OutboxPending stays nil: the store has no method that counts pending deliveries.
-		Degraded: func() bool { return detector.State().Degraded },
-		// SystemAlertsActive stays nil until the system alerts of ADR 0025 exist.
+		DiskFree:      func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
+		OutboxPending: func(ctx context.Context) (int, error) { return state.CountPendingAlerts(ctx) },
+		Degraded:      func() bool { return detector.State().Degraded },
+		SystemAlertsActive: func(ctx context.Context) (map[string]int, error) {
+			alerts, err := state.ListSystemAlerts(ctx, true)
+			if err != nil {
+				return nil, err
+			}
+			counts := make(map[string]int, len(sysalert.Kinds))
+			for _, kind := range sysalert.Kinds {
+				counts[kind] = 0
+			}
+			for _, a := range alerts {
+				counts[a.Kind]++
+			}
+			return counts, nil
+		},
 		ClockOffsets: func() map[string]time.Duration {
 			offsets := make(map[string]time.Duration)
 			for id, ms := range host.ClockOffsets() {
@@ -449,6 +499,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}
 	})
 	bg.Go(func() { reporter.Run(ctx) })
+	bg.Go(func() { quorumNotifier.Run(ctx) })
+	bg.Go(func() { alertCollector.Run(ctx) })
+	bg.Go(func() { systemJobs.Run(ctx) })
 	bg.Go(func() { gapJob.Run(ctx) })
 	bg.Go(func() { judge.Run(ctx) })
 	bg.Go(func() { selfProber.Run(ctx) })
@@ -520,6 +573,15 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return cause
 	}
 	return err
+}
+
+// walSize returns the size of the write-ahead log of db in bytes, 0 if unknown.
+func walSize(db *sqlite.DB) int64 {
+	n, err := db.WALSize()
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // dbFileSizes returns the size of the database file and of its WAL in bytes.

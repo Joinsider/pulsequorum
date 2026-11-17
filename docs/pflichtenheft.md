@@ -657,6 +657,10 @@ Protobuf-Definitionen in `proto/`:
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | Logging |
 | `METRICS_ADDR` | leer | Eigener Listener für `/metrics` (Prometheus), `host:port`; leer = aus (FA-OBS-02, ADR 0025) |
 | `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | – | Bearer-Token für `/metrics`; nicht zusammen setzen (FA-OBS-02, ADR 0025) |
+| `REPLICATION_LAG_ALERT` | `5m` | Replikationsrückstand, ab dem ein Systemalert ausgelöst wird (FA-REP-05, ADR 0025) |
+| `CLOCK_SKEW_ALERT` | `2s` | Uhrzeitabweichung zwischen Voter, ab der ein Systemalert ausgelöst wird (FA-OBS-01, ADR 0025) |
+| `DISK_FREE_ALERT` | `0.15` | Anteil freien Speichers im Datenverzeichnis, unter dem ein Systemalert ausgelöst wird (FA-OBS-01, ADR 0025) |
+| `WAL_SIZE_ALERT` | `512MiB` | WAL-Größe einer Datenbank, ab der ein Systemalert ausgelöst wird; Einheiten `B`, `KiB`, `MiB`, `GiB` (FA-OBS-01, ADR 0025) |
 
 ---
 

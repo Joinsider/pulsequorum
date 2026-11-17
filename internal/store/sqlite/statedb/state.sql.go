@@ -45,6 +45,17 @@ func (q *Queries) CountEnabledUsersWithRole(ctx context.Context, arg CountEnable
 	return column_1, err
 }
 
+const countPendingAlerts = `-- name: CountPendingAlerts :one
+SELECT COUNT(*) FROM alert_outbox WHERE state = 'pending'
+`
+
+func (q *Queries) CountPendingAlerts(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPendingAlerts)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users
 `

@@ -68,3 +68,46 @@ func TestGetStatusReportsSelfCheck(t *testing.T) {
 		})
 	}
 }
+
+// ADR 0025: GetStatus reports the signals of the node; a nil function or a zero
+// certificate expiry leaves the field unset, which the leader reads as no signal.
+func TestGetStatusReportsOwnSignals(t *testing.T) {
+	expiry := time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)
+	full := &Service{
+		Node: statusNode{st: cluster.Status{NodeID: "n1", RaftState: "Follower"}},
+		Own: OwnSignals{
+			Incarnation:      func() string { return "inc-1" },
+			DiskFreeRatio:    func() float64 { return 0.4 },
+			WALBytes:         func() (int64, int64) { return 100, 200 },
+			CertNotAfter:     func() time.Time { return expiry },
+			ReplicationLagMs: func() int64 { return -1 },
+			Checkpoint:       func() (uint64, string) { return 77, "fp" },
+		},
+	}
+	got, err := full.GetStatus(context.Background(), &pb.GetStatusRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &pb.GetStatusResponse{
+		Incarnation: "inc-1", DiskFreeRatio: 0.4, StateWalBytes: 100, MetricsWalBytes: 200,
+		CertNotAfterMs: expiry.UnixMilli(), ReplicationLagMs: -1, FingerprintIndex: 77, Fingerprint: "fp",
+	}
+	if got.GetIncarnation() != want.GetIncarnation() || got.GetDiskFreeRatio() != want.GetDiskFreeRatio() ||
+		got.GetStateWalBytes() != want.GetStateWalBytes() || got.GetMetricsWalBytes() != want.GetMetricsWalBytes() ||
+		got.GetCertNotAfterMs() != want.GetCertNotAfterMs() || got.GetReplicationLagMs() != want.GetReplicationLagMs() ||
+		got.GetFingerprintIndex() != want.GetFingerprintIndex() || got.GetFingerprint() != want.GetFingerprint() {
+		t.Errorf("GetStatus = %v, want the signals %v", got, want)
+	}
+
+	// An older binary, or a node without the functions, reports the zero values.
+	bare := &Service{Node: statusNode{st: cluster.Status{NodeID: "n2"}}, Own: OwnSignals{
+		CertNotAfter: func() time.Time { return time.Time{} },
+	}}
+	got, err = bare.GetStatus(context.Background(), &pb.GetStatusRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetIncarnation() != "" || got.GetDiskFreeRatio() != 0 || got.GetCertNotAfterMs() != 0 || got.GetFingerprintIndex() != 0 {
+		t.Errorf("bare GetStatus = %v, want no ADR 0025 signals", got)
+	}
+}
