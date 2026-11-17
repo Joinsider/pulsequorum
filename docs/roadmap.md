@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P4 – Mandanten (P1, P2 und P3 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | – |
-| **Nächster Schritt (Claude)** | AP-4.1 Zitadel-Anbindung (ADR nötig) |
+| **Wartet auf Projektinhaber** | Review ADR 0027 (Zitadel-Anbindung) |
+| **Nächster Schritt (Claude)** | AP-4.1 umsetzen nach Accepted von ADR 0027 |
 
 ---
 
@@ -109,7 +109,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 | AP | Inhalt | Anforderungen | Status |
 |----|--------|---------------|--------|
-| AP-4.1 | Zitadel-Anbindung (JWT-Validierung, Claims, JWKS-Cache), Angular-OIDC | FA-AUTH-05..07 | ⬜ (ADR nötig) |
+| AP-4.1 | Zitadel-Anbindung (JWT-Validierung, Claims, JWKS-Cache), Angular-OIDC | FA-AUTH-05..07 | ⛔ blockiert (ADR 0027) |
 | AP-4.2 | Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung | FA-TEN-03/04 | ⬜ |
 | AP-4.3 | SSRF-Durchsetzung inkl. Fuzz-Tests, Notification-Ziele | FA-SEC-SSRF, FA-ALR-12 | ⬜ |
 | AP-4.4 | API-Tokens, Audit-Log, Massenaktionen | FA-AUTH-10, FA-DAT-01, FA-MON-06 | ⬜ |

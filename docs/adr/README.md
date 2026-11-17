@@ -32,3 +32,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0024](0024-degraded-modus-und-korrektur.md) | Degraded-Modus, Absender-Sicht und Korrektur nach Quorum-Rückkehr | Accepted | 2026-11-16 |
 | [0025](0025-selbstueberwachung-und-systemalerts.md) | Selbstüberwachung, Systemalerts und Prometheus-Metriken | Accepted | 2026-11-17 |
 | [0026](0026-down-alerts-nicht-buendeln.md) | DOWN-Alerts werden durch die Bündelung nicht zurückgehalten | Accepted | 2026-11-17 |
+| [0027](0027-zitadel-anbindung.md) | Zitadel-Anbindung: JWT-Validierung, Mandant und Rollen, SPA-Login | Proposed | 2026-11-17 |
