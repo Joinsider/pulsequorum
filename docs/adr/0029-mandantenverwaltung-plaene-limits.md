@@ -1,8 +1,8 @@
 # ADR 0029: Mandantenverwaltung, Pläne, Limits und Auto-Provisionierung
 
 | | |
-|---|---|
-| **Status** | Proposed |
+| --- | --- |
+| **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-TEN-01..05, NFA-SEC-02, AS-06, Konzept Kap. 12.5 und E21, ADR 0004, 0011, 0016, 0018, 0025, 0027 |
@@ -81,7 +81,7 @@ plans(id TEXT PRIMARY KEY, name TEXT NOT NULL, limits_json TEXT NOT NULL,
 **Limits** (`limits_json`), alle optional. Fehlt ein Feld oder ist es `null`, gilt es als unbegrenzt.
 
 | Feld | Bedeutung | Durchsetzung ab |
-|------|-----------|-----------------|
+| ------ | ----------- | ----------------- |
 | `maxMonitors` | Anzahl Monitore | AP-4.2 |
 | `minIntervalSeconds` | kürzestes Prüfintervall | AP-4.2 |
 | `maxChannels` | Anzahl Benachrichtigungskanäle | AP-4.2 |
@@ -107,7 +107,7 @@ Eine gelöschte Mandanten-ID wird nie wieder vergeben. Die Org-Bindung wird beim
 Neue Konstante `TenantAdminCommandLevel = 8`. `CommandVersion` steigt auf 8. Jeder neue Befehl läuft erst, wenn alle Voter Version 8 können (ADR 0018).
 
 | Befehl | Inhalt | Regeln |
-|--------|--------|--------|
+| -------- | -------- | -------- |
 | `CreateTenant` | `tenant_id`, `name`, `plan_id`, `org_id?`, `limits?`, `source` | ID neu und nicht in `deleted_tenants`; Name 1–100 Zeichen ohne Steuerzeichen; Plan existiert und ist nicht `system`; Org-ID nach `validOrgID` und frei; bei `source=auto` siehe unten |
 | `UpdateTenant` | `tenant_id`, Felder als optionale Änderungen: `name`, `plan_id`, `limits`, `org_id` | nicht `_system`; für `default` nur `name`, `plan_id`, `limits`; Org-ID wie oben; Umbinden ist hier erlaubt (offener Punkt aus ADR 0027) |
 | `SetTenantSuspended` | `tenant_id`, `suspended` | nicht `_system`, nicht `default` |
@@ -197,10 +197,11 @@ Reihenfolge: **sperren → löschen → aufräumen.**
   - Test, dass nach `DeleteTenant` in keiner Tabelle von `state.db` und `metrics.db` eine Zeile des Mandanten bleibt.
   - Isolationstest mit zwei Mandanten als Vorbereitung für AS-06.
   - Betriebsdoku: Sperren, Löschen mit seinen Grenzen, Auto-Provisionierung, Konfiguration.
-  - Pflichtenheft: Konfigurationstabelle um `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_PLAN` und `OIDC_AUTO_PROVISION_MAX` ergänzen.
+  - Konfiguration `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_PLAN` und `OIDC_AUTO_PROVISION_MAX` in `docs/betrieb/oidc.md` beschreiben (die OIDC-Variablen stehen dort, nicht in der Konfigurationstabelle des Pflichtenhefts).
 
 ## Approval
 
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-17 | Proposed | Claude | Richtung 1A, 3A, 4A im Chat vorgegeben; 2B und 5A vorgeschlagen |
+| 2026-11-17 | Accepted | Projektinhaber | im Chat angenommen („Ja ADR 29 annehmen“), eingetragen durch Claude |

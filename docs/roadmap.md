@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P4 – Mandanten (P1, P2 und P3 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | Review ADR 0029 (Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung) |
-| **Nächster Schritt (Claude)** | AP-4.2 umsetzen, sobald ADR 0029 Accepted ist |
+| **Wartet auf Projektinhaber** | – |
+| **Nächster Schritt (Claude)** | AP-4.2 nach ADR 0029 umsetzen |
 
 ---
 
@@ -110,7 +110,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP | Inhalt | Anforderungen | Status |
 |----|--------|---------------|--------|
 | AP-4.1 | OIDC-Anbindung mit Profilen `generic` und `zitadel` (JWT-Validierung, Claims, JWKS-Cache), Angular-OIDC | FA-AUTH-05..07 | ✅ ADR 0027. Backend `internal/auth/oidc`: go-oidc-Verifier mit eigenem `KeySet` (Allow-List RS256/ES256/EdDSA, RSA ≥ 2048 Bit, `alg` des JWK muss passen), Zusatzprüfungen `azp`, `iat`, Höchstlaufzeit, ID-Tokens (`nonce`/`at_hash`) abgelehnt; opake Tokens mit klarer 401-Meldung. Schlüssel: Refresh alle 5 min bzw. `max-age`, Nachladen bei unbekanntem `kid` höchstens alle 30 s (single flight), letzte gültige Schlüssel bleiben bei Ausfall, Cache `oidc-jwks.json` (0600) für Neustarts; ohne Schlüssel 503 und `/readyz` nicht bereit, Metrik `uptimecluster_auth_jwks_fetch_failures_total`. Profile `generic` (ein Mandant, Rollen-Claim mit Punktpfad und `OIDC_ROLE_MAP`) und `zitadel` (Rollen nur in der eigenen Organisation, `platform-admin` nur aus der Plattform-Organisation, `single`/`multi`). FSM-Befehl `BindTenantOrg` (Version 7, Feature-Gate), der Leader bindet `default` an die Plattform-Organisation; `_system` nie bindbar. Middleware antwortet 401/403/503; lokale Anmeldung und Nutzerverwaltung 409; CSP `connect-src` um den Issuer erweitert; Stream prüft den Mandanten. SPA mit `angular-auth-oidc-client` 22.0.3: Tokens nur im Speicher (`SplitSecurityStorage`, Redirect-Zustand in `sessionStorage`), Refresh-Tokens ohne iframe, nach Reload einmal `prompt=none`. Tests: Fake-IdP `internal/auth/oidctest`, Tabellentests aller Prüfregeln, Ausfall und Neustart, Fuzzing, SPA-Specs. Doku `docs/betrieb/oidc.md`. ADR 0028: `client_id` als `azp`, Rollen aus `/userinfo`, `OIDC_DEFAULT_ROLE`. Ende zu Ende geprüft gegen Keycloak 26.8.2 und Zitadel v4.20.3 (lokal, `deploy/oidc-dev/`, Claim-Fixtures) und gegen eine echte PocketID-Instanz (Passkey, Rollen aus `/userinfo`, Reloads, Speicher ohne Tokens); Befunde behoben (fehlender Mandant `default`, `client_id`, Anzeigename, Laufzeit 3601 s, zweiter Reload). Offen: Claim-Fixture aus PocketID (Claims nur aus dem Quelltext belegt), STRIDE-Ergänzung, `PutEntity` für Mandanten prüft die Org-ID noch nicht wie `BindTenantOrg` (AP-4.2) |
-| AP-4.2 | Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung | FA-TEN-03/04 | ⛔ blockiert (ADR 0029) |
+| AP-4.2 | Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung | FA-TEN-03/04 | 🔄 ADR 0029 |
 | AP-4.3 | SSRF-Durchsetzung inkl. Fuzz-Tests, Notification-Ziele | FA-SEC-SSRF, FA-ALR-12 | ⬜ |
 | AP-4.4 | API-Tokens, Audit-Log, Massenaktionen | FA-AUTH-10, FA-DAT-01, FA-MON-06 | ⬜ |
 | AP-4.5 | Migration lokal → Zitadel | FA-AUTH-08 | ⬜ |
