@@ -397,6 +397,16 @@ func (h *Host) tryAnnounce(ctx context.Context) (bool, error) {
 	if self == nil || self.Address == h.advertise || h.Cert.Leaf() == nil {
 		return true, nil // not a member yet, unchanged, or no certificate
 	}
+	// A node that leads under its old address changes the configuration
+	// itself; the others would name it as leader, and its old address is not
+	// reachable (FA-CLU-10).
+	if h.Node.IsLeader() {
+		if err := h.Manager.AddVoter(ctx, h.Node.ID(), h.advertise); err != nil {
+			return false, err
+		}
+		h.log.Info("cluster address updated", "from", self.Address, "to", h.advertise)
+		return true, nil
+	}
 	// Ask the other voters who leads, then call the leader directly.
 	addrByID := map[string]string{}
 	for _, m := range members {
@@ -412,6 +422,11 @@ func (h *Host) tryAnnounce(ctx context.Context) (bool, error) {
 		cancel()
 		if err != nil {
 			lastErr = err
+			continue
+		}
+		if st.GetLeaderId() == h.Node.ID() {
+			// This node won the election meanwhile; the next round updates locally.
+			lastErr = errors.New("this node became leader")
 			continue
 		}
 		leader := addrByID[st.GetLeaderId()]
