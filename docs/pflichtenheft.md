@@ -4,9 +4,9 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | UptimeCluster (Arbeitstitel, E20) |
-| **Version** | 1.3 |
-| **Status** | Freigegeben (ADRs 0001–0015 Accepted) |
-| **Datum** | 2026-10-22 |
+| **Version** | 1.4 |
+| **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
+| **Datum** | 2026-11-17 |
 | **Grundlage** | [Konzept v0.3](../uptime-cluster-konzept.md), Recherche zu Pitfalls (Kap. 12) |
 | **Auftraggeber / Product Owner** | Projektinhaber |
 | **Verfasser** | Claude (Opus 5.5) |
@@ -19,6 +19,7 @@
 | 1.1 | 2026-10-19 | Präzisierungen aus den Spikes gemäß ADR 0012 und 0013 (FA-NODE-03/05/06, FA-CLU-03/06/08/09/10/13, FA-REP-01/03/07, PF-24) |
 | 1.2 | 2026-10-22 | Geheimnisse in Monitor-Konfigurationen gemäß ADR 0015 (FA-SEC-SEC, FA-API-06) |
 | 1.3 | 2026-11-15 | Teststrategie 13.1: Clock-Skew als Integrationstest statt im Container gemäß ADR 0020 |
+| 1.4 | 2026-11-17 | Externe Anmeldung über beliebige OIDC-Anbieter mit Profilen `generic` und `zitadel` gemäß ADR 0027 (FA-AUTH-05..09, FA-TEN-03, Produktumgebung) |
 
 ---
 
@@ -165,7 +166,7 @@ Annahmen zur Nutzerkompetenz: Betreiber beherrschen Docker/Compose, DNS und TLS-
 | Laufzeit | Linux-Container (Docker ≥ 24, Podman ≥ 4, Kubernetes); Binary zusätzlich für linux/amd64, linux/arm64 |
 | Basis-Image | distroless/static, Nutzer `nonroot` |
 | Zeit | NTP/chrony auf jedem Host (Pflicht) |
-| Optional | Zitadel (aktuelle Version, JWT-Access-Tokens), PostgreSQL ≥ 16 |
+| Optional | OIDC-Anbieter mit JWT-Access-Tokens (vollständig getestet: Zitadel, aktuelle Version), PostgreSQL ≥ 16 |
 | Browser | jeweils die zwei aktuellen Hauptversionen von Chrome, Firefox, Safari, Edge |
 
 ### 4.2 Hardware (Mindestausstattung je Voter, 1.000 Monitore à 60 s)
@@ -408,11 +409,11 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-AUTH-02 | Lokale Tokens: vom Cluster signierte JWTs (EdDSA, `kid`), Signaturschlüssel im Raft-Zustand (verschlüsselt), Schlüsselrotation mit Überlappung. Access-Token-Laufzeit ≤ 15 min. | M | P1 | Test: Token eines Voters wird von jedem anderen Voter akzeptiert (P2). |
 | FA-AUTH-03 | Refresh-Tokens werden bei jeder Nutzung rotiert; Wiederverwendung eines alten Tokens widerruft die ganze Token-Familie. | M | P1 | Test. |
 | FA-AUTH-04 **[neu]** | Login-Drosselung **pro Konto** (und zusätzlich pro IP), progressive Verzögerung, Sperre mit Ablauf; Fehlermeldungen verraten nicht, ob ein Konto existiert. | M | P1 | Test. (PF-33) |
-| FA-AUTH-05 | Modus `zitadel`: SPA nutzt Authorization Code Flow mit PKCE; Voter validieren **JWT-Access-Tokens** lokal über gecachte JWKS (Issuer exakt, `aud` = Projekt-ID, `exp`/`nbf`, Algorithmus fest). Opake Tokens werden mit klarer Fehlermeldung abgelehnt. | M | P4 | Test gegen Zitadel-Testinstanz bzw. Mock-IdP. (PF-31) |
-| FA-AUTH-06 | Mandant aus der Zitadel-Organisation, Rollen aus dem Projekt-Rollen-Claim; **die Autorisierung prüft immer Rollen-Claim + Organisation**, nicht nur die Audience. | M | P4 | Test: Token mit fremder Audience/fehlender Rolle → 403. (PF-31) |
-| FA-AUTH-07 | Zitadel nicht erreichbar → bestehende Sitzungen, Checks und Alerts laufen weiter (JWKS-Cache, Refetch bei unbekanntem `kid` mit Rate-Limit). | M | P4 | Test mit abgeschaltetem IdP. |
-| FA-AUTH-08 | Migration `local` → `zitadel`: Mandant `default` wird einer Organisation zugeordnet. | S | P4 | Test. |
-| FA-AUTH-09 | Rollen `platform-admin`, `tenant-admin`, `tenant-editor`, `tenant-viewer` (Konzept 12.2); serverseitig an jedem Endpunkt durchgesetzt. | M | P1 (lokal), P4 (Zitadel) | Berechtigungsmatrix-Test für alle Endpunkte. |
+| FA-AUTH-05 | Modus `oidc` (ADR 0027) mit den Profilen `generic` (beliebiger OIDC-Anbieter) und `zitadel`: SPA nutzt Authorization Code Flow mit PKCE; Voter validieren **JWT-Access-Tokens** lokal über gecachte JWKS (Issuer exakt, `aud` = konfigurierte Audience, bei Zitadel die Projekt-ID, `azp`, `exp`/`nbf`, Höchstlaufzeit, Algorithmus fest). Opake Tokens werden mit klarer Fehlermeldung abgelehnt. `AUTH_MODE=zitadel` bleibt als Alias. | M | P4 | Test gegen Mock-IdP; manuell gegen Zitadel. (PF-31) |
+| FA-AUTH-06 | Profil `generic`: ein Mandant `default`, Rollen aus einem konfigurierbaren Claim mit optionaler Zuordnung. Profil `zitadel`: Mandant aus der Organisation (`single`: nur die Plattform-Organisation, `multi`: zugeordnete Organisationen), Rollen aus dem Projekt-Rollen-Claim, nur gültig in der Organisation des Nutzers. **Die Autorisierung prüft immer Mandant + Rolle**, nie nur die Audience. | M | P4 | Test: Token mit fremder Audience/fehlender Rolle/fremder Organisation → 401/403. (PF-31) |
+| FA-AUTH-07 | IdP nicht erreichbar → bestehende Sitzungen, Checks und Alerts laufen weiter (JWKS-Cache im Speicher und als Datei, Refetch bei unbekanntem `kid` mit Rate-Limit). | M | P4 | Test mit abgeschaltetem IdP, auch nach Neustart. |
+| FA-AUTH-08 | Migration `local` → `oidc`: Daten des Mandanten `default` bleiben erhalten; im Profil `zitadel` wird `default` der Plattform-Organisation zugeordnet. | S | P4 | Test. |
+| FA-AUTH-09 | Rollen `platform-admin`, `tenant-admin`, `tenant-editor`, `tenant-viewer` (Konzept 12.2); serverseitig an jedem Endpunkt durchgesetzt. | M | P1 (lokal), P4 (OIDC) | Berechtigungsmatrix-Test für alle Endpunkte. |
 | FA-AUTH-10 | API-Tokens (langlebig, mandanten- und rollengebunden, widerrufbar, nur gehasht gespeichert). | S | P4 | Test. |
 | FA-AUTH-11 **[neu]** | WebSocket-Authentifizierung über ein **kurzlebiges Ticket** (≤ 30 s, einmalig), das per HTTPS geholt wird; kein Langzeit-Token in der URL. Verbindungen werden bei Ablauf der Sitzung geschlossen. | M | P1 | Test. (PF-32) |
 
@@ -422,7 +423,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 |----|-------------|---|----|------------------|
 | FA-TEN-01 | `tenant_id` an allen mandantenbezogenen Daten **ab P1** (auch im Single-Tenant-Modus). Jede Repository-Methode erhält die Tenant-ID explizit und filtert danach. | M | P1 | Automatisierter Isolationstest über alle Repository-Methoden. |
 | FA-TEN-02 | Mandanten-Kontext ausschließlich aus dem Token, nie aus URL-/Body-Parametern. | M | P1 | Test: Manipulierte IDs fremder Mandanten → 404. |
-| FA-TEN-03 | Mandanten-Verwaltung durch `platform-admin`: anlegen, sperren, löschen (mit Datenlöschung), Plan/Limits. Automatische Anlage beim ersten Login einer neuen Zitadel-Organisation (abschaltbar). | M | P4 | Test. |
+| FA-TEN-03 | Mandanten-Verwaltung durch `platform-admin`: anlegen, sperren, löschen (mit Datenlöschung), Plan/Limits. Automatische Anlage beim ersten Login einer neuen Zitadel-Organisation (abschaltbar; nur Profil `zitadel` mit `OIDC_TENANCY=multi`). | M | P4 | Test. |
 | FA-TEN-04 | Limits je Plan: max. Monitore, kürzestes Intervall, Statusseiten, private Probes, Kanäle; Überschreitung → HTTP 403 mit verständlicher Meldung. | M | P4 | Test. |
 | FA-TEN-05 | WebSocket-Events werden strikt nach Mandant gefiltert. | M | P1 | Test mit zwei Mandanten. |
 

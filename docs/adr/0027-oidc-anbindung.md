@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-AUTH-05..09, FA-TEN-02/03, NFA-SEC-04/05, PF-31, PF-34, ADR 0008, ADR 0010, ADR 0018, ADR 0019, ADR 0025 |
@@ -356,3 +356,4 @@ Ist die Konfiguration unvollständig oder widersprüchlich, startet der Voter ni
 | 2026-11-17 | Proposed | Claude | erster Entwurf nur für Zitadel |
 | 2026-11-17 | Proposed | Claude | überarbeitet: generisches OIDC mit Profilen, ein Mandant als Standard, mehrere Mandanten über Zitadel (Richtung im Chat vorgegeben) |
 | 2026-11-17 | Proposed | Claude | nach Review von Projektinhaber: 0B, 2B, 3A, 4A festgelegt; Frage 1 auf 1C (go-oidc mit eigenem `KeySet`), weil das weniger sicherheitskritischen Eigenbau braucht als 1B |
+| 2026-11-17 | Accepted | Projektinhaber | im Chat angenommen („Annehmen, umsetzen“), eingetragen durch Claude |
