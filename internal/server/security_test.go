@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/joinsider/uptimecluster/internal/config"
 )
 
 func TestSecurityHeaders(t *testing.T) {
@@ -35,6 +37,39 @@ func TestSecurityHeaders(t *testing.T) {
 				t.Errorf("%s: %s = %q, want %q", tc.path, k, hdr.Get(k), v)
 			}
 		}
+	}
+}
+
+func TestSPACSPWithOIDC(t *testing.T) {
+	tests := []struct {
+		issuer, want string
+	}{
+		{"", cspSPA},
+		{"https://id.example.test/realms/main", strings.Replace(cspSPA, "connect-src 'self';", "connect-src 'self' https://id.example.test;", 1)},
+		{"https://id.example.test:8443", strings.Replace(cspSPA, "connect-src 'self';", "connect-src 'self' https://id.example.test:8443;", 1)},
+		{"ftp://id.example.test", cspSPA},
+		{"://broken", cspSPA},
+	}
+	for _, tc := range tests {
+		if got := spaCSP(tc.issuer); got != tc.want {
+			t.Errorf("spaCSP(%q) = %q, want %q", tc.issuer, got, tc.want)
+		}
+	}
+	if !strings.Contains(cspSPA, "connect-src 'self';") {
+		t.Fatal("cspSPA no longer contains the connect-src directive spaCSP extends")
+	}
+
+	cfg := testConfig()
+	cfg.AuthMode = config.AuthOIDC
+	cfg.OIDC.Issuer = "https://id.example.test"
+	s := testServer()
+	s.cfg = cfg
+	h := s.Handler()
+	if got := get(t, h, "/").Header().Get("Content-Security-Policy"); !strings.Contains(got, "connect-src 'self' https://id.example.test;") {
+		t.Errorf("SPA CSP = %q, want the issuer in connect-src", got)
+	}
+	if got := get(t, h, "/api/v1/health").Header().Get("Content-Security-Policy"); got != cspAPI {
+		t.Errorf("API CSP = %q, want %q", got, cspAPI)
 	}
 }
 

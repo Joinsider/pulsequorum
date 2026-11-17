@@ -77,7 +77,7 @@ describe('AccountPage', () => {
   afterEach(() => http.verify());
 
   it('hides the password form for an identity provider account', () => {
-    setup({ ...LOCAL, authMode: 'zitadel' });
+    setup({ ...LOCAL, authMode: 'oidc' });
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('input[type="password"]'),

@@ -12,11 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -35,8 +34,18 @@ func unauthorized(detail string) *Problem {
 	return &Problem{Status: http.StatusUnauthorized, Title: "Unauthorized", Detail: detail}
 }
 
-// localAuth returns the local authentication or 404 if another mode is active.
+// errManagedByIDP answers local login and user management while an external
+// identity provider manages the users (ADR 0027).
+func errManagedByIDP() *Problem {
+	return &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "users are managed by the identity provider"}
+}
+
+// localAuth returns the local authentication, 409 while an identity provider
+// manages the users, or 404 if local authentication is not available.
 func (h *Handlers) localAuth() (*auth.Local, error) {
+	if h.cfg.AuthMode == config.AuthOIDC {
+		return nil, errManagedByIDP()
+	}
 	if h.deps.Local == nil {
 		return nil, &Problem{Status: http.StatusNotFound, Title: "Not Found", Detail: "local authentication is not enabled"}
 	}
@@ -203,9 +212,7 @@ func (h *Handlers) GetMe(ctx context.Context, _ gen.GetMeRequestObject) (gen.Get
 		return nil, err
 	}
 	out := gen.Me{Username: p.Username, TenantId: p.TenantID, AuthMode: gen.MeAuthMode(h.cfg.AuthMode), Roles: make([]gen.Role, 0, len(p.Roles))}
-	if id, err := uuid.Parse(p.UserID); err == nil {
-		out.Id = id
-	}
+	out.Id = p.UserID
 	for _, r := range p.Roles {
 		out.Roles = append(out.Roles, gen.Role(r))
 	}

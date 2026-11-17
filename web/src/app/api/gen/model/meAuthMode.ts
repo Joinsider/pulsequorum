@@ -16,5 +16,5 @@ export type MeAuthMode = typeof MeAuthMode[keyof typeof MeAuthMode];
 
 export const MeAuthMode = {
   local: 'local',
-  zitadel: 'zitadel',
+  oidc: 'oidc',
 } as const;

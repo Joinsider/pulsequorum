@@ -72,7 +72,11 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("/", s.ui)
 
-	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.limits.middleware(mux))))
+	issuer := ""
+	if s.cfg.AuthMode == config.AuthOIDC {
+		issuer = s.cfg.OIDC.Issuer
+	}
+	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.limits.middleware(mux)), issuer))
 }
 
 // Run serves HTTP on cfg.HTTPAddr until ctx is cancelled, then shuts down

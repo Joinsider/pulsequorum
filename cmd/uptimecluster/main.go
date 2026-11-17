@@ -564,10 +564,21 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		ClockOffsets: host.ClockOffsets,
 		Now:          clock,
 	}
-	if local != nil {
+	readiness := raftNode.Ready
+	switch {
+	case local != nil:
 		apiDeps.Local, apiDeps.Authenticator = local, local
+	case cfg.AuthMode == config.AuthOIDC:
+		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics.JWKSFetchFailed)
+		if err != nil {
+			return fmt.Errorf("oidc: %w", err)
+		}
+		apiDeps.Authenticator = authn
+		readiness = oidcReadiness(readiness, keys)
+		bg.Go(func() { runOIDCKeys(ctx, keys, log) })
+		bg.Go(func() { bindPlatformOrg(ctx, cfg, log, raftNode, state) })
 	}
-	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(raftNode.Ready).Run(ctx)
+	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(readiness).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return cause

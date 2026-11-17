@@ -28,13 +28,23 @@ describe('ConfigService', () => {
     const loading = service.load();
     httpMock.expectOne('/config.json').flush({
       nodes: ['http://node-a:8080'],
-      auth: { mode: 'zitadel', issuer: 'https://id.example.test', clientId: 'uptime' },
+      auth: {
+        mode: 'oidc',
+        issuer: 'https://id.example.test',
+        clientId: 'uptime',
+        scopes: ['openid', 'profile', 'offline_access'],
+      },
     });
     await loading;
 
     expect(service.config()).toEqual({
       nodes: ['http://node-a:8080'],
-      auth: { mode: 'zitadel', issuer: 'https://id.example.test', clientId: 'uptime' },
+      auth: {
+        mode: 'oidc',
+        issuer: 'https://id.example.test',
+        clientId: 'uptime',
+        scopes: ['openid', 'profile', 'offline_access'],
+      },
     });
   });
 

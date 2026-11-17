@@ -61,6 +61,7 @@ type Metrics struct {
 	checkDuration   *prometheus.HistogramVec
 	checksRunning   prometheus.Gauge
 	alertDeliveries *prometheus.CounterVec
+	jwksFailures    prometheus.Counter
 }
 
 // CheckObserver receives check start and finish events from the scheduler.
@@ -93,8 +94,12 @@ func New(src Sources) *Metrics {
 			Name: "uptimecluster_alert_deliveries_total",
 			Help: "Alert deliveries by kind and outcome.",
 		}, []string{"kind", "outcome"}),
+		jwksFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "uptimecluster_auth_jwks_fetch_failures_total",
+			Help: "Failed fetches of the identity provider's signing keys (ADR 0027).",
+		}),
 	}
-	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries)
+	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.jwksFailures)
 	m.reg.MustRegister(newCollector(src))
 	return m
 }
@@ -115,6 +120,11 @@ func (m *Metrics) CheckFinished(typ, result string, d time.Duration) {
 // outcome is e.g. "sent", "failed" or "throttled".
 func (m *Metrics) AlertDelivered(kind, outcome string) {
 	m.alertDeliveries.WithLabelValues(kind, outcome).Inc()
+}
+
+// JWKSFetchFailed counts one failed fetch of the identity provider's keys.
+func (m *Metrics) JWKSFetchFailed() {
+	m.jwksFailures.Inc()
 }
 
 // Handler serves the metrics of the private registry in the Prometheus text format.

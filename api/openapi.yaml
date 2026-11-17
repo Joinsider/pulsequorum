@@ -1078,7 +1078,7 @@ components:
       type: object
       required: [id, username, tenantId, roles, authMode]
       properties:
-        id: { type: string, format: uuid }
+        id: { type: string }
         username: { type: string }
         displayName: { type: string }
         tenantId: { type: string }
@@ -1086,7 +1086,7 @@ components:
         roles:
           type: array
           items: { $ref: "#/components/schemas/Role" }
-        authMode: { type: string, enum: [local, zitadel] }
+        authMode: { type: string, enum: [local, oidc] }
 
     # --- Users --------------------------------------------------------------
     User:

@@ -17,7 +17,7 @@
   },
   "authModes": {
     "local": "Local account",
-    "zitadel": "Identity provider (Zitadel)"
+    "oidc": "Identity provider (OIDC)"
   },
   "password": {
     "title": "Change password",
