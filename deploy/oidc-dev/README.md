@@ -68,6 +68,10 @@ cd deploy/oidc-dev/zitadel
 ./setup.sh                 # starten, provisionieren, Umgebung schreiben (idempotent)
 ./token.sh platform-bot    # Access-Token des Bots (Client Credentials) auf stdout
 ./token.sh acme-bot
+./token.sh platform-admin-bot
+./token.sh acme-admin-bot
+./token.sh globex-admin-bot
+./token.sh initech-bot     # ohne Projektrolle (Negativtest)
 ./down.sh                  # Container und Volumes entfernen; .generated/ bleibt
 ```
 
@@ -75,7 +79,7 @@ cd deploy/oidc-dev/zitadel
 
 - `compose.env`: Masterkey, Datenbank-, Admin- und Cookie-Geheimnis. Wird nur beim ersten Lauf erzeugt. Der Masterkey muss zur Datenbank passen, deshalb nicht von Hand ändern.
 - `bootstrap/`: PAT des IAM-Admins (`iam-admin.pat`) und Login-Client-PAT (`login-client.pat`), geschrieben vom Zitadel-Start.
-- `ids.env`: `PROJECT_ID`, `SPA_CLIENT_ID`, `PLATFORM_ORG_ID`, `ACME_ORG_ID`.
+- `ids.env`: `PROJECT_ID`, `SPA_CLIENT_ID`, `PLATFORM_ORG_ID`, `ACME_ORG_ID`, `GLOBEX_ORG_ID`, `INITECH_ORG_ID`.
 - `bots.env`: Client-IDs und Client-Secrets der Bots. Bei jedem Lauf neu erzeugt.
 - `users.env`: Passwörter der Testnutzer. Bei jedem Lauf neu gesetzt.
 - `uptimecluster.env`: Umgebung für den Cluster (`AUTH_MODE=oidc`, `OIDC_PROFILE=zitadel`, `OIDC_TENANCY=multi`, Issuer, Audience, Client-IDs, Plattform-Organisation).
@@ -87,10 +91,11 @@ Passwörter und Secrets werden nie ausgegeben. Im Cluster lädt man die Variable
 | Objekt | Wert |
 | --- | --- |
 | Plattform-Organisation | `platform` (Standard-Organisation der Instanz) |
-| Zweite Organisation | `acme` (Kunde) |
+| Weitere Organisationen | `acme` (Kunde), `globex` (Kunde, mit Grant), `initech` (ohne Grant, Negativtest) |
 | Projekt | `uptimecluster`, „Assert Roles on Authentication“ aktiv |
 | Projektrollen | `platform-admin`, `tenant-admin`, `tenant-editor`, `tenant-viewer` |
-| Projekt-Grant an `acme` | `tenant-admin`, `tenant-editor`, `tenant-viewer` (ohne `platform-admin`) |
+| Projekt-Grant an `acme` und `globex` | `tenant-admin`, `tenant-editor`, `tenant-viewer` (ohne `platform-admin`) |
+| Kein Projekt-Grant an `initech` | Tokens der Organisation tragen keine Projektrollen |
 | Anwendung `uptimecluster-spa` | öffentlich (`USER_AGENT`), `AUTH_METHOD_NONE` (PKCE), Code-Flow mit Refresh-Token, JWT-Access-Token mit Rollen-Assertion, Dev-Modus. Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/login` |
 | Instanz | Access-Token-Laufzeit 900 s (15 min) |
 
@@ -102,6 +107,10 @@ Testnutzer und Bots:
 | `editor@acme.example.test` | `acme` | `tenant-editor` |
 | `platform-bot` (Maschinenbenutzer) | `platform` | `tenant-admin` |
 | `acme-bot` (Maschinenbenutzer) | `acme` | `tenant-viewer` |
+| `platform-admin-bot` (Maschinenbenutzer) | `platform` | `platform-admin` |
+| `acme-admin-bot` (Maschinenbenutzer) | `acme` | `tenant-admin` |
+| `globex-admin-bot` (Maschinenbenutzer) | `globex` | `tenant-admin` |
+| `initech-bot` (Maschinenbenutzer) | `initech` | keine (Token ohne Projektrolle, Negativtest) |
 
 Zusätzlich gibt es den Admin `zitadel-admin` in `platform` (Passwort: `DEV_ADMIN_PASSWORD` in `compose.env`). Er dient nur der Konsole.
 
