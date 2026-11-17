@@ -33,3 +33,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0025](0025-selbstueberwachung-und-systemalerts.md) | Selbstüberwachung, Systemalerts und Prometheus-Metriken | Accepted | 2026-11-17 |
 | [0026](0026-down-alerts-nicht-buendeln.md) | DOWN-Alerts werden durch die Bündelung nicht zurückgehalten | Accepted | 2026-11-17 |
 | [0027](0027-oidc-anbindung.md) | OIDC-Anbindung mit Profilen (generisch und Zitadel) | Accepted | 2026-11-17 |
+| [0028](0028-rollen-aus-userinfo-und-client-id.md) | Rollen aus `/userinfo` und `client_id` als Ersatz für `azp` | Proposed | 2026-11-17 |
