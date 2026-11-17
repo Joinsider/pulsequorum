@@ -400,6 +400,9 @@ type MonitorPage struct {
 // State gives read access to data class A and the single write path for the FSM.
 type State interface {
 	GetTenant(ctx context.Context, id string) (Tenant, error)
+	// GetTenantByOrg returns the tenant bound to the identity-provider organization,
+	// or ErrNotFound. An empty orgID is always ErrNotFound (ADR 0027).
+	GetTenantByOrg(ctx context.Context, orgID string) (Tenant, error)
 	ListTenants(ctx context.Context) ([]Tenant, error)
 	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
@@ -482,6 +485,8 @@ type StateTx interface {
 	ListNodes(ctx context.Context) ([]Node, error)
 	PutTenant(ctx context.Context, t Tenant) error
 	GetTenant(ctx context.Context, id string) (Tenant, error)
+	// GetTenantByOrg returns the tenant bound to the organization, or ErrNotFound.
+	GetTenantByOrg(ctx context.Context, orgID string) (Tenant, error)
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
 	// replaces the monitor at that revision. On success m.Revision is stored as
 	// expectedRevision+1. Channels of another tenant are ErrNotFound.

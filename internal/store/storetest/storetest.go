@@ -31,6 +31,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		fn   func(t *testing.T, s store.State)
 	}{
 		{"Tenants", testTenants},
+		{"TenantByOrg", testTenantByOrg},
 		{"MonitorLifecycle", testMonitorLifecycle},
 		{"MonitorRevisions", testMonitorRevisions},
 		{"MonitorUnknownTenant", testMonitorUnknownTenant},
@@ -176,6 +177,83 @@ func testTenants(t *testing.T, s store.State) {
 	list, err := s.ListTenants(ctx)
 	if err != nil || len(list) != 2 || list[0].ID != tenantA || list[1].ID != tenantB {
 		t.Errorf("ListTenants = %+v, %v; want ordered by ID", list, err)
+	}
+}
+
+// testTenantByOrg covers GetTenantByOrg (ADR 0027): the lookup by organization,
+// the empty and unknown organization, the uniqueness of organizations, and that
+// the organization of one tenant never finds another tenant.
+func testTenantByOrg(t *testing.T, s store.State) {
+	ctx := context.Background()
+	const tenantC = "tenant-c"
+	err := s.Update(ctx, func(tx store.StateTx) error {
+		for _, tn := range []store.Tenant{
+			{ID: tenantA, Name: tenantA, Plan: "default", ZitadelOrgID: "org-a", CreatedMs: 1, UpdatedMs: 1},
+			{ID: tenantB, Name: tenantB, Plan: "default", ZitadelOrgID: "org-b", CreatedMs: 1, UpdatedMs: 1},
+			{ID: tenantC, Name: tenantC, Plan: "default", CreatedMs: 1, UpdatedMs: 1},
+		} {
+			if err := tx.PutTenant(ctx, tn); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed tenants: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		orgID  string
+		wantID string
+		err    error
+	}{
+		{"bound organization A", "org-a", tenantA, nil},
+		{"bound organization B", "org-b", tenantB, nil},
+		{"empty organization is not found", "", "", store.ErrNotFound},
+		{"unknown organization is not found", "org-unknown", "", store.ErrNotFound},
+		{"organization is case-sensitive", "ORG-A", "", store.ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := s.GetTenantByOrg(ctx, tt.orgID)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("GetTenantByOrg(%q) error = %v, want %v", tt.orgID, err, tt.err)
+			}
+			if got.ID != tt.wantID {
+				t.Errorf("GetTenantByOrg(%q) ID = %q, want %q", tt.orgID, got.ID, tt.wantID)
+			}
+			if tt.err == nil && got.ZitadelOrgID != tt.orgID {
+				t.Errorf("GetTenantByOrg(%q) org = %q", tt.orgID, got.ZitadelOrgID)
+			}
+		})
+	}
+
+	// Tenant isolation: the organization of A never resolves to B or C, and the
+	// same answer comes from a read transaction.
+	err = s.Update(ctx, func(tx store.StateTx) error {
+		got, err := tx.GetTenantByOrg(ctx, "org-a")
+		if err != nil || got.ID != tenantA {
+			t.Errorf("StateTx.GetTenantByOrg(org-a) = %q, %v; want %s", got.ID, err, tenantA)
+		}
+		if _, err := tx.GetTenantByOrg(ctx, ""); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("StateTx.GetTenantByOrg(empty) error = %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An organization is unique: a second tenant cannot take it.
+	err = s.Update(ctx, func(tx store.StateTx) error {
+		return tx.PutTenant(ctx, store.Tenant{ID: tenantC, Name: tenantC, Plan: "default", ZitadelOrgID: "org-a", CreatedMs: 1, UpdatedMs: 2})
+	})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Errorf("PutTenant with a taken organization error = %v, want ErrConflict", err)
+	}
+	if got, err := s.GetTenantByOrg(ctx, "org-a"); err != nil || got.ID != tenantA {
+		t.Errorf("organization org-a moved to %q, %v after a rejected put", got.ID, err)
 	}
 }
 
