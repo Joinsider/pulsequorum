@@ -28,7 +28,7 @@ describe('AccountPage', () => {
   let fixture: ComponentFixture<AccountPage>;
   let http: HttpTestingController;
 
-  function setup(profile: Me) {
+  function setup(profile: Me, mode: 'local' | 'oidc' = 'local') {
     TestBed.configureTestingModule({
       imports: [
         AccountPage,
@@ -40,7 +40,10 @@ describe('AccountPage', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: AuthService, useValue: { me: signal(profile).asReadonly() } },
+        {
+          provide: AuthService,
+          useValue: { me: signal(profile).asReadonly(), mode: signal(mode).asReadonly() },
+        },
       ],
     });
     fixture = TestBed.createComponent(AccountPage);
@@ -75,6 +78,16 @@ describe('AccountPage', () => {
   }
 
   afterEach(() => http.verify());
+
+  it('hides the password form in OIDC mode, even for a local account', () => {
+    setup(LOCAL, 'oidc');
+    expect(text()).toContain('account.password.external');
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'input[formcontrolname="currentPassword"]',
+      ),
+    ).toBeNull();
+  });
 
   it('hides the password form for an identity provider account', () => {
     setup({ ...LOCAL, authMode: 'oidc' });

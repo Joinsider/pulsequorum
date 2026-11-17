@@ -3,6 +3,7 @@
 
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -32,7 +33,13 @@ describe('authInterceptor', () => {
         provideRouter([]),
         provideHttpClient(withInterceptors([authInterceptor, apiBaseUrlInterceptor])),
         provideHttpClientTesting(),
-        { provide: ConfigService, useValue: { apiBaseUrl: () => 'https://node-a.example' } },
+        {
+          provide: ConfigService,
+          useValue: {
+            apiBaseUrl: () => 'https://node-a.example',
+            config: signal({ nodes: [], auth: { mode: 'local' } }),
+          },
+        },
       ],
     });
     http = TestBed.inject(HttpClient);

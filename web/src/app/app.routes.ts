@@ -23,6 +23,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/setup-page').then((m) => m.SetupPage),
   },
   {
+    // Not guarded: it finishes the identity provider sign-in (ADR 0027).
+    path: 'auth/callback',
+    providers: [provideTranslocoScope('auth')],
+    loadComponent: () =>
+      import('./features/auth/auth-callback-page').then((m) => m.AuthCallbackPage),
+  },
+  {
     path: 'status',
     loadComponent: () => import('./features/status/status-page').then((m) => m.StatusPage),
   },

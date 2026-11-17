@@ -2,11 +2,20 @@
 // Copyright (C) 2026 The UptimeCluster Authors
 
 import { HttpContext, HttpContextToken } from '@angular/common/http';
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, Injector, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import {
+  AbstractSecurityStorage,
+  EventTypes,
+  OidcSecurityService,
+  PublicEventsService,
+} from 'angular-auth-oidc-client';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { AuthService as AuthApi } from '../../api/gen/endpoints/auth/auth.service';
 import { Me, Role, TokenResponse } from '../../api/gen/model';
+import { ConfigService } from '../config/config.service';
+import { CALLBACK_PATH, OIDC_CONFIG_ID } from './oidc-config';
+import { SplitSecurityStorage } from './split-security-storage';
 
 /** Marks requests that must not carry the bearer token or trigger a refresh. */
 export const SKIP_AUTH = new HttpContextToken<boolean>(() => false);
@@ -18,29 +27,42 @@ const CSRF_HEADERS = { 'X-Requested-With': 'uptimecluster' };
 const REFRESH_LEAD_MS = 60_000;
 const MIN_REFRESH_DELAY_MS = 5_000;
 
+/** sessionStorage flag (value "1"): this tab has used its one silent login. Holds no secret. */
+const SILENT_TRIED_KEY = 'uc.oidc-silent-tried';
+/** sessionStorage: the in-app path to show after the identity provider redirect. */
+const RETURN_URL_KEY = 'uc.oidc-return';
+
 export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous';
 
 /**
- * Local session (ADR 0008, NFA-SEC-04): the access token lives only in memory;
- * the refresh token is an HttpOnly cookie the SPA never sees. A page reload
- * restores the session with one refresh call.
+ * Session of the SPA (ADR 0008 local, ADR 0027 oidc, NFA-SEC-04): the access
+ * token lives only in memory. Local mode: the refresh token is an HttpOnly
+ * cookie the SPA never sees, and a reload restores the session with one
+ * refresh call. OIDC mode: the identity provider's library holds the tokens in
+ * memory, and refreshes them with refresh tokens.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly api = inject(AuthApi);
   private readonly router = inject(Router);
+  private readonly configService = inject(ConfigService);
+  // Resolved lazily: local mode never touches the OIDC library.
+  private readonly injector = inject(Injector);
 
   private token: string | null = null;
   private expiresAt = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private refreshing: Promise<boolean> | null = null;
   private restoring: Promise<void> | null = null;
+  private eventsSub: Subscription | undefined;
 
   private readonly statusSignal = signal<AuthStatus>('unknown');
   private readonly meSignal = signal<Me | null>(null);
 
   readonly status = this.statusSignal.asReadonly();
   readonly me = this.meSignal.asReadonly();
+  /** `local` for password accounts (ADR 0008), `oidc` for an external identity provider (ADR 0027). */
+  readonly mode = computed(() => this.configService.config().auth.mode);
   readonly authenticated = computed(() => this.statusSignal() === 'authenticated');
   /** Convenience for showing or hiding UI; the server enforces every permission. */
   readonly canEdit = computed(() =>
@@ -51,7 +73,10 @@ export class AuthService {
   readonly canPlatformAdmin = computed(() => this.hasRole('platform-admin'));
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => clearTimeout(this.refreshTimer));
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.refreshTimer);
+      this.eventsSub?.unsubscribe();
+    });
   }
 
   /** The current access token, or null. Only the auth interceptor should need it. */
@@ -59,18 +84,24 @@ export class AuthService {
     return this.token && Date.now() < this.expiresAt ? this.token : null;
   }
 
-  /** Tries once to resume a session from the refresh cookie. Safe to call repeatedly. */
+  /** Tries once to resume a session (refresh cookie, or the identity provider callback). Safe to call repeatedly. */
   restore(): Promise<void> {
     if (this.statusSignal() !== 'unknown') {
       return Promise.resolve();
     }
-    this.restoring ??= this.refresh().then(() => undefined);
+    this.restoring ??=
+      this.mode() === 'oidc' ? this.restoreOidc() : this.refresh().then(() => undefined);
     return this.restoring;
   }
 
-  async login(username: string, password: string): Promise<void> {
-    const t = await firstValueFrom(this.api.login({ username, password }, this.cookieOptions()));
-    await this.start(t);
+  /** Local mode: signs in with username and password. OIDC mode: redirects to the identity provider. */
+  login(username: string, password: string): Promise<void>;
+  login(returnUrl?: string): Promise<void>;
+  login(usernameOrReturnUrl?: string, password?: string): Promise<void> {
+    if (this.mode() === 'oidc') {
+      return this.loginOidc(usernameOrReturnUrl);
+    }
+    return this.loginLocal(usernameOrReturnUrl ?? '', password ?? '');
   }
 
   async setup(
@@ -89,19 +120,15 @@ export class AuthService {
   }
 
   /**
-   * Gets a new access token from the refresh cookie. Concurrent callers share
-   * one request, because the server rotates the cookie and treats reuse of an
-   * old one as theft (family revocation).
+   * Gets a new access token. Local mode: from the refresh cookie. OIDC mode: via
+   * the library's refresh token. Concurrent callers share one request, because
+   * the server rotates the cookie and treats reuse of an old one as theft
+   * (family revocation).
    */
   refresh(): Promise<boolean> {
     this.refreshing ??= (async () => {
       try {
-        const t = await firstValueFrom(this.api.refresh(this.cookieOptions()));
-        await this.start(t);
-        return true;
-      } catch {
-        this.clear();
-        return false;
+        return this.mode() === 'oidc' ? await this.refreshOidc() : await this.refreshLocal();
       } finally {
         this.refreshing = null;
       }
@@ -110,6 +137,16 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    if (this.mode() === 'oidc') {
+      this.clear();
+      // No silent login after an explicit logout in this tab.
+      writeSession(SILENT_TRIED_KEY, '1');
+      // GET redirect to the provider's end_session endpoint; the provider sends the user back to /login.
+      this.oidc()
+        .logoff(OIDC_CONFIG_ID)
+        .subscribe({ complete: () => this.navigateToLogin(), error: () => this.navigateToLogin() });
+      return;
+    }
     try {
       await firstValueFrom(this.api.logout(this.cookieOptions()));
     } catch {
@@ -122,6 +159,11 @@ export class AuthService {
   /** Ends the session after the server rejected it and sends the user to the login. */
   async sessionExpired(): Promise<void> {
     const returnUrl = this.router.url;
+    if (this.mode() === 'oidc') {
+      this.oidc().logoffLocal(OIDC_CONFIG_ID);
+      // Show the expired notice instead of silently signing in again.
+      writeSession(SILENT_TRIED_KEY, '1');
+    }
     this.clear();
     await this.router.navigate(['/login'], {
       queryParams: { returnUrl: safeReturnUrl(returnUrl) === '/' ? null : returnUrl, expired: 1 },
@@ -131,6 +173,161 @@ export class AuthService {
   /** Reloads the profile, e.g. after the user changed it. */
   async reloadMe(): Promise<void> {
     this.meSignal.set(await firstValueFrom(this.api.getMe()));
+  }
+
+  /**
+   * Returns the in-app path to show after an identity provider redirect, and
+   * forgets it. `/` if none was stored.
+   */
+  takeReturnUrl(): string {
+    const value = readSession(RETURN_URL_KEY);
+    removeSession(RETURN_URL_KEY);
+    return safeReturnUrl(value);
+  }
+
+  private async loginLocal(username: string, password: string): Promise<void> {
+    const t = await firstValueFrom(this.api.login({ username, password }, this.cookieOptions()));
+    await this.start(t);
+  }
+
+  private async refreshLocal(): Promise<boolean> {
+    try {
+      const t = await firstValueFrom(this.api.refresh(this.cookieOptions()));
+      await this.start(t);
+      return true;
+    } catch {
+      this.clear();
+      return false;
+    }
+  }
+
+  private async refreshOidc(): Promise<boolean> {
+    try {
+      const result = await firstValueFrom(
+        this.oidc().forceRefreshSession(undefined, OIDC_CONFIG_ID),
+      );
+      if (!result.isAuthenticated || !this.cacheToken(result.accessToken)) {
+        this.clear();
+        return false;
+      }
+      return true;
+    } catch {
+      this.clear();
+      return false;
+    }
+  }
+
+  private async loginOidc(returnUrl?: string): Promise<void> {
+    removeSession(SILENT_TRIED_KEY);
+    writeSession(RETURN_URL_KEY, safeReturnUrl(returnUrl));
+    this.oidc().authorize(OIDC_CONFIG_ID);
+  }
+
+  /**
+   * OIDC start-up: finishes the redirect callback, or resumes an existing
+   * library session. Never rejects; any failure leaves the session anonymous.
+   */
+  private async restoreOidc(): Promise<void> {
+    let oidc: OidcSecurityService | undefined;
+    try {
+      this.wireOidcEvents();
+      oidc = this.oidc();
+      // Must run first: the token endpoint is only known after discovery, and the
+      // library's storage keeps it in memory only.
+      await firstValueFrom(oidc.preloadAuthWellKnownDocument(OIDC_CONFIG_ID));
+
+      if (new URLSearchParams(location.search).has('error')) {
+        // A failed prompt=none login or a refused consent comes back as ?error=...
+        // The library reports it only as "no code in url", so it is handled here.
+        this.storage().clearRedirectState(OIDC_CONFIG_ID);
+        if (location.search) {
+          history.replaceState(history.state, '', location.pathname);
+        }
+        this.statusSignal.set('anonymous');
+        return;
+      }
+
+      const result = await firstValueFrom(oidc.checkAuth(undefined, OIDC_CONFIG_ID));
+      if (result.isAuthenticated && this.cacheToken(result.accessToken)) {
+        this.storage().clearRedirectState(OIDC_CONFIG_ID);
+        this.meSignal.set(await firstValueFrom(this.api.getMe()));
+        this.statusSignal.set('authenticated');
+        return;
+      }
+
+      this.statusSignal.set('anonymous');
+      if (location.pathname !== CALLBACK_PATH && readSession(SILENT_TRIED_KEY) !== '1') {
+        this.startSilentLogin();
+      }
+    } catch {
+      this.clear();
+      oidc?.logoffLocal(OIDC_CONFIG_ID);
+    }
+  }
+
+  /** One attempt per tab without showing the login page (prompt=none). */
+  private startSilentLogin(): void {
+    writeSession(SILENT_TRIED_KEY, '1');
+    writeSession(RETURN_URL_KEY, safeReturnUrl(location.pathname + location.search));
+    this.oidc().authorize(OIDC_CONFIG_ID, { customParams: { prompt: 'none' } });
+  }
+
+  /** Keeps the cached token current and ends the session when the provider gives up. */
+  private wireOidcEvents(): void {
+    if (this.eventsSub) {
+      return;
+    }
+    this.eventsSub = this.injector
+      .get(PublicEventsService)
+      .registerForEvents()
+      .subscribe((event) => {
+        switch (event.type) {
+          case EventTypes.NewAuthenticationResult:
+            void this.cacheLibraryToken();
+            break;
+          case EventTypes.TokenExpired:
+          case EventTypes.SilentRenewFailed:
+            if (this.authenticated()) {
+              void this.sessionExpired();
+            }
+            break;
+        }
+      });
+  }
+
+  private async cacheLibraryToken(): Promise<void> {
+    const token = await firstValueFrom(this.oidc().getAccessToken(OIDC_CONFIG_ID));
+    if (token) {
+      this.cacheToken(token);
+    }
+  }
+
+  /** Stores the access token and its expiry from the JWT `exp` claim. False if there is none. */
+  private cacheToken(accessToken: string): boolean {
+    const expiresAt = jwtExpiryMs(accessToken);
+    if (!expiresAt) {
+      return false;
+    }
+    this.token = accessToken;
+    this.expiresAt = expiresAt;
+    return true;
+  }
+
+  private navigateToLogin(): void {
+    void this.router.navigateByUrl('/login');
+  }
+
+  private oidc(): OidcSecurityService {
+    return this.injector.get(OidcSecurityService);
+  }
+
+  /** Fails closed: OIDC mode must run with the split storage that keeps tokens in memory. */
+  private storage(): SplitSecurityStorage {
+    const storage = this.injector.get(AbstractSecurityStorage);
+    if (!(storage instanceof SplitSecurityStorage)) {
+      throw new Error('OIDC mode requires SplitSecurityStorage (NFA-SEC-04)');
+    }
+    return storage;
   }
 
   private async start(t: TokenResponse): Promise<void> {
@@ -176,6 +373,64 @@ export class AuthService {
       withCredentials: true,
       context: new HttpContext().set(SKIP_AUTH, true),
     };
+  }
+}
+
+/**
+ * Reads `exp` (as epoch milliseconds) from a JWT payload. The signature is not
+ * checked here: the server verifies every request. Returns 0 if there is no valid `exp`.
+ */
+export function jwtExpiryMs(jwt: string): number {
+  const payload = base64UrlDecode(jwt.split('.')[1] ?? '');
+  if (payload === null) {
+    return 0;
+  }
+  try {
+    const claims = JSON.parse(payload) as { exp?: unknown };
+    return typeof claims.exp === 'number' && Number.isFinite(claims.exp) ? claims.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function base64UrlDecode(input: string): string | null {
+  if (!/^[A-Za-z0-9_-]*$/.test(input)) {
+    return null;
+  }
+  const padded = input
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(Math.ceil(input.length / 4) * 4, '=');
+  try {
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+function readSession(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    // No sessionStorage: nothing was stored there.
+    return null;
+  }
+}
+
+function writeSession(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Without sessionStorage the flag is lost; the worst case is one more silent login.
+  }
+}
+
+function removeSession(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore: storage disabled.
   }
 }
 

@@ -7,6 +7,9 @@
     "expired": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
     "toSetup": "Erster Start? Administrator anlegen"
   },
+  "callback": {
+    "loading": "Anmeldung wird abgeschlossen ..."
+  },
   "setup": {
     "title": "Ersten Administrator anlegen",
     "hint": "Das einmalige Setup-Token steht beim ersten Start im Server-Log und ist eine Stunde gültig.",

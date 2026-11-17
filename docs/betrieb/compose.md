@@ -39,7 +39,8 @@ Alle Variablen werden beim Start gelesen. Ungültige Werte beenden den Start mit
 |----------|----------|-----------|
 | `NODE_NAME` | Hostname des Containers | Name des Knotens. In der Compose-Datei gesetzt (`vps1`). |
 | `NODE_ROLE` | `voter` | `voter` (Raft-Teilnehmer) oder `probe` (nur Prüfungen; noch nicht implementiert). |
-| `AUTH_MODE` | `local` | Anmeldung mit lokalen Benutzern. `zitadel` ist noch nicht verfügbar. |
+| `AUTH_MODE` | `local` | Anmeldung mit lokalen Benutzern, oder `oidc` für einen externen OIDC-Anbieter (Keycloak, Authentik, Entra ID, Zitadel u. a.). Details: [oidc.md](oidc.md). |
+| `OIDC_*`, `ZITADEL_PLATFORM_ORG_ID` | leer | Nur mit `AUTH_MODE=oidc` (oder dem Alias `zitadel`): Issuer, Audience, Client-IDs, Rollen-Claim, Mandantenmodus u. a. Vollständige Liste mit Standardwerten: [oidc.md](oidc.md#3-variablen). |
 | `DATA_DIR` | `/data` | Datenverzeichnis (Volume). Das Image setzt den Wert bereits. |
 | `HTTP_ADDR` | `:8080` | Listen-Adresse für API und Oberfläche. |
 | `CLUSTER_ADDR` | `:9443` | Listen-Adresse für die Cluster-Kommunikation (nur mit weiteren Votern nötig). |
