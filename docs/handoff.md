@@ -1,6 +1,6 @@
 # Handoff für die nächste Claude-Code-Session
 
-**Stand:** 2026-11-17, AP-4.2 (ADR 0029) ist auf dem Branch `feat/AP4.2` umgesetzt und committet, aber nicht gepusht. Offen ist der Ende-zu-Ende-Test gegen Zitadel. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
+**Stand:** 2026-11-17, AP-4.2 (ADR 0029) ist auf dem Branch `feat/AP4.2` umgesetzt, Ende zu Ende gegen Zitadel geprüft und committet, aber nicht gepusht und ohne PR. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
 
 ## 1. Zuerst lesen
 
@@ -16,7 +16,7 @@
 |-------|--------|
 | P0 Fundament | fertig bis auf AP-0.9/0.10 (brauchen GitHub-Läufe) |
 | P1 Kern, P2 Cluster, P3 HA-Logik | abgenommen (`docs/abnahme/p1-kern.md`, `p2-cluster.md`, `p3-ha.md`) |
-| **P4 Mandanten** | **AP-4.1 ✅, AP-4.2 umgesetzt (E2E offen), danach AP-4.3** |
+| **P4 Mandanten** | **AP-4.1 ✅, AP-4.2 ✅, nächster Schritt AP-4.3** |
 | P5 Reichweite, P6 Ausbau | offen |
 
 **Was AP-4.1 gebracht hat (Kurzfassung):**
@@ -80,18 +80,12 @@
 - **Browser:** Das eingebaute Browser-Fenster blockiert Skripte mancher externer Seiten (PocketID blieb schwarz, `ERR_BLOCKED_BY_CLIENT`). Dann Claude in Chrome verwenden, nach Rückfrage.
 - **Speicher-Hygiene der SPA** nach jedem Login prüfen: kein JWT, kein Refresh-Token, keine Profildaten in `localStorage`/`sessionStorage`/IndexedDB.
 
-## 4. Nächster Schritt: AP-4.2 abschließen
+## 4. Nächster Schritt: AP-4.3 SSRF-Durchsetzung
 
-Umgesetzt ist alles aus ADR 0029; den Überblick gibt der Roadmap-Eintrag zu AP-4.2. Die Commits auf `feat/AP4.2`: `internal/tenant`, Store, FSM-Befehle (Version 8), Auth und `internal/provision`, Admin-API, Laufzeit (`internal/tenantpurge`, `scheduler.TenantGate`), Web-UI.
-
-1. **Ende-zu-Ende gegen Zitadel** (`deploy/oidc-dev/zitadel`, siehe README dort): Knoten mit `OIDC_PROFILE=zitadel`, `OIDC_TENANCY=multi`, `OIDC_AUTO_PROVISION=true`. Prüfen:
-   - Org `acme` mit Projektrolle wird beim ersten Login als Mandant angelegt; ohne Projektberechtigung bleibt es bei 403.
-   - Zwei Mandanten, ID-Manipulation über API und WebSocket ergibt 404 (Vorbereitung AS-06).
-   - Sperren (403, Stream schließt, Checks ruhen), Entsperren, Löschen (Daten weg in `state.db` und nach ≤ 30 s in `metrics.db`).
-   - Limits: Plan mit `maxMonitors`, 403 mit Meldung in der UI.
-   - Speicher-Hygiene der SPA wie bei AP-4.1.
-   Logins im Browser macht Projektinhaber. Befunde: Regressionstest und Eintrag in `docs/betrieb/oidc.md`.
-2. **Danach:** Roadmap AP-4.2 auf ✅, PR nach Rückfrage.
+- Zuerst Projektinhaber fragen, ob `feat/AP4.2` als PR nach `master` soll und auf welchem Branch AP-4.3 beginnt.
+- Anforderungen: FA-SEC-SSRF und FA-ALR-12 im Pflichtenheft, dazu die Roadmap-Zeile zu AP-4.3. SSRF-Schutz ist Sicherheitscode und bleibt beim Hauptagenten; Fuzz-Tests und Verdrahtung können an Haiku.
+- Prüfen, ob dafür ein ADR nötig ist (neue Komponente oder Verhaltensänderung an Checkern und Benachrichtigungen).
+- Testumgebung für E2E: `deploy/oidc-dev/zitadel` hat jetzt Bots für `platform-admin`, `acme` und `globex` (Grant) sowie `initech` (ohne Grant); `token.sh <bot>`.
 
 ## 5. Offene Punkte
 
@@ -103,6 +97,8 @@ Umgesetzt ist alles aus ADR 0029; den Überblick gibt der Roadmap-Eintrag zu AP-
 - `request_dedup` behält Ergebnisse früherer Befehle mit der Mandanten-ID; Raft-Log und Backups enthalten gelöschte Daten, bis sie überschrieben sind (in der Betriebsdoku nennen).
 - Lokaler Modus: Die Sperre wird erst nach richtigem Passwort gemeldet (403 statt 401).
 - Angular hat kein `ng lint`-Ziel.
+- Übersetzungsdateien unter `/i18n/` werden mit `max-age=3600` ohne Inhalts-Hash ausgeliefert; nach einem Update zeigt die SPA bis zu einer Stunde alte Texte zu neuen Templates.
+- Das Rate-Limit der Auto-Provisionierung zählt Versuche, nicht angelegte Mandanten.
 
 **Aus AP-4.1:**
 - Claim-Fixture aus PocketID fehlt (Claims nur aus dem Quelltext belegt; Keycloak und Zitadel liegen in `internal/auth/oidc/testdata/`). PocketID-Version für die Doku bei Projektinhaber erfragen.
