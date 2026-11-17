@@ -15,6 +15,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -44,6 +45,10 @@ func (h *Handlers) ListNotificationChannels(ctx context.Context, _ gen.ListNotif
 func (h *Handlers) CreateNotificationChannel(ctx context.Context, req gen.CreateNotificationChannelRequestObject) (gen.CreateNotificationChannelResponseObject, error) {
 	p, err := principal(ctx, adminAccess)
 	if err != nil {
+		return nil, err
+	}
+	// Updates do not change the channel count, so only creation is checked (ADR 0029).
+	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, true, 0, 0); err != nil {
 		return nil, err
 	}
 	out, err := h.createChannel(ctx, p.TenantID, req.Params.IdempotencyKey, req.Body)
