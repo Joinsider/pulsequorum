@@ -1,6 +1,6 @@
 module github.com/joinsider/uptimecluster/tools
 
-go 1.27.0
+go 1.27.4
 
 tool (
 	github.com/bufbuild/buf/cmd/buf
