@@ -22,6 +22,7 @@ import (
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/secrets"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/tenant"
 )
 
 // statusHistoryRetention is how long consensus status changes are kept,
@@ -312,6 +313,18 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyCheckpoint(ctx, tx)
 	case *pb.Command_BindTenantOrg:
 		return applyBindTenantOrg(ctx, tx, cmd, p.BindTenantOrg)
+	case *pb.Command_CreateTenant:
+		return applyCreateTenant(ctx, tx, cmd, p.CreateTenant)
+	case *pb.Command_UpdateTenant:
+		return applyUpdateTenant(ctx, tx, cmd, p.UpdateTenant)
+	case *pb.Command_SetTenantSuspended:
+		return applySetTenantSuspended(ctx, tx, cmd, p.SetTenantSuspended)
+	case *pb.Command_DeleteTenant:
+		return applyDeleteTenant(ctx, tx, cmd, p.DeleteTenant)
+	case *pb.Command_PutPlan:
+		return applyPutPlan(ctx, tx, cmd, p.PutPlan)
+	case *pb.Command_DeletePlan:
+		return applyDeletePlan(ctx, tx, cmd, p.DeletePlan)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -337,9 +350,13 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		if put.GetId() == store.SystemTenantID && doc.ZitadelOrgID != "" {
 			return nil, invalid("the system tenant cannot be bound to an organization")
 		}
+		if err := checkPutTenant(ctx, tx, cmd, put.GetId(), doc); err != nil {
+			return nil, err
+		}
 		err := tx.PutTenant(ctx, store.Tenant{
 			ID: put.GetId(), Name: doc.Name, Plan: doc.Plan, ZitadelOrgID: doc.ZitadelOrgID,
-			Limits: doc.Limits, Suspended: doc.Suspended, CreatedMs: issuedAt, UpdatedMs: issuedAt,
+			Limits: doc.Limits, Suspended: doc.Suspended, Source: tenant.SourceBootstrap,
+			CreatedMs: issuedAt, UpdatedMs: issuedAt,
 		})
 		if err != nil {
 			return nil, storeError(err)
@@ -361,6 +378,17 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 			return nil, err
 		}
 		create := put.GetExpectedRevision() == 0
+		target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_MONITOR, create: create, interval: doc.IntervalSeconds}
+		if !create {
+			if old, err := tx.GetMonitor(ctx, cmd.GetTenantId(), put.GetId()); err == nil {
+				target.oldInterval = old.IntervalSeconds
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return nil, storeError(err)
+			}
+		}
+		if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
+			return nil, err
+		}
 		err := tx.PutMonitor(ctx, store.Monitor{
 			TenantID:              cmd.GetTenantId(),
 			ID:                    put.GetId(),
@@ -401,6 +429,10 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		}
 		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, level)
 		if err != nil {
+			return nil, err
+		}
+		target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, create: put.GetExpectedRevision() == 0}
+		if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
 			return nil, err
 		}
 		if err := tx.PutChannel(ctx, ch, put.GetExpectedRevision()); err != nil {

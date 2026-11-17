@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/tenant"
 )
 
 // withRequestID returns cmd with another request ID, so that the FSM applies it
@@ -46,7 +47,7 @@ func (h *alertFSM) tenantOrg(id string) store.Tenant {
 // TestBindTenantOrg covers ADR 0027: the rules of BindTenantOrg, applied in the
 // order of the FSM, with the expected outcome and organization afterwards.
 func TestBindTenantOrg(t *testing.T) {
-	long := strings.Repeat("a", maxOrgIDLength)
+	long := strings.Repeat("a", 128)
 	tests := []struct {
 		name string
 		// setup commands are applied first and must succeed.
@@ -283,8 +284,8 @@ func TestValidOrgID(t *testing.T) {
 		{"1", true},
 		{"123456789012345678", true},
 		{"a.b_c@d-e", true},
-		{strings.Repeat("x", maxOrgIDLength), true},
-		{strings.Repeat("x", maxOrgIDLength+1), false},
+		{strings.Repeat("x", 128), true},
+		{strings.Repeat("x", 128+1), false},
 		{"a b", false},
 		{"a/b", false},
 		{"a:b", false},
@@ -293,8 +294,8 @@ func TestValidOrgID(t *testing.T) {
 		{"a\x00b", false},
 	}
 	for _, tt := range tests {
-		if got := validOrgID(tt.id); got != tt.want {
-			t.Errorf("validOrgID(%q) = %v, want %v", tt.id, got, tt.want)
+		if got := tenant.ValidOrgID(tt.id); got != tt.want {
+			t.Errorf("ValidOrgID(%q) = %v, want %v", tt.id, got, tt.want)
 		}
 	}
 }
