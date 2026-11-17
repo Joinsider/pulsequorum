@@ -191,7 +191,7 @@ func runAS04(ctx context.Context, env *Env) error {
 			if c, _ := notifyCount(env.Ntfy, tFail, "DOWN: "+name); c == 0 {
 				return false, nil
 			}
-			if c, _ := countWhere(env.Ntfy, tFail, unconfirmedDown(name)); c == 0 {
+			if c, _ := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+"DOWN: "+name); c == 0 {
 				return false, nil
 			}
 		}
@@ -218,7 +218,7 @@ func runAS04(ctx context.Context, env *Env) error {
 		rep.Info("Alerts of the failure within the due time", "all DOWN alerts by the due time", "not all sent in time")
 	}
 	for _, name := range names {
-		c, at := countWhere(env.Ntfy, tFail, unconfirmedDown(name))
+		c, at := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+"DOWN: "+name)
 		rep.Check("Minority DOWN for "+name+" carries the unconfirmed prefix", "exactly 1, title '"+strings.TrimSuffix(as04UnconfirmedPrefix, " – ")+"', View line of the isolated follower",
 			fmt.Sprintf("%d unconfirmed DOWN, first +%s, view of isolated follower: %v", c, firstSince(at, tFail), viewOf(env.Ntfy, tFail, unconfirmedDown(name), minorityID)),
 			c == 1 && viewOf(env.Ntfy, tFail, unconfirmedDown(name), minorityID))
@@ -298,9 +298,7 @@ func runAS04(ctx context.Context, env *Env) error {
 		c, at := notifyCount(env.Ntfy, tRec, "UP: "+name)
 		rep.Check("UP notification for "+name, "exactly 1 after recovery",
 			fmt.Sprintf("%d UP, first +%s", c, firstSince(at, tRec)), c == 1)
-		u, _ := countWhere(env.Ntfy, tRec, func(m fake.Message) bool {
-			return strings.Contains(m.Title, "unconfirmed") && strings.HasSuffix(m.Title, "UP: "+name)
-		})
+		u, _ := notifyCount(env.Ntfy, tRec, as04UnconfirmedPrefix+"UP: "+name)
 		d, _ := notifyCount(env.Ntfy, tRec, "DOWN: "+name)
 		rep.Check("No unconfirmed UP and no DOWN after recovery for "+name, "0 and 0",
 			fmt.Sprintf("%d unconfirmed UP, %d DOWN", u, d), u == 0 && d == 0)
