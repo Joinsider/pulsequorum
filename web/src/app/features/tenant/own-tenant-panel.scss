@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+.panel {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.plan,
+.muted {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  min-width: 12rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.row--reached .value {
+  color: var(--status-degraded);
+}
+
+.row--exceeded .value {
+  color: var(--danger);
+}
+
+.hint {
+  flex-basis: 100%;
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.row--reached .hint {
+  color: var(--status-degraded);
+}
+
+.row--exceeded .hint {
+  color: var(--danger);
+}

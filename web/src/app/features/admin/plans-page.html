@@ -1,0 +1,83 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('admin.plans.title')">
+    <button mat-flat-button type="button" (click)="create()">
+      <app-icon name="add" size="1.125rem" />
+      {{ t('admin.plans.new') }}
+    </button>
+  </app-page-header>
+
+  @if (actionError(); as err) {
+    <p class="state state--error" role="alert">
+      {{ t(err.key) }}
+      @if (err.detail) {
+        <span class="detail">{{ err.detail }}</span>
+      }
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError(); as key) {
+    <p class="state state--error" role="alert">
+      {{ t(key) }}
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </p>
+  } @else if (rows().length === 0) {
+    <p class="state">{{ t('admin.plans.empty') }}</p>
+  } @else {
+    <ul class="list" [attr.aria-label]="t('admin.plans.listLabel')">
+      @for (row of rows(); track row.plan.id) {
+        <li class="row" data-testid="plan-row">
+          <div class="row__who">
+            <span class="row__name">{{ row.plan.name }}</span>
+            <span class="row__meta"
+              ><code>{{ row.plan.id }}</code></span
+            >
+          </div>
+
+          <div class="row__actions">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="isPending(row.plan.id)"
+              [attr.aria-label]="t('common.edit') + ': ' + row.plan.name"
+              (click)="edit(row)"
+            >
+              <app-icon name="edit" size="1.125rem" />
+              {{ t('common.edit') }}
+            </button>
+            <span [matTooltip]="row.rights.deleteLockKey ? t(row.rights.deleteLockKey) : ''">
+              <button
+                mat-button
+                type="button"
+                color="warn"
+                [disabled]="!row.rights.canDelete || isPending(row.plan.id)"
+                [attr.aria-label]="t('common.delete') + ': ' + row.plan.name"
+                (click)="remove(row)"
+              >
+                <app-icon name="delete" size="1.125rem" />
+                {{ t('common.delete') }}
+              </button>
+            </span>
+          </div>
+
+          <ul class="limits" [attr.aria-label]="t('admin.plans.limitsLabel')">
+            @for (key of limitKeys; track key) {
+              <li class="chip" [attr.data-limit]="key">
+                {{ t(labelKey(key)) }}:
+                <strong>{{ row.plan.limits[key] ?? t('admin.limits.unlimited') }}</strong>
+              </li>
+            }
+          </ul>
+
+          <p class="facts">
+            <span class="count">{{
+              t('admin.plans.tenantCount', { count: row.plan.tenantCount })
+            }}</span>
+          </p>
+        </li>
+      }
+    </ul>
+  }
+</div>

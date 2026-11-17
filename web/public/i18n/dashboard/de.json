@@ -25,5 +25,30 @@
   "empty": "Noch keine Monitore vorhanden. Lege den ersten an, um mit der Überwachung zu beginnen.",
   "emptyFiltered": "Kein Monitor entspricht dem aktuellen Filter.",
   "loadFailed": "Die Monitore konnten nicht geladen werden.",
-  "actionFailed": "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut."
+  "actionFailed": "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
+  "usage": {
+    "title": "Plan und Limits",
+    "plan": "Plan: {{ plan }}",
+    "rows": {
+      "monitors": "Monitore",
+      "channels": "Kanäle",
+      "interval": "Kürzestes Intervall"
+    },
+    "count": "{{ used }} / {{ limit }}",
+    "unlimited": "unbegrenzt",
+    "seconds": "{{ seconds }} s",
+    "minimum": "mindestens {{ seconds }} s",
+    "none": "–",
+    "hints": {
+      "reached": {
+        "monitors": "Limit für Monitore erreicht. Lösche einen Monitor oder bitte einen Administrator um einen größeren Plan.",
+        "channels": "Limit für Kanäle erreicht. Lösche einen Kanal oder bitte einen Administrator um einen größeren Plan."
+      },
+      "exceeded": {
+        "monitors": "Mehr Monitore als der Plan erlaubt. Bestehende laufen weiter, neue werden abgelehnt.",
+        "channels": "Mehr Kanäle als der Plan erlaubt. Bestehende laufen weiter, neue werden abgelehnt.",
+        "interval": "Manche Monitore prüfen häufiger, als der Plan erlaubt. Sie laufen weiter; neue oder kürzere Intervalle werden abgelehnt."
+      }
+    }
+  }
 }

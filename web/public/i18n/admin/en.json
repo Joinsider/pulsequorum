@@ -127,5 +127,137 @@
       "quorum": "Quorum",
       "test": "Test alert"
     }
+  },
+  "failure": {
+    "offline": "The server cannot be reached. Please try again.",
+    "forbidden": "You are not allowed to do this.",
+    "notFound": "This item no longer exists.",
+    "conflict": "The change conflicts with the current state.",
+    "invalid": "The server rejected some values.",
+    "unavailable": "The cluster is not available right now. Please try again.",
+    "generic": "The request failed."
+  },
+  "limits": {
+    "unlimited": "unlimited",
+    "unlimitedCheckbox": "Unlimited",
+    "emptyUnlimited": "Empty means unlimited",
+    "planValue": "Plan: {{ value }}",
+    "planValueNotEnforced": "Plan: {{ value }}. Saved now, enforced once the feature exists.",
+    "rule": "Enter a whole number from {{ min }} to {{ max }}.",
+    "fields": {
+      "maxMonitors": "Monitors",
+      "minIntervalSeconds": "Shortest interval (seconds)",
+      "maxChannels": "Channels",
+      "maxStatusPages": "Status pages",
+      "maxPrivateProbes": "Private probes"
+    }
+  },
+  "tenants": {
+    "title": "Tenants",
+    "new": "New tenant",
+    "listLabel": "Tenants",
+    "empty": "No tenants yet.",
+    "orgLabel": "Organization",
+    "planLabel": "Plan",
+    "sourceLabel": "Source",
+    "usageLabel": "Usage against limits",
+    "sources": {
+      "admin": "Created by an admin",
+      "auto": "Provisioned automatically",
+      "bootstrap": "Bootstrap"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "usage": {
+      "monitors": "{{ used }} / {{ limit }} monitors",
+      "channels": "{{ used }} / {{ limit }} channels",
+      "interval": "Shortest interval {{ used }} s (minimum {{ limit }} s)"
+    },
+    "exceededTitle": "Limits exceeded: existing items keep running, new ones are refused.",
+    "exceeded": {
+      "maxMonitors": "{{ actual }} monitors, {{ allowed }} allowed",
+      "maxChannels": "{{ actual }} channels, {{ allowed }} allowed",
+      "minIntervalSeconds": "Shortest interval {{ actual }} s, minimum {{ allowed }} s"
+    },
+    "suspend": "Suspend",
+    "suspendDialog": {
+      "title": "Suspend tenant?",
+      "text": "Its users are signed out and refused, and its checks and alerts stop. The data is kept; you can resume at any time.",
+      "confirm": "Suspend"
+    },
+    "resume": "Resume",
+    "created": "Tenant created.",
+    "updated": "Tenant saved.",
+    "suspended": "Tenant suspended.",
+    "resumed": "Tenant resumed.",
+    "deleted": "Tenant deleted.",
+    "lock": {
+      "suspendFirst": "Suspend the tenant first. Only suspended tenants can be deleted."
+    },
+    "dialog": {
+      "createTitle": "New tenant",
+      "editTitle": "Edit tenant",
+      "id": "ID",
+      "idHint": "Optional: lowercase letters, digits and hyphens. Empty generates an ID.",
+      "name": "Name",
+      "plan": "Plan",
+      "orgId": "Organization ID",
+      "orgIdHint": "Optional. Binds the tenant to an organization of the identity provider.",
+      "orgIdLocked": "Set by the server configuration; cannot be changed here.",
+      "limitsTitle": "Limits",
+      "limitsHint": "Empty inherits the plan's value. Unlimited removes the limit for this tenant.",
+      "errors": {
+        "id": "Use lowercase letters, digits and hyphens, at most 64 characters, starting with a letter or digit.",
+        "name": "Enter a name.",
+        "nameLength": "Use at most {{ max }} characters.",
+        "orgIdLength": "Use at most {{ max }} characters."
+      }
+    },
+    "delete": {
+      "title": "Delete tenant “{{ name }}”?",
+      "text": "All data of this tenant is deleted: monitors, check results, incidents, channels, maintenance windows and users. This cannot be undone.",
+      "copies": "Copies remain in the Raft log and in backups until they are overwritten.",
+      "typeLabel": "Type “{{ name }}” to confirm",
+      "confirm": "Delete permanently"
+    }
+  },
+  "plans": {
+    "title": "Plans",
+    "new": "New plan",
+    "listLabel": "Plans",
+    "empty": "No plans yet.",
+    "limitsLabel": "Limits",
+    "tenantCount": "Tenants: {{ count }}",
+    "created": "Plan created.",
+    "updated": "Plan saved.",
+    "deleted": "Plan deleted.",
+    "lock": {
+      "default": "The default plan cannot be deleted.",
+      "inUse": "A plan that tenants use cannot be deleted."
+    },
+    "delete": {
+      "title": "Delete plan?",
+      "text": "The plan is removed. Tenants can no longer be put on it.",
+      "confirm": "Delete"
+    },
+    "dialog": {
+      "createTitle": "New plan",
+      "editTitle": "Edit plan",
+      "id": "ID",
+      "idHint": "Lowercase letters, digits and hyphens. The ID cannot be changed later.",
+      "name": "Name",
+      "limitsTitle": "Limits",
+      "limitsHint": "A lowered limit keeps the existing items of the tenants. Only new objects and shorter intervals are refused.",
+      "errors": {
+        "required": "Enter an ID.",
+        "pattern": "Use lowercase letters, digits and hyphens, at most 64 characters.",
+        "reserved": "This ID is reserved.",
+        "taken": "A plan with this ID already exists.",
+        "name": "Enter a name.",
+        "nameLength": "Use at most {{ max }} characters."
+      }
+    }
   }
 }

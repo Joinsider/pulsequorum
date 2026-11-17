@@ -1,0 +1,152 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('admin.tenants.title')">
+    <button mat-flat-button type="button" (click)="create()">
+      <app-icon name="add" size="1.125rem" />
+      {{ t('admin.tenants.new') }}
+    </button>
+  </app-page-header>
+
+  @if (actionError(); as err) {
+    <p class="state state--error" role="alert">
+      {{ t(err.key) }}
+      @if (err.detail) {
+        <span class="detail">{{ err.detail }}</span>
+      }
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError(); as key) {
+    <p class="state state--error" role="alert">
+      {{ t(key) }}
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </p>
+  } @else if (rows().length === 0) {
+    <p class="state">{{ t('admin.tenants.empty') }}</p>
+  } @else {
+    <ul class="list" [attr.aria-label]="t('admin.tenants.listLabel')">
+      @for (row of rows(); track row.tenant.id) {
+        <li
+          class="row"
+          [class.row--exceeded]="row.tenant.exceeded.length > 0"
+          data-testid="tenant-row"
+        >
+          <div class="row__who">
+            <span class="row__name">{{ row.tenant.name }}</span>
+            <span class="row__meta">
+              <code>{{ row.tenant.id }}</code>
+              @if (row.tenant.orgId; as org) {
+                <span
+                  >· {{ t('admin.tenants.orgLabel') }}: <code>{{ org }}</code></span
+                >
+              }
+            </span>
+          </div>
+
+          <div class="row__actions">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="isPending(row.tenant.id)"
+              [attr.aria-label]="t('common.edit') + ': ' + row.tenant.name"
+              (click)="edit(row)"
+            >
+              <app-icon name="edit" size="1.125rem" />
+              {{ t('common.edit') }}
+            </button>
+            @if (row.rights.canSuspendToggle) {
+              <button
+                mat-stroked-button
+                type="button"
+                [disabled]="isPending(row.tenant.id)"
+                [attr.aria-label]="
+                  (row.tenant.suspended ? t('admin.tenants.resume') : t('admin.tenants.suspend')) +
+                  ': ' +
+                  row.tenant.name
+                "
+                (click)="toggleSuspended(row)"
+              >
+                <app-icon [name]="row.tenant.suspended ? 'playArrow' : 'block'" size="1.125rem" />
+                {{ row.tenant.suspended ? t('admin.tenants.resume') : t('admin.tenants.suspend') }}
+              </button>
+            }
+            @if (row.rights.showDelete) {
+              <span [matTooltip]="row.rights.deleteLockKey ? t(row.rights.deleteLockKey) : ''">
+                <button
+                  mat-button
+                  type="button"
+                  color="warn"
+                  [disabled]="!row.rights.canDelete || isPending(row.tenant.id)"
+                  [attr.aria-label]="t('common.delete') + ': ' + row.tenant.name"
+                  (click)="remove(row)"
+                >
+                  <app-icon name="delete" size="1.125rem" />
+                  {{ t('common.delete') }}
+                </button>
+              </span>
+            }
+          </div>
+
+          <div class="row__facts">
+            <span class="chip">{{ t('admin.tenants.planLabel') }}: {{ row.planName }}</span>
+            <span class="badge" [class.badge--off]="row.tenant.suspended">
+              {{ t(statusKey(row.tenant)) }}
+            </span>
+            <span class="chip">
+              {{ t('admin.tenants.sourceLabel') }}:
+              {{ t('admin.tenants.sources.' + row.tenant.source) }}
+            </span>
+          </div>
+
+          <ul class="usage" [attr.aria-label]="t('admin.tenants.usageLabel')">
+            <li>
+              {{
+                t('admin.tenants.usage.monitors', {
+                  used: row.tenant.usage.monitors,
+                  limit: row.tenant.effectiveLimits.maxMonitors ?? t('admin.limits.unlimited'),
+                })
+              }}
+            </li>
+            <li>
+              {{
+                t('admin.tenants.usage.channels', {
+                  used: row.tenant.usage.channels,
+                  limit: row.tenant.effectiveLimits.maxChannels ?? t('admin.limits.unlimited'),
+                })
+              }}
+            </li>
+            <li>
+              {{
+                t('admin.tenants.usage.interval', {
+                  used: row.tenant.usage.minIntervalSeconds ?? '–',
+                  limit:
+                    row.tenant.effectiveLimits.minIntervalSeconds ?? t('admin.limits.unlimited'),
+                })
+              }}
+            </li>
+          </ul>
+
+          @if (row.tenant.exceeded.length > 0) {
+            <div class="exceeded" role="status">
+              <p class="exceeded__title">{{ t('admin.tenants.exceededTitle') }}</p>
+              <ul>
+                @for (e of row.tenant.exceeded; track e.limit) {
+                  <li>
+                    {{
+                      t('admin.tenants.exceeded.' + e.limit, {
+                        actual: e.actual,
+                        allowed: e.allowed,
+                      })
+                    }}
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>

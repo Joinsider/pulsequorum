@@ -1,0 +1,53 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+@if (tenant(); as current) {
+  <ng-container *transloco="let t">
+    <section class="panel" aria-labelledby="own-tenant-title">
+      <header class="head">
+        <h2 id="own-tenant-title" class="title">{{ t('dashboard.usage.title') }}</h2>
+        <span class="plan">{{ t('dashboard.usage.plan', { plan: current.plan }) }}</span>
+      </header>
+
+      <ul class="rows">
+        @for (row of rows(); track row.key) {
+          <li
+            class="row"
+            [class.row--reached]="row.state === 'reached'"
+            [class.row--exceeded]="row.state === 'exceeded'"
+            data-testid="usage-row"
+          >
+            <span class="label">{{ t('dashboard.usage.rows.' + row.key) }}</span>
+            @switch (row.key) {
+              @case ('interval') {
+                <span class="value">
+                  {{
+                    row.used === null
+                      ? t('dashboard.usage.none')
+                      : t('dashboard.usage.seconds', { seconds: row.used })
+                  }}
+                  @if (row.limit !== null) {
+                    <span class="muted"
+                      >({{ t('dashboard.usage.minimum', { seconds: row.limit }) }})</span
+                    >
+                  }
+                </span>
+              }
+              @default {
+                <span class="value">
+                  {{
+                    t('dashboard.usage.count', {
+                      used: row.used,
+                      limit: row.limit ?? t('dashboard.usage.unlimited'),
+                    })
+                  }}
+                </span>
+              }
+            }
+            @if (hintKey(row); as key) {
+              <p class="hint" role="status">{{ t(key) }}</p>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  </ng-container>
+}
