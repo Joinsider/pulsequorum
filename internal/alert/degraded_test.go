@@ -102,8 +102,16 @@ func TestLocalRateLimitPerChannel(t *testing.T) {
 	wantCounts(t, s, 10, 0)
 }
 
+// localUp returns a delivery of an UP alert, like localDel does for DOWN.
+func localUp(id, ch string, kind string, l *doneLog) LocalDelivery {
+	del := localDel(id, ch, kind, l)
+	del.Payload.Event = store.EventUp
+	del.Payload.Status = "UP"
+	return del
+}
+
 // TestLocalBundleWithinWindow checks that the first Shoutrrr alert goes out at
-// once and the alerts due inside the window go out as one bundle at its end.
+// once and the UP alerts due inside the window go out as one bundle at its end.
 func TestLocalBundleWithinWindow(t *testing.T) {
 	l := newDoneLog()
 	clk := newClock()
@@ -113,8 +121,8 @@ func TestLocalBundleWithinWindow(t *testing.T) {
 	d.deliverDue(context.Background(), clk.now())
 	wantCounts(t, s, 1, 0)
 
-	d.Enqueue(localDel("m2", "ch1", store.ChannelShoutrrr, l))
-	d.Enqueue(localDel("m3", "ch1", store.ChannelShoutrrr, l))
+	d.Enqueue(localUp("m2", "ch1", store.ChannelShoutrrr, l))
+	d.Enqueue(localUp("m3", "ch1", store.ChannelShoutrrr, l))
 	t0 := clk.t
 	clk.t = t0.Add(5 * time.Second)
 	d.deliverDue(context.Background(), clk.now())
@@ -133,6 +141,89 @@ func TestLocalBundleWithinWindow(t *testing.T) {
 		if got := l.outcome(id); len(got) != 1 || got[0] != LocalOutcomeSent {
 			t.Errorf("%s: Done calls = %v, want one sent", id, got)
 		}
+	}
+}
+
+// TestLocalDownFlushesHeldUp checks that a DOWN due inside the window goes out
+// at once with the UP alerts held back, as one bundle. The window end does not
+// move: an UP due after the flush waits for the original end.
+func TestLocalDownFlushesHeldUp(t *testing.T) {
+	l := newDoneLog()
+	clk := newClock()
+	s := &recordingSender{}
+	d := localDispatcher(s, clk, 30*time.Second, 5)
+	t0 := clk.t
+	d.Enqueue(localDel("m1", "ch1", store.ChannelShoutrrr, l))
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 1, 0)
+
+	d.Enqueue(localUp("u1", "ch1", store.ChannelShoutrrr, l))
+	clk.t = t0.Add(time.Second)
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 1, 0)
+	if len(l.outcome("u1")) != 0 {
+		t.Fatal("u1 finished inside the window")
+	}
+
+	d.Enqueue(localDel("m2", "ch1", store.ChannelShoutrrr, l))
+	clk.t = t0.Add(2 * time.Second)
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 1, 1)
+	if len(s.bundles[0]) != 2 {
+		t.Fatalf("bundle has %d alerts, want 2", len(s.bundles[0]))
+	}
+	for _, id := range []string{"u1", "m2"} {
+		if got := l.outcome(id); len(got) != 1 || got[0] != LocalOutcomeSent {
+			t.Errorf("%s: Done calls = %v, want one sent", id, got)
+		}
+	}
+
+	d.Enqueue(localUp("u2", "ch1", store.ChannelShoutrrr, l))
+	clk.t = t0.Add(29 * time.Second)
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 1, 1)
+	if len(l.outcome("u2")) != 0 {
+		t.Fatal("u2 finished before the window end")
+	}
+
+	clk.t = t0.Add(30 * time.Second)
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 2, 1)
+	if got := l.outcome("u2"); len(got) != 1 || got[0] != LocalOutcomeSent {
+		t.Errorf("u2: Done calls = %v, want one sent", got)
+	}
+}
+
+// TestLocalDownWithoutTokenWaits checks that a DOWN flush inside the window
+// still needs a rate-limit token. Without one it waits for a later round.
+func TestLocalDownWithoutTokenWaits(t *testing.T) {
+	l := newDoneLog()
+	clk := newClock()
+	s := &recordingSender{}
+	d := localDispatcher(s, clk, 30*time.Second, 5)
+	t0 := clk.t
+	d.Enqueue(localDel("m0", "ch1", store.ChannelShoutrrr, l))
+	d.deliverDue(context.Background(), clk.now()) // opens the window, one token used
+	wantCounts(t, s, 1, 0)
+
+	for i := 1; i <= 4; i++ {
+		d.Enqueue(localDel(fmt.Sprintf("m%d", i), "ch1", store.ChannelShoutrrr, l))
+		d.deliverDue(context.Background(), clk.now())
+	}
+	wantCounts(t, s, 5, 0)
+
+	d.Enqueue(localDel("m5", "ch1", store.ChannelShoutrrr, l))
+	d.deliverDue(context.Background(), clk.now()) // no token left at this instant
+	wantCounts(t, s, 5, 0)
+	if len(l.outcome("m5")) != 0 {
+		t.Fatal("m5 finished without a token")
+	}
+
+	clk.t = t0.Add(time.Second)
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 6, 0)
+	if got := l.outcome("m5"); len(got) != 1 || got[0] != LocalOutcomeSent {
+		t.Errorf("m5: Done calls = %v, want one sent", got)
 	}
 }
 
@@ -277,4 +368,18 @@ func TestLocalEnqueueAfterStopFails(t *testing.T) {
 	if got := l.outcome("late"); len(got) != 1 || got[0] != LocalOutcomeFailed+": local dispatcher stopped" {
 		t.Errorf("Done calls = %v, want one failed", got)
 	}
+}
+
+// TestLocalWebhookUnaffectedByDownRule checks that webhooks keep one request per
+// alert, DOWN and UP alike, with a bundling window set.
+func TestLocalWebhookUnaffectedByDownRule(t *testing.T) {
+	l := newDoneLog()
+	clk := newClock()
+	s := &recordingSender{}
+	d := localDispatcher(s, clk, 30*time.Second, 5)
+	d.Enqueue(localDel("m1", "ch1", store.ChannelWebhook, l))
+	d.Enqueue(localUp("u1", "ch1", store.ChannelWebhook, l))
+	d.Enqueue(localDel("m2", "ch1", store.ChannelWebhook, l))
+	d.deliverDue(context.Background(), clk.now())
+	wantCounts(t, s, 3, 0)
 }

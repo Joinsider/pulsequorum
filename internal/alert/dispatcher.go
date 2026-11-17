@@ -81,7 +81,9 @@ type DispatcherOptions struct {
 	BatchSize int
 	// BundleWindow bundles the alerts of one Shoutrrr channel (ADR 0023). The
 	// alerts due in the window after a send wait and go out as one message at
-	// its end. Zero disables bundling.
+	// its end. A DOWN alert due in the window does not wait: it sends the due
+	// alerts at once and leaves the window end as it is (ADR 0026). Zero
+	// disables bundling.
 	BundleWindow time.Duration
 	// OnOutcome is called once per delivery attempt with the kind of the
 	// channel and the outcome (OutcomeSent, OutcomeThrottled or OutcomeFailed),
@@ -128,7 +130,8 @@ type channelState struct {
 	last   time.Time
 	// blockedUntil is set when the receiver asked to wait (HTTP 429).
 	blockedUntil time.Time
-	// windowEnd ends the bundling window that opened with the last send.
+	// windowEnd ends the bundling window that opened with the last send. A
+	// flush of DOWN alerts inside the window does not move it (ADR 0026).
 	windowEnd time.Time
 }
 
@@ -321,7 +324,15 @@ func (d *Dispatcher) planChannel(now time.Time, k channelKey, ch store.Notificat
 		// The first alerts go out at once. Alerts due inside the window wait;
 		// when it ends, all due alerts go out as one message (ADR 0023). A
 		// bundle of one alert is sent as a normal message.
-		if now.Before(st.windowEnd) || !st.take(now) {
+		if now.Before(st.windowEnd) {
+			// A DOWN alert never waits for the window (ADR 0026): it sends all
+			// due alerts of the channel now. The window keeps its end.
+			if !anyDown(due) || !st.take(now) {
+				return nil
+			}
+			return []job{{key: k, ch: ch, entries: due}}
+		}
+		if !st.take(now) {
 			return nil
 		}
 		st.windowEnd = now.Add(d.opts.BundleWindow)
@@ -374,6 +385,20 @@ func (d *Dispatcher) run(ctx context.Context, jobs []job) {
 		}(byChannel[k])
 	}
 	wg.Wait()
+}
+
+// anyDown reports whether one of the entries is a DOWN alert (ADR 0026). The
+// event is read from the stored payload, once per entry.
+func anyDown(entries []store.AlertDelivery) bool {
+	for _, a := range entries {
+		var head struct {
+			Event string `json:"event"`
+		}
+		if json.Unmarshal(a.Payload, &head) == nil && head.Event == store.EventDown {
+			return true
+		}
+	}
+	return false
 }
 
 // blocked reports whether the receiver of a channel asked to wait.

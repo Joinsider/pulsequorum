@@ -71,7 +71,9 @@ type LocalDispatcherOptions struct {
 	// Shoutrrr alerts can be bundled.
 	Sender Deliverer
 	// BundleWindow bundles the Shoutrrr alerts of one channel as in the
-	// Dispatcher (ADR 0023). Zero disables bundling.
+	// Dispatcher (ADR 0023). A DOWN alert due in the window flushes the due
+	// alerts at once without moving the window end (ADR 0026). Zero disables
+	// bundling.
 	BundleWindow time.Duration
 	// MaxAttempts is the number of attempts before a delivery fails (default 5).
 	MaxAttempts int
@@ -89,7 +91,7 @@ type LocalDispatcherOptions struct {
 
 // LocalDispatcher delivers the alerts of the degraded mode (ADR 0024). It keeps
 // everything in memory and shares the rate limit, Retry-After block, bundling
-// and backoff of the Dispatcher (ADR 0014, 0023). Deliveries are not
+// and backoff of the Dispatcher (ADR 0014, 0023, 0026). Deliveries are not
 // at-least-once: a delivery pending at shutdown fails.
 type LocalDispatcher struct {
 	opts    LocalDispatcherOptions
@@ -231,8 +233,17 @@ func (d *LocalDispatcher) runChannel(ctx context.Context, now time.Time, st *cha
 	}
 	if d.opts.BundleWindow > 0 && d.bundler != nil && entries[0].del.Target.Kind == store.ChannelShoutrrr {
 		// As in the Dispatcher: the first alert goes out at once, alerts due
-		// inside the window wait, and at its end all due alerts go out as one.
-		if now.Before(st.windowEnd) || !st.take(now) {
+		// inside the window wait, and at its end all due alerts go out as one
+		// (ADR 0023). A DOWN alert does not wait: it sends the due alerts now
+		// and keeps the window end (ADR 0026).
+		if now.Before(st.windowEnd) {
+			if !anyLocalDown(entries) || !st.take(now) {
+				return
+			}
+			d.send(ctx, st, entries)
+			return
+		}
+		if !st.take(now) {
 			return
 		}
 		st.windowEnd = now.Add(d.opts.BundleWindow)
@@ -245,6 +256,16 @@ func (d *LocalDispatcher) runChannel(ctx context.Context, now time.Time, st *cha
 		}
 		d.send(ctx, st, []*localEntry{e})
 	}
+}
+
+// anyLocalDown reports whether one of the deliveries is a DOWN alert (ADR 0026).
+func anyLocalDown(entries []*localEntry) bool {
+	for _, e := range entries {
+		if e.del.Payload.Event == store.EventDown {
+			return true
+		}
+	}
+	return false
 }
 
 // send makes one message of entries and records the outcome of each entry: a

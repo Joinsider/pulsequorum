@@ -276,38 +276,43 @@ func TestBundleSendsDueAlertsAsOne(t *testing.T) {
 	}
 }
 
-// TestBundleCollectsWithinWindow checks that alerts becoming due after a send
-// wait until the window ends and then go out as one message.
+// TestBundleCollectsWithinWindow checks that UP alerts becoming due inside the
+// window wait until it ends and then go out as one message (ADR 0026: only
+// DOWN alerts skip the wait).
 func TestBundleCollectsWithinWindow(t *testing.T) {
 	f := newFixture(t)
 	f.channel(testChannelID, store.ChannelShoutrrr, "generic://hooks.example.com/x")
-	s1 := f.monitorDown("m1", 1)
+	m2 := f.monitorDown("m2", 2)
+	m3 := f.monitorDown("m3", 3)
 	clk := newClock()
+	t0 := clk.t
 	s := &recordingSender{}
 	d := f.dispatcherWith(s, clk, leaderOn(), 30*time.Second)
-	f.deliver(d)
-	wantCounts(t, s, 1, 0)
+	f.deliver(d) // both DOWN alerts go out as one bundle and open the window
+	wantCounts(t, s, 0, 1)
 
-	s2 := f.monitorDown("m2", 2)
-	s3 := f.monitorDown("m3", 3)
-	t0 := clk.t
+	up2 := time.Now().UnixMilli() + 2000
+	up3 := time.Now().UnixMilli() + 3000
+	f.recoverMonitor("m2", up2)
+	f.recoverMonitor("m3", up3)
 	for _, after := range []time.Duration{5 * time.Second, 29 * time.Second} {
 		clk.t = t0.Add(after)
 		f.deliver(d)
-		wantCounts(t, s, 1, 0)
+		wantCounts(t, s, 0, 1)
 	}
-	f.wantUntouched("m2", s2)
-	f.wantUntouched("m3", s3)
+	f.wantUpPending("m2", up2)
+	f.wantUpPending("m3", up3)
 
 	clk.t = t0.Add(30 * time.Second) // the window ends 30 s after the first send
 	f.deliver(d)
-	wantCounts(t, s, 1, 1)
-	if len(s.bundles[0]) != 2 {
-		t.Fatalf("bundle has %d alerts, want 2", len(s.bundles[0]))
+	wantCounts(t, s, 0, 2)
+	if len(s.bundles[1]) != 2 {
+		t.Fatalf("bundle has %d alerts, want 2", len(s.bundles[1]))
 	}
-	f.wantDelivered("m1", s1, 1)
-	f.wantDelivered("m2", s2, 1)
-	f.wantDelivered("m3", s3, 1)
+	f.wantUpDelivered("m2", up2)
+	f.wantUpDelivered("m3", up3)
+	f.wantDelivered("m2", m2, 1)
+	f.wantDelivered("m3", m3, 1)
 }
 
 // TestBundleWindowZeroSendsEach checks that a zero window turns bundling off.
@@ -395,4 +400,173 @@ func TestDeliverDueSkipsWithoutLeaderState(t *testing.T) {
 	f.deliver(f.dispatcherWith(s, newClock(), &atomic.Bool{}, 0))
 	wantCounts(t, s, 0, 0)
 	f.wantUntouched("m1", since)
+}
+
+// recoverMonitor sets the DOWN monitor id to UP at sinceMs. The change
+// proposes an UP alert.
+func (f *fixture) recoverMonitor(id string, sinceMs int64) {
+	f.t.Helper()
+	c := cluster.StateChange{TenantID: cluster.DefaultTenantID, MonitorID: id,
+		From: store.StatusDown, To: store.StatusUp, SinceMs: sinceMs}
+	if _, err := f.node.Apply(f.ctx, cluster.NewSetMonitorState(c)); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// upEntry returns the outbox entry of the UP alert of monitorID that starts at since.
+func (f *fixture) upEntry(monitorID string, since int64) store.AlertDelivery {
+	f.t.Helper()
+	a, err := f.state.GetAlert(f.ctx, fmt.Sprintf("%s:%d:UP", monitorID, since), testChannelID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return a
+}
+
+// wantUpPending checks that the UP alert of monitorID is still pending and not attempted.
+func (f *fixture) wantUpPending(monitorID string, since int64) {
+	f.t.Helper()
+	a := f.upEntry(monitorID, since)
+	if a.State != store.AlertPending || a.Attempts != 0 {
+		f.t.Errorf("%s UP: alert = %+v, want pending without attempts", monitorID, a)
+	}
+}
+
+// wantUpDelivered checks that the UP alert of monitorID was delivered after one attempt.
+func (f *fixture) wantUpDelivered(monitorID string, since int64) {
+	f.t.Helper()
+	a := f.upEntry(monitorID, since)
+	if a.State != store.AlertDelivered || a.Attempts != 1 {
+		f.t.Errorf("%s UP: alert = %+v, want delivered after 1 attempt", monitorID, a)
+	}
+}
+
+// TestBundleDownFlushesHeldUp checks that a DOWN due inside the window sends at
+// once, together with the UP alerts held back in the window, as one bundle. The
+// window end does not move, so an UP due later in the window waits for it.
+func TestBundleDownFlushesHeldUp(t *testing.T) {
+	f := newFixture(t)
+	f.channel(testChannelID, store.ChannelShoutrrr, "generic://hooks.example.com/x")
+	m2 := f.monitorDown("m2", 2)
+	clk := newClock()
+	t0 := clk.t
+	s := &recordingSender{}
+	d := f.dispatcherWith(s, clk, leaderOn(), 30*time.Second)
+	f.deliver(d) // m2 goes out at once and opens the window
+	wantCounts(t, s, 1, 0)
+
+	up2 := time.Now().UnixMilli() + 2000
+	f.recoverMonitor("m2", up2)
+	clk.t = t0.Add(time.Second)
+	f.deliver(d) // a lone UP in the window waits
+	wantCounts(t, s, 1, 0)
+	f.wantUpPending("m2", up2)
+
+	m1 := f.monitorDown("m1", 1)
+	clk.t = t0.Add(2 * time.Second)
+	f.deliver(d) // the DOWN flushes the held UP: one bundle of two
+	wantCounts(t, s, 1, 1)
+	if len(s.bundles[0]) != 2 {
+		t.Fatalf("bundle has %d alerts, want 2", len(s.bundles[0]))
+	}
+	f.wantUpDelivered("m2", up2)
+	f.wantDelivered("m1", m1, 1)
+	f.wantDelivered("m2", m2, 1)
+
+	up1 := time.Now().UnixMilli() + 2000
+	f.recoverMonitor("m1", up1)
+	clk.t = t0.Add(29 * time.Second)
+	f.deliver(d) // the window still ends at t0+30 s
+	wantCounts(t, s, 1, 1)
+	f.wantUpPending("m1", up1)
+
+	clk.t = t0.Add(30 * time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 2, 1)
+	f.wantUpDelivered("m1", up1)
+}
+
+// TestBundleUpWaitsForWindowEnd checks that a lone UP due inside the window
+// waits until the window ends.
+func TestBundleUpWaitsForWindowEnd(t *testing.T) {
+	f := newFixture(t)
+	f.channel(testChannelID, store.ChannelShoutrrr, "generic://hooks.example.com/x")
+	m1 := f.monitorDown("m1", 1)
+	clk := newClock()
+	t0 := clk.t
+	s := &recordingSender{}
+	d := f.dispatcherWith(s, clk, leaderOn(), 30*time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 1, 0)
+	f.wantDelivered("m1", m1, 1)
+
+	up1 := time.Now().UnixMilli() + 2000
+	f.recoverMonitor("m1", up1)
+	clk.t = t0.Add(5 * time.Second)
+	f.deliver(d)
+	clk.t = t0.Add(29 * time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 1, 0)
+	f.wantUpPending("m1", up1)
+
+	clk.t = t0.Add(30 * time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 2, 0)
+	f.wantUpDelivered("m1", up1)
+}
+
+// TestBundleDownWithoutTokenWaits checks that a DOWN inside the window still
+// needs a rate-limit token. Without one it waits for the next round.
+func TestBundleDownWithoutTokenWaits(t *testing.T) {
+	f := newFixture(t)
+	f.channel(testChannelID, store.ChannelShoutrrr, "generic://hooks.example.com/x")
+	m0 := f.monitorDown("m0", 0)
+	clk := newClock()
+	t0 := clk.t
+	s := &recordingSender{}
+	d := f.dispatcherWith(s, clk, leaderOn(), 30*time.Second)
+	f.deliver(d) // m0 opens the window and takes one of five tokens
+	wantCounts(t, s, 1, 0)
+	f.wantDelivered("m0", m0, 1)
+
+	// Four DOWN alerts in the window take the remaining four tokens.
+	for i := 1; i <= 4; i++ {
+		f.monitorDown(fmt.Sprintf("m%d", i), i)
+		f.deliver(d)
+	}
+	wantCounts(t, s, 5, 0)
+
+	m5 := f.monitorDown("m5", 5)
+	f.deliver(d) // no token left at the same instant
+	wantCounts(t, s, 5, 0)
+	f.wantUntouched("m5", m5)
+
+	clk.t = t0.Add(time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 6, 0)
+	f.wantDelivered("m5", m5, 1)
+}
+
+// TestWebhookUnaffectedByDownRule checks that webhooks keep one request per
+// alert, UP and DOWN alike, with a bundling window set.
+func TestWebhookUnaffectedByDownRule(t *testing.T) {
+	f := newFixture(t)
+	f.channel(testChannelID, store.ChannelWebhook, "https://hooks.example.com/x")
+	m1 := f.monitorDown("m1", 1)
+	clk := newClock()
+	t0 := clk.t
+	s := &recordingSender{}
+	d := f.dispatcherWith(s, clk, leaderOn(), 30*time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 1, 0)
+
+	up1 := time.Now().UnixMilli() + 2000
+	f.recoverMonitor("m1", up1)
+	m2 := f.monitorDown("m2", 2)
+	clk.t = t0.Add(time.Second)
+	f.deliver(d)
+	wantCounts(t, s, 3, 0)
+	f.wantUpDelivered("m1", up1)
+	f.wantDelivered("m1", m1, 1)
+	f.wantDelivered("m2", m2, 1)
 }
