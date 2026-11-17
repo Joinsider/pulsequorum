@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/joinsider/uptimecluster/internal/selfcheck"
+	"github.com/joinsider/uptimecluster/internal/tenant"
 )
 
 // Role is the role a node runs in.
@@ -103,6 +104,14 @@ type OIDCConfig struct {
 	DefaultRole string
 	// Tenancy is single or multi, zitadel profile only (OIDC_TENANCY). The generic profile is always single.
 	Tenancy Tenancy
+	// AutoProvision creates the tenant of an unknown organization on its first
+	// login (OIDC_AUTO_PROVISION). Only with the zitadel profile and multi tenancy (ADR 0029).
+	AutoProvision bool
+	// AutoProvisionPlan is the plan of automatically created tenants (OIDC_AUTO_PROVISION_PLAN).
+	AutoProvisionPlan string
+	// AutoProvisionMax is the highest number of automatically created tenants,
+	// counted cluster-wide (OIDC_AUTO_PROVISION_MAX).
+	AutoProvisionMax int
 	// PlatformOrgID is the Zitadel organization of the platform, zitadel profile only (ZITADEL_PLATFORM_ORG_ID).
 	PlatformOrgID string
 }
@@ -549,6 +558,10 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 	}
 	c.Profile = profile
 
+	var autoErrs []error
+	c.AutoProvision, c.AutoProvisionPlan, c.AutoProvisionMax, autoErrs = loadAutoProvision(get, profile)
+	errs = append(errs, autoErrs...)
+
 	c.InsecureHTTP, err = boolVar(get, "OIDC_INSECURE_HTTP", false)
 	add(err)
 
@@ -653,6 +666,51 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 		fail("OIDC_DEFAULT_ROLE: must be empty, tenant-admin, tenant-editor or tenant-viewer, got %q", c.DefaultRole)
 	}
 	return c, errs
+}
+
+// Defaults of the automatic provisioning (ADR 0029). DefaultAutoProvisionMax
+// equals provision.DefaultMax.
+const (
+	DefaultAutoProvisionPlan = "default"
+	DefaultAutoProvisionMax  = 100
+)
+
+// loadAutoProvision reads OIDC_AUTO_PROVISION, OIDC_AUTO_PROVISION_PLAN and
+// OIDC_AUTO_PROVISION_MAX (ADR 0029). Enabling it needs the zitadel profile
+// with multi tenancy; the plan and the maximum are only accepted with it on.
+func loadAutoProvision(get func(key, def string) string, profile OIDCProfile) (bool, string, int, []error) {
+	var errs []error
+	enabled, err := boolVar(get, "OIDC_AUTO_PROVISION", false)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	plan := get("OIDC_AUTO_PROVISION_PLAN", DefaultAutoProvisionPlan)
+	maxTenants := DefaultAutoProvisionMax
+	rawMax := get("OIDC_AUTO_PROVISION_MAX", "")
+	if rawMax != "" {
+		n, err := strconv.Atoi(rawMax)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("OIDC_AUTO_PROVISION_MAX: must be an integer of at least 1, got %q", rawMax))
+		} else {
+			maxTenants = n
+		}
+	}
+	if !enabled {
+		if get("OIDC_AUTO_PROVISION_PLAN", "") != "" || rawMax != "" {
+			errs = append(errs, fmt.Errorf("OIDC_AUTO_PROVISION_PLAN and OIDC_AUTO_PROVISION_MAX: only valid with OIDC_AUTO_PROVISION=true"))
+		}
+		return false, plan, maxTenants, errs
+	}
+	if profile != ProfileZitadel || get("OIDC_TENANCY", "") != string(TenancyMulti) {
+		errs = append(errs, fmt.Errorf("OIDC_AUTO_PROVISION: only valid with OIDC_PROFILE=zitadel and OIDC_TENANCY=multi"))
+	}
+	switch {
+	case !tenant.ValidID(plan):
+		errs = append(errs, fmt.Errorf("OIDC_AUTO_PROVISION_PLAN: must be 1 to 64 characters of a-z, 0-9 and '-', got %q", plan))
+	case plan == tenant.SystemPlanID:
+		errs = append(errs, fmt.Errorf("OIDC_AUTO_PROVISION_PLAN: the plan %q is reserved for the system tenant", plan))
+	}
+	return enabled, plan, maxTenants, errs
 }
 
 // boolVar reads a strict true or false, as the other boolean variables do.

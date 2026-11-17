@@ -86,6 +86,9 @@ type LocalDispatcherOptions struct {
 	// OnOutcome is called once per delivery attempt with the kind of the
 	// channel and the outcome (see DispatcherOptions.OnOutcome). Nil means none.
 	OnOutcome func(kind, outcome string)
+	// Suspended reports whether a tenant is suspended (ADR 0029). Pending
+	// deliveries of suspended tenants are dropped without a send. Nil means none.
+	Suspended func(tenantID string) bool
 	Logger    *slog.Logger
 }
 
@@ -189,6 +192,37 @@ func (d *LocalDispatcher) stop(err error) {
 	}
 }
 
+// errTenantSuspended is the error of a delivery dropped for a suspended tenant.
+var errTenantSuspended = errors.New("tenant is suspended")
+
+// dropSuspended removes the pending deliveries of suspended tenants: the
+// degraded mode keeps nothing for later (ADR 0029). The verdict is taken once
+// per tenant. It returns the dropped entries, whose Done the caller must call
+// after releasing mu. It must be called with mu held.
+func (d *LocalDispatcher) dropSuspended() []*localEntry {
+	if d.opts.Suspended == nil {
+		return nil
+	}
+	verdict := make(map[string]bool)
+	var dropped []*localEntry
+	kept := d.pending[:0]
+	for _, e := range d.pending {
+		s, ok := verdict[e.del.TenantID]
+		if !ok {
+			s = d.opts.Suspended(e.del.TenantID)
+			verdict[e.del.TenantID] = s
+		}
+		if s {
+			dropped = append(dropped, e)
+		} else {
+			kept = append(kept, e)
+		}
+	}
+	clear(d.pending[len(kept):])
+	d.pending = kept
+	return dropped
+}
+
 // deliverDue sends the due deliveries that the rate limit, the Retry-After
 // block and the bundling window allow at now. Channels run in parallel, the
 // messages of one channel one after the other. It returns when all are done.
@@ -196,6 +230,7 @@ func (d *LocalDispatcher) deliverDue(ctx context.Context, now time.Time) {
 	d.mu.Lock()
 	var keys []channelKey
 	due := make(map[channelKey][]*localEntry)
+	dropped := d.dropSuspended()
 	for _, e := range d.pending {
 		if e.nextAttempt.After(now) {
 			continue
@@ -207,6 +242,9 @@ func (d *LocalDispatcher) deliverDue(ctx context.Context, now time.Time) {
 		due[k] = append(due[k], e)
 	}
 	d.mu.Unlock()
+	for _, e := range dropped {
+		finishLocal(e.del, LocalOutcomeFailed, errTenantSuspended)
+	}
 
 	// The channel state is read here, before the goroutines start; each
 	// goroutine then owns its state exclusively.

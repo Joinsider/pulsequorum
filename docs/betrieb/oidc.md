@@ -62,6 +62,9 @@ Alle Variablen werden beim Start gelesen. Ungültige oder widersprüchliche Wert
 | `OIDC_DEFAULT_ROLE` | leer | Rolle für ein gültiges Token, wenn die gewählte Rollenquelle keine gültige Rolle liefert. Leer, `tenant-admin`, `tenant-editor` oder `tenant-viewer`. `platform-admin` ist nicht erlaubt. Nur bei `generic`, siehe Abschnitt 4. |
 | `OIDC_TENANCY` | `single` | `single` oder `multi`. Nur bei `zitadel`; bei `generic` nicht erlaubt. |
 | `ZITADEL_PLATFORM_ORG_ID` | – (Pflicht bei `zitadel`) | ID der Zitadel-Organisation der Plattform. Nur bei `zitadel`. |
+| `OIDC_AUTO_PROVISION` | `false` | Legt bei der ersten Anmeldung einer Organisation automatisch einen Mandanten an. Nur mit `zitadel` und `OIDC_TENANCY=multi`, siehe unten. |
+| `OIDC_AUTO_PROVISION_PLAN` | `default` | Plan der automatisch angelegten Mandanten. Muss existieren. Nur zusammen mit `OIDC_AUTO_PROVISION=true`. |
+| `OIDC_AUTO_PROVISION_MAX` | `100` | Höchstzahl automatisch angelegter Mandanten, clusterweit gezählt. Mindestens `1`. Nur zusammen mit `OIDC_AUTO_PROVISION=true`. |
 
 **Standard von `OIDC_SCOPES`:**
 
@@ -164,7 +167,17 @@ ZITADEL_PLATFORM_ORG_ID=<ID der Plattform-Organisation>
 
 - **Projekt-Grants an Kundenorganisationen.** Der Eigentümer des Projekts gibt das Projekt an jede Kundenorganisation frei und wählt die Rollen aus, die sie vergeben darf. Laut Zitadel-Dokumentation können Administratoren einer Kundenorganisation nur diese freigegebenen Rollen vergeben. Dieses Verhalten ist nicht selbst geprüft.
 - **Standard-Mandant.** Ist der Mandant `default` noch nicht an eine Organisation gebunden, bindet ihn der Leader beim Start an `ZITADEL_PLATFORM_ORG_ID`. So kann sich der erste Plattform-Administrator anmelden. Ein Wechsel von `single` zu `multi` lässt die Daten in `default` unverändert. Sie gehören dann der Plattform-Organisation.
-- **Neue Organisationen.** Eine Organisation ohne Mandanten wird mit `403` (`organization is not provisioned`) abgelehnt. Die automatische Anlage beim ersten Login und die Admin-API zur Bindung einer Organisation an einen Mandanten kommen mit AP-4.2.
+- **Neue Organisationen.** Eine Organisation ohne Mandanten wird mit `403` (`organization is not provisioned`) abgelehnt, solange die automatische Anlage aus ist. Siehe den nächsten Abschnitt.
+
+### Automatische Anlage von Mandanten (ADR 0029)
+
+Mit `OIDC_AUTO_PROVISION=true` legt der Cluster bei der ersten Anmeldung einer Organisation ohne Mandanten einen Mandanten an. Der Name kommt aus der Organisation, der Plan aus `OIDC_AUTO_PROVISION_PLAN`. Die Anlage ist standardmäßig aus.
+
+- **Voraussetzung im IdP:** Das Token muss mindestens eine Projektrolle in dieser Organisation tragen. Dafür muss der Betreiber von Zitadel dem Projekt in der Organisation einen Project Grant mit Rollen geben. Eine reine Selbstregistrierung legt damit noch keinen Mandanten an. `platform-admin` aus einer Kundenorganisation wird weiterhin abgelehnt.
+- **Begrenzung:** `OIDC_AUTO_PROVISION_MAX` (Standard `100`) begrenzt die Zahl der automatisch angelegten Mandanten über den ganzen Cluster. Die Zählung läuft über den Raft-Zustand, nicht je Node.
+- **Missbrauchsschutz je Node:** höchstens 10 Anlagen je Minute. Lehnt der Cluster eine Organisation ab, wird sie 60 s lang nicht erneut versucht. Die Antwort bleibt `403` (`organization is not provisioned`). Der Grund steht im Log des Nodes.
+- **Plan prüfen:** Beim Start protokolliert der Node einen Fehler, solange der Plan fehlt, und prüft weiter. Fehlt der Plan, schlagen alle Anlagen fehl, bis er existiert.
+- **Gleichzeitige Erstanmeldungen** über mehrere Nodes enden beim selben Mandanten.
 
 ### Befunde aus dem Test mit Zitadel v4.20.3
 
