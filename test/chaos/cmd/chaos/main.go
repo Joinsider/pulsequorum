@@ -87,8 +87,8 @@ func parseOptions(args []string, output io.Writer) (options, error) {
 	if _, err := harness.ParseBuildPolicy(o.build); err != nil {
 		return o, err
 	}
-	if o.fakeListenBase < 1024 || o.fakeListenBase > 65534 {
-		return o, errors.New("-fake-listen-base must leave room for two ports in 1024..65534")
+	if o.fakeListenBase < 1024 || o.fakeListenBase > 65532 {
+		return o, errors.New("-fake-listen-base must leave room for three ports in 1024..65534")
 	}
 	return o, nil
 }
@@ -199,7 +199,13 @@ func run(ctx context.Context, opts options, selected []Scenario, log *slog.Logge
 		return nil, err
 	}
 	defer func() { _ = targetSrv.Close() }()
-	log.Info("fake servers listening", "ntfy", ntfySrv.Port(), "target", targetSrv.Port())
+	refTarget := fake.NewTarget()
+	refSrv, err := fake.Listen(fmt.Sprintf(":%d", opts.fakeListenBase+2), refTarget)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = refSrv.Close() }()
+	log.Info("fake servers listening", "ntfy", ntfySrv.Port(), "target", targetSrv.Port(), "reference", refSrv.Port())
 
 	var reports []*harness.Report
 	for _, s := range selected {
@@ -215,6 +221,8 @@ func run(ctx context.Context, opts options, selected []Scenario, log *slog.Logge
 			Target:     target,
 			NtfyPort:   ntfySrv.Port(),
 			TargetPort: targetSrv.Port(),
+			RefTarget:  refTarget,
+			RefPort:    refSrv.Port(),
 			Rep:        rep,
 			FromRef:    opts.fromRef,
 		}

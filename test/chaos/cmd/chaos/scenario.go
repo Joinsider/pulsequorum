@@ -47,7 +47,11 @@ type Env struct {
 	Target     *fake.Target
 	NtfyPort   int
 	TargetPort int
-	Rep        *harness.Report
+	// RefTarget is a second, always healthy HTTP endpoint for the node
+	// self-checks (SELF_CHECK_TARGETS, ADR 0022).
+	RefTarget *fake.Target
+	RefPort   int
+	Rep       *harness.Report
 	// FromRef is the git ref the old voter image of AS-09 is built from.
 	FromRef string
 
@@ -98,6 +102,11 @@ func (e *Env) NtfyURL(topic string) string {
 // see it.
 func (e *Env) TargetURL(path string) string {
 	return "http://" + net.JoinHostPort(e.Cfg.CallbackHost, strconv.Itoa(e.TargetPort)) + path
+}
+
+// RefURL returns the URL of a path on the reference target as containers see it.
+func (e *Env) RefURL(path string) string {
+	return "http://" + net.JoinHostPort(e.Cfg.CallbackHost, strconv.Itoa(e.RefPort)) + path
 }
 
 // teardown tears down all clusters of the scenario, newest first.

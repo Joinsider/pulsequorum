@@ -253,3 +253,47 @@ func TestParseBuildPolicy(t *testing.T) {
 		t.Errorf("auto = %v, %v", p, err)
 	}
 }
+
+func TestVoterSpecSelfCheckTargets(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SelfCheckTargets = []string{"http://host.containers.internal:18952/healthz", "10.0.0.1:443"}
+	c, _ := newTestCluster(t, "podman", cfg, func([]string) (string, error) { return "", nil })
+	spec := strings.Join(c.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " ")
+	if !strings.Contains(spec, "-e SELF_CHECK_TARGETS=http://host.containers.internal:18952/healthz,10.0.0.1:443") {
+		t.Errorf("run args lack SELF_CHECK_TARGETS: %s", spec)
+	}
+	plain, _ := newTestCluster(t, "podman", DefaultConfig(), func([]string) (string, error) { return "", nil })
+	if strings.Contains(strings.Join(plain.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "SELF_CHECK_TARGETS") {
+		t.Error("self-check env set without targets")
+	}
+}
+
+func TestConfigRejectsBadSelfCheckTargets(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SelfCheckTargets = []string{"a:1,b:2"}
+	if err := cfg.Validate(); err == nil {
+		t.Error("comma inside one target accepted")
+	}
+	cfg.SelfCheckTargets = []string{" "}
+	if err := cfg.Validate(); err == nil {
+		t.Error("blank target accepted")
+	}
+}
+
+func TestVoterSpecAlertBundleWindow(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AlertBundleWindow = "0s"
+	c, _ := newTestCluster(t, "podman", cfg, func([]string) (string, error) { return "", nil })
+	if !strings.Contains(strings.Join(c.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "-e ALERT_BUNDLE_WINDOW=0s") {
+		t.Error("ALERT_BUNDLE_WINDOW not passed")
+	}
+	plain, _ := newTestCluster(t, "podman", DefaultConfig(), func([]string) (string, error) { return "", nil })
+	if strings.Contains(strings.Join(plain.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "ALERT_BUNDLE_WINDOW") {
+		t.Error("bundle window set without a value")
+	}
+	bad := DefaultConfig()
+	bad.AlertBundleWindow = "soon"
+	if err := bad.Validate(); err == nil {
+		t.Error("invalid bundle window accepted")
+	}
+}

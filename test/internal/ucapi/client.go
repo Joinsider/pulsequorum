@@ -76,6 +76,10 @@ type Health struct {
 	NodeName string `json:"nodeName"`
 	Version  string `json:"version"`
 	Commit   string `json:"commit"`
+	// Degraded is true while the voter has known no leader for DEGRADED_AFTER (ADR 0024).
+	Degraded bool `json:"degraded"`
+	// Partition holds the node IDs of this voter and the reachable voters without a leader.
+	Partition []string `json:"partition"`
 }
 
 // User is a local user of the tenant.
@@ -235,6 +239,20 @@ type ClusterNode struct {
 	ReplicationLagMs  *int64   `json:"replicationLagMs"`
 	ReplicationError  string   `json:"replicationError"`
 	MaxCommandVersion int      `json:"maxCommandVersion"`
+	// ConnectivityImpaired is the leader's decision on the node's connectivity (ADR 0022).
+	ConnectivityImpaired bool   `json:"connectivityImpaired"`
+	ConnectivityReason   string `json:"connectivityReason"`
+}
+
+// SystemAlert is one system alert (ADR 0025). Details hold measured values and node IDs only.
+type SystemAlert struct {
+	Kind    string         `json:"kind"`
+	Subject string         `json:"subject"`
+	Active  bool           `json:"active"`
+	Level   int            `json:"level"`
+	Since   time.Time      `json:"since"`
+	Updated time.Time      `json:"updated"`
+	Details map[string]any `json:"details"`
 }
 
 // ClusterNodeList is the answer of GET /admin/nodes.
@@ -542,6 +560,39 @@ func (c *Client) ListClusterNodes(ctx context.Context) (ClusterNodeList, error) 
 	var list ClusterNodeList
 	_, err := c.Do(ctx, http.MethodGet, "/admin/nodes", nil, nil, &list)
 	return list, err
+}
+
+// CreateSystemChannel creates a system notification channel (ADR 0025). The
+// node forces the tenant to _system and adds the event system. Platform admins only.
+func (c *Client) CreateSystemChannel(ctx context.Context, name, shoutrrrURL string, events []string) (NotificationChannel, error) {
+	var ch NotificationChannel
+	body := map[string]any{
+		"name":   name,
+		"kind":   "shoutrrr",
+		"url":    shoutrrrURL,
+		"events": events,
+	}
+	_, err := c.Do(ctx, http.MethodPost, "/admin/system-channels", nil, body, &ch)
+	return ch, err
+}
+
+// TestSystemChannel sends the test message of a system channel synchronously.
+func (c *Client) TestSystemChannel(ctx context.Context, channelID string) (DeliveryResult, error) {
+	var res DeliveryResult
+	_, err := c.Do(ctx, http.MethodPost, "/admin/system-channels/"+url.PathEscape(channelID)+"/test", nil, nil, &res)
+	return res, err
+}
+
+// ListSystemAlerts lists the active system alerts, or with includeCleared
+// also the cleared ones (query active=false).
+func (c *Client) ListSystemAlerts(ctx context.Context, includeCleared bool) ([]SystemAlert, error) {
+	var out []SystemAlert
+	var q url.Values
+	if includeCleared {
+		q = url.Values{"active": {"false"}}
+	}
+	_, err := c.Do(ctx, http.MethodGet, "/admin/system-alerts", q, nil, &out)
+	return out, err
 }
 
 // CreateJoinToken creates a one-time join token for a new node of the given

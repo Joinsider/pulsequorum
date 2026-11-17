@@ -115,6 +115,10 @@ func TestEnvURLs(t *testing.T) {
 	if got := env.TargetURL("/x/y"); got != "http://host.containers.internal:18951/x/y" {
 		t.Errorf("TargetURL = %q", got)
 	}
+	env.RefPort = 18952
+	if got := env.RefURL("/healthz"); got != "http://host.containers.internal:18952/healthz" {
+		t.Errorf("RefURL = %q", got)
+	}
 }
 
 func TestReportLabel(t *testing.T) {

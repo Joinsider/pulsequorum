@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -304,4 +305,107 @@ func (c *Cluster) TimeHTTP(ctx context.Context, from, to int, path string) (time
 		return 0, fmt.Errorf("GET %s from %s: %w", path, c.names.Voter(from), err)
 	}
 	return time.Since(start), nil
+}
+
+// HostIP resolves host (for example host.containers.internal) as seen from the
+// network namespace of voter i, using the sidecar's resolver. The address is
+// the one the voter's own connections to host use.
+func (c *Cluster) HostIP(ctx context.Context, i int, host string) (string, error) {
+	if err := c.checkIndex(i); err != nil {
+		return "", err
+	}
+	if err := c.requireSidecar(ctx, i); err != nil {
+		return "", err
+	}
+	out, err := c.rt.Exec(ctx, c.names.Sidecar(i), "nslookup", host)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s on %s: %w", host, c.names.Voter(i), err)
+	}
+	return parseNslookupAddress(out)
+}
+
+// parseNslookupAddress returns the IPv4 address of the answer section of
+// busybox nslookup output. The resolver's own "Address" line (its server
+// address, with a port) comes before the "Name:" line and is skipped.
+func parseNslookupAddress(out string) (string, error) {
+	inAnswer := false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Name:") {
+			inAnswer = true
+			continue
+		}
+		if !inAnswer || !strings.HasPrefix(line, "Address:") {
+			continue
+		}
+		addr := strings.TrimSpace(strings.TrimPrefix(line, "Address:"))
+		if i := strings.Index(addr, "#"); i >= 0 { // "addr#port" form of some resolvers
+			addr = addr[:i]
+		}
+		if ip := net.ParseIP(addr); ip != nil && ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+	return "", fmt.Errorf("no IPv4 answer in nslookup output %q", strings.TrimSpace(out))
+}
+
+// BlockEgress drops the TCP traffic of voter i to ip on the given ports, in
+// its OUTPUT chain. Other traffic, in particular the cluster traffic between
+// the voters, is not affected. Each call adds one rule per port; UnblockEgress
+// removes them again.
+func (c *Cluster) BlockEgress(ctx context.Context, i int, ip string, ports []int) error {
+	return c.egress(ctx, i, ip, ports, true)
+}
+
+// UnblockEgress removes the rules that BlockEgress installed for the same
+// address and ports.
+func (c *Cluster) UnblockEgress(ctx context.Context, i int, ip string, ports []int) error {
+	return c.egress(ctx, i, ip, ports, false)
+}
+
+func (c *Cluster) egress(ctx context.Context, i int, ip string, ports []int, block bool) error {
+	if err := c.checkIndex(i); err != nil {
+		return err
+	}
+	if err := c.requireSidecar(ctx, i); err != nil {
+		return err
+	}
+	cmds, err := egressCommands(ip, ports, block)
+	if err != nil {
+		return err
+	}
+	verb := "unblock"
+	if block {
+		verb = "block"
+	}
+	for _, args := range cmds {
+		if _, err := c.rt.Exec(ctx, c.names.Sidecar(i), args...); err != nil {
+			return fmt.Errorf("%s egress of %s: %w", verb, c.names.Voter(i), err)
+		}
+	}
+	c.log.Info("egress "+verb+"ed", "node", c.names.Voter(i), "ip", ip, "ports", ports)
+	return nil
+}
+
+// egressCommands returns the iptables calls that add (block) or remove the
+// OUTPUT rules for ip and each port.
+func egressCommands(ip string, ports []int, block bool) ([][]string, error) {
+	if net.ParseIP(ip) == nil {
+		return nil, fmt.Errorf("egress: %q is not an IP address", ip)
+	}
+	if len(ports) == 0 {
+		return nil, errors.New("egress: no ports")
+	}
+	action := "-D"
+	if block {
+		action = "-I"
+	}
+	var out [][]string
+	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			return nil, fmt.Errorf("egress: port %d out of range", p)
+		}
+		out = append(out, []string{"iptables", action, "OUTPUT", "-d", ip, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "DROP"})
+	}
+	return out, nil
 }

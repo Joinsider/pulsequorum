@@ -273,3 +273,76 @@ func assertContainsInOrder(t *testing.T, got, want []string) {
 		t.Errorf("calls = %q\nmissing in order: %q", got, want[i:])
 	}
 }
+
+func TestParseNslookupAddress(t *testing.T) {
+	busybox := "Server:\t\t10.89.0.1\nAddress:\t10.89.0.1:53\n\nName:\thost.containers.internal\nAddress: 192.168.127.254\n"
+	if got, err := parseNslookupAddress(busybox); err != nil || got != "192.168.127.254" {
+		t.Errorf("busybox answer = %q, %v", got, err)
+	}
+	if _, err := parseNslookupAddress("Server:\t10.89.0.1\nAddress:\t10.89.0.1:53\n\n** server can't find x: NXDOMAIN\n"); err == nil {
+		t.Error("answer without Name line accepted")
+	}
+	if _, err := parseNslookupAddress("Name:\tx\nAddress: not-an-ip\n"); err == nil {
+		t.Error("garbage address accepted")
+	}
+}
+
+func TestEgressCommands(t *testing.T) {
+	got, err := egressCommands("10.0.0.9", []int{18951, 18952}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"iptables", "-I", "OUTPUT", "-d", "10.0.0.9", "-p", "tcp", "--dport", "18951", "-j", "DROP"},
+		{"iptables", "-I", "OUTPUT", "-d", "10.0.0.9", "-p", "tcp", "--dport", "18952", "-j", "DROP"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("block commands = %v", got)
+	}
+	un, err := egressCommands("10.0.0.9", []int{18951}, false)
+	if err != nil || un[0][1] != "-D" || un[0][2] != "OUTPUT" {
+		t.Errorf("unblock commands = %v, %v", un, err)
+	}
+	for _, bad := range []struct {
+		ip    string
+		ports []int
+	}{{"nope", []int{1}}, {"10.0.0.9", nil}, {"10.0.0.9", []int{0}}, {"10.0.0.9", []int{70000}}} {
+		if _, err := egressCommands(bad.ip, bad.ports, true); err == nil {
+			t.Errorf("egressCommands(%q, %v) accepted", bad.ip, bad.ports)
+		}
+	}
+}
+
+func TestBlockEgressRunsInSidecarOnly(t *testing.T) {
+	c, sc := clusterWithScript(t, faultHandler)
+	ctx := context.Background()
+	if err := c.BlockEgress(ctx, 2, "10.0.0.9", []int{18951}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UnblockEgress(ctx, 2, "10.0.0.9", []int{18951}); err != nil {
+		t.Fatal(err)
+	}
+	last := sc.calls[len(sc.calls)-1]
+	if !strings.Contains(last, "-D OUTPUT -d 10.0.0.9") {
+		t.Errorf("last call = %q", last)
+	}
+	if err := c.BlockEgress(ctx, 9, "10.0.0.9", []int{1}); err == nil {
+		t.Error("broken index accepted")
+	}
+}
+
+func TestHostIPUsesSidecarResolver(t *testing.T) {
+	c, sc := clusterWithScript(t, func(args []string) (string, error) {
+		if strings.Contains(strings.Join(args, " "), " nslookup ") {
+			return "Server:\t10.89.0.1\nAddress:\t10.89.0.1:53\n\nName:\thost.containers.internal\nAddress: 10.89.0.1\n", nil
+		}
+		return faultHandler(args)
+	})
+	ip, err := c.HostIP(context.Background(), 1, "host.containers.internal")
+	if err != nil || ip != "10.89.0.1" {
+		t.Fatalf("HostIP = %q, %v", ip, err)
+	}
+	if !strings.Contains(sc.calls[len(sc.calls)-1], "nslookup host.containers.internal") {
+		t.Errorf("calls = %v", sc.calls)
+	}
+}

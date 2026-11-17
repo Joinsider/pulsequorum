@@ -145,3 +145,61 @@ func TestNeedsAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemAndHealthFields(t *testing.T) {
+	mux := http.NewServeMux()
+	var gotBody map[string]any
+	mux.HandleFunc("POST /api/v1/auth/login", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"accessToken":"tok-1","expiresAt":"2030-01-01T00:00:00Z"}`))
+	})
+	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok","role":"voter","nodeName":"n1","version":"v","commit":"c",` +
+			`"degraded":true,"partition":["node-a"]}`))
+	})
+	mux.HandleFunc("POST /api/v1/admin/system-channels", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{"id":"ch-1","name":"sys","kind":"shoutrrr","events":["system"]}`))
+	})
+	mux.HandleFunc("GET /api/v1/admin/system-alerts", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("active") == "false" {
+			_, _ = w.Write([]byte(`[{"kind":"node_impaired","subject":"node-b","active":false,"details":{}}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"kind":"node_impaired","subject":"node-b","active":true,"level":0,"details":{"reason":"reference"}}]`))
+	})
+	mux.HandleFunc("POST /api/v1/admin/system-channels/ch-1/test", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"delivered":true,"durationMs":3}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := New(srv.URL, "admin", "pw")
+	ctx := context.Background()
+
+	h, err := c.Health(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Degraded || len(h.Partition) != 1 || h.Partition[0] != "node-a" {
+		t.Errorf("health = %+v, want degraded with partition [node-a]", h)
+	}
+
+	ch, err := c.CreateSystemChannel(ctx, "sys", "ntfy://x/y", []string{"system"})
+	if err != nil || ch.ID != "ch-1" {
+		t.Fatalf("CreateSystemChannel = %+v, %v", ch, err)
+	}
+	if gotBody["kind"] != "shoutrrr" || gotBody["url"] != "ntfy://x/y" {
+		t.Errorf("request body = %v", gotBody)
+	}
+	if res, err := c.TestSystemChannel(ctx, "ch-1"); err != nil || !res.Delivered {
+		t.Errorf("TestSystemChannel = %+v, %v", res, err)
+	}
+
+	active, err := c.ListSystemAlerts(ctx, false)
+	if err != nil || len(active) != 1 || !active[0].Active || active[0].Subject != "node-b" {
+		t.Errorf("active alerts = %+v, %v", active, err)
+	}
+	all, err := c.ListSystemAlerts(ctx, true)
+	if err != nil || len(all) != 1 || all[0].Active {
+		t.Errorf("all alerts = %+v, %v", all, err)
+	}
+}
