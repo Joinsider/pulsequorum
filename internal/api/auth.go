@@ -112,6 +112,8 @@ func authError(err error) error {
 		return unauthorized("invalid username or password")
 	case errors.Is(err, auth.ErrInvalidSession):
 		return unauthorized("session expired, please log in again")
+	case errors.Is(err, auth.ErrTenantSuspended):
+		return &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: "tenant is suspended"}
 	case errors.Is(err, auth.ErrSetupUnavailable):
 		return &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: "setup token is invalid or expired"}
 	case errors.Is(err, auth.ErrWeakPassword):

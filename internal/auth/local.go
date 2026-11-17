@@ -382,7 +382,32 @@ func (l *Local) Login(ctx context.Context, username, password, clientIP string) 
 		return Tokens{}, ErrInvalidCredentials
 	}
 	l.accounts.Succeed(accountKey)
+	if err := l.checkTenant(ctx, u.TenantID); err != nil {
+		return Tokens{}, err
+	}
 	return l.startSession(ctx, u)
+}
+
+// ErrTenantSuspended rejects the users of a suspended tenant (ADR 0029). It
+// wraps ErrForbidden and is answered with 403.
+var ErrTenantSuspended = fmt.Errorf("%w: tenant is suspended", ErrForbidden)
+
+// checkTenant rejects users of a missing, reserved or suspended tenant
+// (ADR 0025, 0029). A missing tenant means the tenant was deleted.
+func (l *Local) checkTenant(ctx context.Context, tenantID string) error {
+	if tenantID == store.SystemTenantID {
+		return ErrUnauthenticated
+	}
+	t, err := l.opts.State.GetTenant(ctx, tenantID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return ErrUnauthenticated
+	case err != nil:
+		return fmt.Errorf("tenant lookup: %w", err)
+	case t.Suspended:
+		return ErrTenantSuspended
+	}
+	return nil
 }
 
 func (l *Local) fail(accountKey, ipKey string, now time.Time) {
@@ -460,6 +485,12 @@ func (l *Local) Refresh(ctx context.Context, refreshToken string) (Tokens, error
 	u, err := l.opts.State.GetUser(ctx, r.TenantID, r.UserID)
 	if err != nil {
 		return Tokens{}, ErrInvalidSession
+	}
+	if err := l.checkTenant(ctx, u.TenantID); err != nil {
+		if errors.Is(err, ErrUnauthenticated) {
+			return Tokens{}, ErrInvalidSession
+		}
+		return Tokens{}, err
 	}
 	access, accessExp, err := l.issue(ctx, u)
 	if err != nil {
@@ -544,6 +575,9 @@ func (l *Local) Authenticate(r *http.Request) (Principal, error) {
 	u, err := l.opts.State.GetUser(r.Context(), c.TenantID, c.Subject)
 	if err != nil || u.Disabled || !ValidRole(Role(u.Role)) {
 		return Principal{}, ErrUnauthenticated
+	}
+	if err := l.checkTenant(r.Context(), u.TenantID); err != nil {
+		return Principal{}, err
 	}
 	return Principal{UserID: u.ID, Username: u.Username, TenantID: u.TenantID, Roles: []Role{Role(u.Role)},
 		ExpiresAt: time.Unix(c.ExpiresAt, 0)}, nil

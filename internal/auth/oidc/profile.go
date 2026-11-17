@@ -114,7 +114,8 @@ func addRole(roles []auth.Role, r auth.Role) []auth.Role {
 
 // Zitadel claim names.
 const (
-	claimResourceOwner = "urn:zitadel:iam:user:resourceowner:id"
+	claimResourceOwner     = "urn:zitadel:iam:user:resourceowner:id"
+	claimResourceOwnerName = "urn:zitadel:iam:user:resourceowner:name"
 )
 
 func zitadelRolesClaim(projectID string) string {
@@ -137,6 +138,17 @@ type Zitadel struct {
 	Multi           bool
 	DefaultTenantID string
 	Tenants         TenantByOrg
+	// Provisioner creates the tenant of an unknown organization on its first
+	// login (FA-TEN-03, ADR 0029). Nil disables automatic provisioning; it is
+	// only used with Multi.
+	Provisioner Provisioner
+}
+
+// Provisioner creates the tenant of an organization (ADR 0029). It returns
+// the tenant ID; if the organization was provisioned concurrently, the ID of
+// that tenant. Errors wrapping auth.ErrForbidden are shown to the caller.
+type Provisioner interface {
+	Provision(ctx context.Context, orgID, orgName string) (string, error)
 }
 
 // Map implements Profile.
@@ -151,27 +163,9 @@ func (z Zitadel) Map(ctx context.Context, claims map[string]json.RawMessage) (Id
 		return Identity{}, fmt.Errorf("%w: the token names no organization; request the scope urn:zitadel:iam:user:resourceowner", auth.ErrForbidden)
 	}
 
-	var tenantID string
-	switch {
-	case org == z.PlatformOrgID && !z.Multi:
-		tenantID = z.DefaultTenantID
-	case !z.Multi:
-		return Identity{}, fmt.Errorf("%w: organization is not admitted", auth.ErrForbidden)
-	default:
-		t, err := z.Tenants.GetTenantByOrg(ctx, org)
-		if errors.Is(err, store.ErrNotFound) {
-			return Identity{}, fmt.Errorf("%w: organization is not provisioned", auth.ErrForbidden)
-		}
-		if err != nil {
-			return Identity{}, fmt.Errorf("%w: tenant lookup: %w", auth.ErrAuthUnavailable, err)
-		}
-		// Defense in depth: the store returns the bound tenant only.
-		if t.ZitadelOrgID != org {
-			return Identity{}, fmt.Errorf("%w: organization is not provisioned", auth.ErrForbidden)
-		}
-		tenantID = t.ID
-	}
-
+	// Roles first: automatic provisioning needs a role granted in the
+	// organization, which only exists after the Zitadel operator granted the
+	// project to it (ADR 0029). A self-registered organization alone gets no tenant.
 	var granted map[string]map[string]json.RawMessage
 	if raw, ok := claims[zitadelRolesClaim(z.ProjectID)]; ok {
 		if err := json.Unmarshal(raw, &granted); err != nil {
@@ -189,9 +183,47 @@ func (z Zitadel) Map(ctx context.Context, claims map[string]json.RawMessage) (Id
 		}
 		roles = addRole(roles, r)
 	}
+
+	var tenantID string
+	switch {
+	case org == z.PlatformOrgID && !z.Multi:
+		tenantID = z.DefaultTenantID
+	case !z.Multi:
+		return Identity{}, fmt.Errorf("%w: organization is not admitted", auth.ErrForbidden)
+	default:
+		t, err := z.Tenants.GetTenantByOrg(ctx, org)
+		switch {
+		case errors.Is(err, store.ErrNotFound) && z.Provisioner != nil && len(roles) > 0:
+			id, perr := z.Provisioner.Provision(ctx, org, orgName(claims))
+			if perr != nil {
+				return Identity{}, perr
+			}
+			tenantID = id
+		case errors.Is(err, store.ErrNotFound):
+			return Identity{}, fmt.Errorf("%w: organization is not provisioned", auth.ErrForbidden)
+		case err != nil:
+			return Identity{}, fmt.Errorf("%w: tenant lookup: %w", auth.ErrAuthUnavailable, err)
+		case t.ZitadelOrgID != org:
+			// Defense in depth: the store returns the bound tenant only.
+			return Identity{}, fmt.Errorf("%w: organization is not provisioned", auth.ErrForbidden)
+		default:
+			tenantID = t.ID
+		}
+	}
+
 	if len(roles) == 0 {
 		return Identity{}, errNoRole
 	}
 	slices.Sort(roles)
 	return Identity{TenantID: tenantID, Roles: roles}, nil
+}
+
+// orgName returns the organization name claim, or "" if it is missing or
+// not a string. The provisioner sanitizes it.
+func orgName(claims map[string]json.RawMessage) string {
+	var name string
+	if raw, ok := claims[claimResourceOwnerName]; ok {
+		_ = json.Unmarshal(raw, &name)
+	}
+	return name
 }
