@@ -177,7 +177,7 @@ Gemessen mit Zitadel v4.20.3 und Login V2 (Umgebung unter `deploy/oidc-dev/zitad
 
 ## 6. PocketID
 
-> **Wird gerade gegen eine echte Instanz geprüft.**
+Am 2026-11-17 Ende zu Ende gegen eine öffentlich erreichbare PocketID-Instanz geprüft: Passkey-Anmeldung in der SPA, Rollen aus `/userinfo`, Anzeigename, mehrere Reloads ohne erneute Anmeldung, Browser-Speicher ohne Tokens und Profildaten, 401 ohne Token und für opake Tokens.
 
 PocketID ist ein schlanker, selbst hostbarer Anbieter mit Passkeys. Die Angaben beruhen auf dem Quelltext von PocketID v2.19.3 (Fork `pocket-id/fosite` v1.4.3):
 
@@ -196,23 +196,23 @@ OIDC_AUDIENCE=<Client-ID>
 OIDC_CLIENT_IDS=<Client-ID>
 OIDC_ROLES_SOURCE=userinfo
 OIDC_ROLES_CLAIM=groups
-OIDC_SCOPES="openid profile groups offline_access"
-OIDC_ROLE_MAP=uptimecluster-admins=tenant-admin,uptimecluster-viewers=tenant-viewer
+OIDC_SCOPES="openid profile email groups offline_access"
+OIDC_ROLE_MAP=uptimecluster_admins=tenant-admin,uptimecluster_editors=tenant-editor,uptimecluster_viewers=tenant-viewer
 ```
 
 - `OIDC_ISSUER` ist die `APP_URL` von PocketID ohne abschließendes `/`. Der Wert muss exakt dem `issuer` der Discovery entsprechen.
 - `OIDC_AUDIENCE` und `OIDC_CLIENT_IDS` sind die Client-ID. Der Claim `aud` enthält sie, und `client_id` ist der Claim, den der Cluster prüft.
 - `OIDC_SCOPES`: Der Scope `groups` ist für den Rollen-Claim nötig. `offline_access` ist laut Quelltext für Refresh-Tokens nicht zwingend, wenn der Client den Refresh-Grant erlaubt. Er schadet nicht und entspricht dem Standard, daher bleibt er in der Liste.
-- `OIDC_ROLE_MAP` ist ein Beispiel. Gruppennamen und Rollen wählt man selbst. Die Gruppen-Namen müssen genau so in PocketID stehen.
+- `OIDC_ROLE_MAP` ist ein Beispiel. Gruppennamen und Rollen wählt man selbst, die Zuordnung steht nur in dieser Variable. Maßgeblich ist das Feld **Name** der Gruppe in PocketID, nicht der Anzeigename, und zwar Zeichen für Zeichen (`uptimecluster_admins` ist nicht `uptimecluster-admins`). Ist ein Nutzer in mehreren zugeordneten Gruppen, bekommt er alle Rollen. Passt keine Gruppe, antwortet der Cluster mit 403 und schreibt „the token grants no role for this application“ ins Log.
 
 ### Einrichtung in PocketID
 
-1. **Gruppen anlegen**, zum Beispiel `uptimecluster-admins` und `uptimecluster-viewers`, und die Nutzer zuweisen.
+1. **Gruppen anlegen**, zum Beispiel `uptimecluster_admins`, `uptimecluster_editors` und `uptimecluster_viewers`, und die Nutzer zuweisen.
 2. **OIDC-Client anlegen:**
    - **Public Client** aktivieren. PKCE wird automatisch verlangt. PocketID akzeptiert zusätzlich `plain`, die SPA sendet aber immer `S256`.
    - **Callback-URL:** `https://<host>/auth/callback`
    - **Logout-Callback-URL:** `https://<host>/login`
-   - **Access-Token-Laufzeit:** 15 min. Der Standard von PocketID ist 60 min, und der Cluster lehnt Tokens über `OIDC_MAX_TOKEN_TTL` (1 h) ab, deshalb ist der Wert anzupassen.
+   - **Access-Token-Laufzeit:** 15 min empfohlen. Der Standard von PocketID ist 60 min. Solche Tokens haben `exp - iat = 3601 s`; der Cluster akzeptiert sie mit `OIDC_MAX_TOKEN_TTL=1h`, weil für die Laufzeit dieselbe Toleranz von 30 s gilt wie für `iat` und `nbf`. Kürzere Tokens verkürzen aber die Zeit, in der entzogene Gruppen noch wirken.
    - **Allowed user groups:** auf die Gruppen beschränken, die Zugang haben sollen. Nur Mitglieder dieser Gruppen bekommen ein Token. Das ist die Zugangskontrolle, wenn `OIDC_DEFAULT_ROLE` gesetzt ist (siehe Abschnitt 4).
    - Die Client-ID notieren. Sie geht in `OIDC_AUDIENCE` und `OIDC_CLIENT_IDS`.
 3. **`INTERNAL_APP_URL` nicht setzen** oder auf eine Adresse, die sowohl die Voter als auch der Browser erreichen. PocketID schreibt diesen Wert in die Discovery-Daten, in `jwks_uri` und `token_endpoint`. Zeigt er auf eine Adresse, die nur intern gilt, kann der Browser den Token-Endpunkt nicht erreichen, und die Voter scheitern beim Abruf der Schlüssel.
@@ -222,6 +222,13 @@ OIDC_ROLE_MAP=uptimecluster-admins=tenant-admin,uptimecluster-viewers=tenant-vie
 
 - **CORS:** PocketID antwortet auf Token-, Userinfo- und JWKS-Endpunkt mit `Access-Control-Allow-Origin: *`. Ein CORS-Eintrag im IdP ist deshalb nicht nötig.
 - **Anmeldung:** Nutzer melden sich bei PocketID mit Passkeys an. Für Einrichtung und Wiederherstellung gibt es Einmal-Links.
+
+### Befunde aus dem Test mit PocketID
+
+- **Laufzeit 3601 s:** Tokens mit der Standardlaufzeit wurden zunächst abgelehnt („lifetime 3601s exceeds the maximum 1h0m0s“). Behoben durch die Toleranz bei der Laufzeitprüfung.
+- **Reload:** Nach einem erfolgreichen stillen Login (`prompt=none`) war der zweite Reload im selben Tab wieder auf der Login-Seite. Behoben: Jede erfolgreiche Anmeldung erlaubt den nächsten stillen Login wieder; ein fehlgeschlagener sperrt ihn weiter für den Tab.
+- **Gruppen-Namen:** Ein Tippfehler zwischen `-` und `_` führt zu 403. Das ist erwartet, siehe `OIDC_ROLE_MAP` oben.
+- **Stiller Login:** PocketID beachtet `prompt=none`. Mit bestehender PocketID-Sitzung erscheint nach dem Reload weder die Login-Seite noch eine Passkey-Abfrage.
 
 ## 7. Beispiele für andere Anbieter
 
@@ -342,7 +349,7 @@ Die Begründung für `401` steht nicht in der Antwort, sondern im Log. Der Voter
 
 ## 10. Tests gegen echte Anbieter
 
-Für die manuelle Ende-zu-Ende-Prüfung gegen lokale Instanzen gibt es Umgebungen unter `deploy/oidc-dev/`: Keycloak 26.8.2 und Zitadel v4.20.3. Anleitung, Testnutzer, Clients und Start der Container stehen in [deploy/oidc-dev/README.md](../../deploy/oidc-dev/README.md).
+Für die manuelle Ende-zu-Ende-Prüfung gegen lokale Instanzen gibt es Umgebungen unter `deploy/oidc-dev/`: Keycloak 26.8.2 und Zitadel v4.20.3. PocketID wurde gegen eine bestehende Instanz geprüft (Abschnitt 6), weil Passkeys eine echte Domain mit HTTPS brauchen. Anleitung, Testnutzer, Clients und Start der Container stehen in [deploy/oidc-dev/README.md](../../deploy/oidc-dev/README.md).
 
 ## Verwandte Dokumente
 
