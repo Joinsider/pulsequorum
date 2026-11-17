@@ -73,6 +73,23 @@ type FSM struct {
 	changes chan struct{}
 	// observer receives the StateEvents of committed transactions (see OnStateChange).
 	observer atomic.Pointer[func(StateEvent)]
+	// checkpoint is the last fingerprint this FSM computed; it is not replicated (ADR 0025).
+	checkpointMu sync.Mutex
+	checkpoint   checkpointRecord
+}
+
+// checkpointRecord is the fingerprint of the state at the log index of a checkpoint.
+type checkpointRecord struct {
+	index       uint64
+	fingerprint string
+}
+
+// LastCheckpoint returns the log index and the fingerprint of the last
+// checkpoint this FSM applied since it started, or 0 and "" if none (ADR 0025).
+func (f *FSM) LastCheckpoint() (index uint64, fingerprint string) {
+	f.checkpointMu.Lock()
+	defer f.checkpointMu.Unlock()
+	return f.checkpoint.index, f.checkpoint.fingerprint
 }
 
 var _ raft.FSM = (*FSM)(nil)
@@ -146,8 +163,10 @@ func (f *FSM) Apply(l *raft.Log) any {
 
 	var res ApplyResult
 	var collected stateEventCollector
+	var checkpoint *checkpointRecord
 	err := f.state.Update(ctx, func(tx store.StateTx) error {
 		collected.events = nil
+		checkpoint = nil
 		txCtx := withStateEvents(ctx, &collected)
 		if id := cmd.GetRequestId(); id != "" {
 			e, err := tx.GetDedup(ctx, id)
@@ -167,7 +186,19 @@ func (f *FSM) Apply(l *raft.Log) any {
 			return err
 		}
 		res = ApplyResult{Index: l.Index, Result: result}
-		return f.finish(ctx, tx, l.Index, &cmd, store.DedupEntry{Result: result})
+		if err := f.finish(ctx, tx, l.Index, &cmd, store.DedupEntry{Result: result}); err != nil {
+			return err
+		}
+		// A checkpoint takes the fingerprint after the last write of the command
+		// (ADR 0025); it is kept only once the transaction has committed.
+		if cmd.GetCheckpoint() != nil {
+			fp, err := tx.Fingerprint(ctx)
+			if err != nil {
+				return fmt.Errorf("fingerprint at index %d: %w", l.Index, err)
+			}
+			checkpoint = &checkpointRecord{index: l.Index, fingerprint: fp}
+		}
+		return nil
 	})
 
 	var cmdErr *CommandError
@@ -181,6 +212,11 @@ func (f *FSM) Apply(l *raft.Log) any {
 		return ApplyResult{Index: l.Index, Err: f.Healthy()}
 	}
 	f.applied.Store(l.Index)
+	if checkpoint != nil {
+		f.checkpointMu.Lock()
+		f.checkpoint = *checkpoint
+		f.checkpointMu.Unlock()
+	}
 	if !res.Duplicate {
 		f.notify()
 		f.emit(collected.events)
@@ -268,6 +304,12 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyResolveUnconfirmedAlerts(ctx, tx, cmd, p.ResolveUnconfirmedAlerts)
 	case *pb.Command_RecordMonitorHistory:
 		return applyRecordMonitorHistory(ctx, tx, cmd, p.RecordMonitorHistory)
+	case *pb.Command_SetSystemAlert:
+		return applySetSystemAlert(ctx, tx, cmd, p.SetSystemAlert)
+	case *pb.Command_RecordIncarnation:
+		return applyRecordIncarnation(ctx, tx, cmd, p.RecordIncarnation)
+	case *pb.Command_Checkpoint:
+		return applyCheckpoint(ctx, tx)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -348,11 +390,11 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("channel document: %v", err)
 		}
-		extended, err := flappingEnabled(ctx, tx)
+		level, err := currentCommandLevel(ctx, tx)
 		if err != nil {
 			return nil, err
 		}
-		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, extended)
+		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, level)
 		if err != nil {
 			return nil, err
 		}

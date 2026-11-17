@@ -5,6 +5,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +160,9 @@ func (t *stateTx) SetChannelState(ctx context.Context, tenantID, id, state, last
 
 func (t *stateTx) EnqueueAlert(ctx context.Context, a store.AlertDelivery) error {
 	return mapErr(t.q.InsertAlert(ctx, statedb.InsertAlertParams{
-		TenantID: a.TenantID, AlertKey: a.AlertKey, ChannelID: a.ChannelID, MonitorID: a.MonitorID,
+		TenantID: a.TenantID, AlertKey: a.AlertKey, ChannelID: a.ChannelID,
+		// A system alert has no monitor: NULL, so the monitor foreign key is not checked (ADR 0025).
+		MonitorID:   sql.NullString{String: a.MonitorID, Valid: a.MonitorID != ""},
 		PayloadJson: string(a.Payload), NextAttemptMs: a.NextAttemptMs, CreatedMs: a.CreatedMs, UpdatedMs: a.UpdatedMs,
 	}))
 }
@@ -213,7 +216,7 @@ func channelFromRow(r statedb.NotificationChannel) (store.NotificationChannel, e
 
 func alertFromRow(r statedb.AlertOutbox) store.AlertDelivery {
 	return store.AlertDelivery{
-		TenantID: r.TenantID, AlertKey: r.AlertKey, ChannelID: r.ChannelID, MonitorID: r.MonitorID,
+		TenantID: r.TenantID, AlertKey: r.AlertKey, ChannelID: r.ChannelID, MonitorID: r.MonitorID.String,
 		Payload: json.RawMessage(r.PayloadJson), Attempts: int(r.Attempts), NextAttemptMs: r.NextAttemptMs,
 		State: r.State, LastError: r.LastError, CreatedMs: r.CreatedMs, UpdatedMs: r.UpdatedMs,
 	}

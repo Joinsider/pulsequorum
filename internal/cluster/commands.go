@@ -23,8 +23,9 @@ import (
 // It is raised together with a feature gate (FA-CLU-12). Version 2 adds
 // RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022),
 // version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023),
-// version 5 the degraded-mode commands and the sender view of alerts (ADR 0024).
-const CommandVersion = 5
+// version 5 the degraded-mode commands and the sender view of alerts (ADR 0024),
+// version 6 the system alerts, incarnation records and checkpoints (ADR 0025).
+const CommandVersion = 6
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this
@@ -182,6 +183,9 @@ type AlertPayload struct {
 	// Verdict is "confirmed" or "false_alarm" for a correction of an alert sent
 	// while the cluster was degraded (FA-ALR-10, ADR 0024).
 	Verdict string `json:"verdict,omitempty"`
+	// System describes a system alert, Event "system" (FA-OBS-01, ADR 0025).
+	// Such an alert has no monitor and goes to the system tenant only.
+	System *SystemAlertInfo `json:"system,omitempty"`
 }
 
 // AlertSender describes which part of the cluster the sending node saw when it

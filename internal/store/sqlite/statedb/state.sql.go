@@ -573,6 +573,30 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (RefreshSess
 	return i, err
 }
 
+const getSystemAlert = `-- name: GetSystemAlert :one
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts WHERE kind = ? AND subject = ?
+`
+
+type GetSystemAlertParams struct {
+	Kind    string
+	Subject string
+}
+
+func (q *Queries) GetSystemAlert(ctx context.Context, arg GetSystemAlertParams) (SystemAlert, error) {
+	row := q.db.QueryRowContext(ctx, getSystemAlert, arg.Kind, arg.Subject)
+	var i SystemAlert
+	err := row.Scan(
+		&i.Kind,
+		&i.Subject,
+		&i.Active,
+		&i.Level,
+		&i.SinceMs,
+		&i.UpdatedMs,
+		&i.DetailsJson,
+	)
+	return i, err
+}
+
 const getTenant = `-- name: GetTenant :one
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -694,7 +718,7 @@ type InsertAlertParams struct {
 	TenantID      string
 	AlertKey      string
 	ChannelID     string
-	MonitorID     string
+	MonitorID     sql.NullString
 	PayloadJson   string
 	NextAttemptMs int64
 	CreatedMs     int64
@@ -1095,6 +1119,41 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
 		arg.LastLoginMs,
 	)
 	return err
+}
+
+const listActiveSystemAlerts = `-- name: ListActiveSystemAlerts :many
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts WHERE active = 1 ORDER BY kind, subject
+`
+
+func (q *Queries) ListActiveSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSystemAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SystemAlert{}
+	for rows.Next() {
+		var i SystemAlert
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Subject,
+			&i.Active,
+			&i.Level,
+			&i.SinceMs,
+			&i.UpdatedMs,
+			&i.DetailsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAllMaintenanceWindows = `-- name: ListAllMaintenanceWindows :many
@@ -1531,6 +1590,33 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 	return items, nil
 }
 
+const listNodeIncarnations = `-- name: ListNodeIncarnations :many
+SELECT node_id, incarnation, seen_ms FROM node_incarnations ORDER BY node_id
+`
+
+func (q *Queries) ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error) {
+	rows, err := q.db.QueryContext(ctx, listNodeIncarnations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NodeIncarnation{}
+	for rows.Next() {
+		var i NodeIncarnation
+		if err := rows.Scan(&i.NodeID, &i.Incarnation, &i.SeenMs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNodes = `-- name: ListNodes :many
 SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms FROM nodes ORDER BY id
 `
@@ -1731,6 +1817,41 @@ func (q *Queries) ListSigningKeys(ctx context.Context) ([]SigningKey, error) {
 			&i.PrivateKeyEnc,
 			&i.CreatedMs,
 			&i.RetiredMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSystemAlerts = `-- name: ListSystemAlerts :many
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts ORDER BY kind, subject
+`
+
+func (q *Queries) ListSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listSystemAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SystemAlert{}
+	for rows.Next() {
+		var i SystemAlert
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Subject,
+			&i.Active,
+			&i.Level,
+			&i.SinceMs,
+			&i.UpdatedMs,
+			&i.DetailsJson,
 		); err != nil {
 			return nil, err
 		}
@@ -2674,6 +2795,22 @@ func (q *Queries) UpsertMonitorState(ctx context.Context, arg UpsertMonitorState
 	return err
 }
 
+const upsertNodeIncarnation = `-- name: UpsertNodeIncarnation :exec
+INSERT INTO node_incarnations (node_id, incarnation, seen_ms) VALUES (?, ?, ?)
+ON CONFLICT (node_id) DO UPDATE SET incarnation = excluded.incarnation, seen_ms = excluded.seen_ms
+`
+
+type UpsertNodeIncarnationParams struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
+}
+
+func (q *Queries) UpsertNodeIncarnation(ctx context.Context, arg UpsertNodeIncarnationParams) error {
+	_, err := q.db.ExecContext(ctx, upsertNodeIncarnation, arg.NodeID, arg.Incarnation, arg.SeenMs)
+	return err
+}
+
 const upsertSecretKey = `-- name: UpsertSecretKey :exec
 INSERT INTO secret_keys (key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms)
 VALUES (?, ?, ?, ?, ?)
@@ -2754,6 +2891,40 @@ func (q *Queries) UpsertStatusHistory(ctx context.Context, arg UpsertStatusHisto
 		arg.MonitorID,
 		arg.SinceMs,
 		arg.Status,
+	)
+	return err
+}
+
+const upsertSystemAlert = `-- name: UpsertSystemAlert :exec
+INSERT INTO system_alerts (kind, subject, active, level, since_ms, updated_ms, details_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (kind, subject) DO UPDATE SET
+    active = excluded.active,
+    level = excluded.level,
+    since_ms = excluded.since_ms,
+    updated_ms = excluded.updated_ms,
+    details_json = excluded.details_json
+`
+
+type UpsertSystemAlertParams struct {
+	Kind        string
+	Subject     string
+	Active      int64
+	Level       int64
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJson string
+}
+
+func (q *Queries) UpsertSystemAlert(ctx context.Context, arg UpsertSystemAlertParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSystemAlert,
+		arg.Kind,
+		arg.Subject,
+		arg.Active,
+		arg.Level,
+		arg.SinceMs,
+		arg.UpdatedMs,
+		arg.DetailsJson,
 	)
 	return err
 }

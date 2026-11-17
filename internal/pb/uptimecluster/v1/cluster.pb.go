@@ -471,8 +471,25 @@ type GetStatusResponse struct {
 	SelfCheckFailed bool `protobuf:"varint,11,opt,name=self_check_failed,json=selfCheckFailed,proto3" json:"self_check_failed,omitempty"`
 	// Wall clock of the last self-check in Unix milliseconds, 0 if none ran yet (ADR 0022).
 	SelfCheckAtMs int64 `protobuf:"varint,12,opt,name=self_check_at_ms,json=selfCheckAtMs,proto3" json:"self_check_at_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Incarnation of the node from metrics.db (ADR 0025). Nodes older than ADR 0025
+	// do not send the fields 13 to 20; they then read as no signal.
+	Incarnation string `protobuf:"bytes,13,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	// Share of free bytes in the data directory, 0 to 1 (ADR 0025).
+	DiskFreeRatio float64 `protobuf:"fixed64,14,opt,name=disk_free_ratio,json=diskFreeRatio,proto3" json:"disk_free_ratio,omitempty"`
+	// Size of the WAL files of state.db and metrics.db in bytes (ADR 0025).
+	StateWalBytes   int64 `protobuf:"varint,15,opt,name=state_wal_bytes,json=stateWalBytes,proto3" json:"state_wal_bytes,omitempty"`
+	MetricsWalBytes int64 `protobuf:"varint,16,opt,name=metrics_wal_bytes,json=metricsWalBytes,proto3" json:"metrics_wal_bytes,omitempty"`
+	// Expiry of the node's own certificate in Unix milliseconds (ADR 0025).
+	CertNotAfterMs int64 `protobuf:"varint,17,opt,name=cert_not_after_ms,json=certNotAfterMs,proto3" json:"cert_not_after_ms,omitempty"`
+	// Largest replication lag to a connected peer in milliseconds; -1 if the
+	// node never caught up with a peer (ADR 0025).
+	ReplicationLagMs int64 `protobuf:"varint,18,opt,name=replication_lag_ms,json=replicationLagMs,proto3" json:"replication_lag_ms,omitempty"`
+	// Index and fingerprint of the last FSM checkpoint applied by the node; 0 and
+	// empty if none ran yet (ADR 0025).
+	FingerprintIndex uint64 `protobuf:"varint,19,opt,name=fingerprint_index,json=fingerprintIndex,proto3" json:"fingerprint_index,omitempty"`
+	Fingerprint      string `protobuf:"bytes,20,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -587,6 +604,62 @@ func (x *GetStatusResponse) GetSelfCheckAtMs() int64 {
 		return x.SelfCheckAtMs
 	}
 	return 0
+}
+
+func (x *GetStatusResponse) GetIncarnation() string {
+	if x != nil {
+		return x.Incarnation
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetDiskFreeRatio() float64 {
+	if x != nil {
+		return x.DiskFreeRatio
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetStateWalBytes() int64 {
+	if x != nil {
+		return x.StateWalBytes
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetMetricsWalBytes() int64 {
+	if x != nil {
+		return x.MetricsWalBytes
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetCertNotAfterMs() int64 {
+	if x != nil {
+		return x.CertNotAfterMs
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetReplicationLagMs() int64 {
+	if x != nil {
+		return x.ReplicationLagMs
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetFingerprintIndex() uint64 {
+	if x != nil {
+		return x.FingerprintIndex
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetFingerprint() string {
+	if x != nil {
+		return x.Fingerprint
+	}
+	return ""
 }
 
 type RemoveNodeRequest struct {
@@ -747,7 +820,7 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10GetStatusRequest\"\xdb\x03\n" +
+	"\x10GetStatusRequest\"\xa1\x06\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -762,7 +835,15 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x15self_check_configured\x18\n" +
 	" \x01(\bR\x13selfCheckConfigured\x12*\n" +
 	"\x11self_check_failed\x18\v \x01(\bR\x0fselfCheckFailed\x12'\n" +
-	"\x10self_check_at_ms\x18\f \x01(\x03R\rselfCheckAtMs\"O\n" +
+	"\x10self_check_at_ms\x18\f \x01(\x03R\rselfCheckAtMs\x12 \n" +
+	"\vincarnation\x18\r \x01(\tR\vincarnation\x12&\n" +
+	"\x0fdisk_free_ratio\x18\x0e \x01(\x01R\rdiskFreeRatio\x12&\n" +
+	"\x0fstate_wal_bytes\x18\x0f \x01(\x03R\rstateWalBytes\x12*\n" +
+	"\x11metrics_wal_bytes\x18\x10 \x01(\x03R\x0fmetricsWalBytes\x12)\n" +
+	"\x11cert_not_after_ms\x18\x11 \x01(\x03R\x0ecertNotAfterMs\x12,\n" +
+	"\x12replication_lag_ms\x18\x12 \x01(\x03R\x10replicationLagMs\x12+\n" +
+	"\x11fingerprint_index\x18\x13 \x01(\x04R\x10fingerprintIndex\x12 \n" +
+	"\vfingerprint\x18\x14 \x01(\tR\vfingerprint\"O\n" +
 	"\x11RemoveNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
 	"\frequested_by\x18\x02 \x01(\tR\vrequestedBy\"\x93\x01\n" +

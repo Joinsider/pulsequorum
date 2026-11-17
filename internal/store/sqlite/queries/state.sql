@@ -513,3 +513,29 @@ WHERE node_id = sqlc.arg(node_id) AND local_id = sqlc.arg(local_id) AND verdict 
 SELECT * FROM unconfirmed_alerts WHERE verdict = ''
 ORDER BY since_ms, node_id, local_id
 LIMIT sqlc.arg(row_limit);
+
+-- name: GetSystemAlert :one
+SELECT * FROM system_alerts WHERE kind = ? AND subject = ?;
+
+-- name: UpsertSystemAlert :exec
+INSERT INTO system_alerts (kind, subject, active, level, since_ms, updated_ms, details_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (kind, subject) DO UPDATE SET
+    active = excluded.active,
+    level = excluded.level,
+    since_ms = excluded.since_ms,
+    updated_ms = excluded.updated_ms,
+    details_json = excluded.details_json;
+
+-- name: ListSystemAlerts :many
+SELECT * FROM system_alerts ORDER BY kind, subject;
+
+-- name: ListActiveSystemAlerts :many
+SELECT * FROM system_alerts WHERE active = 1 ORDER BY kind, subject;
+
+-- name: UpsertNodeIncarnation :exec
+INSERT INTO node_incarnations (node_id, incarnation, seen_ms) VALUES (?, ?, ?)
+ON CONFLICT (node_id) DO UPDATE SET incarnation = excluded.incarnation, seen_ms = excluded.seen_ms;
+
+-- name: ListNodeIncarnations :many
+SELECT * FROM node_incarnations ORDER BY node_id;

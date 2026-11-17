@@ -12,7 +12,7 @@ type AlertOutbox struct {
 	TenantID      string
 	AlertKey      string
 	ChannelID     string
-	MonitorID     string
+	MonitorID     sql.NullString
 	PayloadJson   string
 	Attempts      int64
 	NextAttemptMs int64
@@ -140,6 +140,12 @@ type Node struct {
 	ConnectivityChangedMs int64
 }
 
+type NodeIncarnation struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
+}
+
 type NotificationChannel struct {
 	TenantID           string
 	ID                 string
@@ -205,6 +211,16 @@ type SigningKey struct {
 	PrivateKeyEnc string
 	CreatedMs     int64
 	RetiredMs     int64
+}
+
+type SystemAlert struct {
+	Kind        string
+	Subject     string
+	Active      int64
+	Level       int64
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJson string
 }
 
 type Tenant struct {

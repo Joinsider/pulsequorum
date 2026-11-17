@@ -49,6 +49,8 @@ var fingerprintTables = []struct{ name, orderBy string }{
 	{"revoked_nodes", "node_id"},
 	{"nodes", "id"},
 	{"unconfirmed_alerts", "node_id, local_id"},
+	{"system_alerts", "kind, subject"},
+	{"node_incarnations", "node_id"},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.
@@ -210,7 +212,13 @@ func (s *StateStore) Fingerprint(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("fingerprint: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	return fingerprint(ctx, tx)
+}
 
+// fingerprint hashes the replicated state as seen inside tx. StateStore calls
+// it on a read transaction, StateTx on the write transaction of a command, so
+// both compute the same value for the same state (ADR 0025).
+func fingerprint(ctx context.Context, tx *sql.Tx) (string, error) {
 	h := sha256.New()
 	for _, t := range fingerprintTables {
 		if err := hashTable(ctx, tx, h, t.name, t.orderBy); err != nil {

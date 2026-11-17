@@ -190,9 +190,10 @@ func applyAckAlertDelivery(ctx context.Context, tx store.StateTx, cmd *pb.Comman
 
 // channelFromDocument validates a channel document; secrets must be encrypted.
 //
-// extended admits the events of command level 4 (ADR 0023); below that level
-// they are unknown, as before.
-func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64, extended bool) (store.NotificationChannel, error) {
+// level is the effective command level. It admits the events of later levels:
+// flapping and channel_failed from level 4 (ADR 0023), system from level 6 and
+// only for the system tenant (ADR 0025). Below these levels the events are unknown.
+func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64, level uint32) (store.NotificationChannel, error) {
 	switch {
 	case tenantID == "":
 		return store.NotificationChannel{}, invalid("channel command without tenant")
@@ -210,7 +211,11 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 		switch e {
 		case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
 		case store.EventFlapping, store.EventChannelFailed:
-			if !extended {
+			if level < FlappingCommandLevel {
+				return store.NotificationChannel{}, invalid("event %q", e)
+			}
+		case store.EventSystem:
+			if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
 				return store.NotificationChannel{}, invalid("event %q", e)
 			}
 		default:

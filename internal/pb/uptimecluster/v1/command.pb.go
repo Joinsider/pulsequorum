@@ -235,6 +235,9 @@ type Command struct {
 	//	*Command_ReportDegradedAlerts
 	//	*Command_ResolveUnconfirmedAlerts
 	//	*Command_RecordMonitorHistory
+	//	*Command_SetSystemAlert
+	//	*Command_RecordIncarnation
+	//	*Command_Checkpoint
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -483,6 +486,33 @@ func (x *Command) GetRecordMonitorHistory() *RecordMonitorHistory {
 	return nil
 }
 
+func (x *Command) GetSetSystemAlert() *SetSystemAlert {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_SetSystemAlert); ok {
+			return x.SetSystemAlert
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRecordIncarnation() *RecordIncarnation {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RecordIncarnation); ok {
+			return x.RecordIncarnation
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetCheckpoint() *Checkpoint {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_Checkpoint); ok {
+			return x.Checkpoint
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -563,6 +593,18 @@ type Command_RecordMonitorHistory struct {
 	RecordMonitorHistory *RecordMonitorHistory `protobuf:"bytes,30,opt,name=record_monitor_history,json=recordMonitorHistory,proto3,oneof"`
 }
 
+type Command_SetSystemAlert struct {
+	SetSystemAlert *SetSystemAlert `protobuf:"bytes,31,opt,name=set_system_alert,json=setSystemAlert,proto3,oneof"`
+}
+
+type Command_RecordIncarnation struct {
+	RecordIncarnation *RecordIncarnation `protobuf:"bytes,32,opt,name=record_incarnation,json=recordIncarnation,proto3,oneof"`
+}
+
+type Command_Checkpoint struct {
+	Checkpoint *Checkpoint `protobuf:"bytes,33,opt,name=checkpoint,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -600,6 +642,12 @@ func (*Command_ReportDegradedAlerts) isCommand_Payload() {}
 func (*Command_ResolveUnconfirmedAlerts) isCommand_Payload() {}
 
 func (*Command_RecordMonitorHistory) isCommand_Payload() {}
+
+func (*Command_SetSystemAlert) isCommand_Payload() {}
+
+func (*Command_RecordIncarnation) isCommand_Payload() {}
+
+func (*Command_Checkpoint) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -2351,11 +2399,189 @@ func (x *HistoryEntry) GetErrorClass() string {
 	return ""
 }
 
+// SetSystemAlert records a change of a system alert (FA-OBS-01, ADR 0025). Only
+// the leader proposes it, and only on a change. The FSM stores the alert and
+// enqueues it for the channels of the system tenant that subscribe to "system".
+// details_json is a JSON object with measured values and node IDs only.
+type SetSystemAlert struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Kind of the alert, e.g. "replication_lag" (ADR 0025, section 3).
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Subject of the alert: a node ID, a certificate name or "cluster".
+	Subject string `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	// true when the alert starts or continues, false when it clears.
+	Active bool `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
+	// Level of the alert, e.g. the expiry stage of a certificate; 0 if unused.
+	Level int32 `protobuf:"varint,4,opt,name=level,proto3" json:"level,omitempty"`
+	// JSON object with the details; empty means "{}".
+	DetailsJson   []byte `protobuf:"bytes,5,opt,name=details_json,json=detailsJson,proto3" json:"details_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSystemAlert) Reset() {
+	*x = SetSystemAlert{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSystemAlert) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSystemAlert) ProtoMessage() {}
+
+func (x *SetSystemAlert) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSystemAlert.ProtoReflect.Descriptor instead.
+func (*SetSystemAlert) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *SetSystemAlert) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SetSystemAlert) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *SetSystemAlert) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *SetSystemAlert) GetLevel() int32 {
+	if x != nil {
+		return x.Level
+	}
+	return 0
+}
+
+func (x *SetSystemAlert) GetDetailsJson() []byte {
+	if x != nil {
+		return x.DetailsJson
+	}
+	return nil
+}
+
+// RecordIncarnation stores the incarnation a node reported (FA-REP-06, ADR 0025).
+// It is the last known incarnation of the node; a change is detected by the leader.
+type RecordIncarnation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Incarnation   string                 `protobuf:"bytes,2,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordIncarnation) Reset() {
+	*x = RecordIncarnation{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordIncarnation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordIncarnation) ProtoMessage() {}
+
+func (x *RecordIncarnation) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordIncarnation.ProtoReflect.Descriptor instead.
+func (*RecordIncarnation) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RecordIncarnation) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *RecordIncarnation) GetIncarnation() string {
+	if x != nil {
+		return x.Incarnation
+	}
+	return ""
+}
+
+// Checkpoint asks every replica to compute the fingerprint of its state at this
+// log index (FA-CLU-07, ADR 0025). It changes no replicated data; each replica
+// keeps the result in memory only.
+type Checkpoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Checkpoint) Reset() {
+	*x = Checkpoint{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Checkpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Checkpoint) ProtoMessage() {}
+
+func (x *Checkpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Checkpoint.ProtoReflect.Descriptor instead.
+func (*Checkpoint) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{28}
+}
+
 var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xcd\r\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xb1\x0f\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -2385,7 +2611,12 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x16clear_monitor_flapping\x18\x1b \x01(\v2&.uptimecluster.v1.ClearMonitorFlappingH\x00R\x14clearMonitorFlapping\x12^\n" +
 	"\x16report_degraded_alerts\x18\x1c \x01(\v2&.uptimecluster.v1.ReportDegradedAlertsH\x00R\x14reportDegradedAlerts\x12j\n" +
 	"\x1aresolve_unconfirmed_alerts\x18\x1d \x01(\v2*.uptimecluster.v1.ResolveUnconfirmedAlertsH\x00R\x18resolveUnconfirmedAlerts\x12^\n" +
-	"\x16record_monitor_history\x18\x1e \x01(\v2&.uptimecluster.v1.RecordMonitorHistoryH\x00R\x14recordMonitorHistoryB\t\n" +
+	"\x16record_monitor_history\x18\x1e \x01(\v2&.uptimecluster.v1.RecordMonitorHistoryH\x00R\x14recordMonitorHistory\x12L\n" +
+	"\x10set_system_alert\x18\x1f \x01(\v2 .uptimecluster.v1.SetSystemAlertH\x00R\x0esetSystemAlert\x12T\n" +
+	"\x12record_incarnation\x18  \x01(\v2#.uptimecluster.v1.RecordIncarnationH\x00R\x11recordIncarnation\x12>\n" +
+	"\n" +
+	"checkpoint\x18! \x01(\v2\x1c.uptimecluster.v1.CheckpointH\x00R\n" +
+	"checkpointB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -2539,7 +2770,18 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"incidentId\x12\x14\n" +
 	"\x05cause\x18\x04 \x01(\tR\x05cause\x12\x1f\n" +
 	"\verror_class\x18\x05 \x01(\tR\n" +
-	"errorClass*\xab\x02\n" +
+	"errorClass\"\x8f\x01\n" +
+	"\x0eSetSystemAlert\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
+	"\x06active\x18\x03 \x01(\bR\x06active\x12\x14\n" +
+	"\x05level\x18\x04 \x01(\x05R\x05level\x12!\n" +
+	"\fdetails_json\x18\x05 \x01(\fR\vdetailsJson\"N\n" +
+	"\x11RecordIncarnation\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12 \n" +
+	"\vincarnation\x18\x02 \x01(\tR\vincarnation\"\f\n" +
+	"\n" +
+	"Checkpoint*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -2566,7 +2808,7 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),                  // 0: uptimecluster.v1.EntityKind
 	(Actor_Kind)(0),                  // 1: uptimecluster.v1.Actor.Kind
@@ -2597,8 +2839,11 @@ var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(*UnconfirmedVerdict)(nil),       // 26: uptimecluster.v1.UnconfirmedVerdict
 	(*RecordMonitorHistory)(nil),     // 27: uptimecluster.v1.RecordMonitorHistory
 	(*HistoryEntry)(nil),             // 28: uptimecluster.v1.HistoryEntry
-	nil,                              // 29: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),                  // 30: uptimecluster.v1.ErrorClass
+	(*SetSystemAlert)(nil),           // 29: uptimecluster.v1.SetSystemAlert
+	(*RecordIncarnation)(nil),        // 30: uptimecluster.v1.RecordIncarnation
+	(*Checkpoint)(nil),               // 31: uptimecluster.v1.Checkpoint
+	nil,                              // 32: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 33: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -2621,22 +2866,25 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	23, // 17: uptimecluster.v1.Command.report_degraded_alerts:type_name -> uptimecluster.v1.ReportDegradedAlerts
 	25, // 18: uptimecluster.v1.Command.resolve_unconfirmed_alerts:type_name -> uptimecluster.v1.ResolveUnconfirmedAlerts
 	27, // 19: uptimecluster.v1.Command.record_monitor_history:type_name -> uptimecluster.v1.RecordMonitorHistory
-	1,  // 20: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 21: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 22: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 23: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	30, // 24: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	19, // 25: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 26: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	29, // 27: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	24, // 28: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
-	26, // 29: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
-	28, // 30: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	29, // 20: uptimecluster.v1.Command.set_system_alert:type_name -> uptimecluster.v1.SetSystemAlert
+	30, // 21: uptimecluster.v1.Command.record_incarnation:type_name -> uptimecluster.v1.RecordIncarnation
+	31, // 22: uptimecluster.v1.Command.checkpoint:type_name -> uptimecluster.v1.Checkpoint
+	1,  // 23: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 24: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 25: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 26: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	33, // 27: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	19, // 28: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 29: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	32, // 30: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	24, // 31: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
+	26, // 32: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
+	28, // 33: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -2665,6 +2913,9 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_ReportDegradedAlerts)(nil),
 		(*Command_ResolveUnconfirmedAlerts)(nil),
 		(*Command_RecordMonitorHistory)(nil),
+		(*Command_SetSystemAlert)(nil),
+		(*Command_RecordIncarnation)(nil),
+		(*Command_Checkpoint)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2672,7 +2923,7 @@ func file_uptimecluster_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   27,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -270,7 +270,7 @@ func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error
 	if err != nil {
 		return fmt.Errorf("begin state transaction: %w", err)
 	}
-	if err := fn(&stateTx{q: statedb.New(tx)}); err != nil {
+	if err := fn(&stateTx{q: statedb.New(tx), tx: tx}); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -281,7 +281,8 @@ func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error
 }
 
 type stateTx struct {
-	q *statedb.Queries
+	q  *statedb.Queries
+	tx *sql.Tx // the write transaction; Fingerprint reads through it
 }
 
 func (t *stateTx) PutTenant(ctx context.Context, tn store.Tenant) error {

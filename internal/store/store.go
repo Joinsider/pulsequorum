@@ -138,6 +138,9 @@ const (
 	// EventChannelFailed reports another channel of the tenant that failed
 	// permanently or gave up (FA-ALR-05, ADR 0023).
 	EventChannelFailed = "channel_failed"
+	// EventSystem reports a system alert (FA-OBS-01, ADR 0025). Only channels
+	// of the system tenant subscribe to it.
+	EventSystem = "system"
 )
 
 // NotificationChannel is a target for alerts (FA-ALR-01). URLEnc and the
@@ -452,6 +455,11 @@ type State interface {
 	ListRevokedNodes(ctx context.Context) ([]RevokedNode, error)
 	// ListNodes returns the node registry ordered by node ID (ADR 0017).
 	ListNodes(ctx context.Context) ([]Node, error)
+	// ListSystemAlerts returns the system alerts ordered by kind and subject;
+	// with activeOnly only the active ones (ADR 0025).
+	ListSystemAlerts(ctx context.Context, activeOnly bool) ([]SystemAlert, error)
+	// ListNodeIncarnations returns the last known incarnations ordered by node ID (ADR 0025).
+	ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error)
 
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
@@ -626,6 +634,15 @@ type StateTx interface {
 	PutDedup(ctx context.Context, e DedupEntry) error
 	// PruneDedup removes entries issued before beforeMs (deterministic retention).
 	PruneDedup(ctx context.Context, beforeMs int64) error
+	// GetSystemAlert returns the stored system alert or ErrNotFound (ADR 0025).
+	GetSystemAlert(ctx context.Context, kind, subject string) (SystemAlert, error)
+	// PutSystemAlert creates or replaces the system alert with its kind and subject.
+	PutSystemAlert(ctx context.Context, a SystemAlert) error
+	// PutNodeIncarnation creates or replaces the last known incarnation of a node (ADR 0025).
+	PutNodeIncarnation(ctx context.Context, n NodeIncarnation) error
+	// Fingerprint hashes the replicated state inside this transaction, as
+	// State.Fingerprint does for the committed state (ADR 0025).
+	Fingerprint(ctx context.Context) (string, error)
 }
 
 // ClusterCA is the certificate authority of the cluster (ADR 0006). KeyEnc is
@@ -712,6 +729,25 @@ type SecretKey struct {
 	KEKFingerprint string
 	CreatedMs      int64
 	RetiredMs      int64 // 0 = not retired
+}
+
+// SystemAlert is the replicated state of one system alert (FA-OBS-01, ADR 0025),
+// identified by its kind and subject. Level is the expiry stage or a counter.
+type SystemAlert struct {
+	Kind        string
+	Subject     string
+	Active      bool
+	Level       int
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJSON json.RawMessage
+}
+
+// NodeIncarnation is the last incarnation a node reported (FA-REP-06, ADR 0025).
+type NodeIncarnation struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
 }
 
 // DedupEntry is the stored outcome of an applied command, so that a retry with

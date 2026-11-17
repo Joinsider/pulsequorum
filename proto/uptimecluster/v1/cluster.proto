@@ -119,6 +119,23 @@ message GetStatusResponse {
   bool self_check_failed = 11;
   // Wall clock of the last self-check in Unix milliseconds, 0 if none ran yet (ADR 0022).
   int64 self_check_at_ms = 12;
+  // Incarnation of the node from metrics.db (ADR 0025). Nodes older than ADR 0025
+  // do not send the fields 13 to 20; they then read as no signal.
+  string incarnation = 13;
+  // Share of free bytes in the data directory, 0 to 1 (ADR 0025).
+  double disk_free_ratio = 14;
+  // Size of the WAL files of state.db and metrics.db in bytes (ADR 0025).
+  int64 state_wal_bytes = 15;
+  int64 metrics_wal_bytes = 16;
+  // Expiry of the node's own certificate in Unix milliseconds (ADR 0025).
+  int64 cert_not_after_ms = 17;
+  // Largest replication lag to a connected peer in milliseconds; -1 if the
+  // node never caught up with a peer (ADR 0025).
+  int64 replication_lag_ms = 18;
+  // Index and fingerprint of the last FSM checkpoint applied by the node; 0 and
+  // empty if none ran yet (ADR 0025).
+  uint64 fingerprint_index = 19;
+  string fingerprint = 20;
 }
 
 message RemoveNodeRequest {
