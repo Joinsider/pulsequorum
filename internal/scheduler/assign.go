@@ -32,7 +32,7 @@ func (a Assigner) Nodes(m store.Monitor, registry []store.Node) []string {
 	var ids []string
 	switch m.Assignment.Mode {
 	case "count":
-		ids = rendezvous(m.ID, healthy(candidates), m.Assignment.Count)
+		ids = rendezvous(m.ID, usable(candidates), m.Assignment.Count)
 	case "nodes":
 		ids = listed(m.Assignment.Nodes, candidates)
 	default: // "all", "" and unknown modes
@@ -69,11 +69,12 @@ func (a Assigner) candidates(m store.Monitor, registry []store.Node) []store.Nod
 	return out
 }
 
-// healthy returns the nodes that are healthy.
-func healthy(nodes []store.Node) []store.Node {
+// usable returns the nodes that are healthy and not impaired in their
+// connectivity (ADR 0017, ADR 0022). Only count assignments skip the others.
+func usable(nodes []store.Node) []store.Node {
 	var out []store.Node
 	for _, n := range nodes {
-		if n.Healthy {
+		if n.Healthy && !n.ConnectivityImpaired {
 			out = append(out, n)
 		}
 	}

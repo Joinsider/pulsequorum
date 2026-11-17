@@ -300,3 +300,9 @@ export class NotificationsService {
   }
 };
 
+export type ListNotificationChannelsClientResult = NonNullable<NotificationChannel[]>
+export type CreateNotificationChannelClientResult = NonNullable<NotificationChannel>
+export type GetNotificationChannelClientResult = NonNullable<NotificationChannel>
+export type UpdateNotificationChannelClientResult = NonNullable<NotificationChannel>
+export type DeleteNotificationChannelClientResult = NonNullable<void>
+export type TestNotificationChannelClientResult = NonNullable<DeliveryResult>

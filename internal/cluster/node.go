@@ -276,6 +276,12 @@ func orDefault(v, def uint64) uint64 {
 // FSM returns the state machine.
 func (n *Node) FSM() *FSM { return n.fsm }
 
+// LastCheckpoint returns the log index and fingerprint of the last checkpoint
+// this node applied since it started, or 0 and "" if none (ADR 0025).
+func (n *Node) LastCheckpoint() (index uint64, fingerprint string) {
+	return n.fsm.LastCheckpoint()
+}
+
 // MaxCommandVersion returns the highest Command.version this node applies
 // (ADR 0018): CommandVersion, unless a test overrides it.
 func (n *Node) MaxCommandVersion() uint32 { return n.fsm.maxVersion }

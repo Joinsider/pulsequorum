@@ -27,6 +27,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
@@ -133,6 +134,10 @@ type Options struct {
 	State      *sqlite.StateStore
 	// Metrics holds the heartbeats that the replication exchanges (FA-REP-01).
 	Metrics store.Metrics
+	// OnHeartbeatsStored is called with the heartbeats that replication stored
+	// (pushes and anti-entropy pages), see replication.Options.OnStored. It
+	// must not block (ADR 0021). Nil means no callback.
+	OnHeartbeatsStored func([]store.Heartbeat)
 	// ReplicationInterval is the period of the anti-entropy pass per peer.
 	// Zero means the default of the replication package; tests use short ones.
 	ReplicationInterval time.Duration
@@ -162,6 +167,15 @@ type Options struct {
 	// ClockInterval is the period of the clock offset measurement; zero means
 	// clockSampleInterval. Tests shorten it.
 	ClockInterval time.Duration
+	// SelfCheck returns the latest result of this node's reference targets
+	// (ADR 0022); it is reported in GetStatus. Nil means not configured.
+	SelfCheck func() selfcheck.Status
+	// DiskFreeRatio returns the free share of the data directory, negative if
+	// unknown; it is reported in GetStatus (ADR 0025). Nil means unknown.
+	DiskFreeRatio func() float64
+	// WALBytes returns the WAL sizes of state.db and metrics.db; it is reported
+	// in GetStatus (ADR 0025). Nil means unknown.
+	WALBytes func() (state, metrics int64)
 }
 
 // Host is the running cluster side of a voter.
@@ -183,8 +197,13 @@ type Host struct {
 	state store.State
 	self  store.Node
 	// clock is the wall clock of this node (Options.Clock).
-	clock         func() time.Time
-	clocks        clockTracker
+	clock      func() time.Time
+	clocks     clockTracker
+	selfChecks selfCheckTracker
+	peerViews  peerViewTracker
+	signals    signalTracker
+	// service answers GetStatus; SelfSignals asks it for this node's signals.
+	service       *membership.Service
 	clockInterval time.Duration
 	mux           *clusternet.Mux
 	grpc          *grpc.Server
@@ -271,6 +290,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		Log:                 opts.Log,
 		AntiEntropyInterval: opts.ReplicationInterval,
 		Now:                 clock,
+		OnStored:            opts.OnHeartbeatsStored,
 	})
 	// A peer that resumes heartbeats or joins the configuration gets an
 	// immediate anti-entropy pass (ADR 0012 B6). Followers do not see these
@@ -278,12 +298,14 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	node.OnPeerResumed(h.Replication.Trigger)
 
 	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
-	pb.RegisterClusterServiceServer(h.grpc, &membership.Service{
+	h.service = &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
-	})
+		SelfCheck: opts.SelfCheck, Own: h.ownSignals(opts),
+	}
+	pb.RegisterClusterServiceServer(h.grpc, h.service)
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
-		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, Log: opts.Log,
+		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, OnStored: opts.OnHeartbeatsStored, Log: opts.Log,
 	})
 	h.wg.Go(func() {
 		if err := mux.Serve(); err != nil {
@@ -385,6 +407,16 @@ func (h *Host) tryAnnounce(ctx context.Context) (bool, error) {
 	if self == nil || self.Address == h.advertise || h.Cert.Leaf() == nil {
 		return true, nil // not a member yet, unchanged, or no certificate
 	}
+	// A node that leads under its old address changes the configuration
+	// itself; the others would name it as leader, and its old address is not
+	// reachable (FA-CLU-10).
+	if h.Node.IsLeader() {
+		if err := h.Manager.AddVoter(ctx, h.Node.ID(), h.advertise); err != nil {
+			return false, err
+		}
+		h.log.Info("cluster address updated", "from", self.Address, "to", h.advertise)
+		return true, nil
+	}
 	// Ask the other voters who leads, then call the leader directly.
 	addrByID := map[string]string{}
 	for _, m := range members {
@@ -400,6 +432,11 @@ func (h *Host) tryAnnounce(ctx context.Context) (bool, error) {
 		cancel()
 		if err != nil {
 			lastErr = err
+			continue
+		}
+		if st.GetLeaderId() == h.Node.ID() {
+			// This node won the election meanwhile; the next round updates locally.
+			lastErr = errors.New("this node became leader")
 			continue
 		}
 		leader := addrByID[st.GetLeaderId()]

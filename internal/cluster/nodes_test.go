@@ -272,3 +272,137 @@ func nodeEqual(a, b store.Node) bool {
 		a.Healthy == b.Healthy && a.HealthChangedMs == b.HealthChangedMs &&
 		a.RegisteredMs == b.RegisteredMs && a.UpdatedMs == b.UpdatedMs
 }
+
+// ADR 0022: SetNodeConnectivity validates the reason, changes only on a change
+// and reports unknown nodes.
+func TestSetNodeConnectivity(t *testing.T) {
+	tests := []struct {
+		name    string
+		nodeID  string
+		impair  bool
+		reason  string
+		atMs    int64
+		wantErr error
+		// wantChanged is the change time expected after the command, 0 for none.
+		wantChanged int64
+		wantImpair  bool
+		wantReason  string
+	}{
+		{"unknown node", "node-x", true, "reference", 3_000, store.ErrNotFound, 0, false, ""},
+		{"invalid node ID", "bad/id", true, "reference", 3_000, ErrInvalidCommand, 0, false, ""},
+		{"impaired without reason", "node-1", true, "", 3_000, ErrInvalidCommand, 0, false, ""},
+		{"impaired with unknown reason", "node-1", true, "other", 3_000, ErrInvalidCommand, 0, false, ""},
+		{"not impaired with reason", "node-1", false, "reference", 3_000, ErrInvalidCommand, 0, false, ""},
+		{"impaired by reference", "node-1", true, "reference", 3_000, nil, 3_000, true, "reference"},
+		{"impaired by deviation", "node-1", true, "deviation", 3_000, nil, 3_000, true, "deviation"},
+		{"same state is no change", "node-1", true, "reference", 4_000, nil, 3_000, true, "reference"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newNodeFSM(t)
+			if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
+				t.Fatal(r.Err)
+			}
+			// The first valid impairment sets the state at 3000; the test row
+			// then checks a repeat or the invalid input against it.
+			if tt.name == "same state is no change" {
+				if r := f.apply(NewSetNodeConnectivity("node-1", true, "reference"), 3_000); r.Err != nil {
+					t.Fatal(r.Err)
+				}
+			}
+			r := f.apply(NewSetNodeConnectivity(tt.nodeID, tt.impair, tt.reason), tt.atMs)
+			if tt.wantErr != nil {
+				if !errors.Is(r.Err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", r.Err, tt.wantErr)
+				}
+				return
+			}
+			if r.Err != nil {
+				t.Fatalf("unexpected error: %v", r.Err)
+			}
+			n, ok := f.node("node-1")
+			if !ok {
+				t.Fatal("node-1 missing")
+			}
+			if n.ConnectivityImpaired != tt.wantImpair || n.ConnectivityReason != tt.wantReason {
+				t.Errorf("connectivity = %v/%q, want %v/%q", n.ConnectivityImpaired, n.ConnectivityReason, tt.wantImpair, tt.wantReason)
+			}
+			if n.ConnectivityChangedMs != tt.wantChanged {
+				t.Errorf("connectivity changed at %d, want %d", n.ConnectivityChangedMs, tt.wantChanged)
+			}
+			if n.Healthy != true || n.HealthChangedMs != 1_000 {
+				t.Errorf("connectivity changed the health: %+v", n)
+			}
+		})
+	}
+}
+
+// ADR 0022: recovery clears the reason, and the result shows the new state.
+func TestSetNodeConnectivityRecovery(t *testing.T) {
+	f := newNodeFSM(t)
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewSetNodeConnectivity("node-1", true, "deviation"), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	r := f.apply(NewSetNodeConnectivity("node-1", false, ""), 3_000)
+	if r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	var res NodeResult
+	if err := json.Unmarshal(r.Result, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.ConnectivityImpaired || res.ConnectivityReason != "" || res.ConnectivityChangedMs != 3_000 {
+		t.Errorf("result = %+v, want recovered at 3000", res)
+	}
+	n, _ := f.node("node-1")
+	if n.ConnectivityImpaired || n.ConnectivityReason != "" || n.ConnectivityChangedMs != 3_000 || n.UpdatedMs != 3_000 {
+		t.Errorf("node after recovery = %+v", n)
+	}
+}
+
+// ADR 0022: the connectivity columns are replicated state, so a change moves the fingerprint.
+func TestSetNodeConnectivityChangesFingerprint(t *testing.T) {
+	ctx := context.Background()
+	f := newNodeFSM(t)
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	before, err := f.st.Fingerprint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := f.apply(NewSetNodeConnectivity("node-1", true, "reference"), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	after, err := f.st.Fingerprint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Error("fingerprint did not change with the connectivity")
+	}
+}
+
+// ADR 0022: a registration keeps the connectivity the leader decided.
+func TestRegisterNodeKeepsConnectivity(t *testing.T) {
+	f := newNodeFSM(t)
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter, Version: "1.0.0"}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewSetNodeConnectivity("node-1", true, "reference"), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter, Version: "1.1.0"}), 3_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	n, _ := f.node("node-1")
+	if n.Version != "1.1.0" {
+		t.Errorf("version = %q, want 1.1.0", n.Version)
+	}
+	if !n.ConnectivityImpaired || n.ConnectivityReason != "reference" || n.ConnectivityChangedMs != 2_000 {
+		t.Errorf("registration reset the connectivity: %+v", n)
+	}
+}

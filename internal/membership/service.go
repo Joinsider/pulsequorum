@@ -21,6 +21,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterpki"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -78,6 +79,31 @@ type Service struct {
 	// Clock is the wall clock of this node, reported in GetStatus; nil means
 	// time.Now (ADR 0020).
 	Clock func() time.Time
+	// SelfCheck returns the latest result of the reference targets of this
+	// node (ADR 0022). Nil means no targets are configured.
+	SelfCheck func() selfcheck.Status
+	// Own reports the signals of this node that the leader evaluates (ADR 0025).
+	Own OwnSignals
+}
+
+// OwnSignals are the signals of this node that GetStatus reports (ADR 0025).
+// Each function is optional; a nil one leaves its fields unset, which the
+// leader reads as no signal.
+type OwnSignals struct {
+	// Incarnation returns the incarnation of metrics.db.
+	Incarnation func() string
+	// DiskFreeRatio returns the free share of the data directory, or a
+	// negative value if it cannot be measured.
+	DiskFreeRatio func() float64
+	// WALBytes returns the WAL sizes of state.db and metrics.db.
+	WALBytes func() (state, metrics int64)
+	// CertNotAfter returns the expiry of the node certificate; zero if there is none.
+	CertNotAfter func() time.Time
+	// ReplicationLagMs returns the largest lag to a connected peer in
+	// milliseconds, -1 if a connected peer never caught up, 0 without peers.
+	ReplicationLagMs func() int64
+	// Checkpoint returns the index and fingerprint of the last FSM checkpoint.
+	Checkpoint func() (index uint64, fingerprint string)
 }
 
 var _ pb.ClusterServiceServer = (*Service)(nil)
@@ -280,11 +306,42 @@ func (s *Service) stillMember(ctx context.Context, peer pki.Identity) error {
 // GetStatus reports this node's Raft state (ADR 0012 A3/A9).
 func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatusResponse, error) {
 	st := s.Node.Status()
-	return &pb.GetStatusResponse{
+	var sc selfcheck.Status
+	if s.SelfCheck != nil {
+		sc = s.SelfCheck()
+	}
+	out := &pb.GetStatusResponse{
 		NodeId: st.NodeID, RaftState: st.RaftState, AppliedIndex: st.AppliedIndex, CommitIndex: st.CommitIndex,
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
 		LeaderAddress: st.LeaderAddress, WallClockUnixMs: s.now().UnixMilli(),
-	}, nil
+		SelfCheckConfigured: sc.Configured, SelfCheckFailed: sc.Failed, SelfCheckAtMs: sc.AtMs,
+	}
+	s.Own.fill(out)
+	return out, nil
+}
+
+// fill sets the ADR 0025 fields of the answer from the functions that are set.
+func (o OwnSignals) fill(out *pb.GetStatusResponse) {
+	if o.Incarnation != nil {
+		out.Incarnation = o.Incarnation()
+	}
+	if o.DiskFreeRatio != nil {
+		out.DiskFreeRatio = o.DiskFreeRatio()
+	}
+	if o.WALBytes != nil {
+		out.StateWalBytes, out.MetricsWalBytes = o.WALBytes()
+	}
+	if o.CertNotAfter != nil {
+		if t := o.CertNotAfter(); !t.IsZero() {
+			out.CertNotAfterMs = t.UnixMilli()
+		}
+	}
+	if o.ReplicationLagMs != nil {
+		out.ReplicationLagMs = o.ReplicationLagMs()
+	}
+	if o.Checkpoint != nil {
+		out.FingerprintIndex, out.Fingerprint = o.Checkpoint()
+	}
 }
 
 func (s *Service) now() time.Time {

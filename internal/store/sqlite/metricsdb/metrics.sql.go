@@ -154,6 +154,43 @@ func (q *Queries) GetStreamPosition(ctx context.Context, arg GetStreamPositionPa
 	return seq, err
 }
 
+const insertDegradedAlert = `-- name: InsertDegradedAlert :execlastid
+INSERT INTO degraded_alerts (tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertDegradedAlertParams struct {
+	TenantID  string
+	MonitorID string
+	ChannelID string
+	Status    string
+	SinceMs   int64
+	SentMs    int64
+	Outcome   string
+	Reachable int64
+	Total     int64
+	Reporters string
+}
+
+func (q *Queries) InsertDegradedAlert(ctx context.Context, arg InsertDegradedAlertParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertDegradedAlert,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.ChannelID,
+		arg.Status,
+		arg.SinceMs,
+		arg.SentMs,
+		arg.Outcome,
+		arg.Reachable,
+		arg.Total,
+		arg.Reporters,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
 const insertHeartbeat = `-- name: InsertHeartbeat :execrows
 INSERT INTO heartbeats (
     node_id, incarnation, seq, tenant_id, monitor_id, ts_ms, status, latency_ms,
@@ -751,6 +788,67 @@ func (q *Queries) ListStreamSeqsAfter(ctx context.Context, arg ListStreamSeqsAft
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUnreportedDegradedAlerts = `-- name: ListUnreportedDegradedAlerts :many
+SELECT id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported FROM degraded_alerts WHERE reported = 0 ORDER BY id LIMIT ?1
+`
+
+func (q *Queries) ListUnreportedDegradedAlerts(ctx context.Context, rowLimit int64) ([]DegradedAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listUnreportedDegradedAlerts, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DegradedAlert{}
+	for rows.Next() {
+		var i DegradedAlert
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.MonitorID,
+			&i.ChannelID,
+			&i.Status,
+			&i.SinceMs,
+			&i.SentMs,
+			&i.Outcome,
+			&i.Reachable,
+			&i.Total,
+			&i.Reporters,
+			&i.Reported,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markDegradedAlertReported = `-- name: MarkDegradedAlertReported :exec
+UPDATE degraded_alerts SET reported = 1 WHERE id = ?
+`
+
+func (q *Queries) MarkDegradedAlertReported(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, markDegradedAlertReported, id)
+	return err
+}
+
+const pruneDegradedAlerts = `-- name: PruneDegradedAlerts :execrows
+DELETE FROM degraded_alerts WHERE sent_ms < ?
+`
+
+func (q *Queries) PruneDegradedAlerts(ctx context.Context, sentMs int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneDegradedAlerts, sentMs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertMeta = `-- name: UpsertMeta :exec

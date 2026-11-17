@@ -78,7 +78,7 @@ go-lint: ## go vet and gofmt check
 	@out="$$(gofmt -l cmd internal)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 golangci: ## Run golangci-lint v2 (standard + errorlint, gosec, revive, ...; config in .golangci.yml)
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./cmd/... ./internal/...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
 
 web-lint: web/node_modules ## Prettier check
 	cd web && npx prettier --check src

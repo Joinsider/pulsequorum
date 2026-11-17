@@ -5,6 +5,7 @@ package config
 
 import (
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.AlertMaxAttempts != 10 {
 		t.Errorf("AlertMaxAttempts = %d, want 10", cfg.AlertMaxAttempts)
+	}
+	if cfg.DegradedAfter != 15*time.Second {
+		t.Errorf("DegradedAfter = %v, want 15s", cfg.DegradedAfter)
 	}
 }
 
@@ -93,6 +97,8 @@ func TestLoadInvalid(t *testing.T) {
 		{"alert attempts not a number", map[string]string{"ALERT_MAX_ATTEMPTS": "many"}, "ALERT_MAX_ATTEMPTS"},
 		{"alert attempts zero", map[string]string{"ALERT_MAX_ATTEMPTS": "0"}, "ALERT_MAX_ATTEMPTS"},
 		{"alert attempts above limit", map[string]string{"ALERT_MAX_ATTEMPTS": "101"}, "ALERT_MAX_ATTEMPTS"},
+		{"alert bundle window not a duration", map[string]string{"ALERT_BUNDLE_WINDOW": "soon"}, "ALERT_BUNDLE_WINDOW"},
+		{"alert bundle window negative", map[string]string{"ALERT_BUNDLE_WINDOW": "-5s"}, "ALERT_BUNDLE_WINDOW"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -230,5 +236,214 @@ func TestJoinTokenSources(t *testing.T) {
 	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "JOIN_TOKEN": "uc1.x", "JOIN_TOKEN_FILE": "/run/secrets/join"}))
 	if err == nil || !strings.Contains(err.Error(), "JOIN_TOKEN") {
 		t.Errorf("both sources: error = %v, want a JOIN_TOKEN error", err)
+	}
+}
+
+// TestSelfCheck covers SELF_CHECK_TARGETS and SELF_HEALTH_FAIL_RATIO (ADR 0022):
+// entries are trimmed, blank entries are skipped, invalid entries are named.
+func TestSelfCheck(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil || cfg.SelfCheckTargets != nil || cfg.SelfHealthFailRatio != 0.5 {
+		t.Fatalf("defaults = %v, %v, %v; want no targets, ratio 0.5", cfg.SelfCheckTargets, cfg.SelfHealthFailRatio, err)
+	}
+
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME":              "n1",
+		"SELF_CHECK_TARGETS":     " 1.1.1.1:443 , ,https://example.com/ping?x=1,http://example.org ",
+		"SELF_HEALTH_FAIL_RATIO": "1",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"1.1.1.1:443", "https://example.com/ping?x=1", "http://example.org"}
+	if strings.Join(cfg.SelfCheckTargets, " ") != strings.Join(want, " ") {
+		t.Errorf("SelfCheckTargets = %q, want %q", cfg.SelfCheckTargets, want)
+	}
+	if cfg.SelfHealthFailRatio != 1 {
+		t.Errorf("SelfHealthFailRatio = %v, want 1", cfg.SelfHealthFailRatio)
+	}
+
+	invalidTargets := []string{"nohostport", "host:", "host:0", "host:70000", "ftp://example.com", "https://", "https://u:p@example.com"}
+	for _, bad := range invalidTargets {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "SELF_CHECK_TARGETS": "1.1.1.1:443," + bad}))
+		if err == nil || !strings.Contains(err.Error(), "SELF_CHECK_TARGETS") || !strings.Contains(err.Error(), bad) {
+			t.Errorf("SELF_CHECK_TARGETS entry %q: error = %v, want error naming the entry", bad, err)
+		}
+	}
+
+	for _, bad := range []string{"0", "-0.1", "1.5", "abc", "NaN"} {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "SELF_HEALTH_FAIL_RATIO": bad}))
+		if err == nil || !strings.Contains(err.Error(), "SELF_HEALTH_FAIL_RATIO") {
+			t.Errorf("SELF_HEALTH_FAIL_RATIO=%q: error = %v, want SELF_HEALTH_FAIL_RATIO error", bad, err)
+		}
+	}
+}
+
+// TestDegradedAfter covers DEGRADED_AFTER (ADR 0024): a duration of 0 or more,
+// where 0 disables the degraded mode.
+func TestDegradedAfter(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "default", value: "", want: 15 * time.Second},
+		{name: "custom", value: "30s", want: 30 * time.Second},
+		{name: "disabled", value: "0", want: 0},
+		{name: "not a duration", value: "soon", wantErr: true},
+		{name: "negative", value: "-1s", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "DEGRADED_AFTER": tc.value}))
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "DEGRADED_AFTER") {
+					t.Fatalf("error = %v, want DEGRADED_AFTER error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.DegradedAfter != tc.want {
+				t.Errorf("DegradedAfter = %v, want %v", cfg.DegradedAfter, tc.want)
+			}
+		})
+	}
+}
+
+// TestMetrics covers METRICS_ADDR (ADR 0025, section 7): off by default, a
+// host:port with a valid port otherwise. METRICS_TOKEN and METRICS_TOKEN_FILE
+// are exclusive.
+func TestMetrics(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil || cfg.MetricsAddr != "" || cfg.MetricsToken != "" || cfg.MetricsTokenFile != "" {
+		t.Fatalf("defaults = %q, %q, %q, %v; want all empty", cfg.MetricsAddr, cfg.MetricsToken, cfg.MetricsTokenFile, err)
+	}
+
+	valid := []string{"127.0.0.1:9100", ":9100", "[::1]:9100"}
+	for _, addr := range valid {
+		if _, err := Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_ADDR": addr})); err != nil {
+			t.Errorf("METRICS_ADDR %q: unexpected error %v", addr, err)
+		}
+	}
+	invalid := []string{"9100", "127.0.0.1", "host:", "host:0", "host:70000", "host:http"}
+	for _, addr := range invalid {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_ADDR": addr}))
+		if err == nil || !strings.Contains(err.Error(), "METRICS_ADDR") {
+			t.Errorf("METRICS_ADDR %q: error = %v, want a METRICS_ADDR error", addr, err)
+		}
+	}
+
+	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "a", "METRICS_TOKEN_FILE": "/run/secrets/m"})) //nolint:gosec // G101: test value, not a credential
+	if err == nil || !strings.Contains(err.Error(), "METRICS_TOKEN_FILE") {
+		t.Errorf("both token sources: error = %v, want a METRICS_TOKEN error", err)
+	}
+}
+
+func TestResolveMetricsToken(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		p := dir + "/" + name
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		file    func() string
+		want    string
+		wantErr bool
+	}{
+		{name: "none", env: map[string]string{"NODE_NAME": "n1"}, want: ""},
+		{name: "env token trimmed", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "  s3cret \n"}, want: "s3cret"},
+		{name: "file trimmed", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": write("ok", "s3cret\n")}, want: "s3cret"},
+		{name: "empty file", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": write("empty", " \n")}, wantErr: true},
+		{name: "missing file", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": dir + "/missing"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(env(tt.env))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			got, err := cfg.ResolveMetricsToken()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ResolveMetricsToken error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("token = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// ADR 0025: the thresholds of the system alerts have defaults and are validated.
+func TestSystemAlertThresholds(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ReplicationLagAlert != 5*time.Minute || cfg.ClockSkewAlert != 2*time.Second ||
+		cfg.DiskFreeAlert != 0.15 || cfg.WALSizeAlert != 512<<20 {
+		t.Errorf("defaults = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+	}
+
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME": "n1", "REPLICATION_LAG_ALERT": "90s", "CLOCK_SKEW_ALERT": "500ms",
+		"DISK_FREE_ALERT": "0.5", "WAL_SIZE_ALERT": "1GiB",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ReplicationLagAlert != 90*time.Second || cfg.ClockSkewAlert != 500*time.Millisecond ||
+		cfg.DiskFreeAlert != 0.5 || cfg.WALSizeAlert != 1<<30 {
+		t.Errorf("overrides = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+	}
+
+	invalid := map[string]string{
+		"REPLICATION_LAG_ALERT": "0s",
+		"CLOCK_SKEW_ALERT":      "-1s",
+		"DISK_FREE_ALERT":       "1",
+		"WAL_SIZE_ALERT":        "512MB",
+	}
+	for key, value := range invalid {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", key: value}))
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s=%q: error = %v, want it to name the key", key, value, err)
+		}
+	}
+}
+
+func TestParseByteSize(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    int64
+		wantErr bool
+	}{
+		{in: "512MiB", want: 512 << 20},
+		{in: " 2 KiB ", want: 2 << 10},
+		{in: "1GiB", want: 1 << 30},
+		{in: "4096", want: 4096},
+		{in: "0B", want: 0},
+		{in: "", wantErr: true},
+		{in: "MiB", wantErr: true},
+		{in: "-1MiB", wantErr: true},
+		{in: "10MB", wantErr: true},
+		{in: "9999999999999GiB", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := parseByteSize(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("parseByteSize(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("parseByteSize(%q) = %d, want %d", tt.in, got, tt.want)
+		}
 	}
 }

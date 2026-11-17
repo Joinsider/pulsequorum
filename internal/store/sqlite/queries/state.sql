@@ -28,7 +28,9 @@ ON CONFLICT (id) DO UPDATE SET
 SELECT sqlc.embed(m),
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.id = sqlc.arg(id);
@@ -37,7 +39,9 @@ WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.id = sqlc.arg(id);
 SELECT sqlc.embed(m),
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = sqlc.arg(tenant_id)
@@ -124,6 +128,7 @@ ON CONFLICT (key_id) DO UPDATE SET
 SELECT * FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?;
 
 -- name: UpsertMonitorState :exec
+-- The flapping columns are not touched: only SetMonitorFlapping writes them.
 INSERT INTO monitor_states (tenant_id, monitor_id, status, confirmed, since_ms)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (tenant_id, monitor_id) DO UPDATE SET
@@ -131,9 +136,14 @@ ON CONFLICT (tenant_id, monitor_id) DO UPDATE SET
     confirmed = excluded.confirmed,
     since_ms  = excluded.since_ms;
 
+-- name: SetMonitorFlapping :execrows
+UPDATE monitor_states SET flapping = sqlc.arg(flapping), flapping_since_ms = sqlc.arg(flapping_since_ms)
+WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id);
+
 -- name: InsertIncident :exec
-INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+-- resolved_ms is 0 for an open incident; a re-evaluated gap is stored closed.
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, resolved_ms, cause, error_class, affected_nodes_json, confirmed, reevaluated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ResolveIncident :execrows
 UPDATE incidents SET resolved_ms = sqlc.arg(resolved_ms)
@@ -160,6 +170,12 @@ WHERE i.tenant_id = sqlc.arg(tenant_id)
        OR (i.started_ms = sqlc.arg(before_started_ms) AND i.id < sqlc.arg(before_id)))
 ORDER BY i.started_ms DESC, i.id DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: DeleteStatusHistoryBetween :exec
+-- Removes the changes in [from_ms, to_ms) of one monitor (FA-UPT-07).
+DELETE FROM monitor_status_history
+WHERE tenant_id = sqlc.arg(tenant_id) AND monitor_id = sqlc.arg(monitor_id)
+  AND since_ms >= sqlc.arg(from_ms) AND since_ms < sqlc.arg(to_ms);
 
 -- name: UpsertStatusHistory :exec
 -- A second change at the same instant (PENDING, then DOWN dated back to the
@@ -257,6 +273,9 @@ SELECT * FROM alert_outbox
 WHERE state = 'pending' AND next_attempt_ms <= sqlc.arg(now_ms)
 ORDER BY next_attempt_ms, alert_key, channel_id
 LIMIT sqlc.arg(row_limit);
+
+-- name: CountPendingAlerts :one
+SELECT COUNT(*) FROM alert_outbox WHERE state = 'pending';
 
 -- name: PruneAlerts :exec
 DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?;
@@ -366,6 +385,13 @@ UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? A
 -- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?;
 
+-- name: StatusChangesSince :many
+-- The changes at or after from_ms; the FSM counts flapping changes from them.
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = sqlc.arg(tenant_id) AND h.monitor_id = sqlc.arg(monitor_id)
+  AND h.since_ms >= sqlc.arg(from_ms)
+ORDER BY h.since_ms;
+
 -- name: StatusHistoryBatch :many
 -- StatusHistory of several monitors at once: per monitor, the changes in
 -- [from_ms, to_ms) plus the last change before from_ms, as StatusHistory.
@@ -445,8 +471,9 @@ SELECT * FROM nodes ORDER BY id;
 
 -- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
-                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
+                   connectivity_impaired, connectivity_reason, connectivity_changed_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -458,7 +485,60 @@ ON CONFLICT (id) DO UPDATE SET
     healthy = excluded.healthy,
     health_changed_ms = excluded.health_changed_ms,
     registered_ms = excluded.registered_ms,
-    updated_ms = excluded.updated_ms;
+    updated_ms = excluded.updated_ms,
+    connectivity_impaired = excluded.connectivity_impaired,
+    connectivity_reason = excluded.connectivity_reason,
+    connectivity_changed_ms = excluded.connectivity_changed_ms;
+
+-- name: SetNodeConnectivity :execrows
+UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,
+                 connectivity_changed_ms = ?, updated_ms = ?
+WHERE id = ?;
 
 -- name: DeleteNode :execrows
 DELETE FROM nodes WHERE id = ?;
+
+-- name: InsertUnconfirmedAlert :exec
+-- A report of an already stored alert changes nothing: the first copy wins.
+INSERT INTO unconfirmed_alerts (node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms,
+                                outcome, reachable, total, reporters, reported_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (node_id, local_id) DO NOTHING;
+
+-- name: GetUnconfirmedAlert :one
+SELECT * FROM unconfirmed_alerts WHERE node_id = ? AND local_id = ?;
+
+-- name: ResolveUnconfirmedAlert :execrows
+UPDATE unconfirmed_alerts SET verdict = sqlc.arg(verdict), resolved_ms = sqlc.arg(resolved_ms)
+WHERE node_id = sqlc.arg(node_id) AND local_id = sqlc.arg(local_id) AND verdict = '';
+
+-- name: ListOpenUnconfirmedAlerts :many
+SELECT * FROM unconfirmed_alerts WHERE verdict = ''
+ORDER BY since_ms, node_id, local_id
+LIMIT sqlc.arg(row_limit);
+
+-- name: GetSystemAlert :one
+SELECT * FROM system_alerts WHERE kind = ? AND subject = ?;
+
+-- name: UpsertSystemAlert :exec
+INSERT INTO system_alerts (kind, subject, active, level, since_ms, updated_ms, details_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (kind, subject) DO UPDATE SET
+    active = excluded.active,
+    level = excluded.level,
+    since_ms = excluded.since_ms,
+    updated_ms = excluded.updated_ms,
+    details_json = excluded.details_json;
+
+-- name: ListSystemAlerts :many
+SELECT * FROM system_alerts ORDER BY kind, subject;
+
+-- name: ListActiveSystemAlerts :many
+SELECT * FROM system_alerts WHERE active = 1 ORDER BY kind, subject;
+
+-- name: UpsertNodeIncarnation :exec
+INSERT INTO node_incarnations (node_id, incarnation, seen_ms) VALUES (?, ?, ?)
+ON CONFLICT (node_id) DO UPDATE SET incarnation = excluded.incarnation, seen_ms = excluded.seen_ms;
+
+-- name: ListNodeIncarnations :many
+SELECT * FROM node_incarnations ORDER BY node_id;

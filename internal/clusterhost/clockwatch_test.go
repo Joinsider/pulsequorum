@@ -6,6 +6,8 @@ package clusterhost
 import (
 	"testing"
 	"time"
+
+	"github.com/joinsider/uptimecluster/internal/degraded"
 )
 
 // ADR 0020: the offset is remote minus the local midpoint of the call, and
@@ -71,5 +73,58 @@ func TestClockTrackerFreshness(t *testing.T) {
 	tr.record("b", clockSample{offset: 3 * time.Second, at: base.Add(time.Hour)})
 	if got := tr.offsets(base.Add(time.Hour)); got["b"] != 3000 {
 		t.Errorf("replaced sample = %v, want 3000", got)
+	}
+}
+
+// ADR 0024: the last GetStatus answer per peer is kept as a PeerView, and
+// answers older than clockMaxAge are dropped.
+func TestPeerViewTrackerFreshness(t *testing.T) {
+	base := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
+	var tr peerViewTracker
+	tr.record("b", degraded.PeerView{AnsweredAt: base, LeaderID: "node-c"})
+	tr.record("c", degraded.PeerView{AnsweredAt: base.Add(time.Minute), SelfCheckFailed: true})
+	tr.record("b", degraded.PeerView{AnsweredAt: base.Add(10 * time.Second), LeaderID: ""})
+
+	got := tr.snapshot(base.Add(90 * time.Second))
+	if want := (degraded.PeerView{AnsweredAt: base.Add(10 * time.Second)}); got["b"] != want {
+		t.Errorf("view of b = %+v, want the newer answer %+v", got["b"], want)
+	}
+	if !got["c"].SelfCheckFailed {
+		t.Errorf("view of c = %+v, want self-check failed", got["c"])
+	}
+
+	got = tr.snapshot(base.Add(2*time.Minute + 11*time.Second))
+	if _, ok := got["b"]; ok {
+		t.Errorf("stale view of b still returned: %+v", got)
+	}
+	if _, ok := got["c"]; !ok {
+		t.Errorf("fresh view of c dropped: %+v", got)
+	}
+	if got := tr.snapshot(base.Add(time.Hour)); len(got) != 0 {
+		t.Errorf("views after all aged out = %v, want none", got)
+	}
+}
+
+// ADR 0024: while no leader is known the poll runs at most every 5 s; a
+// shorter configured interval (tests) and a leader known keep the normal one.
+func TestClockWait(t *testing.T) {
+	tests := []struct {
+		name       string
+		normal     time.Duration
+		leaderless bool
+		want       time.Duration
+	}{
+		{"leader known, normal interval", 15 * time.Second, false, 15 * time.Second},
+		{"leaderless, default interval shortened to 5 s", 15 * time.Second, true, 5 * time.Second},
+		{"leaderless, interval already shorter", 200 * time.Millisecond, true, 200 * time.Millisecond},
+		{"leaderless, interval exactly 5 s", 5 * time.Second, true, 5 * time.Second},
+		{"leader known, short interval", 200 * time.Millisecond, false, 200 * time.Millisecond},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clockWait(tc.normal, tc.leaderless); got != tc.want {
+				t.Errorf("clockWait = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

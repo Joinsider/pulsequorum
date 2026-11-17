@@ -6,4 +6,5 @@ export * from './monitors/monitors.service';
 export * from './notifications/notifications.service';
 export * from './stream/stream.service';
 export * from './system/system.service';
+export * from './system-admin/system-admin.service';
 export * from './users/users.service';

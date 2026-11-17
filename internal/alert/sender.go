@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,10 +50,20 @@ func (t Target) secrets() []string {
 type DeliveryError struct {
 	// Permanent failures are not retried (FA-ALR-05).
 	Permanent bool
-	Msg       string
+	// RetryAfter is the earliest retry requested by the receiver (HTTP 429,
+	// ADR 0023). Zero means none.
+	RetryAfter time.Duration
+	Msg        string
 }
 
 func (e *DeliveryError) Error() string { return e.Msg }
+
+// Retry-After limits (ADR 0023). Shoutrrr does not expose the header, so a 429
+// in its error text waits a fixed time.
+const (
+	maxRetryAfter      = time.Hour
+	shoutrrrRetryAfter = 60 * time.Second
+)
 
 // Sender delivers alerts through the central dialer, so check and
 // notification targets share the SSRF policy (FA-ALR-12).
@@ -60,6 +71,8 @@ type Sender struct {
 	dialer *checker.Dialer
 	client *http.Client
 	log    *slog.Logger
+	// now is the clock for HTTP-date Retry-After values (default time.Now).
+	now func() time.Time
 }
 
 // NewSender creates a sender that dials through dialer.
@@ -82,7 +95,16 @@ func NewSender(dialer *checker.Dialer, log *slog.Logger) *Sender {
 			return nil
 		},
 	}
-	return &Sender{dialer: dialer, client: client, log: log}
+	return &Sender{dialer: dialer, client: client, log: log, now: time.Now}
+}
+
+// WithClock sets the clock used to read HTTP-date Retry-After headers and
+// returns the sender. The node's clock is injected this way (ADR 0020).
+func (s *Sender) WithClock(now func() time.Time) *Sender {
+	if now != nil {
+		s.now = now
+	}
+	return s
 }
 
 // Validate checks a target before it is saved: a parsable Shoutrrr URL whose
@@ -135,6 +157,25 @@ func (s *Sender) Send(ctx context.Context, t Target, p cluster.AlertPayload) err
 	default:
 		err = &DeliveryError{Permanent: true, Msg: fmt.Sprintf("unknown channel kind %q", t.Kind)}
 	}
+	return s.finish(t, err)
+}
+
+// SendBundle delivers several alerts as one message (ADR 0023). Only Shoutrrr
+// channels are bundled; webhooks get one request per alert.
+func (s *Sender) SendBundle(ctx context.Context, t Target, ps []cluster.AlertPayload) error {
+	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
+	defer cancel()
+	var err error
+	if t.Kind != store.ChannelShoutrrr {
+		err = &DeliveryError{Permanent: true, Msg: "only Shoutrrr channels take bundles"}
+	} else {
+		err = s.sendShoutrrrText(ctx, t, BundleTitle(ps), BundleText(ps))
+	}
+	return s.finish(t, err)
+}
+
+// finish turns err into a *DeliveryError without secrets, or returns nil.
+func (s *Sender) finish(t Target, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -161,7 +202,23 @@ func (s *Sender) router(t Target) (interface {
 // permanentStatus finds HTTP 401/403/404/410 in a Shoutrrr error message.
 var permanentStatus = regexp.MustCompile(`\b(401|403|404|410)\b`)
 
+// rateLimitStatus finds HTTP 429 in a Shoutrrr error message (ADR 0023).
+var rateLimitStatus = regexp.MustCompile(`\b429\b`)
+
+// shoutrrrError classifies an error message of the Shoutrrr library.
+func shoutrrrError(msg string) *DeliveryError {
+	de := &DeliveryError{Permanent: permanentStatus.MatchString(msg), Msg: msg}
+	if !de.Permanent && rateLimitStatus.MatchString(msg) {
+		de.RetryAfter = shoutrrrRetryAfter
+	}
+	return de
+}
+
 func (s *Sender) sendShoutrrr(ctx context.Context, t Target, p cluster.AlertPayload) error {
+	return s.sendShoutrrrText(ctx, t, title(p), Text(p))
+}
+
+func (s *Sender) sendShoutrrrText(ctx context.Context, t Target, title, text string) error {
 	router, err := shoutrrr.NewSenderWithOptions(s.shoutrrrLogger(t), types.SenderOptions{
 		HTTPClient: s.client, DialContext: s.dialer.DialContext, Timeout: SendTimeout,
 	}, t.URL)
@@ -169,13 +226,38 @@ func (s *Sender) sendShoutrrr(ctx context.Context, t Target, p cluster.AlertPayl
 		return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + err.Error()}
 	}
 	params := types.Params{}
-	params.SetTitle(fmt.Sprintf("%s: %s", p.Status, p.MonitorName))
-	for _, e := range router.SendContext(ctx, Text(p), &params) {
+	params.SetTitle(title)
+	for _, e := range router.SendContext(ctx, text, &params) {
 		if e != nil {
-			return &DeliveryError{Permanent: permanentStatus.MatchString(e.Error()), Msg: e.Error()}
+			return shoutrrrError(e.Error())
 		}
 	}
 	return nil
+}
+
+// parseRetryAfter reads a Retry-After header given in seconds or as an HTTP
+// date relative to now. It returns 0 if the value is missing, invalid or in the
+// past, and at most maxRetryAfter (ADR 0023).
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	var d time.Duration
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		if secs >= int(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
+		d = time.Duration(secs) * time.Second
+	} else if at, err := http.ParseTime(v); err == nil {
+		d = at.Sub(now)
+	} else {
+		return 0
+	}
+	return min(max(d, 0), maxRetryAfter)
 }
 
 func (s *Sender) sendWebhook(ctx context.Context, t Target, p cluster.AlertPayload) error {
@@ -208,6 +290,11 @@ func (s *Sender) sendWebhook(ctx context.Context, t Target, p cluster.AlertPaylo
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden,
 		resp.StatusCode == http.StatusNotFound, resp.StatusCode == http.StatusGone:
 		return &DeliveryError{Permanent: true, Msg: "webhook answered " + resp.Status}
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return &DeliveryError{
+			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), s.now()),
+			Msg:        "webhook answered " + resp.Status,
+		}
 	}
 	return &DeliveryError{Msg: "webhook answered " + resp.Status}
 }

@@ -8,18 +8,18 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// TestNext covers the retry and recovery rules of FA-CON-03 (PF-20). Results
-// are one second apart, starting at 0; U = up, D = down, G = degraded.
+// TestNext covers the retry and recovery rules of FA-CON-03 and FA-CON-05 on
+// the consensus of rounds (PF-20). Rounds are one second apart, starting at 0.
+// Targets: U = UP, G = DEGRADED, P = PARTIAL, D = DOWN, - = no report.
 func TestNext(t *testing.T) {
 	tests := []struct {
 		name              string
 		start             store.MonitorStatus
 		retries, recovery int
-		results           string
+		rounds            string
 		want              []string // "STATUS@sinceMs"
 	}{
 		{"new monitor goes UP on first success", store.StatusPending, 1, 1, "U", []string{"UP@0"}},
@@ -35,16 +35,29 @@ func TestNext(t *testing.T) {
 		{"paused is never left", store.StatusPaused, 0, 1, "DUG", nil},
 		{"maintenance is never left", store.StatusMaintenance, 0, 1, "DU", nil},
 		{"full cycle", store.StatusPending, 1, 2, "UDDDUUU", []string{"UP@0", "PENDING@1000", "DOWN@1000", "UP@4000"}},
+
+		{"PARTIAL from PENDING is positive", store.StatusPending, 1, 1, "P", []string{"PARTIAL@0"}},
+		{"PARTIAL then failure goes PENDING", store.StatusPending, 1, 1, "PD", []string{"PARTIAL@0", "PENDING@1000"}},
+		{"PARTIAL counts for recovery", store.StatusDown, 1, 2, "PP", []string{"PARTIAL@0"}},
+		{"no report sets UNKNOWN from UP", store.StatusUp, 1, 1, "-", []string{"UNKNOWN@0"}},
+		{"UNKNOWN stays on further no reports", store.StatusUp, 1, 1, "--", []string{"UNKNOWN@0"}},
+		{"no report keeps PENDING", store.StatusPending, 1, 1, "-", nil},
+		{"no report keeps DOWN", store.StatusDown, 1, 1, "--", nil},
+		{"no report does not break a failure streak", store.StatusUp, 1, 1, "D-D", []string{"PENDING@0", "DOWN@0"}},
+		{"positive from UNKNOWN is immediate", store.StatusUnknown, 1, 3, "U", []string{"UP@0"}},
+		{"failure from UNKNOWN goes through PENDING", store.StatusUnknown, 1, 1, "DD", []string{"PENDING@0", "DOWN@0"}},
 	}
-	statuses := map[rune]checker.Status{'U': checker.StatusUp, 'D': checker.StatusDown, 'G': checker.StatusDegraded}
+	targets := map[rune]store.MonitorStatus{'U': store.StatusUp, 'G': store.StatusDegraded, 'P': store.StatusPartial,
+		'D': store.StatusDown, '-': ""}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := &tracker{status: tt.start}
 			var got []string
-			for i, c := range tt.results {
+			for i, c := range tt.rounds {
 				at := int64(i) * 1000
-				tr.observe(checker.Result{Status: statuses[c]}, at)
-				if to, since, ok := tr.next(statuses[c], at, tt.retries, tt.recovery); ok {
+				target := targets[c]
+				tr.observe(target, at)
+				if to, since, ok := tr.next(target, at, tt.retries, tt.recovery); ok {
 					got = append(got, fmt.Sprintf("%s@%d", to, since))
 					tr.status = to
 				}

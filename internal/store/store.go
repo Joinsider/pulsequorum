@@ -16,6 +16,11 @@ import (
 	"slices"
 )
 
+// SystemTenantID is the reserved tenant that holds the system channels of the
+// platform admins (ADR 0025). It has no monitors and no users; principals of
+// it are rejected, and only the system actor may create it.
+const SystemTenantID = "_system"
+
 var (
 	// ErrNotFound is returned when an object does not exist or belongs to another tenant.
 	ErrNotFound = errors.New("not found")
@@ -102,6 +107,11 @@ type MonitorState struct {
 	// Confirmed is false if the change was made without quorum (phase 3).
 	Confirmed bool
 	SinceMs   int64
+	// Flapping is true while the monitor flaps (FA-ALR-06, ADR 0023);
+	// FlappingSinceMs is the time the period started. Only SetMonitorFlapping
+	// writes them, so PutMonitorState keeps them.
+	Flapping        bool
+	FlappingSinceMs int64
 }
 
 // Channel kinds (E7).
@@ -123,6 +133,14 @@ const (
 	EventUp       = "up"
 	EventDegraded = "degraded"
 	EventPartial  = "partial"
+	// EventFlapping starts and ends a flapping period (FA-ALR-06, ADR 0023).
+	EventFlapping = "flapping"
+	// EventChannelFailed reports another channel of the tenant that failed
+	// permanently or gave up (FA-ALR-05, ADR 0023).
+	EventChannelFailed = "channel_failed"
+	// EventSystem reports a system alert (FA-OBS-01, ADR 0025). Only channels
+	// of the system tenant subscribe to it.
+	EventSystem = "system"
 )
 
 // NotificationChannel is a target for alerts (FA-ALR-01). URLEnc and the
@@ -290,6 +308,54 @@ type Incident struct {
 	// AffectedNodes are the IDs of the nodes that reported DOWN.
 	AffectedNodes []string
 	Confirmed     bool
+	// Reevaluated is true for an incident added to a gap in the history after
+	// the quorum returned (FA-UPT-07, ADR 0024). It never caused a notification.
+	Reevaluated bool
+}
+
+// Verdicts of an unconfirmed alert, judged by the leader after the quorum
+// returned (FA-ALR-10, ADR 0024).
+const (
+	VerdictConfirmed    = "confirmed"
+	VerdictFalseAlarm   = "false_alarm"
+	VerdictUnverifiable = "unverifiable"
+)
+
+// UnconfirmedAlert is an alert a voter sent while it was degraded, reported to
+// the leader after the quorum returned (ADR 0024). Verdict and ResolvedMs are
+// empty while the alert is open.
+type UnconfirmedAlert struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int
+	Total      int
+	Reporters  []string
+	ReportedMs int64
+	Verdict    string
+	ResolvedMs int64
+}
+
+// DegradedAlert is a row of the node-local log of alerts a voter sent while it
+// was degraded (ADR 0024). It is not replicated.
+type DegradedAlert struct {
+	ID        int64
+	TenantID  string
+	MonitorID string
+	ChannelID string
+	Status    string
+	SinceMs   int64
+	SentMs    int64
+	Outcome   string
+	Reachable int
+	Total     int
+	Reporters []string
 }
 
 // IncidentCursor is the keyset position after which ListIncidents continues.
@@ -363,6 +429,10 @@ type State interface {
 	// GetSession returns the refresh token with the hash or ErrNotFound.
 	GetSession(ctx context.Context, tokenHash string) (Session, error)
 
+	// ListOpenUnconfirmedAlerts returns the alerts without verdict ordered by
+	// since time, node and local ID (ADR 0024).
+	ListOpenUnconfirmedAlerts(ctx context.Context, limit int) ([]UnconfirmedAlert, error)
+
 	// StatusHistory returns the status changes in [fromMs, toMs), preceded by
 	// the last change before fromMs if it is still stored, ordered by time.
 	StatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64) ([]StatusChange, error)
@@ -385,12 +455,20 @@ type State interface {
 	ListRevokedNodes(ctx context.Context) ([]RevokedNode, error)
 	// ListNodes returns the node registry ordered by node ID (ADR 0017).
 	ListNodes(ctx context.Context) ([]Node, error)
+	// ListSystemAlerts returns the system alerts ordered by kind and subject;
+	// with activeOnly only the active ones (ADR 0025).
+	ListSystemAlerts(ctx context.Context, activeOnly bool) ([]SystemAlert, error)
+	// ListNodeIncarnations returns the last known incarnations ordered by node ID (ADR 0025).
+	ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error)
 
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
 	// CommandLevel returns the command version the cluster may use (ADR 0018),
 	// 0 if it was never set.
 	CommandLevel(ctx context.Context) (uint32, error)
+	// LastIssuedAt returns the command time of the last applied command, 0 if
+	// none was applied (ADR 0024).
+	LastIssuedAt(ctx context.Context) (int64, error)
 
 	// Update runs fn in one write transaction. Only the Raft FSM calls it, so
 	// that every replica applies the same changes (ADR 0005, FA-CLU-07).
@@ -400,6 +478,8 @@ type State interface {
 // StateTx writes data class A inside State.Update. Implementations must not read
 // the clock or a random source: timestamps and IDs come with the records.
 type StateTx interface {
+	// ListNodes returns the node registry ordered by node ID (ADR 0017).
+	ListNodes(ctx context.Context) ([]Node, error)
 	PutTenant(ctx context.Context, t Tenant) error
 	GetTenant(ctx context.Context, id string) (Tenant, error)
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
@@ -431,16 +511,43 @@ type StateTx interface {
 
 	// GetMonitorState returns the stored state or ErrNotFound.
 	GetMonitorState(ctx context.Context, tenantID, monitorID string) (MonitorState, error)
-	// PutMonitorState stores the state and records it in the status history.
+	// PutMonitorState stores the status, confirmation and since time and records
+	// the change in the status history. The flapping fields are not changed.
 	PutMonitorState(ctx context.Context, tenantID, monitorID string, st MonitorState) error
+	// SetMonitorFlapping stores the flapping flag and its start time of a monitor
+	// with a state, or ErrNotFound.
+	SetMonitorFlapping(ctx context.Context, tenantID, monitorID string, flapping bool, sinceMs int64) error
+	// StatusChangesSince returns the status history of a monitor from fromMs on, ordered by time.
+	StatusChangesSince(ctx context.Context, tenantID, monitorID string, fromMs int64) ([]StatusChange, error)
+	// ListChannels returns the tenant's channels ordered by name.
+	ListChannels(ctx context.Context, tenantID string) ([]NotificationChannel, error)
 	// PruneStatusHistory deletes a monitor's changes before beforeMs except
 	// the last one, which still defines the status at beforeMs.
 	PruneStatusHistory(ctx context.Context, tenantID, monitorID string, beforeMs int64) error
 	// OpenIncident stores a new incident; a second open incident of the same
-	// monitor is ErrConflict.
+	// monitor is ErrConflict. A non-zero ResolvedMs stores a closed incident,
+	// which is how re-evaluated gaps are recorded (ADR 0024).
 	OpenIncident(ctx context.Context, inc Incident) error
 	// ResolveIncident ends the open incident of a monitor, if there is one.
 	ResolveIncident(ctx context.Context, tenantID, monitorID string, resolvedMs int64) error
+	// ReplaceStatusHistory deletes the changes of a monitor in [fromMs, toMs)
+	// and stores entries instead (FA-UPT-07, ADR 0024). An entry outside the
+	// interval is an error.
+	ReplaceStatusHistory(ctx context.Context, tenantID, monitorID string, fromMs, toMs int64, entries []StatusChange) error
+
+	// InsertUnconfirmedAlerts stores reported alerts. An alert whose node and
+	// local ID are already stored is left unchanged (ADR 0024).
+	InsertUnconfirmedAlerts(ctx context.Context, alerts []UnconfirmedAlert) error
+	// GetUnconfirmedAlert returns a stored alert or ErrNotFound.
+	GetUnconfirmedAlert(ctx context.Context, nodeID string, localID int64) (UnconfirmedAlert, error)
+	// ResolveUnconfirmedAlert stores the verdict of an open alert. An unknown
+	// alert is ErrNotFound, an alert that already has a verdict is ErrConflict.
+	// verdict is one of the Verdict constants.
+	ResolveUnconfirmedAlert(ctx context.Context, nodeID string, localID int64, verdict string, resolvedMs int64) error
+	// SetLastIssuedAt stores the command time of the last applied command (ADR 0024).
+	SetLastIssuedAt(ctx context.Context, ms int64) error
+	// LastIssuedAt returns the stored command time, 0 if none (ADR 0024).
+	LastIssuedAt(ctx context.Context) (int64, error)
 
 	// PutSecretKey creates a DEK or updates its wrapping or retirement; the
 	// creation time of an existing key is kept.
@@ -476,6 +583,9 @@ type StateTx interface {
 	PutNode(ctx context.Context, n Node) error
 	// DeleteNode removes a registry entry; an unknown ID is not an error.
 	DeleteNode(ctx context.Context, id string) error
+	// SetNodeConnectivity records the connectivity of a registered node and
+	// the time of the change (ADR 0022). An unknown node is ErrNotFound.
+	SetNodeConnectivity(ctx context.Context, nodeID string, impaired bool, reason string, atMs int64) error
 
 	// CountUsers returns the number of users of all tenants.
 	CountUsers(ctx context.Context) (int, error)
@@ -524,6 +634,15 @@ type StateTx interface {
 	PutDedup(ctx context.Context, e DedupEntry) error
 	// PruneDedup removes entries issued before beforeMs (deterministic retention).
 	PruneDedup(ctx context.Context, beforeMs int64) error
+	// GetSystemAlert returns the stored system alert or ErrNotFound (ADR 0025).
+	GetSystemAlert(ctx context.Context, kind, subject string) (SystemAlert, error)
+	// PutSystemAlert creates or replaces the system alert with its kind and subject.
+	PutSystemAlert(ctx context.Context, a SystemAlert) error
+	// PutNodeIncarnation creates or replaces the last known incarnation of a node (ADR 0025).
+	PutNodeIncarnation(ctx context.Context, n NodeIncarnation) error
+	// Fingerprint hashes the replicated state inside this transaction, as
+	// State.Fingerprint does for the committed state (ADR 0025).
+	Fingerprint(ctx context.Context) (string, error)
 }
 
 // ClusterCA is the certificate authority of the cluster (ADR 0006). KeyEnc is
@@ -588,8 +707,14 @@ type Node struct {
 	// HealthChangedMs is the command time of the last health change, or of
 	// the first registration.
 	HealthChangedMs int64
-	RegisteredMs    int64
-	UpdatedMs       int64
+	// ConnectivityImpaired is the connectivity state the leader decided (ADR 0022).
+	ConnectivityImpaired bool
+	// ConnectivityReason is "reference" or "deviation" while impaired, else empty.
+	ConnectivityReason string
+	// ConnectivityChangedMs is the command time of the last connectivity change.
+	ConnectivityChangedMs int64
+	RegisteredMs          int64
+	UpdatedMs             int64
 }
 
 // HasCapability reports whether the node has the capability; "" is always true.
@@ -604,6 +729,25 @@ type SecretKey struct {
 	KEKFingerprint string
 	CreatedMs      int64
 	RetiredMs      int64 // 0 = not retired
+}
+
+// SystemAlert is the replicated state of one system alert (FA-OBS-01, ADR 0025),
+// identified by its kind and subject. Level is the expiry stage or a counter.
+type SystemAlert struct {
+	Kind        string
+	Subject     string
+	Active      bool
+	Level       int
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJSON json.RawMessage
+}
+
+// NodeIncarnation is the last incarnation a node reported (FA-REP-06, ADR 0025).
+type NodeIncarnation struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
 }
 
 // DedupEntry is the stored outcome of an applied command, so that a retry with
@@ -795,4 +939,15 @@ type Metrics interface {
 	// data before an interrupted compaction (FA-UPT-04).
 	CompactHeartbeats(ctx context.Context, minutes []LatencyMinute, deleted []HeartbeatKey) error
 	DeleteLatencyMinutesBefore(ctx context.Context, beforeMs int64, batchSize int) (int64, error)
+
+	// InsertDegradedAlert appends an alert to the node-local degraded log and
+	// returns its ID (ADR 0024). a.ID is ignored.
+	InsertDegradedAlert(ctx context.Context, a DegradedAlert) (int64, error)
+	// ListUnreportedDegradedAlerts returns up to limit alerts not yet reported
+	// to the leader, ordered by ID.
+	ListUnreportedDegradedAlerts(ctx context.Context, limit int) ([]DegradedAlert, error)
+	// MarkDegradedAlertsReported records that the alerts reached the leader.
+	MarkDegradedAlertsReported(ctx context.Context, ids []int64) error
+	// PruneDegradedAlerts deletes the alerts sent before beforeMs and returns the number deleted.
+	PruneDegradedAlerts(ctx context.Context, beforeMs int64) (int64, error)
 }

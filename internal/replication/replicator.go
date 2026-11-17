@@ -44,6 +44,10 @@ type Options struct {
 	PageSize int
 	// PushBuffer is the number of batches queued per peer. Default 64.
 	PushBuffer int
+	// OnStored is called with the heartbeats of every anti-entropy page after
+	// they were stored (ADR 0021). It must not block, and the slice is only valid
+	// during the call. It may be nil.
+	OnStored func([]store.Heartbeat)
 
 	// Reconnect backoff of push streams and dials (ADR 0006). Defaults 1s and 30s.
 	backoffMin time.Duration

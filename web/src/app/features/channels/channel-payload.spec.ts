@@ -79,8 +79,23 @@ describe('buildHeaders', () => {
 describe('event flags', () => {
   it('maps events to flags and back in API order', () => {
     const flags = eventFlags([NotificationEvent.up, NotificationEvent.down]);
-    expect(flags).toEqual({ down: true, up: true, degraded: false, partial: false });
+    expect(flags).toEqual({
+      down: true,
+      up: true,
+      degraded: false,
+      partial: false,
+      flapping: false,
+      channel_failed: false,
+    });
     expect(selectedEvents(flags)).toEqual([NotificationEvent.down, NotificationEvent.up]);
+  });
+
+  it('selects the flapping and channel-failed events in API order', () => {
+    const flags = eventFlags([NotificationEvent.channel_failed, NotificationEvent.flapping]);
+    expect(selectedEvents(flags)).toEqual([
+      NotificationEvent.flapping,
+      NotificationEvent.channel_failed,
+    ]);
   });
 
   it('returns an empty selection when nothing is checked', () => {

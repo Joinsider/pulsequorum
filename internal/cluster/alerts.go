@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
@@ -54,15 +55,19 @@ func enqueueAlerts(ctx context.Context, tx store.StateTx, issuedAt int64, m stor
 		if ch.State == store.ChannelDisabled || !ch.Subscribes(p.Event) {
 			continue
 		}
-		err = tx.EnqueueAlert(ctx, store.AlertDelivery{
-			TenantID: m.TenantID, AlertKey: p.AlertID, ChannelID: id, MonitorID: m.ID, Payload: payload,
-			NextAttemptMs: issuedAt, State: store.AlertPending, CreatedMs: issuedAt, UpdatedMs: issuedAt,
-		})
-		if err != nil {
+		if err := enqueueAlertDelivery(ctx, tx, issuedAt, m.TenantID, m.ID, id, p.AlertID, payload); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// enqueueAlertDelivery adds the outbox entry of one alert for one channel (ADR 0014).
+func enqueueAlertDelivery(ctx context.Context, tx store.StateTx, issuedAt int64, tenantID, monitorID, channelID, alertKey string, payload []byte) error {
+	return tx.EnqueueAlert(ctx, store.AlertDelivery{
+		TenantID: tenantID, AlertKey: alertKey, ChannelID: channelID, MonitorID: monitorID, Payload: payload,
+		NextAttemptMs: issuedAt, State: store.AlertPending, CreatedMs: issuedAt, UpdatedMs: issuedAt,
+	})
 }
 
 func alertKey(monitorID string, sinceMs int64, status store.MonitorStatus) string {
@@ -84,6 +89,9 @@ func notifyStateChange(ctx context.Context, tx store.StateTx, cmd *pb.Command, s
 		MonitorType: m.Type, Event: event, Status: string(to), PreviousStatus: string(from), SinceMs: since,
 		Confirmed: set.GetConfirmed(),
 	}
+	if p.Sender, err = senderView(ctx, tx, set); err != nil {
+		return err
+	}
 	if inc := set.GetIncident(); to == store.StatusDown && inc != nil {
 		p.Cause, p.ErrorClass, p.IncidentID = inc.GetCause(), ErrorClassFromProto(inc.GetErrorClass()), inc.GetIncidentId()
 	}
@@ -102,6 +110,10 @@ func applyEnqueueAlert(ctx context.Context, tx store.StateTx, cmd *pb.Command, e
 	}
 	if m.State.Status != store.StatusDown || m.State.SinceMs != e.GetDownSinceMs() {
 		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is no longer in that DOWN period", m.ID)}
+	}
+	if m.State.Flapping {
+		// A flapping monitor sends its summary only; reminders wait (ADR 0023, 4).
+		return json.Marshal(PutResult{})
 	}
 	p := AlertPayload{
 		AlertID:  fmt.Sprintf("%s:reminder:%d", alertKey(m.ID, m.State.SinceMs, store.StatusDown), e.GetReminder()),
@@ -150,8 +162,24 @@ func applyAckAlertDelivery(ctx context.Context, tx store.StateTx, cmd *pb.Comman
 		return nil, err
 	}
 	if channelState != "" {
+		prev, err := tx.GetChannel(ctx, a.TenantID, a.ChannelID)
+		if err != nil {
+			return nil, storeError(err)
+		}
 		if err := tx.SetChannelState(ctx, a.TenantID, a.ChannelID, channelState, channelErr); err != nil {
 			return nil, err
+		}
+		enabled, err := flappingEnabled(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		// Only a channel that fails notifies; recovery does not (ADR 0023, 5).
+		if enabled && channelState != store.ChannelOK && prev.State != channelState {
+			failed := prev
+			failed.State, failed.LastError = channelState, channelErr
+			if err := notifyChannelFailed(ctx, tx, cmd, a, failed); err != nil {
+				return nil, storeError(err)
+			}
 		}
 	}
 	if err := tx.PruneAlerts(ctx, now-alertRetention.Milliseconds()); err != nil {
@@ -161,7 +189,11 @@ func applyAckAlertDelivery(ctx context.Context, tx store.StateTx, cmd *pb.Comman
 }
 
 // channelFromDocument validates a channel document; secrets must be encrypted.
-func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64) (store.NotificationChannel, error) {
+//
+// level is the effective command level. It admits the events of later levels:
+// flapping and channel_failed from level 4 (ADR 0023), system from level 6 and
+// only for the system tenant (ADR 0025). Below these levels the events are unknown.
+func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int64, level uint32) (store.NotificationChannel, error) {
 	switch {
 	case tenantID == "":
 		return store.NotificationChannel{}, invalid("channel command without tenant")
@@ -178,6 +210,14 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 	for _, e := range doc.Events {
 		switch e {
 		case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
+		case store.EventFlapping, store.EventChannelFailed:
+			if level < FlappingCommandLevel {
+				return store.NotificationChannel{}, invalid("event %q", e)
+			}
+		case store.EventSystem:
+			if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
+				return store.NotificationChannel{}, invalid("event %q", e)
+			}
 		default:
 			return store.NotificationChannel{}, invalid("event %q", e)
 		}
@@ -187,4 +227,29 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 		WebhookMethod: doc.WebhookMethod, WebhookHeaders: doc.WebhookHeaders, WebhookTemplate: doc.WebhookTemplate,
 		Events: doc.Events, IsDefault: doc.IsDefault, CreatedMs: issuedAt, UpdatedMs: issuedAt,
 	}, nil
+}
+
+// senderView returns the view of the proposing node for an alert of set
+// (FA-ALR-11), or nil below DegradedCommandLevel. The voter counts come from
+// the replicated registry, so every replica computes the same payload.
+func senderView(ctx context.Context, tx store.StateTx, set *pb.SetMonitorState) (*AlertSender, error) {
+	enabled, err := degradedEnabled(ctx, tx)
+	if err != nil || !enabled {
+		return nil, err
+	}
+	nodes, err := tx.ListNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	v := &AlertSender{NodeID: set.GetSenderNodeId(), Reporters: slices.Clone(set.GetReporters()), Confirmed: set.GetConfirmed()}
+	for _, n := range nodes {
+		if n.Role != store.NodeRoleVoter {
+			continue
+		}
+		v.TotalVoters++
+		if n.Healthy {
+			v.ReachableVoters++
+		}
+	}
+	return v, nil
 }

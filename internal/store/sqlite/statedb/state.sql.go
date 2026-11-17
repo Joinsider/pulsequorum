@@ -45,6 +45,17 @@ func (q *Queries) CountEnabledUsersWithRole(ctx context.Context, arg CountEnable
 	return column_1, err
 }
 
+const countPendingAlerts = `-- name: CountPendingAlerts :one
+SELECT COUNT(*) FROM alert_outbox WHERE state = 'pending'
+`
+
+func (q *Queries) CountPendingAlerts(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPendingAlerts)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users
 `
@@ -157,6 +168,30 @@ func (q *Queries) DeleteNode(ctx context.Context, id string) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const deleteStatusHistoryBetween = `-- name: DeleteStatusHistoryBetween :exec
+DELETE FROM monitor_status_history
+WHERE tenant_id = ?1 AND monitor_id = ?2
+  AND since_ms >= ?3 AND since_ms < ?4
+`
+
+type DeleteStatusHistoryBetweenParams struct {
+	TenantID  string
+	MonitorID string
+	FromMs    int64
+	ToMs      int64
+}
+
+// Removes the changes in [from_ms, to_ms) of one monitor (FA-UPT-07).
+func (q *Queries) DeleteStatusHistoryBetween(ctx context.Context, arg DeleteStatusHistoryBetweenParams) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusHistoryBetween,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.FromMs,
+		arg.ToMs,
+	)
+	return err
 }
 
 const deleteUser = `-- name: DeleteUser :execrows
@@ -313,7 +348,7 @@ func (q *Queries) GetFSMMeta(ctx context.Context, key string) (int64, error) {
 }
 
 const getIncident = `-- name: GetIncident :one
-SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, i.reevaluated, m.name AS monitor_name
 FROM incidents i
 JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
 WHERE i.tenant_id = ?1 AND i.id = ?2
@@ -342,6 +377,7 @@ func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIn
 		&i.Incident.ErrorClass,
 		&i.Incident.AffectedNodesJson,
 		&i.Incident.Confirmed,
+		&i.Incident.Reevaluated,
 		&i.MonitorName,
 	)
 	return i, err
@@ -411,7 +447,9 @@ const getMonitor = `-- name: GetMonitor :one
 SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = ?1 AND m.id = ?2
@@ -423,10 +461,12 @@ type GetMonitorParams struct {
 }
 
 type GetMonitorRow struct {
-	Monitor        Monitor
-	StateStatus    string
-	StateConfirmed int64
-	StateSinceMs   int64
+	Monitor              Monitor
+	StateStatus          string
+	StateConfirmed       int64
+	StateSinceMs         int64
+	StateFlapping        int64
+	StateFlappingSinceMs int64
 }
 
 // Monitors and their state are written in the same FSM transaction; the
@@ -456,12 +496,14 @@ func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (GetMoni
 		&i.StateStatus,
 		&i.StateConfirmed,
 		&i.StateSinceMs,
+		&i.StateFlapping,
+		&i.StateFlappingSinceMs,
 	)
 	return i, err
 }
 
 const getMonitorState = `-- name: GetMonitorState :one
-SELECT tenant_id, monitor_id, status, confirmed, since_ms FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?
+SELECT tenant_id, monitor_id, status, confirmed, since_ms, flapping, flapping_since_ms FROM monitor_states WHERE tenant_id = ? AND monitor_id = ?
 `
 
 type GetMonitorStateParams struct {
@@ -478,12 +520,14 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 		&i.Status,
 		&i.Confirmed,
 		&i.SinceMs,
+		&i.Flapping,
+		&i.FlappingSinceMs,
 	)
 	return i, err
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes WHERE id = ?
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
@@ -502,6 +546,9 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 		&i.HealthChangedMs,
 		&i.RegisteredMs,
 		&i.UpdatedMs,
+		&i.ConnectivityImpaired,
+		&i.ConnectivityReason,
+		&i.ConnectivityChangedMs,
 	)
 	return i, err
 }
@@ -537,6 +584,30 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (RefreshSess
 	return i, err
 }
 
+const getSystemAlert = `-- name: GetSystemAlert :one
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts WHERE kind = ? AND subject = ?
+`
+
+type GetSystemAlertParams struct {
+	Kind    string
+	Subject string
+}
+
+func (q *Queries) GetSystemAlert(ctx context.Context, arg GetSystemAlertParams) (SystemAlert, error) {
+	row := q.db.QueryRowContext(ctx, getSystemAlert, arg.Kind, arg.Subject)
+	var i SystemAlert
+	err := row.Scan(
+		&i.Kind,
+		&i.Subject,
+		&i.Active,
+		&i.Level,
+		&i.SinceMs,
+		&i.UpdatedMs,
+		&i.DetailsJson,
+	)
+	return i, err
+}
+
 const getTenant = `-- name: GetTenant :one
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -560,6 +631,38 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 		&i.Suspended,
 		&i.CreatedMs,
 		&i.UpdatedMs,
+	)
+	return i, err
+}
+
+const getUnconfirmedAlert = `-- name: GetUnconfirmedAlert :one
+SELECT node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported_ms, verdict, resolved_ms FROM unconfirmed_alerts WHERE node_id = ? AND local_id = ?
+`
+
+type GetUnconfirmedAlertParams struct {
+	NodeID  string
+	LocalID int64
+}
+
+func (q *Queries) GetUnconfirmedAlert(ctx context.Context, arg GetUnconfirmedAlertParams) (UnconfirmedAlert, error) {
+	row := q.db.QueryRowContext(ctx, getUnconfirmedAlert, arg.NodeID, arg.LocalID)
+	var i UnconfirmedAlert
+	err := row.Scan(
+		&i.NodeID,
+		&i.LocalID,
+		&i.TenantID,
+		&i.MonitorID,
+		&i.ChannelID,
+		&i.Status,
+		&i.SinceMs,
+		&i.SentMs,
+		&i.Outcome,
+		&i.Reachable,
+		&i.Total,
+		&i.Reporters,
+		&i.ReportedMs,
+		&i.Verdict,
+		&i.ResolvedMs,
 	)
 	return i, err
 }
@@ -626,7 +729,7 @@ type InsertAlertParams struct {
 	TenantID      string
 	AlertKey      string
 	ChannelID     string
-	MonitorID     string
+	MonitorID     sql.NullString
 	PayloadJson   string
 	NextAttemptMs int64
 	CreatedMs     int64
@@ -741,8 +844,8 @@ func (q *Queries) InsertDedup(ctx context.Context, arg InsertDedupParams) error 
 }
 
 const insertIncident = `-- name: InsertIncident :exec
-INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, cause, error_class, affected_nodes_json, confirmed)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO incidents (tenant_id, id, monitor_id, started_ms, resolved_ms, cause, error_class, affected_nodes_json, confirmed, reevaluated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertIncidentParams struct {
@@ -750,22 +853,27 @@ type InsertIncidentParams struct {
 	ID                string
 	MonitorID         string
 	StartedMs         int64
+	ResolvedMs        int64
 	Cause             string
 	ErrorClass        string
 	AffectedNodesJson string
 	Confirmed         int64
+	Reevaluated       int64
 }
 
+// resolved_ms is 0 for an open incident; a re-evaluated gap is stored closed.
 func (q *Queries) InsertIncident(ctx context.Context, arg InsertIncidentParams) error {
 	_, err := q.db.ExecContext(ctx, insertIncident,
 		arg.TenantID,
 		arg.ID,
 		arg.MonitorID,
 		arg.StartedMs,
+		arg.ResolvedMs,
 		arg.Cause,
 		arg.ErrorClass,
 		arg.AffectedNodesJson,
 		arg.Confirmed,
+		arg.Reevaluated,
 	)
 	return err
 }
@@ -944,6 +1052,49 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const insertUnconfirmedAlert = `-- name: InsertUnconfirmedAlert :exec
+INSERT INTO unconfirmed_alerts (node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms,
+                                outcome, reachable, total, reporters, reported_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (node_id, local_id) DO NOTHING
+`
+
+type InsertUnconfirmedAlertParams struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int64
+	Total      int64
+	Reporters  string
+	ReportedMs int64
+}
+
+// A report of an already stored alert changes nothing: the first copy wins.
+func (q *Queries) InsertUnconfirmedAlert(ctx context.Context, arg InsertUnconfirmedAlertParams) error {
+	_, err := q.db.ExecContext(ctx, insertUnconfirmedAlert,
+		arg.NodeID,
+		arg.LocalID,
+		arg.TenantID,
+		arg.MonitorID,
+		arg.ChannelID,
+		arg.Status,
+		arg.SinceMs,
+		arg.SentMs,
+		arg.Outcome,
+		arg.Reachable,
+		arg.Total,
+		arg.Reporters,
+		arg.ReportedMs,
+	)
+	return err
+}
+
 const insertUser = `-- name: InsertUser :exec
 INSERT INTO users (
     tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms
@@ -979,6 +1130,41 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
 		arg.LastLoginMs,
 	)
 	return err
+}
+
+const listActiveSystemAlerts = `-- name: ListActiveSystemAlerts :many
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts WHERE active = 1 ORDER BY kind, subject
+`
+
+func (q *Queries) ListActiveSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSystemAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SystemAlert{}
+	for rows.Next() {
+		var i SystemAlert
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Subject,
+			&i.Active,
+			&i.Level,
+			&i.SinceMs,
+			&i.UpdatedMs,
+			&i.DetailsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAllMaintenanceWindows = `-- name: ListAllMaintenanceWindows :many
@@ -1096,7 +1282,7 @@ func (q *Queries) ListClusterCAs(ctx context.Context) ([]ClusterCa, error) {
 }
 
 const listIncidents = `-- name: ListIncidents :many
-SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, m.name AS monitor_name
+SELECT i.tenant_id, i.id, i.monitor_id, i.started_ms, i.resolved_ms, i.cause, i.error_class, i.affected_nodes_json, i.confirmed, i.reevaluated, m.name AS monitor_name
 FROM incidents i
 JOIN monitors m ON m.tenant_id = i.tenant_id AND m.id = i.monitor_id
 WHERE i.tenant_id = ?1
@@ -1156,6 +1342,7 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			&i.Incident.ErrorClass,
 			&i.Incident.AffectedNodesJson,
 			&i.Incident.Confirmed,
+			&i.Incident.Reevaluated,
 			&i.MonitorName,
 		); err != nil {
 			return nil, err
@@ -1326,7 +1513,9 @@ const listMonitors = `-- name: ListMonitors :many
 SELECT m.tenant_id, m.id, m.name, m.description, m.type, m.config_json, m.interval_s, m.timeout_s, m.retries, m.recovery_threshold, m.resend_interval_min, m.assignment_json, m.consensus_policy, m.paused, m.revision, m.created_ms, m.updated_ms, m.secrets_json,
        CAST(COALESCE(s.status, 'PENDING') AS TEXT)          AS state_status,
        CAST(COALESCE(s.confirmed, 1) AS INTEGER)            AS state_confirmed,
-       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms
+       CAST(COALESCE(s.since_ms, m.created_ms) AS INTEGER)  AS state_since_ms,
+       CAST(COALESCE(s.flapping, 0) AS INTEGER)             AS state_flapping,
+       CAST(COALESCE(s.flapping_since_ms, 0) AS INTEGER)    AS state_flapping_since_ms
 FROM monitors m
 LEFT JOIN monitor_states s ON s.tenant_id = m.tenant_id AND s.monitor_id = m.id
 WHERE m.tenant_id = ?1
@@ -1350,10 +1539,12 @@ type ListMonitorsParams struct {
 }
 
 type ListMonitorsRow struct {
-	Monitor        Monitor
-	StateStatus    string
-	StateConfirmed int64
-	StateSinceMs   int64
+	Monitor              Monitor
+	StateStatus          string
+	StateConfirmed       int64
+	StateSinceMs         int64
+	StateFlapping        int64
+	StateFlappingSinceMs int64
 }
 
 func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]ListMonitorsRow, error) {
@@ -1394,6 +1585,8 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 			&i.StateStatus,
 			&i.StateConfirmed,
 			&i.StateSinceMs,
+			&i.StateFlapping,
+			&i.StateFlappingSinceMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1408,8 +1601,35 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 	return items, nil
 }
 
+const listNodeIncarnations = `-- name: ListNodeIncarnations :many
+SELECT node_id, incarnation, seen_ms FROM node_incarnations ORDER BY node_id
+`
+
+func (q *Queries) ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error) {
+	rows, err := q.db.QueryContext(ctx, listNodeIncarnations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NodeIncarnation{}
+	for rows.Next() {
+		var i NodeIncarnation
+		if err := rows.Scan(&i.NodeID, &i.Incarnation, &i.SeenMs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms FROM nodes ORDER BY id
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms FROM nodes ORDER BY id
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -1434,6 +1654,54 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.HealthChangedMs,
 			&i.RegisteredMs,
 			&i.UpdatedMs,
+			&i.ConnectivityImpaired,
+			&i.ConnectivityReason,
+			&i.ConnectivityChangedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenUnconfirmedAlerts = `-- name: ListOpenUnconfirmedAlerts :many
+SELECT node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported_ms, verdict, resolved_ms FROM unconfirmed_alerts WHERE verdict = ''
+ORDER BY since_ms, node_id, local_id
+LIMIT ?1
+`
+
+func (q *Queries) ListOpenUnconfirmedAlerts(ctx context.Context, rowLimit int64) ([]UnconfirmedAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenUnconfirmedAlerts, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UnconfirmedAlert{}
+	for rows.Next() {
+		var i UnconfirmedAlert
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.LocalID,
+			&i.TenantID,
+			&i.MonitorID,
+			&i.ChannelID,
+			&i.Status,
+			&i.SinceMs,
+			&i.SentMs,
+			&i.Outcome,
+			&i.Reachable,
+			&i.Total,
+			&i.Reporters,
+			&i.ReportedMs,
+			&i.Verdict,
+			&i.ResolvedMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1560,6 +1828,41 @@ func (q *Queries) ListSigningKeys(ctx context.Context) ([]SigningKey, error) {
 			&i.PrivateKeyEnc,
 			&i.CreatedMs,
 			&i.RetiredMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSystemAlerts = `-- name: ListSystemAlerts :many
+SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts ORDER BY kind, subject
+`
+
+func (q *Queries) ListSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listSystemAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SystemAlert{}
+	for rows.Next() {
+		var i SystemAlert
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Subject,
+			&i.Active,
+			&i.Level,
+			&i.SinceMs,
+			&i.UpdatedMs,
+			&i.DetailsJson,
 		); err != nil {
 			return nil, err
 		}
@@ -1791,8 +2094,9 @@ func (q *Queries) PruneStatusHistory(ctx context.Context, arg PruneStatusHistory
 
 const putNode = `-- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
-                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
+                   connectivity_impaired, connectivity_reason, connectivity_changed_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -1804,22 +2108,28 @@ ON CONFLICT (id) DO UPDATE SET
     healthy = excluded.healthy,
     health_changed_ms = excluded.health_changed_ms,
     registered_ms = excluded.registered_ms,
-    updated_ms = excluded.updated_ms
+    updated_ms = excluded.updated_ms,
+    connectivity_impaired = excluded.connectivity_impaired,
+    connectivity_reason = excluded.connectivity_reason,
+    connectivity_changed_ms = excluded.connectivity_changed_ms
 `
 
 type PutNodeParams struct {
-	ID                string
-	Name              string
-	Role              string
-	CapabilitiesJson  string
-	LabelsJson        string
-	Region            string
-	Version           string
-	MaxCommandVersion int64
-	Healthy           int64
-	HealthChangedMs   int64
-	RegisteredMs      int64
-	UpdatedMs         int64
+	ID                    string
+	Name                  string
+	Role                  string
+	CapabilitiesJson      string
+	LabelsJson            string
+	Region                string
+	Version               string
+	MaxCommandVersion     int64
+	Healthy               int64
+	HealthChangedMs       int64
+	RegisteredMs          int64
+	UpdatedMs             int64
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
 }
 
 func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
@@ -1836,6 +2146,9 @@ func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
 		arg.HealthChangedMs,
 		arg.RegisteredMs,
 		arg.UpdatedMs,
+		arg.ConnectivityImpaired,
+		arg.ConnectivityReason,
+		arg.ConnectivityChangedMs,
 	)
 	return err
 }
@@ -1895,6 +2208,31 @@ type ResolveIncidentParams struct {
 
 func (q *Queries) ResolveIncident(ctx context.Context, arg ResolveIncidentParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, resolveIncident, arg.ResolvedMs, arg.TenantID, arg.MonitorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const resolveUnconfirmedAlert = `-- name: ResolveUnconfirmedAlert :execrows
+UPDATE unconfirmed_alerts SET verdict = ?1, resolved_ms = ?2
+WHERE node_id = ?3 AND local_id = ?4 AND verdict = ''
+`
+
+type ResolveUnconfirmedAlertParams struct {
+	Verdict    string
+	ResolvedMs int64
+	NodeID     string
+	LocalID    int64
+}
+
+func (q *Queries) ResolveUnconfirmedAlert(ctx context.Context, arg ResolveUnconfirmedAlertParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, resolveUnconfirmedAlert,
+		arg.Verdict,
+		arg.ResolvedMs,
+		arg.NodeID,
+		arg.LocalID,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1967,6 +2305,59 @@ func (q *Queries) SetFSMMeta(ctx context.Context, arg SetFSMMetaParams) error {
 	return err
 }
 
+const setMonitorFlapping = `-- name: SetMonitorFlapping :execrows
+UPDATE monitor_states SET flapping = ?1, flapping_since_ms = ?2
+WHERE tenant_id = ?3 AND monitor_id = ?4
+`
+
+type SetMonitorFlappingParams struct {
+	Flapping        int64
+	FlappingSinceMs int64
+	TenantID        string
+	MonitorID       string
+}
+
+func (q *Queries) SetMonitorFlapping(ctx context.Context, arg SetMonitorFlappingParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setMonitorFlapping,
+		arg.Flapping,
+		arg.FlappingSinceMs,
+		arg.TenantID,
+		arg.MonitorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setNodeConnectivity = `-- name: SetNodeConnectivity :execrows
+UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,
+                 connectivity_changed_ms = ?, updated_ms = ?
+WHERE id = ?
+`
+
+type SetNodeConnectivityParams struct {
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
+	UpdatedMs             int64
+	ID                    string
+}
+
+func (q *Queries) SetNodeConnectivity(ctx context.Context, arg SetNodeConnectivityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setNodeConnectivity,
+		arg.ConnectivityImpaired,
+		arg.ConnectivityReason,
+		arg.ConnectivityChangedMs,
+		arg.UpdatedMs,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setUserLastLogin = `-- name: SetUserLastLogin :execrows
 UPDATE users SET last_login_ms = ? WHERE tenant_id = ? AND id = ?
 `
@@ -1983,6 +2374,48 @@ func (q *Queries) SetUserLastLogin(ctx context.Context, arg SetUserLastLoginPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const statusChangesSince = `-- name: StatusChangesSince :many
+SELECT h.since_ms, h.status FROM monitor_status_history h
+WHERE h.tenant_id = ?1 AND h.monitor_id = ?2
+  AND h.since_ms >= ?3
+ORDER BY h.since_ms
+`
+
+type StatusChangesSinceParams struct {
+	TenantID  string
+	MonitorID string
+	FromMs    int64
+}
+
+type StatusChangesSinceRow struct {
+	SinceMs int64
+	Status  string
+}
+
+// The changes at or after from_ms; the FSM counts flapping changes from them.
+func (q *Queries) StatusChangesSince(ctx context.Context, arg StatusChangesSinceParams) ([]StatusChangesSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusChangesSince, arg.TenantID, arg.MonitorID, arg.FromMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatusChangesSinceRow{}
+	for rows.Next() {
+		var i StatusChangesSinceRow
+		if err := rows.Scan(&i.SinceMs, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const statusHistory = `-- name: StatusHistory :many
@@ -2361,6 +2794,7 @@ type UpsertMonitorStateParams struct {
 	SinceMs   int64
 }
 
+// The flapping columns are not touched: only SetMonitorFlapping writes them.
 func (q *Queries) UpsertMonitorState(ctx context.Context, arg UpsertMonitorStateParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMonitorState,
 		arg.TenantID,
@@ -2369,6 +2803,22 @@ func (q *Queries) UpsertMonitorState(ctx context.Context, arg UpsertMonitorState
 		arg.Confirmed,
 		arg.SinceMs,
 	)
+	return err
+}
+
+const upsertNodeIncarnation = `-- name: UpsertNodeIncarnation :exec
+INSERT INTO node_incarnations (node_id, incarnation, seen_ms) VALUES (?, ?, ?)
+ON CONFLICT (node_id) DO UPDATE SET incarnation = excluded.incarnation, seen_ms = excluded.seen_ms
+`
+
+type UpsertNodeIncarnationParams struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
+}
+
+func (q *Queries) UpsertNodeIncarnation(ctx context.Context, arg UpsertNodeIncarnationParams) error {
+	_, err := q.db.ExecContext(ctx, upsertNodeIncarnation, arg.NodeID, arg.Incarnation, arg.SeenMs)
 	return err
 }
 
@@ -2452,6 +2902,40 @@ func (q *Queries) UpsertStatusHistory(ctx context.Context, arg UpsertStatusHisto
 		arg.MonitorID,
 		arg.SinceMs,
 		arg.Status,
+	)
+	return err
+}
+
+const upsertSystemAlert = `-- name: UpsertSystemAlert :exec
+INSERT INTO system_alerts (kind, subject, active, level, since_ms, updated_ms, details_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (kind, subject) DO UPDATE SET
+    active = excluded.active,
+    level = excluded.level,
+    since_ms = excluded.since_ms,
+    updated_ms = excluded.updated_ms,
+    details_json = excluded.details_json
+`
+
+type UpsertSystemAlertParams struct {
+	Kind        string
+	Subject     string
+	Active      int64
+	Level       int64
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJson string
+}
+
+func (q *Queries) UpsertSystemAlert(ctx context.Context, arg UpsertSystemAlertParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSystemAlert,
+		arg.Kind,
+		arg.Subject,
+		arg.Active,
+		arg.Level,
+		arg.SinceMs,
+		arg.UpdatedMs,
+		arg.DetailsJson,
 	)
 	return err
 }

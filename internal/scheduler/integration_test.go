@@ -59,9 +59,11 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: node, NodeID: "node-1", Logger: log})
+	agg := aggregator.New(aggregator.Options{State: state, Metrics: metrics, Cluster: node, NodeID: "node-1",
+		IsLeader: node.IsLeader, LeaderGrace: time.Millisecond, Unit: 10 * time.Millisecond, Logger: log})
+	writer.SetOnStored(agg.Observe)
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "test"},
-		Sink: scheduler.Sinks{writer, agg}, Logger: log, Unit: 10 * time.Millisecond})
+		Sink: writer, Logger: log, Unit: 10 * time.Millisecond})
 	runCtx, stop := context.WithCancel(ctx)
 	done := make(chan struct{}, 4)
 	go func() { writer.Run(runCtx); done <- struct{}{} }()

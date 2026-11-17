@@ -24,6 +24,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
+	"github.com/joinsider/uptimecluster/internal/degraded"
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/replication"
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -79,6 +80,9 @@ type Deps struct {
 	Tickets *auth.Tickets
 	// StreamClosing is closed when the server shuts down; open streams end then.
 	StreamClosing <-chan struct{}
+	// Degraded reports the degraded state of this voter (ADR 0024) for the
+	// health endpoint; nil omits it.
+	Degraded interface{ State() degraded.State }
 }
 
 // Handlers implements gen.StrictServerInterface.
@@ -150,13 +154,23 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 
 // GetHealth returns the public node status.
 func (h *Handlers) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.GetHealthResponseObject, error) {
-	return gen.GetHealth200JSONResponse{
+	out := gen.GetHealth200JSONResponse{
 		Status:   gen.HealthStatusOk,
 		Role:     gen.HealthRole(h.cfg.Role),
 		NodeName: h.cfg.NodeName,
 		Version:  version.Version,
 		Commit:   version.Commit,
-	}, nil
+	}
+	if h.deps.Degraded != nil {
+		if st := h.deps.Degraded.State(); st.Degraded {
+			since := st.Since.UTC()
+			partition := st.Partition
+			out.Degraded = true
+			out.DegradedSince = &since
+			out.Partition = &partition
+		}
+	}
+	return out, nil
 }
 
 // WriteProblem writes an RFC 9457 problem details response.

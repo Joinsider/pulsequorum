@@ -31,6 +31,9 @@ services:
       # RETENTION_HOURLY_DAYS: "365"   # minimum 1
       # RETENTION_DAILY_DAYS: "0"      # 0 = keep forever
       # ALERT_MAX_ATTEMPTS: "10"       # 1 to 100 delivery attempts per alert and channel
+      # SELF_CHECK_TARGETS: "1.1.1.1:443,https://example.com"  # 2 to 3 independent targets; empty = off
+      # SELF_HEALTH_FAIL_RATIO: "0.5"  # share of failed checks at which a node counts as impaired, 0 to 1
+      # DEGRADED_AFTER: 15s            # time without a known leader before alerts are sent unconfirmed; 0 = off
       # SHUTDOWN_TIMEOUT: 10s
     volumes:
       # The image runs as nonroot (uid 65532); a named volume is writable out of the box.

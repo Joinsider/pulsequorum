@@ -12,7 +12,7 @@ type AlertOutbox struct {
 	TenantID      string
 	AlertKey      string
 	ChannelID     string
-	MonitorID     string
+	MonitorID     sql.NullString
 	PayloadJson   string
 	Attempts      int64
 	NextAttemptMs int64
@@ -45,6 +45,7 @@ type Incident struct {
 	ErrorClass        string
 	AffectedNodesJson string
 	Confirmed         int64
+	Reevaluated       int64
 }
 
 type JoinToken struct {
@@ -99,11 +100,13 @@ type MonitorChannel struct {
 }
 
 type MonitorState struct {
-	TenantID  string
-	MonitorID string
-	Status    string
-	Confirmed int64
-	SinceMs   int64
+	TenantID        string
+	MonitorID       string
+	Status          string
+	Confirmed       int64
+	SinceMs         int64
+	Flapping        int64
+	FlappingSinceMs int64
 }
 
 type MonitorStatusHistory struct {
@@ -120,18 +123,27 @@ type MonitorTag struct {
 }
 
 type Node struct {
-	ID                string
-	Name              string
-	Role              string
-	CapabilitiesJson  string
-	LabelsJson        string
-	Region            string
-	Version           string
-	MaxCommandVersion int64
-	Healthy           int64
-	HealthChangedMs   int64
-	RegisteredMs      int64
-	UpdatedMs         int64
+	ID                    string
+	Name                  string
+	Role                  string
+	CapabilitiesJson      string
+	LabelsJson            string
+	Region                string
+	Version               string
+	MaxCommandVersion     int64
+	Healthy               int64
+	HealthChangedMs       int64
+	RegisteredMs          int64
+	UpdatedMs             int64
+	ConnectivityImpaired  int64
+	ConnectivityReason    string
+	ConnectivityChangedMs int64
+}
+
+type NodeIncarnation struct {
+	NodeID      string
+	Incarnation string
+	SeenMs      int64
 }
 
 type NotificationChannel struct {
@@ -201,6 +213,16 @@ type SigningKey struct {
 	RetiredMs     int64
 }
 
+type SystemAlert struct {
+	Kind        string
+	Subject     string
+	Active      int64
+	Level       int64
+	SinceMs     int64
+	UpdatedMs   int64
+	DetailsJson string
+}
+
 type Tenant struct {
 	ID           string
 	Name         string
@@ -210,6 +232,24 @@ type Tenant struct {
 	Suspended    int64
 	CreatedMs    int64
 	UpdatedMs    int64
+}
+
+type UnconfirmedAlert struct {
+	NodeID     string
+	LocalID    int64
+	TenantID   string
+	MonitorID  string
+	ChannelID  string
+	Status     string
+	SinceMs    int64
+	SentMs     int64
+	Outcome    string
+	Reachable  int64
+	Total      int64
+	Reporters  string
+	ReportedMs int64
+	Verdict    string
+	ResolvedMs int64
 }
 
 type User struct {

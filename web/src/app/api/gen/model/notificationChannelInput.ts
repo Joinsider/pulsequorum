@@ -24,6 +24,11 @@ export interface NotificationChannelInput {
   /** Shoutrrr URL (kind=shoutrrr). Write-only; omit on update to keep the stored value. */
   url?: string;
   webhook?: WebhookConfig;
+  /**
+     * Omitted on create: `down` and `up`, plus `flapping` and `channel_failed`
+     * once the cluster command level is 4 or higher (ADR 0023). System channels
+     * always get `system`; without `events` they get only `system`.
+     */
   events?: NotificationEvent[];
   /** Attach to new monitors automatically */
   isDefault?: boolean;

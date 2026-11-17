@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	// All voters evaluate maintenance time zones with the same embedded database.
@@ -34,16 +35,22 @@ import (
 	"github.com/joinsider/uptimecluster/internal/clusterhost"
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
+	"github.com/joinsider/uptimecluster/internal/degraded"
+	"github.com/joinsider/uptimecluster/internal/diskstat"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/membership"
+	ucmetrics "github.com/joinsider/uptimecluster/internal/metrics"
 	"github.com/joinsider/uptimecluster/internal/node"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/secrets"
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
+	"github.com/joinsider/uptimecluster/internal/selfhealth"
 	"github.com/joinsider/uptimecluster/internal/server"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/stream"
+	"github.com/joinsider/uptimecluster/internal/sysalert"
 	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
@@ -145,6 +152,10 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	metricsToken, err := cfg.ResolveMetricsToken()
+	if err != nil {
+		return err
+	}
 	// Join before the master key is loaded: a joining voter takes the
 	// cluster's key instead of generating its own (ADR 0011).
 	prepared, err := clusterhost.Prepare(ctx, cfg.DataDir, nodeID, cfg.NodeName, cfg.ClusterAdvertise, version.Version,
@@ -170,13 +181,55 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		capabilities = append(capabilities, icmpcheck.Capability)
 	}
 
+	// Node self-check (ADR 0022): the reference targets are probed through the
+	// same SSRF-aware dialer as the checkers, so they obey the same address policy.
+	var policy checker.AddressPolicy
+	if cfg.SSRFProtectionEnabled() {
+		policy = checker.BlockPrivate{}
+	}
+	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
+	dialer := &checker.Dialer{Policy: policy}
+	selfTargets, err := selfcheck.ParseTargets(cfg.SelfCheckTargets)
+	if err != nil {
+		return fmt.Errorf("SELF_CHECK_TARGETS: %w", err)
+	}
+	selfProber, err := selfcheck.New(selfcheck.Options{Targets: selfTargets, Dialer: dialer, Now: clock, Logger: log})
+	if err != nil {
+		return err
+	}
+	if len(selfTargets) > 0 {
+		log.Info("node self-check enabled", "targets", len(selfTargets))
+	}
+
 	keyring := secrets.NewKeyring(kek, state.ListSecretKeys)
+	// The aggregator needs the Raft node, which exists only after Start. Stored
+	// heartbeats that arrive before it is set are not observed; the leader
+	// rebuild reads them from the store (ADR 0021).
+	var aggPtr, degradedAggPtr atomic.Pointer[aggregator.Aggregator]
 	host, err := clusterhost.Start(ctx, clusterhost.Options{
-		NodeID: nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
+		// The disk and WAL signals of GetStatus (ADR 0025, section 2).
+		DiskFreeRatio: func() float64 {
+			ratio, err := diskstat.FreeRatio(cfg.DataDir)
+			if err != nil {
+				return -1
+			}
+			return ratio
+		},
+		WALBytes: func() (int64, int64) { return walSize(state.DB()), walSize(metrics.DB()) },
+		NodeID:   nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
 		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
-		Clock: clock,
+		Clock:     clock,
+		SelfCheck: selfProber.Status,
+		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
+			if a := aggPtr.Load(); a != nil {
+				a.Observe(hbs)
+			}
+			if a := degradedAggPtr.Load(); a != nil {
+				a.Observe(hbs)
+			}
+		},
 	})
 	if err != nil {
 		return err
@@ -232,38 +285,234 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	// Stored heartbeats are pushed to the other voters without blocking the writer.
 	heartbeats.SetOnStored(host.Replication.Publish)
-	var policy checker.AddressPolicy
-	if cfg.SSRFProtectionEnabled() {
-		policy = checker.BlockPrivate{}
-	}
-	log.Info("SSRF protection", "enabled", policy != nil, "setting", cfg.SSRFProtection)
 	checkEnv := &checker.Env{
-		Dialer:    &checker.Dialer{Policy: policy},
+		Dialer:    dialer,
 		UserAgent: "UptimeCluster/" + version.Version,
 		ICMPMode:  icmpMode,
 		Now:       clock,
 	}
-	sender := alert.NewSender(checkEnv.Dialer, log)
+	sender := alert.NewSender(checkEnv.Dialer, log).WithClock(clock)
+	// nodeMetrics is set before any dispatcher runs; the outcome hooks read it.
+	var nodeMetrics *ucmetrics.Metrics
+	outcomes := func(kind, outcome string) {
+		if nodeMetrics != nil {
+			nodeMetrics.AlertDelivered(kind, outcome)
+		}
+	}
 	dispatcher := alert.NewDispatcher(alert.DispatcherOptions{
 		State: state, Cluster: raftNode, Keyring: keyring, Sender: sender,
 		IsLeader: raftNode.IsLeader, MaxAttempts: cfg.AlertMaxAttempts, Logger: log, Now: clock,
+		BundleWindow: cfg.AlertBundleWindow, OnOutcome: outcomes,
 	})
 	maint := maintenance.NewController(maintenance.ControllerOptions{
 		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Logger: log, Now: clock,
 	})
+	// Responsible nodes of a monitor (ADR 0017); shared by the aggregator and the assignment syncer.
+	assigner := scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)}
+	// The leader decides which voters are impaired in their connectivity (ADR 0022).
+	// Its deviation statistics come from the aggregator, which is created after it.
+	assessor := selfhealth.New(selfhealth.Options{
+		NodeID: nodeID, IsLeader: raftNode.IsLeader, Registry: state, Cluster: raftNode,
+		Self: selfProber.Status, Peers: host.PeerSelfChecks,
+		Deviation: func(sinceMs int64) map[string]aggregator.DeviationStats {
+			if a := aggPtr.Load(); a != nil {
+				return a.Deviation(sinceMs)
+			}
+			return nil
+		},
+		FailRatio: cfg.SelfHealthFailRatio, Now: clock, Logger: log,
+	})
+	registry := func(ctx context.Context) ([]store.Node, error) { return state.ListNodes(ctx) }
+	// Reconciliation after the quorum returned (ADR 0024, sections 6 and 7). The
+	// gap job is created after the aggregator, which it re-evaluates with.
+	var gapJob *degraded.GapJob
+	// The aggregator evaluates only on the leader, from the heartbeats it observes (ADR 0021).
+	// It waits for the gap job of the leadership: the history must be corrected first (ADR 0024).
 	agg := aggregator.New(aggregator.Options{
 		State: state, Metrics: metrics, Cluster: raftNode, NodeID: nodeID,
-		Maintenance: maint.InMaintenance, Logger: log,
+		IsLeader:    func() bool { return raftNode.IsLeader() && gapJob != nil && gapJob.Done() },
+		Registry:    registry,
+		Assigner:    assigner,
+		Exclude:     assessor.Exclude,
+		Maintenance: maint.InMaintenance, Now: clock, Logger: log,
 	})
-	sink := scheduler.Sinks{heartbeats, agg, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
+	aggPtr.Store(agg)
+	heartbeats.SetOnStored(agg.Observe)
+
+	// Degraded mode (ADR 0024): without a leader, the reachable voter with the
+	// smallest ID of the partition decides and sends the alerts itself.
+	selfCheckFailed := func() bool {
+		st := selfProber.Status()
+		return st.Configured && st.Failed
+	}
+	detector := degraded.New(degraded.Options{
+		NodeID: nodeID, LeaderID: host.LeaderID, CaughtUp: host.CaughtUp,
+		Voters: func(ctx context.Context) ([]string, error) {
+			nodes, err := state.ListNodes(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var voters []string
+			for _, n := range nodes {
+				if n.Role == store.NodeRoleVoter {
+					voters = append(voters, n.ID)
+				}
+			}
+			return voters, nil
+		},
+		Peers: host.PeerViews, SelfCheckFailed: selfCheckFailed,
+		// 0 in the configuration disables the degraded mode; a negative value does so for the detector.
+		After: disabledIfZero(cfg.DegradedAfter), Now: clock, Logger: log,
+	})
+	overlay := degraded.NewOverlay(state)
+	localDispatcher := alert.NewLocalDispatcher(alert.LocalDispatcherOptions{
+		Sender: sender, BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log, OnOutcome: outcomes,
+	})
+	degradedApplier := degraded.NewApplier(degraded.ApplierOptions{
+		NodeID: nodeID, State: state, Overlay: overlay, Metrics: metrics, Detector: detector.State,
+		SelfCheckFailed: selfCheckFailed, Keyring: keyring, Dispatcher: localDispatcher,
+		BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log,
+	})
+	// The degraded aggregator evaluates the same slots as the live one, but
+	// only on the sender, and records the statuses in the overlay (ADR 0024, section 3).
+	degradedAgg := aggregator.New(aggregator.Options{
+		State: overlay, Metrics: metrics, Cluster: degradedApplier, NodeID: nodeID,
+		IsLeader: detector.IsSender,
+		Registry: registry, Assigner: assigner,
+		Maintenance: maint.InMaintenance, Now: clock, Logger: log.With("component", "degraded"),
+	})
+	degradedAggPtr.Store(degradedAgg)
+	heartbeats.SetOnStored(degradedAgg.Observe)
+	reporter := degraded.NewReporter(degraded.ReporterOptions{
+		NodeID: nodeID, Detector: detector.State, LeaderID: host.LeaderID, CaughtUp: host.CaughtUp,
+		CommandLevel: raftNode.CommandLevel, Proposer: raftNode, Metrics: metrics, Now: clock, Logger: log,
+	})
+	gapJob = degraded.NewGapJob(degraded.GapOptions{
+		NodeID: nodeID, State: state, Reevaluator: agg, Proposer: raftNode, IsLeader: raftNode.IsLeader,
+		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews,
+		Trigger: host.Replication.Trigger, Degraded: func() bool { return detector.State().Degraded },
+		Now: clock, Logger: log,
+	})
+	// The sender of a degraded period announces the lost quorum to the system channels (ADR 0025, section 5).
+	quorumNotifier := degraded.NewQuorumNotifier(degraded.QuorumOptions{
+		NodeID: nodeID, State: state, Keyring: keyring, Dispatcher: localDispatcher, Detector: detector.State,
+		SelfCheckFailed: selfCheckFailed, Now: clock, Logger: log,
+	})
+	// The system alerts of the leader (ADR 0025, sections 3 and 4).
+	alertCollector := sysalert.New(sysalert.Options{
+		NodeID: nodeID, IsLeader: raftNode.IsLeader, State: state, CommandLevel: raftNode.CommandLevel,
+		Cluster: raftNode, Self: host.SelfSignals, Peers: host.PeerSignals, ClockOffsets: host.ClockOffsets,
+		Thresholds: sysalert.Thresholds{
+			ReplicationLag: cfg.ReplicationLagAlert, ClockSkew: cfg.ClockSkewAlert,
+			DiskFree: cfg.DiskFreeAlert, WALSize: cfg.WALSizeAlert,
+		},
+		Now: clock, Logger: log,
+	})
+	systemJobs := sysalert.NewJobs(sysalert.JobOptions{
+		IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel, State: state, Cluster: raftNode,
+		Now: clock, Logger: log,
+	})
+	judge := degraded.NewJudge(degraded.JudgeOptions{
+		State: state, Proposer: raftNode, IsLeader: raftNode.IsLeader, CommandLevel: raftNode.CommandLevel,
+		GapDone: gapJob.Done, RetentionRaw: cfg.RetentionRaw, Now: clock, Logger: log,
+	})
+	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
+	// Prometheus metrics (ADR 0025, section 7). The sources are read on each scrape.
+	nodeMetrics = ucmetrics.New(ucmetrics.Sources{
+		RaftState: func() string { return raftNode.Status().RaftState },
+		RaftIndexes: func() (applied, commit uint64, lastContact time.Duration) {
+			st := raftNode.Status()
+			return st.AppliedIndex, st.CommitIndex, time.Duration(st.LastContactMs) * time.Millisecond
+		},
+		ReplicationLag: func() map[string]time.Duration {
+			now := clock()
+			lags := make(map[string]time.Duration)
+			for _, p := range host.Replication.Status() {
+				lag, ok := p.Lag(now)
+				if !ok {
+					lag = -time.Nanosecond // negative = the peer never caught up
+				}
+				lags[p.ID] = lag
+			}
+			return lags
+		},
+		ReplicationDropped: func() map[string]uint64 {
+			dropped := make(map[string]uint64)
+			for _, p := range host.Replication.Status() {
+				dropped[p.ID] = p.Dropped
+			}
+			return dropped
+		},
+		DBSizes: func() map[string]struct{ Size, WAL int64 } {
+			return map[string]struct{ Size, WAL int64 }{
+				"state":   dbFileSizes(state.DB()),
+				"metrics": dbFileSizes(metrics.DB()),
+			}
+		},
+		DiskFree:      func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
+		OutboxPending: func(ctx context.Context) (int, error) { return state.CountPendingAlerts(ctx) },
+		Degraded:      func() bool { return detector.State().Degraded },
+		SystemAlertsActive: func(ctx context.Context) (map[string]int, error) {
+			alerts, err := state.ListSystemAlerts(ctx, true)
+			if err != nil {
+				return nil, err
+			}
+			counts := make(map[string]int, len(sysalert.Kinds))
+			for _, kind := range sysalert.Kinds {
+				counts[kind] = 0
+			}
+			for _, a := range alerts {
+				counts[a.Kind]++
+			}
+			return counts, nil
+		},
+		ClockOffsets: func() map[string]time.Duration {
+			offsets := make(map[string]time.Duration)
+			for id, ms := range host.ClockOffsets() {
+				offsets[id] = time.Duration(ms) * time.Millisecond
+			}
+			return offsets
+		},
+		Version: version.Version,
+	})
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log, Now: clock,
+		Observer: nodeMetrics,
 		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
 			return configsecret.ResolveMonitor(ctx, keyring, m)
 		}})
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { agg.Run(ctx) })
+	bg.Go(func() { detector.Run(ctx) })
+	bg.Go(func() { localDispatcher.Run(ctx) })
+	bg.Go(func() { degradedAgg.Run(ctx) })
+	bg.Go(func() {
+		// Leaving the sender role drops the statuses decided locally (ADR 0024, section 3).
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-detector.Changes():
+				if !detector.IsSender() {
+					overlay.Reset()
+				}
+			}
+		}
+	})
+	bg.Go(func() { reporter.Run(ctx) })
+	bg.Go(func() { quorumNotifier.Run(ctx) })
+	bg.Go(func() { alertCollector.Run(ctx) })
+	bg.Go(func() { systemJobs.Run(ctx) })
+	bg.Go(func() { gapJob.Run(ctx) })
+	bg.Go(func() { judge.Run(ctx) })
+	bg.Go(func() { selfProber.Run(ctx) })
+	bg.Go(func() { assessor.Run(ctx) })
 	bg.Go(func() { dispatcher.Run(ctx) })
 	bg.Go(func() { maint.Run(ctx) })
+	// Ends flapping periods after 30 min without a status change (FA-ALR-06, ADR 0023).
+	flapping := alert.NewFlappingWatcher(alert.FlappingWatcherOptions{
+		State: state, Cluster: raftNode, IsLeader: raftNode.IsLeader, Now: clock, Logger: log,
+	})
+	bg.Go(func() { flapping.Run(ctx) })
 	bg.Go(func() {
 		configsecret.RunMigration(ctx, configsecret.MigrationOptions{
 			State: state, Cluster: raftNode, Keyring: keyring, Schemas: &configsecret.Schemas{Registry: checker.Default},
@@ -280,14 +529,23 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
+	if cfg.MetricsAddr != "" {
+		// The endpoint is optional; if it cannot listen, the node keeps running without it.
+		bg.Go(func() {
+			if err := nodeMetrics.Serve(ctx, cfg.MetricsAddr, metricsToken, log); err != nil {
+				log.Error("metrics endpoint failed", "addr", cfg.MetricsAddr, "err", err)
+			}
+		})
+	}
 	// The scheduler runs only the monitors assigned to this node; the aggregator
 	// keeps all monitors, because it tracks results of other nodes too (ADR 0017).
+	// The degraded aggregator needs the same monitors, or it never evaluates (ADR 0024).
 	assigned := scheduler.AssignmentSyncer{
-		Target: sched, NodeID: nodeID, Assigner: scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)},
+		Target: sched, NodeID: nodeID, Assigner: assigner,
 		Registry: func() ([]store.Node, error) { return state.ListNodes(ctx) }, Log: log,
 	}
 	bg.Go(func() {
-		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg)
+		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg, degradedAgg)
 	})
 
 	if !webui.Built() {
@@ -299,7 +557,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		State: state, Metrics: metrics, Cluster: raftNode, Registry: checker.Default,
 		CheckEnv: checkEnv, NodeID: nodeID,
 		Keyring: keyring, Alerts: sender,
-		Stream: hub, Tickets: tickets,
+		Degraded: detector,
+		Stream:   hub, Tickets: tickets,
 		ClusterAdmin: clusterAdmin{host: host},
 		Replication:  host.Replication,
 		ClockOffsets: host.ClockOffsets,
@@ -314,6 +573,38 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return cause
 	}
 	return err
+}
+
+// walSize returns the size of the write-ahead log of db in bytes, 0 if unknown.
+func walSize(db *sqlite.DB) int64 {
+	n, err := db.WALSize()
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// dbFileSizes returns the size of the database file and of its WAL in bytes.
+// A file that cannot be stat'ed counts as 0; the metric then shows the drop.
+func dbFileSizes(db *sqlite.DB) struct{ Size, WAL int64 } {
+	var sizes struct{ Size, WAL int64 }
+	if info, err := os.Stat(db.Path()); err == nil {
+		sizes.Size = info.Size()
+	}
+	if wal, err := db.WALSize(); err == nil {
+		sizes.WAL = wal
+	}
+	return sizes
+}
+
+// disabledIfZero maps the configured DEGRADED_AFTER to the detector option: a
+// zero duration disables the degraded mode, which the detector expresses as a
+// negative value (its zero value means the default).
+func disabledIfZero(after time.Duration) time.Duration {
+	if after == 0 {
+		return -1
+	}
+	return after
 }
 
 // bootstrapCluster creates the default tenant and the first data key once a

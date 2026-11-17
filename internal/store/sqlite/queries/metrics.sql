@@ -181,3 +181,16 @@ WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation)
   AND seq > sqlc.arg(after_seq) AND seq <= sqlc.arg(until_seq)
 ORDER BY seq
 LIMIT sqlc.arg(row_limit);
+
+-- name: InsertDegradedAlert :execlastid
+INSERT INTO degraded_alerts (tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: ListUnreportedDegradedAlerts :many
+SELECT * FROM degraded_alerts WHERE reported = 0 ORDER BY id LIMIT sqlc.arg(row_limit);
+
+-- name: MarkDegradedAlertReported :exec
+UPDATE degraded_alerts SET reported = 1 WHERE id = ?;
+
+-- name: PruneDegradedAlerts :execrows
+DELETE FROM degraded_alerts WHERE sent_ms < ?;

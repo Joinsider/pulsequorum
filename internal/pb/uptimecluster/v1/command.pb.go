@@ -194,7 +194,7 @@ func (x NodeInfo_Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NodeInfo_Role.Descriptor instead.
 func (NodeInfo_Role) EnumDescriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{14, 0}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{16, 0}
 }
 
 // Command is the envelope of every Raft log entry (ADR 0005). The leader fills
@@ -230,6 +230,14 @@ type Command struct {
 	//	*Command_RevokeCertificate
 	//	*Command_RevokeNode
 	//	*Command_SetNodeHealth
+	//	*Command_SetNodeConnectivity
+	//	*Command_ClearMonitorFlapping
+	//	*Command_ReportDegradedAlerts
+	//	*Command_ResolveUnconfirmedAlerts
+	//	*Command_RecordMonitorHistory
+	//	*Command_SetSystemAlert
+	//	*Command_RecordIncarnation
+	//	*Command_Checkpoint
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -433,6 +441,78 @@ func (x *Command) GetSetNodeHealth() *SetNodeHealth {
 	return nil
 }
 
+func (x *Command) GetSetNodeConnectivity() *SetNodeConnectivity {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_SetNodeConnectivity); ok {
+			return x.SetNodeConnectivity
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetClearMonitorFlapping() *ClearMonitorFlapping {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_ClearMonitorFlapping); ok {
+			return x.ClearMonitorFlapping
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetReportDegradedAlerts() *ReportDegradedAlerts {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_ReportDegradedAlerts); ok {
+			return x.ReportDegradedAlerts
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetResolveUnconfirmedAlerts() *ResolveUnconfirmedAlerts {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_ResolveUnconfirmedAlerts); ok {
+			return x.ResolveUnconfirmedAlerts
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRecordMonitorHistory() *RecordMonitorHistory {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RecordMonitorHistory); ok {
+			return x.RecordMonitorHistory
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetSetSystemAlert() *SetSystemAlert {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_SetSystemAlert); ok {
+			return x.SetSystemAlert
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRecordIncarnation() *RecordIncarnation {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RecordIncarnation); ok {
+			return x.RecordIncarnation
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetCheckpoint() *Checkpoint {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_Checkpoint); ok {
+			return x.Checkpoint
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -493,6 +573,38 @@ type Command_SetNodeHealth struct {
 	SetNodeHealth *SetNodeHealth `protobuf:"bytes,25,opt,name=set_node_health,json=setNodeHealth,proto3,oneof"`
 }
 
+type Command_SetNodeConnectivity struct {
+	SetNodeConnectivity *SetNodeConnectivity `protobuf:"bytes,26,opt,name=set_node_connectivity,json=setNodeConnectivity,proto3,oneof"`
+}
+
+type Command_ClearMonitorFlapping struct {
+	ClearMonitorFlapping *ClearMonitorFlapping `protobuf:"bytes,27,opt,name=clear_monitor_flapping,json=clearMonitorFlapping,proto3,oneof"`
+}
+
+type Command_ReportDegradedAlerts struct {
+	ReportDegradedAlerts *ReportDegradedAlerts `protobuf:"bytes,28,opt,name=report_degraded_alerts,json=reportDegradedAlerts,proto3,oneof"`
+}
+
+type Command_ResolveUnconfirmedAlerts struct {
+	ResolveUnconfirmedAlerts *ResolveUnconfirmedAlerts `protobuf:"bytes,29,opt,name=resolve_unconfirmed_alerts,json=resolveUnconfirmedAlerts,proto3,oneof"`
+}
+
+type Command_RecordMonitorHistory struct {
+	RecordMonitorHistory *RecordMonitorHistory `protobuf:"bytes,30,opt,name=record_monitor_history,json=recordMonitorHistory,proto3,oneof"`
+}
+
+type Command_SetSystemAlert struct {
+	SetSystemAlert *SetSystemAlert `protobuf:"bytes,31,opt,name=set_system_alert,json=setSystemAlert,proto3,oneof"`
+}
+
+type Command_RecordIncarnation struct {
+	RecordIncarnation *RecordIncarnation `protobuf:"bytes,32,opt,name=record_incarnation,json=recordIncarnation,proto3,oneof"`
+}
+
+type Command_Checkpoint struct {
+	Checkpoint *Checkpoint `protobuf:"bytes,33,opt,name=checkpoint,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -520,6 +632,22 @@ func (*Command_RevokeCertificate) isCommand_Payload() {}
 func (*Command_RevokeNode) isCommand_Payload() {}
 
 func (*Command_SetNodeHealth) isCommand_Payload() {}
+
+func (*Command_SetNodeConnectivity) isCommand_Payload() {}
+
+func (*Command_ClearMonitorFlapping) isCommand_Payload() {}
+
+func (*Command_ReportDegradedAlerts) isCommand_Payload() {}
+
+func (*Command_ResolveUnconfirmedAlerts) isCommand_Payload() {}
+
+func (*Command_RecordMonitorHistory) isCommand_Payload() {}
+
+func (*Command_SetSystemAlert) isCommand_Payload() {}
+
+func (*Command_RecordIncarnation) isCommand_Payload() {}
+
+func (*Command_Checkpoint) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -714,7 +842,12 @@ type SetMonitorState struct {
 	// conflict if the stored status differs, e.g. after a pause.
 	ExpectedStatus string `protobuf:"bytes,5,opt,name=expected_status,json=expectedStatus,proto3" json:"expected_status,omitempty"`
 	// Required for a change to DOWN: the incident to open.
-	Incident      *IncidentStart `protobuf:"bytes,6,opt,name=incident,proto3" json:"incident,omitempty"`
+	Incident *IncidentStart `protobuf:"bytes,6,opt,name=incident,proto3" json:"incident,omitempty"`
+	// Node IDs that reported in the deciding slot, set by the leader (FA-ALR-11).
+	// Empty below command level 5.
+	Reporters []string `protobuf:"bytes,7,rep,name=reporters,proto3" json:"reporters,omitempty"`
+	// Node that proposed the change.
+	SenderNodeId  string `protobuf:"bytes,8,opt,name=sender_node_id,json=senderNodeId,proto3" json:"sender_node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -789,6 +922,20 @@ func (x *SetMonitorState) GetIncident() *IncidentStart {
 		return x.Incident
 	}
 	return nil
+}
+
+func (x *SetMonitorState) GetReporters() []string {
+	if x != nil {
+		return x.Reporters
+	}
+	return nil
+}
+
+func (x *SetMonitorState) GetSenderNodeId() string {
+	if x != nil {
+		return x.SenderNodeId
+	}
+	return ""
 }
 
 // IncidentStart describes the cause of an incident.
@@ -1316,6 +1463,69 @@ func (x *SetNodeHealth) GetHealthy() bool {
 	return false
 }
 
+// SetNodeConnectivity records a change of the connectivity of a node (ADR 0022).
+// Only the leader proposes it, and only on a change. reason is "reference" or
+// "deviation" while impaired is true, and empty otherwise.
+type SetNodeConnectivity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Impaired      bool                   `protobuf:"varint,2,opt,name=impaired,proto3" json:"impaired,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetNodeConnectivity) Reset() {
+	*x = SetNodeConnectivity{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetNodeConnectivity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetNodeConnectivity) ProtoMessage() {}
+
+func (x *SetNodeConnectivity) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetNodeConnectivity.ProtoReflect.Descriptor instead.
+func (*SetNodeConnectivity) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *SetNodeConnectivity) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *SetNodeConnectivity) GetImpaired() bool {
+	if x != nil {
+		return x.Impaired
+	}
+	return false
+}
+
+func (x *SetNodeConnectivity) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 // SetFeatureLevel raises the command version the cluster may use (FA-CLU-12).
 type SetFeatureLevel struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1326,7 +1536,7 @@ type SetFeatureLevel struct {
 
 func (x *SetFeatureLevel) Reset() {
 	*x = SetFeatureLevel{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1548,7 @@ func (x *SetFeatureLevel) String() string {
 func (*SetFeatureLevel) ProtoMessage() {}
 
 func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[13]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,12 +1561,68 @@ func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFeatureLevel.ProtoReflect.Descriptor instead.
 func (*SetFeatureLevel) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{13}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetFeatureLevel) GetLevel() uint32 {
 	if x != nil {
 		return x.Level
+	}
+	return 0
+}
+
+// ClearMonitorFlapping ends a flapping period of a monitor (FA-ALR-06, ADR 0023).
+// The leader proposes it after a quiet period. The FSM clears the period only if
+// it still is the one the leader saw (expected_since_ms), otherwise it rejects
+// the command as a conflict.
+type ClearMonitorFlapping struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	MonitorId       string                 `protobuf:"bytes,1,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
+	ExpectedSinceMs int64                  `protobuf:"varint,2,opt,name=expected_since_ms,json=expectedSinceMs,proto3" json:"expected_since_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ClearMonitorFlapping) Reset() {
+	*x = ClearMonitorFlapping{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClearMonitorFlapping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClearMonitorFlapping) ProtoMessage() {}
+
+func (x *ClearMonitorFlapping) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClearMonitorFlapping.ProtoReflect.Descriptor instead.
+func (*ClearMonitorFlapping) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ClearMonitorFlapping) GetMonitorId() string {
+	if x != nil {
+		return x.MonitorId
+	}
+	return ""
+}
+
+func (x *ClearMonitorFlapping) GetExpectedSinceMs() int64 {
+	if x != nil {
+		return x.ExpectedSinceMs
 	}
 	return 0
 }
@@ -1385,7 +1651,7 @@ type NodeInfo struct {
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1397,7 +1663,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[14]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1410,7 +1676,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{14}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *NodeInfo) GetId() string {
@@ -1507,7 +1773,7 @@ type RedeemJoinToken struct {
 
 func (x *RedeemJoinToken) Reset() {
 	*x = RedeemJoinToken{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1785,7 @@ func (x *RedeemJoinToken) String() string {
 func (*RedeemJoinToken) ProtoMessage() {}
 
 func (x *RedeemJoinToken) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[15]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1798,7 @@ func (x *RedeemJoinToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedeemJoinToken.ProtoReflect.Descriptor instead.
 func (*RedeemJoinToken) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{15}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RedeemJoinToken) GetTokenId() string {
@@ -1571,7 +1837,7 @@ type RevokeCertificate struct {
 
 func (x *RevokeCertificate) Reset() {
 	*x = RevokeCertificate{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[16]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1583,7 +1849,7 @@ func (x *RevokeCertificate) String() string {
 func (*RevokeCertificate) ProtoMessage() {}
 
 func (x *RevokeCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[16]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1596,7 +1862,7 @@ func (x *RevokeCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeCertificate.ProtoReflect.Descriptor instead.
 func (*RevokeCertificate) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{16}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RevokeCertificate) GetSerial() string {
@@ -1632,7 +1898,7 @@ type RevokeNode struct {
 
 func (x *RevokeNode) Reset() {
 	*x = RevokeNode{}
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[17]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1910,7 @@ func (x *RevokeNode) String() string {
 func (*RevokeNode) ProtoMessage() {}
 
 func (x *RevokeNode) ProtoReflect() protoreflect.Message {
-	mi := &file_uptimecluster_v1_command_proto_msgTypes[17]
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1923,7 @@ func (x *RevokeNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNode.ProtoReflect.Descriptor instead.
 func (*RevokeNode) Descriptor() ([]byte, []int) {
-	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{17}
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RevokeNode) GetNodeId() string {
@@ -1667,11 +1933,655 @@ func (x *RevokeNode) GetNodeId() string {
 	return ""
 }
 
+// ReportDegradedAlerts stores the alerts a node sent while it was degraded
+// (FA-ALR-10, ADR 0024). The node sends them after the quorum returned, in
+// blocks of at most 100 entries. The FSM stores them idempotently by
+// (node_id, local_id) in unconfirmed_alerts.
+type ReportDegradedAlerts struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Entries       []*DegradedAlertEntry  `protobuf:"bytes,2,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportDegradedAlerts) Reset() {
+	*x = ReportDegradedAlerts{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportDegradedAlerts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportDegradedAlerts) ProtoMessage() {}
+
+func (x *ReportDegradedAlerts) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportDegradedAlerts.ProtoReflect.Descriptor instead.
+func (*ReportDegradedAlerts) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReportDegradedAlerts) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ReportDegradedAlerts) GetEntries() []*DegradedAlertEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+// DegradedAlertEntry is one alert of the local degraded log of a node.
+type DegradedAlertEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ID in the local log of the reporting node; unique per node.
+	LocalId   int64  `protobuf:"varint,1,opt,name=local_id,json=localId,proto3" json:"local_id,omitempty"`
+	TenantId  string `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	MonitorId string `protobuf:"bytes,3,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
+	ChannelId string `protobuf:"bytes,4,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	// Status announced by the alert (DOWN or UP).
+	Status  string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	SinceMs int64  `protobuf:"varint,6,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`
+	// Time the node sent the alert, UTC milliseconds.
+	SentMs int64 `protobuf:"varint,7,opt,name=sent_ms,json=sentMs,proto3" json:"sent_ms,omitempty"`
+	// "sent", "failed" or "suppressed".
+	Outcome string `protobuf:"bytes,8,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	// Voters the node could reach, and voters in total, when it sent the alert.
+	Reachable int32 `protobuf:"varint,9,opt,name=reachable,proto3" json:"reachable,omitempty"`
+	Total     int32 `protobuf:"varint,10,opt,name=total,proto3" json:"total,omitempty"`
+	// Node IDs of the partition that reported the change.
+	Reporters     []string `protobuf:"bytes,11,rep,name=reporters,proto3" json:"reporters,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DegradedAlertEntry) Reset() {
+	*x = DegradedAlertEntry{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DegradedAlertEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DegradedAlertEntry) ProtoMessage() {}
+
+func (x *DegradedAlertEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DegradedAlertEntry.ProtoReflect.Descriptor instead.
+func (*DegradedAlertEntry) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DegradedAlertEntry) GetLocalId() int64 {
+	if x != nil {
+		return x.LocalId
+	}
+	return 0
+}
+
+func (x *DegradedAlertEntry) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *DegradedAlertEntry) GetMonitorId() string {
+	if x != nil {
+		return x.MonitorId
+	}
+	return ""
+}
+
+func (x *DegradedAlertEntry) GetChannelId() string {
+	if x != nil {
+		return x.ChannelId
+	}
+	return ""
+}
+
+func (x *DegradedAlertEntry) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DegradedAlertEntry) GetSinceMs() int64 {
+	if x != nil {
+		return x.SinceMs
+	}
+	return 0
+}
+
+func (x *DegradedAlertEntry) GetSentMs() int64 {
+	if x != nil {
+		return x.SentMs
+	}
+	return 0
+}
+
+func (x *DegradedAlertEntry) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *DegradedAlertEntry) GetReachable() int32 {
+	if x != nil {
+		return x.Reachable
+	}
+	return 0
+}
+
+func (x *DegradedAlertEntry) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *DegradedAlertEntry) GetReporters() []string {
+	if x != nil {
+		return x.Reporters
+	}
+	return nil
+}
+
+// ResolveUnconfirmedAlerts stores the verdicts of the leader on unconfirmed
+// alerts after the quorum returned (FA-ALR-10, ADR 0024). The FSM applies only
+// open entries and creates outbox entries for them, depending on the verdict.
+type ResolveUnconfirmedAlerts struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Verdicts      []*UnconfirmedVerdict  `protobuf:"bytes,1,rep,name=verdicts,proto3" json:"verdicts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveUnconfirmedAlerts) Reset() {
+	*x = ResolveUnconfirmedAlerts{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveUnconfirmedAlerts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveUnconfirmedAlerts) ProtoMessage() {}
+
+func (x *ResolveUnconfirmedAlerts) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveUnconfirmedAlerts.ProtoReflect.Descriptor instead.
+func (*ResolveUnconfirmedAlerts) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ResolveUnconfirmedAlerts) GetVerdicts() []*UnconfirmedVerdict {
+	if x != nil {
+		return x.Verdicts
+	}
+	return nil
+}
+
+// UnconfirmedVerdict is the judgement of one unconfirmed alert.
+type UnconfirmedVerdict struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	NodeId  string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	LocalId int64                  `protobuf:"varint,2,opt,name=local_id,json=localId,proto3" json:"local_id,omitempty"`
+	// "confirmed", "false_alarm" or "unverifiable".
+	Verdict string `protobuf:"bytes,3,opt,name=verdict,proto3" json:"verdict,omitempty"`
+	// Whether the FSM sends a notification for this verdict. Decided by the
+	// leader, which knows whether the channel already received a confirmed alert.
+	Notify        bool `protobuf:"varint,4,opt,name=notify,proto3" json:"notify,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnconfirmedVerdict) Reset() {
+	*x = UnconfirmedVerdict{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnconfirmedVerdict) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnconfirmedVerdict) ProtoMessage() {}
+
+func (x *UnconfirmedVerdict) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnconfirmedVerdict.ProtoReflect.Descriptor instead.
+func (*UnconfirmedVerdict) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *UnconfirmedVerdict) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *UnconfirmedVerdict) GetLocalId() int64 {
+	if x != nil {
+		return x.LocalId
+	}
+	return 0
+}
+
+func (x *UnconfirmedVerdict) GetVerdict() string {
+	if x != nil {
+		return x.Verdict
+	}
+	return ""
+}
+
+func (x *UnconfirmedVerdict) GetNotify() bool {
+	if x != nil {
+		return x.Notify
+	}
+	return false
+}
+
+// RecordMonitorHistory replaces the consensus status history of a monitor in
+// [from_ms, to_ms) after a gap was re-evaluated (FA-UPT-07, ADR 0024). The FSM
+// closes the gap with incidents marked as reevaluated and sends no alerts.
+// The tenant is set by Command.tenant_id.
+type RecordMonitorHistory struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	MonitorId string                 `protobuf:"bytes,1,opt,name=monitor_id,json=monitorId,proto3" json:"monitor_id,omitempty"`
+	// Status the leader saw before the gap; the FSM rejects the command with a
+	// conflict if the stored status differs.
+	ExpectedStatus string          `protobuf:"bytes,2,opt,name=expected_status,json=expectedStatus,proto3" json:"expected_status,omitempty"`
+	FromMs         int64           `protobuf:"varint,3,opt,name=from_ms,json=fromMs,proto3" json:"from_ms,omitempty"`
+	ToMs           int64           `protobuf:"varint,4,opt,name=to_ms,json=toMs,proto3" json:"to_ms,omitempty"`
+	Entries        []*HistoryEntry `protobuf:"bytes,5,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RecordMonitorHistory) Reset() {
+	*x = RecordMonitorHistory{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordMonitorHistory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordMonitorHistory) ProtoMessage() {}
+
+func (x *RecordMonitorHistory) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordMonitorHistory.ProtoReflect.Descriptor instead.
+func (*RecordMonitorHistory) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *RecordMonitorHistory) GetMonitorId() string {
+	if x != nil {
+		return x.MonitorId
+	}
+	return ""
+}
+
+func (x *RecordMonitorHistory) GetExpectedStatus() string {
+	if x != nil {
+		return x.ExpectedStatus
+	}
+	return ""
+}
+
+func (x *RecordMonitorHistory) GetFromMs() int64 {
+	if x != nil {
+		return x.FromMs
+	}
+	return 0
+}
+
+func (x *RecordMonitorHistory) GetToMs() int64 {
+	if x != nil {
+		return x.ToMs
+	}
+	return 0
+}
+
+func (x *RecordMonitorHistory) GetEntries() []*HistoryEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+// HistoryEntry is one status change of a re-evaluated gap.
+type HistoryEntry struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SinceMs int64                  `protobuf:"varint,1,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`
+	Status  string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// Required for DOWN entries: the incident the period belongs to.
+	IncidentId    string `protobuf:"bytes,3,opt,name=incident_id,json=incidentId,proto3" json:"incident_id,omitempty"`
+	Cause         string `protobuf:"bytes,4,opt,name=cause,proto3" json:"cause,omitempty"`
+	ErrorClass    string `protobuf:"bytes,5,opt,name=error_class,json=errorClass,proto3" json:"error_class,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryEntry) Reset() {
+	*x = HistoryEntry{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryEntry) ProtoMessage() {}
+
+func (x *HistoryEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryEntry.ProtoReflect.Descriptor instead.
+func (*HistoryEntry) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *HistoryEntry) GetSinceMs() int64 {
+	if x != nil {
+		return x.SinceMs
+	}
+	return 0
+}
+
+func (x *HistoryEntry) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *HistoryEntry) GetIncidentId() string {
+	if x != nil {
+		return x.IncidentId
+	}
+	return ""
+}
+
+func (x *HistoryEntry) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *HistoryEntry) GetErrorClass() string {
+	if x != nil {
+		return x.ErrorClass
+	}
+	return ""
+}
+
+// SetSystemAlert records a change of a system alert (FA-OBS-01, ADR 0025). Only
+// the leader proposes it, and only on a change. The FSM stores the alert and
+// enqueues it for the channels of the system tenant that subscribe to "system".
+// details_json is a JSON object with measured values and node IDs only.
+type SetSystemAlert struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Kind of the alert, e.g. "replication_lag" (ADR 0025, section 3).
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Subject of the alert: a node ID, a certificate name or "cluster".
+	Subject string `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	// true when the alert starts or continues, false when it clears.
+	Active bool `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
+	// Level of the alert, e.g. the expiry stage of a certificate; 0 if unused.
+	Level int32 `protobuf:"varint,4,opt,name=level,proto3" json:"level,omitempty"`
+	// JSON object with the details; empty means "{}".
+	DetailsJson   []byte `protobuf:"bytes,5,opt,name=details_json,json=detailsJson,proto3" json:"details_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSystemAlert) Reset() {
+	*x = SetSystemAlert{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSystemAlert) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSystemAlert) ProtoMessage() {}
+
+func (x *SetSystemAlert) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSystemAlert.ProtoReflect.Descriptor instead.
+func (*SetSystemAlert) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *SetSystemAlert) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SetSystemAlert) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *SetSystemAlert) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *SetSystemAlert) GetLevel() int32 {
+	if x != nil {
+		return x.Level
+	}
+	return 0
+}
+
+func (x *SetSystemAlert) GetDetailsJson() []byte {
+	if x != nil {
+		return x.DetailsJson
+	}
+	return nil
+}
+
+// RecordIncarnation stores the incarnation a node reported (FA-REP-06, ADR 0025).
+// It is the last known incarnation of the node; a change is detected by the leader.
+type RecordIncarnation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Incarnation   string                 `protobuf:"bytes,2,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordIncarnation) Reset() {
+	*x = RecordIncarnation{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordIncarnation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordIncarnation) ProtoMessage() {}
+
+func (x *RecordIncarnation) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordIncarnation.ProtoReflect.Descriptor instead.
+func (*RecordIncarnation) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RecordIncarnation) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *RecordIncarnation) GetIncarnation() string {
+	if x != nil {
+		return x.Incarnation
+	}
+	return ""
+}
+
+// Checkpoint asks every replica to compute the fingerprint of its state at this
+// log index (FA-CLU-07, ADR 0025). It changes no replicated data; each replica
+// keeps the result in memory only.
+type Checkpoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Checkpoint) Reset() {
+	*x = Checkpoint{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Checkpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Checkpoint) ProtoMessage() {}
+
+func (x *Checkpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Checkpoint.ProtoReflect.Descriptor instead.
+func (*Checkpoint) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{28}
+}
+
 var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xe4\t\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xb1\x0f\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -1696,7 +2606,17 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x12revoke_certificate\x18\x17 \x01(\v2#.uptimecluster.v1.RevokeCertificateH\x00R\x11revokeCertificate\x12?\n" +
 	"\vrevoke_node\x18\x18 \x01(\v2\x1c.uptimecluster.v1.RevokeNodeH\x00R\n" +
 	"revokeNode\x12I\n" +
-	"\x0fset_node_health\x18\x19 \x01(\v2\x1f.uptimecluster.v1.SetNodeHealthH\x00R\rsetNodeHealthB\t\n" +
+	"\x0fset_node_health\x18\x19 \x01(\v2\x1f.uptimecluster.v1.SetNodeHealthH\x00R\rsetNodeHealth\x12[\n" +
+	"\x15set_node_connectivity\x18\x1a \x01(\v2%.uptimecluster.v1.SetNodeConnectivityH\x00R\x13setNodeConnectivity\x12^\n" +
+	"\x16clear_monitor_flapping\x18\x1b \x01(\v2&.uptimecluster.v1.ClearMonitorFlappingH\x00R\x14clearMonitorFlapping\x12^\n" +
+	"\x16report_degraded_alerts\x18\x1c \x01(\v2&.uptimecluster.v1.ReportDegradedAlertsH\x00R\x14reportDegradedAlerts\x12j\n" +
+	"\x1aresolve_unconfirmed_alerts\x18\x1d \x01(\v2*.uptimecluster.v1.ResolveUnconfirmedAlertsH\x00R\x18resolveUnconfirmedAlerts\x12^\n" +
+	"\x16record_monitor_history\x18\x1e \x01(\v2&.uptimecluster.v1.RecordMonitorHistoryH\x00R\x14recordMonitorHistory\x12L\n" +
+	"\x10set_system_alert\x18\x1f \x01(\v2 .uptimecluster.v1.SetSystemAlertH\x00R\x0esetSystemAlert\x12T\n" +
+	"\x12record_incarnation\x18  \x01(\v2#.uptimecluster.v1.RecordIncarnationH\x00R\x11recordIncarnation\x12>\n" +
+	"\n" +
+	"checkpoint\x18! \x01(\v2\x1c.uptimecluster.v1.CheckpointH\x00R\n" +
+	"checkpointB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -1713,7 +2633,7 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\"P\n" +
 	"\fDeleteEntity\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.EntityKindR\x04kind\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xe7\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"\xab\x02\n" +
 	"\x0fSetMonitorState\x12\x1d\n" +
 	"\n" +
 	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12\x16\n" +
@@ -1721,7 +2641,9 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\tconfirmed\x18\x03 \x01(\bR\tconfirmed\x12\x19\n" +
 	"\bsince_ms\x18\x04 \x01(\x03R\asinceMs\x12'\n" +
 	"\x0fexpected_status\x18\x05 \x01(\tR\x0eexpectedStatus\x12;\n" +
-	"\bincident\x18\x06 \x01(\v2\x1f.uptimecluster.v1.IncidentStartR\bincident\"\xb1\x01\n" +
+	"\bincident\x18\x06 \x01(\v2\x1f.uptimecluster.v1.IncidentStartR\bincident\x12\x1c\n" +
+	"\treporters\x18\a \x03(\tR\treporters\x12$\n" +
+	"\x0esender_node_id\x18\b \x01(\tR\fsenderNodeId\"\xb1\x01\n" +
 	"\rIncidentStart\x12\x1f\n" +
 	"\vincident_id\x18\x01 \x01(\tR\n" +
 	"incidentId\x12\x14\n" +
@@ -1763,9 +2685,17 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\x04node\x18\x01 \x01(\v2\x1a.uptimecluster.v1.NodeInfoR\x04node\"B\n" +
 	"\rSetNodeHealth\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
-	"\ahealthy\x18\x02 \x01(\bR\ahealthy\"'\n" +
+	"\ahealthy\x18\x02 \x01(\bR\ahealthy\"b\n" +
+	"\x13SetNodeConnectivity\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1a\n" +
+	"\bimpaired\x18\x02 \x01(\bR\bimpaired\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"'\n" +
 	"\x0fSetFeatureLevel\x12\x14\n" +
-	"\x05level\x18\x01 \x01(\rR\x05level\"\x93\x04\n" +
+	"\x05level\x18\x01 \x01(\rR\x05level\"a\n" +
+	"\x14ClearMonitorFlapping\x12\x1d\n" +
+	"\n" +
+	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12*\n" +
+	"\x11expected_since_ms\x18\x02 \x01(\x03R\x0fexpectedSinceMs\"\x93\x04\n" +
 	"\bNodeInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x123\n" +
@@ -1800,7 +2730,58 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"notAfterMs\"%\n" +
 	"\n" +
 	"RevokeNode\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId*\xab\x02\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"o\n" +
+	"\x14ReportDegradedAlerts\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12>\n" +
+	"\aentries\x18\x02 \x03(\v2$.uptimecluster.v1.DegradedAlertEntryR\aentries\"\xc2\x02\n" +
+	"\x12DegradedAlertEntry\x12\x19\n" +
+	"\blocal_id\x18\x01 \x01(\x03R\alocalId\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1d\n" +
+	"\n" +
+	"monitor_id\x18\x03 \x01(\tR\tmonitorId\x12\x1d\n" +
+	"\n" +
+	"channel_id\x18\x04 \x01(\tR\tchannelId\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x19\n" +
+	"\bsince_ms\x18\x06 \x01(\x03R\asinceMs\x12\x17\n" +
+	"\asent_ms\x18\a \x01(\x03R\x06sentMs\x12\x18\n" +
+	"\aoutcome\x18\b \x01(\tR\aoutcome\x12\x1c\n" +
+	"\treachable\x18\t \x01(\x05R\treachable\x12\x14\n" +
+	"\x05total\x18\n" +
+	" \x01(\x05R\x05total\x12\x1c\n" +
+	"\treporters\x18\v \x03(\tR\treporters\"\\\n" +
+	"\x18ResolveUnconfirmedAlerts\x12@\n" +
+	"\bverdicts\x18\x01 \x03(\v2$.uptimecluster.v1.UnconfirmedVerdictR\bverdicts\"z\n" +
+	"\x12UnconfirmedVerdict\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x19\n" +
+	"\blocal_id\x18\x02 \x01(\x03R\alocalId\x12\x18\n" +
+	"\averdict\x18\x03 \x01(\tR\averdict\x12\x16\n" +
+	"\x06notify\x18\x04 \x01(\bR\x06notify\"\xc6\x01\n" +
+	"\x14RecordMonitorHistory\x12\x1d\n" +
+	"\n" +
+	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12'\n" +
+	"\x0fexpected_status\x18\x02 \x01(\tR\x0eexpectedStatus\x12\x17\n" +
+	"\afrom_ms\x18\x03 \x01(\x03R\x06fromMs\x12\x13\n" +
+	"\x05to_ms\x18\x04 \x01(\x03R\x04toMs\x128\n" +
+	"\aentries\x18\x05 \x03(\v2\x1e.uptimecluster.v1.HistoryEntryR\aentries\"\x99\x01\n" +
+	"\fHistoryEntry\x12\x19\n" +
+	"\bsince_ms\x18\x01 \x01(\x03R\asinceMs\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1f\n" +
+	"\vincident_id\x18\x03 \x01(\tR\n" +
+	"incidentId\x12\x14\n" +
+	"\x05cause\x18\x04 \x01(\tR\x05cause\x12\x1f\n" +
+	"\verror_class\x18\x05 \x01(\tR\n" +
+	"errorClass\"\x8f\x01\n" +
+	"\x0eSetSystemAlert\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
+	"\x06active\x18\x03 \x01(\bR\x06active\x12\x14\n" +
+	"\x05level\x18\x04 \x01(\x05R\x05level\x12!\n" +
+	"\fdetails_json\x18\x05 \x01(\fR\vdetailsJson\"N\n" +
+	"\x11RecordIncarnation\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12 \n" +
+	"\vincarnation\x18\x02 \x01(\tR\vincarnation\"\f\n" +
+	"\n" +
+	"Checkpoint*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -1827,31 +2808,42 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
-	(EntityKind)(0),           // 0: uptimecluster.v1.EntityKind
-	(Actor_Kind)(0),           // 1: uptimecluster.v1.Actor.Kind
-	(NodeInfo_Role)(0),        // 2: uptimecluster.v1.NodeInfo.Role
-	(*Command)(nil),           // 3: uptimecluster.v1.Command
-	(*Actor)(nil),             // 4: uptimecluster.v1.Actor
-	(*PutEntity)(nil),         // 5: uptimecluster.v1.PutEntity
-	(*DeleteEntity)(nil),      // 6: uptimecluster.v1.DeleteEntity
-	(*SetMonitorState)(nil),   // 7: uptimecluster.v1.SetMonitorState
-	(*IncidentStart)(nil),     // 8: uptimecluster.v1.IncidentStart
-	(*EnqueueAlert)(nil),      // 9: uptimecluster.v1.EnqueueAlert
-	(*AckAlertDelivery)(nil),  // 10: uptimecluster.v1.AckAlertDelivery
-	(*CreateSession)(nil),     // 11: uptimecluster.v1.CreateSession
-	(*RotateSession)(nil),     // 12: uptimecluster.v1.RotateSession
-	(*RevokeSessions)(nil),    // 13: uptimecluster.v1.RevokeSessions
-	(*RegisterNode)(nil),      // 14: uptimecluster.v1.RegisterNode
-	(*SetNodeHealth)(nil),     // 15: uptimecluster.v1.SetNodeHealth
-	(*SetFeatureLevel)(nil),   // 16: uptimecluster.v1.SetFeatureLevel
-	(*NodeInfo)(nil),          // 17: uptimecluster.v1.NodeInfo
-	(*RedeemJoinToken)(nil),   // 18: uptimecluster.v1.RedeemJoinToken
-	(*RevokeCertificate)(nil), // 19: uptimecluster.v1.RevokeCertificate
-	(*RevokeNode)(nil),        // 20: uptimecluster.v1.RevokeNode
-	nil,                       // 21: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),           // 22: uptimecluster.v1.ErrorClass
+	(EntityKind)(0),                  // 0: uptimecluster.v1.EntityKind
+	(Actor_Kind)(0),                  // 1: uptimecluster.v1.Actor.Kind
+	(NodeInfo_Role)(0),               // 2: uptimecluster.v1.NodeInfo.Role
+	(*Command)(nil),                  // 3: uptimecluster.v1.Command
+	(*Actor)(nil),                    // 4: uptimecluster.v1.Actor
+	(*PutEntity)(nil),                // 5: uptimecluster.v1.PutEntity
+	(*DeleteEntity)(nil),             // 6: uptimecluster.v1.DeleteEntity
+	(*SetMonitorState)(nil),          // 7: uptimecluster.v1.SetMonitorState
+	(*IncidentStart)(nil),            // 8: uptimecluster.v1.IncidentStart
+	(*EnqueueAlert)(nil),             // 9: uptimecluster.v1.EnqueueAlert
+	(*AckAlertDelivery)(nil),         // 10: uptimecluster.v1.AckAlertDelivery
+	(*CreateSession)(nil),            // 11: uptimecluster.v1.CreateSession
+	(*RotateSession)(nil),            // 12: uptimecluster.v1.RotateSession
+	(*RevokeSessions)(nil),           // 13: uptimecluster.v1.RevokeSessions
+	(*RegisterNode)(nil),             // 14: uptimecluster.v1.RegisterNode
+	(*SetNodeHealth)(nil),            // 15: uptimecluster.v1.SetNodeHealth
+	(*SetNodeConnectivity)(nil),      // 16: uptimecluster.v1.SetNodeConnectivity
+	(*SetFeatureLevel)(nil),          // 17: uptimecluster.v1.SetFeatureLevel
+	(*ClearMonitorFlapping)(nil),     // 18: uptimecluster.v1.ClearMonitorFlapping
+	(*NodeInfo)(nil),                 // 19: uptimecluster.v1.NodeInfo
+	(*RedeemJoinToken)(nil),          // 20: uptimecluster.v1.RedeemJoinToken
+	(*RevokeCertificate)(nil),        // 21: uptimecluster.v1.RevokeCertificate
+	(*RevokeNode)(nil),               // 22: uptimecluster.v1.RevokeNode
+	(*ReportDegradedAlerts)(nil),     // 23: uptimecluster.v1.ReportDegradedAlerts
+	(*DegradedAlertEntry)(nil),       // 24: uptimecluster.v1.DegradedAlertEntry
+	(*ResolveUnconfirmedAlerts)(nil), // 25: uptimecluster.v1.ResolveUnconfirmedAlerts
+	(*UnconfirmedVerdict)(nil),       // 26: uptimecluster.v1.UnconfirmedVerdict
+	(*RecordMonitorHistory)(nil),     // 27: uptimecluster.v1.RecordMonitorHistory
+	(*HistoryEntry)(nil),             // 28: uptimecluster.v1.HistoryEntry
+	(*SetSystemAlert)(nil),           // 29: uptimecluster.v1.SetSystemAlert
+	(*RecordIncarnation)(nil),        // 30: uptimecluster.v1.RecordIncarnation
+	(*Checkpoint)(nil),               // 31: uptimecluster.v1.Checkpoint
+	nil,                              // 32: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 33: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -1861,27 +2853,38 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	9,  // 4: uptimecluster.v1.Command.enqueue_alert:type_name -> uptimecluster.v1.EnqueueAlert
 	10, // 5: uptimecluster.v1.Command.ack_alert_delivery:type_name -> uptimecluster.v1.AckAlertDelivery
 	14, // 6: uptimecluster.v1.Command.register_node:type_name -> uptimecluster.v1.RegisterNode
-	16, // 7: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
+	17, // 7: uptimecluster.v1.Command.set_feature_level:type_name -> uptimecluster.v1.SetFeatureLevel
 	11, // 8: uptimecluster.v1.Command.create_session:type_name -> uptimecluster.v1.CreateSession
 	12, // 9: uptimecluster.v1.Command.rotate_session:type_name -> uptimecluster.v1.RotateSession
 	13, // 10: uptimecluster.v1.Command.revoke_sessions:type_name -> uptimecluster.v1.RevokeSessions
-	18, // 11: uptimecluster.v1.Command.redeem_join_token:type_name -> uptimecluster.v1.RedeemJoinToken
-	19, // 12: uptimecluster.v1.Command.revoke_certificate:type_name -> uptimecluster.v1.RevokeCertificate
-	20, // 13: uptimecluster.v1.Command.revoke_node:type_name -> uptimecluster.v1.RevokeNode
+	20, // 11: uptimecluster.v1.Command.redeem_join_token:type_name -> uptimecluster.v1.RedeemJoinToken
+	21, // 12: uptimecluster.v1.Command.revoke_certificate:type_name -> uptimecluster.v1.RevokeCertificate
+	22, // 13: uptimecluster.v1.Command.revoke_node:type_name -> uptimecluster.v1.RevokeNode
 	15, // 14: uptimecluster.v1.Command.set_node_health:type_name -> uptimecluster.v1.SetNodeHealth
-	1,  // 15: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 16: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 17: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 18: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	22, // 19: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	17, // 20: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 21: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	21, // 22: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	16, // 15: uptimecluster.v1.Command.set_node_connectivity:type_name -> uptimecluster.v1.SetNodeConnectivity
+	18, // 16: uptimecluster.v1.Command.clear_monitor_flapping:type_name -> uptimecluster.v1.ClearMonitorFlapping
+	23, // 17: uptimecluster.v1.Command.report_degraded_alerts:type_name -> uptimecluster.v1.ReportDegradedAlerts
+	25, // 18: uptimecluster.v1.Command.resolve_unconfirmed_alerts:type_name -> uptimecluster.v1.ResolveUnconfirmedAlerts
+	27, // 19: uptimecluster.v1.Command.record_monitor_history:type_name -> uptimecluster.v1.RecordMonitorHistory
+	29, // 20: uptimecluster.v1.Command.set_system_alert:type_name -> uptimecluster.v1.SetSystemAlert
+	30, // 21: uptimecluster.v1.Command.record_incarnation:type_name -> uptimecluster.v1.RecordIncarnation
+	31, // 22: uptimecluster.v1.Command.checkpoint:type_name -> uptimecluster.v1.Checkpoint
+	1,  // 23: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 24: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 25: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 26: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	33, // 27: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	19, // 28: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 29: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	32, // 30: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	24, // 31: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
+	26, // 32: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
+	28, // 33: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -1905,6 +2908,14 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_RevokeCertificate)(nil),
 		(*Command_RevokeNode)(nil),
 		(*Command_SetNodeHealth)(nil),
+		(*Command_SetNodeConnectivity)(nil),
+		(*Command_ClearMonitorFlapping)(nil),
+		(*Command_ReportDegradedAlerts)(nil),
+		(*Command_ResolveUnconfirmedAlerts)(nil),
+		(*Command_RecordMonitorHistory)(nil),
+		(*Command_SetSystemAlert)(nil),
+		(*Command_RecordIncarnation)(nil),
+		(*Command_Checkpoint)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1912,7 +2923,7 @@ func file_uptimecluster_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   19,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -18,7 +18,9 @@
     "down": "Down",
     "up": "Up",
     "degraded": "Degraded",
-    "partial": "Partial"
+    "partial": "Partial",
+    "flapping": "Flapping",
+    "channel_failed": "Another channel failed"
   },
   "default": "Default",
   "lastError": "Last error",
@@ -108,5 +110,14 @@
       "headerValue": "Enter a value for every new header.",
       "headerDuplicate": "Each header name may appear only once."
     }
+  },
+  "system": {
+    "title": "System channels",
+    "new": "New system channel",
+    "titleNew": "New system channel",
+    "titleEdit": "Edit system channel",
+    "empty": "No system channels yet.",
+    "emptyHint": "Without a system channel, system alerts are only logged and shown on the cluster page.",
+    "eventsHint": "System channels receive system alerts only."
   }
 }

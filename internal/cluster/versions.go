@@ -40,6 +40,18 @@ func minVersion(cmd *pb.Command) uint32 {
 		*pb.Command_SetNodeHealth,
 		*pb.Command_SetFeatureLevel:
 		return 2
+	case *pb.Command_SetNodeConnectivity:
+		return 3
+	case *pb.Command_ClearMonitorFlapping:
+		return 4
+	case *pb.Command_ReportDegradedAlerts,
+		*pb.Command_ResolveUnconfirmedAlerts,
+		*pb.Command_RecordMonitorHistory:
+		return 5
+	case *pb.Command_SetSystemAlert,
+		*pb.Command_RecordIncarnation,
+		*pb.Command_Checkpoint:
+		return SystemAlertCommandLevel
 	}
 	return 0
 }

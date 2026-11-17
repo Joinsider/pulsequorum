@@ -13,6 +13,7 @@ import { ClusterNode, ClusterNodeList } from '../../api/gen/model';
 import { JoinTokenDialog } from './join-token-dialog';
 import { ClusterPage } from './cluster-page';
 import { RemoveNodeDialog } from './remove-node-dialog';
+import { SystemAlertsService } from './system-alerts.service';
 
 const NODES: ClusterNode[] = [
   {
@@ -119,6 +120,7 @@ describe('ClusterPage', () => {
       ],
       providers: [
         { provide: ClusterService, useValue: api },
+        { provide: SystemAlertsService, useValue: { active: () => of([]) } },
         { provide: MatDialog, useValue: dialog },
         { provide: MatSnackBar, useValue: snack },
       ],
@@ -210,6 +212,21 @@ describe('ClusterPage', () => {
     // The test loader returns keys, so the interpolated error text is checked by the key only.
     expect(cardFor('berlin-1').textContent).toContain('admin.cluster.node.replicationError');
     expect(cardFor('frankfurt-1').querySelector('.lag')?.textContent?.trim()).toBe('–');
+  });
+
+  it('shows the connectivity badge with its reason only while impaired (ADR 0022)', async () => {
+    const impaired: ClusterNode = {
+      ...NODES[2],
+      connectivityImpaired: true,
+      connectivityReason: 'reference',
+    };
+    api.listClusterNodes.mockReturnValue(of(listOf([NODES[0], NODES[1], impaired, NODES[3]])));
+    await render();
+
+    const badge = cardFor('cologne-1').querySelector('.badge--connectivity');
+    expect(badge?.textContent).toContain('admin.cluster.node.connectivity.impaired');
+    expect(badge?.textContent).toContain('admin.cluster.node.connectivity.reasons.reference');
+    expect(cardFor('berlin-1').querySelector('.badge--connectivity')).toBeNull();
   });
 
   it('shows server warnings as they are and the upgrade banner', async () => {

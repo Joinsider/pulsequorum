@@ -4,9 +4,12 @@
 package replication
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/joinsider/uptimecluster/internal/store"
 )
@@ -140,5 +143,56 @@ func TestPeerStatusLag(t *testing.T) {
 	lag, ok := st.Lag(now)
 	if !ok || lag != 90*time.Second {
 		t.Errorf("Lag = %v, %v; want 90s, true", lag, ok)
+	}
+}
+
+// Anti-entropy pages reach OnStored page by page, and only once stored (ADR 0021).
+func TestFetchStreamOnStoredReceivesStoredPages(t *testing.T) {
+	source := newFakeMetrics("inc-c")
+	mustInsert(t, source, makeHBs("c", "inc-c", 1, 2, 3))
+	client := serveServer(t, &Server{NodeID: "c", Metrics: source, identity: fixedIdentity("b")})
+
+	var got []uint64
+	r := New(Options{
+		NodeID:   "b",
+		Metrics:  newFakeMetrics("inc-b"),
+		Peers:    func() []Peer { return nil },
+		Dial:     func(string) (*grpc.ClientConn, error) { return nil, errUnreachable },
+		PageSize: 2,
+		OnStored: func(hbs []store.Heartbeat) {
+			for _, h := range hbs {
+				got = append(got, h.Seq)
+			}
+		},
+	})
+	w := newWorker(r, Peer{ID: "c"}, func() {})
+	if err := w.fetchStream(context.Background(), client, streamKey{node: "c", inc: "inc-c"}, 0, 3); err != nil {
+		t.Fatalf("fetchStream: %v", err)
+	}
+	if got := seqsString(got); got != "[1 2 3]" {
+		t.Fatalf("OnStored seqs = %s, want [1 2 3]", got)
+	}
+}
+
+// OnStored is not called for a page whose insert fails.
+func TestFetchStreamOnStoredSkippedOnInsertError(t *testing.T) {
+	source := newFakeMetrics("inc-c")
+	mustInsert(t, source, makeHBs("c", "inc-c", 1, 2))
+	client := serveServer(t, &Server{NodeID: "c", Metrics: source, identity: fixedIdentity("b")})
+
+	var calls int
+	r := New(Options{
+		NodeID:   "b",
+		Metrics:  failingInsert{newFakeMetrics("inc-b"), errUnreachable},
+		Peers:    func() []Peer { return nil },
+		Dial:     func(string) (*grpc.ClientConn, error) { return nil, errUnreachable },
+		OnStored: func([]store.Heartbeat) { calls++ },
+	})
+	w := newWorker(r, Peer{ID: "c"}, func() {})
+	if err := w.fetchStream(context.Background(), client, streamKey{node: "c", inc: "inc-c"}, 0, 2); err == nil {
+		t.Fatal("fetchStream succeeded although the insert failed")
+	}
+	if calls != 0 {
+		t.Fatalf("OnStored called %d times for a failed insert, want 0", calls)
 	}
 }

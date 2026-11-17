@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,12 @@ type Config struct {
 	// Keep leaves containers, volumes, the network and the temp directory in
 	// place after the run, for inspection.
 	Keep bool
+	// SelfCheckTargets are passed to every voter as SELF_CHECK_TARGETS (ADR 0022):
+	// host:port or http(s) URLs. Empty leaves the self-check off.
+	SelfCheckTargets []string
+	// AlertBundleWindow is passed as ALERT_BUNDLE_WINDOW when set (a duration,
+	// "0s" disables bundling, ADR 0023). Empty keeps the product default.
+	AlertBundleWindow string
 }
 
 // DefaultConfig returns the defaults of the chaos driver.
@@ -96,6 +103,17 @@ func (c Config) Validate() error {
 	}
 	if c.Interval < minMonitorInterval || c.Interval > maxMonitorInterval {
 		return fmt.Errorf("interval must be between %s and %s, got %s", minMonitorInterval, maxMonitorInterval, c.Interval)
+	}
+	if c.AlertBundleWindow != "" {
+		d, err := time.ParseDuration(c.AlertBundleWindow)
+		if err != nil || d < 0 {
+			return fmt.Errorf("alert bundle window %q must be a duration of 0 or more", c.AlertBundleWindow)
+		}
+	}
+	for _, t := range c.SelfCheckTargets {
+		if strings.TrimSpace(t) == "" || strings.Contains(t, ",") {
+			return fmt.Errorf("self-check target %q must be one non-empty entry without commas", t)
+		}
 	}
 	return nil
 }

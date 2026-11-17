@@ -5,6 +5,7 @@ package replication
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // countingTrigger records how often each node was triggered.
@@ -234,5 +236,68 @@ func TestStreamHeartbeatsTriggersOncePerStream(t *testing.T) {
 		if err := s.CloseSend(); err != nil {
 			t.Fatalf("close send: %v", err)
 		}
+	}
+}
+
+// failingInsert fails every InsertHeartbeats call.
+type failingInsert struct {
+	*fakeMetrics
+	err error
+}
+
+func (m failingInsert) InsertHeartbeats(context.Context, []store.Heartbeat) (int, error) {
+	return 0, m.err
+}
+
+// OnStored receives exactly the validated heartbeats that were stored (ADR 0021).
+func TestStreamHeartbeatsOnStoredReceivesStoredOnly(t *testing.T) {
+	m := newFakeMetrics("inc-b")
+	var got []store.Heartbeat
+	srv := &Server{NodeID: "b", Metrics: m, identity: fixedIdentity("a"),
+		OnStored: func(hbs []store.Heartbeat) { got = append(got, hbs...) }}
+	client := serveServer(t, srv)
+
+	stream, err := client.StreamHeartbeats(context.Background())
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	invalid := heartbeatToPB(makeHB("c", "inc-c", 3))
+	invalid.TenantId = ""
+	msg := &pb.StreamHeartbeatsRequest{Heartbeats: []*pb.Heartbeat{
+		heartbeatToPB(makeHB("c", "inc-c", 1)), invalid, heartbeatToPB(makeHB("c", "inc-c", 2)),
+	}}
+	if err := stream.Send(msg); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("recv: %v", err)
+	}
+	if len(got) != 2 || got[0].Seq != 1 || got[1].Seq != 2 {
+		t.Fatalf("OnStored got %d heartbeats, want seqs [1 2]", len(got))
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("close send: %v", err)
+	}
+}
+
+// OnStored is not called when the insert fails.
+func TestStreamHeartbeatsOnStoredSkippedOnInsertError(t *testing.T) {
+	var calls int
+	srv := &Server{NodeID: "b", Metrics: failingInsert{newFakeMetrics("inc-b"), errors.New("disk full")},
+		identity: fixedIdentity("a"), OnStored: func([]store.Heartbeat) { calls++ }}
+	client := serveServer(t, srv)
+
+	stream, err := client.StreamHeartbeats(context.Background())
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	if err := stream.Send(&pb.StreamHeartbeatsRequest{Heartbeats: []*pb.Heartbeat{heartbeatToPB(makeHB("c", "inc-c", 1))}}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if _, err := stream.Recv(); err == nil {
+		t.Fatal("recv succeeded although the insert failed")
+	}
+	if calls != 0 {
+		t.Fatalf("OnStored called %d times for a failed insert, want 0", calls)
 	}
 }

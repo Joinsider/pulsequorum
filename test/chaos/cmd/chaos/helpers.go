@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/joinsider/uptimecluster/test/chaos/harness"
-	"github.com/joinsider/uptimecluster/test/internal/fake"
 	"github.com/joinsider/uptimecluster/test/internal/ucapi"
 )
 
@@ -206,20 +205,6 @@ func createHTTPMonitor(ctx context.Context, c *ucapi.Client, name, url string, i
 		Assignment:             &ucapi.Assignment{Mode: "all"},
 		NotificationChannelIDs: channels,
 	})
-}
-
-// notifyCount counts the recorded notifications with the given title that
-// arrived at or after since.
-func notifyCount(rec *fake.Recorder, since time.Time, title string) (int, []time.Time) {
-	var n int
-	var at []time.Time
-	for _, m := range rec.Messages() {
-		if !m.At.Before(since) && m.Title == title {
-			n++
-			at = append(at, m.At)
-		}
-	}
-	return n, at
 }
 
 // waitMonitorStatus polls until every monitor reports status.

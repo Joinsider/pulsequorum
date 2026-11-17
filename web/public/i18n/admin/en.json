@@ -46,6 +46,13 @@
       "leaderBadge": "Leader",
       "selfBadge": "This node",
       "healthLabel": "Health",
+      "connectivity": {
+        "impaired": "Connectivity impaired",
+        "reasons": {
+          "reference": "reference targets",
+          "deviation": "deviation"
+        }
+      },
       "address": "Address",
       "health": {
         "healthy": "Healthy",
@@ -95,6 +102,30 @@
     "error": {
       "notMember": "This node is not a member of the cluster.",
       "conflict": "The cluster refused the change because of its current state."
+    }
+  },
+  "alerts": {
+    "title": "Active system alerts",
+    "empty": "No active system alerts.",
+    "loadError": "The system alerts could not be loaded.",
+    "subject": "Subject",
+    "since": "Since",
+    "level": "Level",
+    "details": "Details",
+    "kinds": {
+      "voter_offline": "Voter offline",
+      "node_impaired": "Node connectivity impaired",
+      "replication_lag": "Replication lag",
+      "clock_skew": "Clock skew",
+      "disk_low": "Disk space low",
+      "wal_large": "WAL file large",
+      "raft_stale": "Raft state stale",
+      "cert_expiry": "Certificate expires",
+      "incarnation_changed": "Node incarnation changed",
+      "fingerprint_mismatch": "FSM fingerprint mismatch",
+      "mixed_versions": "Mixed versions",
+      "quorum": "Quorum",
+      "test": "Test alert"
     }
   }
 }

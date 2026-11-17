@@ -11,6 +11,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,14 @@ func (s Sinks) Record(ctx context.Context, o Outcome) {
 	}
 }
 
+// CheckObserver is told when a check starts and when it finishes. It is
+// optional; metrics implement it. Calls come from the check goroutines and
+// must not block for long. The result is the lower-case status (up, down, degraded).
+type CheckObserver interface {
+	CheckStarted(typ string)
+	CheckFinished(typ, result string, d time.Duration)
+}
+
 // Options configure a Scheduler.
 type Options struct {
 	Registry      *checker.Registry
@@ -55,6 +64,8 @@ type Options struct {
 	Sink          Sink
 	Logger        *slog.Logger
 	MaxConcurrent int
+	// Observer receives check start and finish events; nil disables them.
+	Observer CheckObserver
 	// Unit is the length of one interval second; tests shrink it.
 	Unit time.Duration
 	// Resolve returns the configuration with its secrets decrypted (ADR 0015);
@@ -246,11 +257,30 @@ func (s *Scheduler) run(ctx context.Context, e *entry, scheduled time.Time) {
 	defer cancel()
 
 	started := s.opts.Now()
+	began := time.Now() // monotonic clock for the duration metric (ADR 0020)
+	obs := s.opts.Observer
+	var typ string
+	if obs != nil {
+		typ = s.observedType(m.Type)
+		obs.CheckStarted(typ)
+	}
 	res := s.execute(checkCtx, m)
+	if obs != nil {
+		obs.CheckFinished(typ, strings.ToLower(res.Status.String()), time.Since(began))
+	}
 	if ctx.Err() != nil {
 		return // monitor removed or node shutting down; the result is meaningless
 	}
 	s.opts.Sink.Record(ctx, Outcome{Monitor: m, Scheduled: scheduled, Started: started, Result: res})
+}
+
+// observedType keeps metric labels bounded: unregistered monitor types are
+// reported as "unknown" instead of their stored string.
+func (s *Scheduler) observedType(typ string) string {
+	if _, err := s.opts.Registry.Lookup(typ); err != nil {
+		return "unknown"
+	}
+	return typ
 }
 
 func (s *Scheduler) execute(ctx context.Context, m store.Monitor) (res checker.Result) {

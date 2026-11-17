@@ -26,15 +26,18 @@ const (
 	maxLabelValueLen    = 256
 )
 
-// NodeResult is the result of RegisterNode and SetNodeHealth: the registry
-// entry after the command.
+// NodeResult is the result of RegisterNode, SetNodeHealth and
+// SetNodeConnectivity: the registry entry after the command.
 type NodeResult struct {
-	ID              string `json:"id"`
-	Role            string `json:"role"`
-	Healthy         bool   `json:"healthy"`
-	HealthChangedMs int64  `json:"healthChangedMs"`
-	RegisteredMs    int64  `json:"registeredMs"`
-	UpdatedMs       int64  `json:"updatedMs"`
+	ID                    string `json:"id"`
+	Role                  string `json:"role"`
+	Healthy               bool   `json:"healthy"`
+	HealthChangedMs       int64  `json:"healthChangedMs"`
+	ConnectivityImpaired  bool   `json:"connectivityImpaired"`
+	ConnectivityReason    string `json:"connectivityReason"`
+	ConnectivityChangedMs int64  `json:"connectivityChangedMs"`
+	RegisteredMs          int64  `json:"registeredMs"`
+	UpdatedMs             int64  `json:"updatedMs"`
 }
 
 // NewRegisterNode builds the command that registers a node or updates its
@@ -159,7 +162,8 @@ func isCapability(s string) bool {
 }
 
 // applyRegisterNode upserts a registry entry (ADR 0017). The first registration
-// makes the node healthy; an update keeps the health and the registration time.
+// makes the node healthy; an update keeps the health, the connectivity and the
+// registration time, which only the leader changes (ADR 0022).
 // A revoked node cannot register again.
 func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *pb.RegisterNode) (json.RawMessage, error) {
 	n, err := nodeFromInfo(r.GetNode())
@@ -180,6 +184,9 @@ func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r
 	case err == nil:
 		n.Healthy = existing.Healthy
 		n.HealthChangedMs = existing.HealthChangedMs
+		n.ConnectivityImpaired = existing.ConnectivityImpaired
+		n.ConnectivityReason = existing.ConnectivityReason
+		n.ConnectivityChangedMs = existing.ConnectivityChangedMs
 		n.RegisteredMs = existing.RegisteredMs
 	case errors.Is(err, store.ErrNotFound):
 		n.Healthy = true
@@ -217,13 +224,53 @@ func applySetNodeHealth(ctx context.Context, tx store.StateTx, cmd *pb.Command, 
 	return json.Marshal(nodeResult(n))
 }
 
+// Reasons of an impaired connectivity (ADR 0022).
+const (
+	ConnectivityReasonReference = "reference"
+	ConnectivityReasonDeviation = "deviation"
+)
+
+// applySetNodeConnectivity records a connectivity change (ADR 0022). A reason
+// is required while impaired and forbidden otherwise. An unchanged state is a
+// success without a write.
+func applySetNodeConnectivity(ctx context.Context, tx store.StateTx, cmd *pb.Command, s *pb.SetNodeConnectivity) (json.RawMessage, error) {
+	if !isNodeID(s.GetNodeId()) {
+		return nil, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
+	}
+	reason := s.GetReason()
+	switch {
+	case s.GetImpaired() && reason != ConnectivityReasonReference && reason != ConnectivityReasonDeviation:
+		return nil, invalid("connectivity reason must be %q or %q while impaired", ConnectivityReasonReference, ConnectivityReasonDeviation)
+	case !s.GetImpaired() && reason != "":
+		return nil, invalid("connectivity reason must be empty when not impaired")
+	}
+	n, err := tx.GetNode(ctx, s.GetNodeId())
+	if err != nil {
+		return nil, storeError(err)
+	}
+	if n.ConnectivityImpaired != s.GetImpaired() || n.ConnectivityReason != reason {
+		now := cmd.GetIssuedAtMs()
+		if err := tx.SetNodeConnectivity(ctx, n.ID, s.GetImpaired(), reason, now); err != nil {
+			return nil, storeError(err)
+		}
+		n.ConnectivityImpaired = s.GetImpaired()
+		n.ConnectivityReason = reason
+		n.ConnectivityChangedMs = now
+		n.UpdatedMs = now
+	}
+	return json.Marshal(nodeResult(n))
+}
+
 func nodeResult(n store.Node) NodeResult {
 	return NodeResult{
-		ID:              n.ID,
-		Role:            n.Role,
-		Healthy:         n.Healthy,
-		HealthChangedMs: n.HealthChangedMs,
-		RegisteredMs:    n.RegisteredMs,
-		UpdatedMs:       n.UpdatedMs,
+		ID:                    n.ID,
+		Role:                  n.Role,
+		Healthy:               n.Healthy,
+		HealthChangedMs:       n.HealthChangedMs,
+		ConnectivityImpaired:  n.ConnectivityImpaired,
+		ConnectivityReason:    n.ConnectivityReason,
+		ConnectivityChangedMs: n.ConnectivityChangedMs,
+		RegisteredMs:          n.RegisteredMs,
+		UpdatedMs:             n.UpdatedMs,
 	}
 }

@@ -46,9 +46,20 @@ func TestMinVersion(t *testing.T) {
 		{"register node", &pb.Command{Payload: &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{}}}, 2},
 		{"set node health", &pb.Command{Payload: &pb.Command_SetNodeHealth{SetNodeHealth: &pb.SetNodeHealth{}}}, 2},
 		{"set feature level", &pb.Command{Payload: &pb.Command_SetFeatureLevel{SetFeatureLevel: &pb.SetFeatureLevel{Level: 3}}}, 2},
+		{"set node connectivity", &pb.Command{Payload: &pb.Command_SetNodeConnectivity{SetNodeConnectivity: &pb.SetNodeConnectivity{}}}, 3},
+		{"constructor set node connectivity", NewSetNodeConnectivity("node-1", true, "reference"), 3},
 		{"constructor register node", NewRegisterNode("r", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 2},
 		{"constructor delete monitor", NewDeleteMonitor("r", "default", "m1"), 1},
 		{"constructor set feature level", NewSetFeatureLevel("r", 3), 2},
+		{"clear monitor flapping", &pb.Command{Payload: &pb.Command_ClearMonitorFlapping{ClearMonitorFlapping: &pb.ClearMonitorFlapping{}}}, 4},
+		{"constructor clear monitor flapping", NewClearMonitorFlapping("t1", "m1", 1000), 4},
+		{"report degraded alerts", &pb.Command{Payload: &pb.Command_ReportDegradedAlerts{ReportDegradedAlerts: &pb.ReportDegradedAlerts{}}}, 5},
+		{"resolve unconfirmed alerts", &pb.Command{Payload: &pb.Command_ResolveUnconfirmedAlerts{ResolveUnconfirmedAlerts: &pb.ResolveUnconfirmedAlerts{}}}, 5},
+		{"record monitor history", &pb.Command{Payload: &pb.Command_RecordMonitorHistory{RecordMonitorHistory: &pb.RecordMonitorHistory{}}}, 5},
+		{"constructor report degraded alerts", NewReportDegradedAlerts("node-1", nil), 5},
+		{"constructor resolve unconfirmed alerts", NewResolveUnconfirmedAlerts(nil), 5},
+		{"constructor record monitor history", NewRecordMonitorHistory("t1", "m1", store.StatusUp, 1, 2, nil), 5},
+		{"constructor set monitor state stays at 1", NewSetMonitorState(StateChange{TenantID: "t1", MonitorID: "m1", From: store.StatusUp, To: store.StatusDown, SinceMs: 1, Incident: &store.Incident{ID: "i"}, Reporters: []string{"n1"}}), 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

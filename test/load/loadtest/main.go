@@ -66,7 +66,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `usage: loadtest <subcommand> [flags]
+	// A failed write to the usage output is not actionable; the exit code still reports the error.
+	_, _ = fmt.Fprint(w, `usage: loadtest <subcommand> [flags]
 
   targets  -listen :18900 -count 1000 [-latency 0s]
   setup    -base URL (-setup-token T | -user U -password P) -count N -interval S
@@ -91,7 +92,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 		return errHelp
 	}
 	if err != nil {
-		return fmt.Errorf("%w: %v", errUsage, err)
+		return fmt.Errorf("%w: %w", errUsage, err)
 	}
 	return nil
 }

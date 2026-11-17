@@ -32,7 +32,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import { applyFieldErrors, problemOf } from '../../shared/problem';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header';
-import { NotificationsService } from '../../api/gen/endpoints/notifications/notifications.service';
+import { ChannelApi, ChannelScope, channelListPath } from './channel-api';
 import {
   NotificationChannel,
   NotificationChannelInput,
@@ -77,9 +77,7 @@ type HeaderGroup = FormGroup<{
   ],
   template: `
     <ng-container *transloco="let t">
-      <app-page-header
-        [title]="channelId() ? t('channels.editor.titleEdit') : t('channels.editor.titleNew')"
-      />
+      <app-page-header [title]="t(titleKey())" />
 
       @if (loading()) {
         <div class="state" role="status">
@@ -282,20 +280,24 @@ type HeaderGroup = FormGroup<{
             </section>
           }
 
-          <section class="section" [attr.aria-label]="t('channels.editor.events')">
-            <h2 class="section__title">{{ t('channels.editor.events') }}</h2>
-            <div class="events" formGroupName="events">
-              @for (e of events; track e) {
-                <mat-checkbox [formControlName]="e">{{ t('channels.events.' + e) }}</mat-checkbox>
-              }
-            </div>
-            <p class="muted">{{ t('channels.editor.eventsHint') }}</p>
-          </section>
+          @if (isSystem()) {
+            <p class="muted">{{ t('channels.system.eventsHint') }}</p>
+          } @else {
+            <section class="section" [attr.aria-label]="t('channels.editor.events')">
+              <h2 class="section__title">{{ t('channels.editor.events') }}</h2>
+              <div class="events" formGroupName="events">
+                @for (e of events; track e) {
+                  <mat-checkbox [formControlName]="e">{{ t('channels.events.' + e) }}</mat-checkbox>
+                }
+              </div>
+              <p class="muted">{{ t('channels.editor.eventsHint') }}</p>
+            </section>
 
-          <mat-slide-toggle formControlName="isDefault">{{
-            t('channels.editor.isDefault')
-          }}</mat-slide-toggle>
-          <p class="muted">{{ t('channels.editor.isDefaultHint') }}</p>
+            <mat-slide-toggle formControlName="isDefault">{{
+              t('channels.editor.isDefault')
+            }}</mat-slide-toggle>
+            <p class="muted">{{ t('channels.editor.isDefaultHint') }}</p>
+          }
 
           @if (formError(); as e) {
             <p class="error" role="alert">{{ e }}</p>
@@ -307,7 +309,7 @@ type HeaderGroup = FormGroup<{
                 {{ t('common.save') }}
               </button>
             }
-            <a mat-button routerLink="/channels">{{ t('common.cancel') }}</a>
+            <a mat-button [routerLink]="listPath()">{{ t('common.cancel') }}</a>
           </div>
         </form>
       }
@@ -404,9 +406,19 @@ type HeaderGroup = FormGroup<{
 export class ChannelEditorPage implements OnInit {
   /** Route parameter; absent when creating a channel. */
   readonly channelId = input<string>();
+  /** Tenant channels, or the platform's system channels for platform admins (ADR 0025). */
+  readonly scope = input<ChannelScope>('tenant');
+  protected readonly isSystem = computed(() => this.scope() === 'system');
+  protected readonly listPath = computed(() => channelListPath(this.scope()));
+  protected readonly titleKey = computed(() => {
+    if (this.channelId()) {
+      return this.isSystem() ? 'channels.system.titleEdit' : 'channels.editor.titleEdit';
+    }
+    return this.isSystem() ? 'channels.system.titleNew' : 'channels.editor.titleNew';
+  });
 
   protected readonly auth = inject(AuthService);
-  private readonly api = inject(NotificationsService);
+  private readonly api = inject(ChannelApi);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
   private readonly fb = inject(NonNullableFormBuilder);
@@ -417,6 +429,8 @@ export class ChannelEditorPage implements OnInit {
     NotificationEvent.up,
     NotificationEvent.degraded,
     NotificationEvent.partial,
+    NotificationEvent.flapping,
+    NotificationEvent.channel_failed,
   ];
 
   protected readonly loading = signal(false);
@@ -436,6 +450,8 @@ export class ChannelEditorPage implements OnInit {
       up: this.fb.control(true),
       degraded: this.fb.control(false),
       partial: this.fb.control(false),
+      flapping: this.fb.control(true),
+      channel_failed: this.fb.control(true),
     }),
     isDefault: this.fb.control(false),
     webhook: this.fb.group({
@@ -493,7 +509,7 @@ export class ChannelEditorPage implements OnInit {
     }
     this.loading.set(true);
     this.loadError.set(false);
-    this.api.getNotificationChannel(id).subscribe({
+    this.api.get(this.scope(), id).subscribe({
       next: (channel) => {
         this.populate(channel);
         this.loading.set(false);
@@ -525,7 +541,8 @@ export class ChannelEditorPage implements OnInit {
     this.shoutrrrError.set(null);
     this.form.markAllAsTouched();
     const raw = this.form.getRawValue();
-    const events = selectedEvents(raw.events);
+    // System channels subscribe to the system event only (ADR 0025).
+    const events = this.isSystem() ? [NotificationEvent.system] : selectedEvents(raw.events);
     if (this.form.controls.name.invalid) {
       this.form.controls.name.markAsTouched();
       return;
@@ -539,7 +556,8 @@ export class ChannelEditorPage implements OnInit {
       name: raw.name.trim(),
       kind: raw.kind,
       events,
-      isDefault: raw.isDefault,
+      // System channels have no monitors to attach to, so they are never a default.
+      isDefault: this.isSystem() ? undefined : raw.isDefault,
     };
 
     if (raw.kind === NotificationKind.shoutrrr) {
@@ -582,12 +600,12 @@ export class ChannelEditorPage implements OnInit {
     this.saving.set(true);
     const id = this.channelId();
     const request = id
-      ? this.api.updateNotificationChannel(id, input)
-      : this.api.createNotificationChannel(input);
+      ? this.api.update(this.scope(), id, input)
+      : this.api.create(this.scope(), input);
     request.subscribe({
       next: () => {
         this.saving.set(false);
-        void this.router.navigateByUrl('/channels');
+        void this.router.navigateByUrl(this.listPath());
       },
       error: (err: unknown) => {
         this.saving.set(false);

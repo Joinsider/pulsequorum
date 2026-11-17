@@ -19,4 +19,10 @@ export interface Health {
   nodeName: string;
   version: string;
   commit: string;
+  /** True while this voter has known no leader for DEGRADED_AFTER (ADR 0024) */
+  degraded: boolean;
+  /** Start of the leaderless period, set while degraded */
+  degradedSince?: string;
+  /** Sorted IDs of this voter and the reachable voters without a leader, set while degraded (ADR 0024) */
+  partition?: string[];
 }

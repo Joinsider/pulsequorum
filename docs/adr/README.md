@@ -26,3 +26,9 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0018](0018-rolling-updates-und-feature-gates.md) | Rolling Updates: Befehlsversionen, Feature-Gate und Expand/Contract | Accepted | 2026-10-23 |
 | [0019](0019-recovery-cli.md) | Recovery-CLI: Quorumverlust und Admin-Passwort | Accepted | 2026-10-25 |
 | [0020](0020-uhrversatz-messen-und-testen.md) | Uhrversatz zwischen Nodes messen und testen | Accepted | 2026-11-15 |
+| [0021](0021-konsens-bewertung-auf-dem-leader.md) | Konsens-Bewertung auf dem Leader in Bewertungsrunden | Accepted | 2026-11-16 |
+| [0022](0022-node-selbstgesundheit.md) | Node-Selbstgesundheit (Konnektivität) und Ausschluss aus der Bewertung | Accepted | 2026-11-16 |
+| [0023](0023-alert-drosselung-buendelung-flapping.md) | Alert-Drosselung, Bündelung, dauerhafte Fehler und Flapping | Accepted | 2026-11-16 |
+| [0024](0024-degraded-modus-und-korrektur.md) | Degraded-Modus, Absender-Sicht und Korrektur nach Quorum-Rückkehr | Accepted | 2026-11-16 |
+| [0025](0025-selbstueberwachung-und-systemalerts.md) | Selbstüberwachung, Systemalerts und Prometheus-Metriken | Accepted | 2026-11-17 |
+| [0026](0026-down-alerts-nicht-buendeln.md) | DOWN-Alerts werden durch die Bündelung nicht zurückgehalten | Accepted | 2026-11-17 |

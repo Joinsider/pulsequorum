@@ -297,7 +297,12 @@ func (s *streamListener) connect(ctx context.Context) error {
 		return err
 	}
 	dialURL := wsBase + apiPrefix + "/stream?ticket=" + url.QueryEscape(ticket)
-	conn, _, err := websocket.Dial(ctx, dialURL, nil)
+	conn, resp, err := websocket.Dial(ctx, dialURL, nil)
+	// websocket.Dial clears resp.Body after a successful upgrade; on failure the
+	// body is already drained and closed, so closing it here is a no-op.
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		// Do not leak the one-time ticket into logs.
 		return fmt.Errorf("dial stream: %s", strings.ReplaceAll(err.Error(), ticket, "***"))

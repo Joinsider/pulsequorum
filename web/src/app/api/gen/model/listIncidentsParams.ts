@@ -16,20 +16,16 @@ import type { LimitParameter } from './limitParameter';
 import type { ToParameter } from './toParameter';
 
 export type ListIncidentsParams = {
-/**
- * Opaque cursor from `nextCursor` of the previous page
- */
-cursor?: CursorParameter;
-/**
- * @minimum 1
- * @maximum 500
- */
-limit?: LimitParameter;
-monitorId?: string;
-from?: FromParameter;
-to?: ToParameter;
-/**
- * Only unresolved incidents
- */
-open?: boolean;
+  /** Opaque cursor from `nextCursor` of the previous page */
+  cursor?: CursorParameter;
+  /**
+   * @minimum 1
+   * @maximum 500
+   */
+  limit?: LimitParameter;
+  monitorId?: string;
+  from?: FromParameter;
+  to?: ToParameter;
+  /** Only unresolved incidents */
+  open?: boolean;
 };

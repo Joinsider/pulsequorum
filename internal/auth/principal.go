@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"slices"
 	"time"
+
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // Role is a role from the role model.
@@ -73,7 +75,9 @@ func WithPrincipal(ctx context.Context, p Principal) context.Context {
 // FromContext returns the principal of the request.
 func FromContext(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(ctxKey{}).(Principal)
-	return p, ok && p.TenantID != ""
+	// The system tenant is not a tenant of anyone; its channels are reached
+	// only through the platform admin API (ADR 0025).
+	return p, ok && p.TenantID != "" && p.TenantID != store.SystemTenantID
 }
 
 // Authenticator verifies the credentials of a request.

@@ -18,7 +18,9 @@
     "down": "Ausgefallen",
     "up": "Wieder online",
     "degraded": "Beeinträchtigt",
-    "partial": "Teilweise ausgefallen"
+    "partial": "Teilweise ausgefallen",
+    "flapping": "Flattern",
+    "channel_failed": "Anderer Kanal ausgefallen"
   },
   "default": "Standard",
   "lastError": "Letzter Fehler",
@@ -108,5 +110,14 @@
       "headerValue": "Gib für jeden neuen Header einen Wert ein.",
       "headerDuplicate": "Jeder Header-Name darf nur einmal vorkommen."
     }
+  },
+  "system": {
+    "title": "Systemkanäle",
+    "new": "Neuer Systemkanal",
+    "titleNew": "Neuer Systemkanal",
+    "titleEdit": "Systemkanal bearbeiten",
+    "empty": "Noch keine Systemkanäle.",
+    "emptyHint": "Ohne Systemkanal werden Systemalarme nur protokolliert und auf der Cluster-Seite angezeigt.",
+    "eventsHint": "Systemkanäle erhalten nur Systemalarme."
   }
 }

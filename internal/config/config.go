@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joinsider/uptimecluster/internal/selfcheck"
 )
 
 // Role is the role a node runs in.
@@ -80,9 +83,41 @@ type Config struct {
 	AuthCookieDomain string
 	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
 	AlertMaxAttempts int
-	LogLevel         slog.Level
-	LogFormat        string
-	ShutdownTimeout  time.Duration
+	// AlertBundleWindow bundles the alerts of one Shoutrrr channel that fall due
+	// within this window into one message; 0 disables bundling (ADR 0023).
+	AlertBundleWindow time.Duration
+	// SelfCheckTargets are the raw, trimmed SELF_CHECK_TARGETS entries (ADR 0022);
+	// empty disables the connectivity self-check. Parse them with selfcheck.ParseTargets.
+	SelfCheckTargets []string
+	// SelfHealthFailRatio is the share of deviating heartbeats at which a node
+	// counts as impaired, in (0, 1] (ADR 0022).
+	SelfHealthFailRatio float64
+	// DegradedAfter is how long a voter may know no leader before it enters the
+	// degraded mode (DEGRADED_AFTER, ADR 0024). Zero disables the degraded
+	// mode, so nothing is sent without quorum.
+	DegradedAfter time.Duration
+	// MetricsAddr is the listen address of the Prometheus endpoint, host:port
+	// (FA-OBS-02, ADR 0025). Empty disables it.
+	MetricsAddr string
+	// MetricsToken or MetricsTokenFile protect /metrics with a bearer token.
+	// Never log them. Read the token with ResolveMetricsToken.
+	MetricsToken     string
+	MetricsTokenFile string
+	// ReplicationLagAlert is the replication lag from which a system alert is
+	// raised (REPLICATION_LAG_ALERT, FA-REP-05, ADR 0025).
+	ReplicationLagAlert time.Duration
+	// ClockSkewAlert is the clock offset from which a system alert is raised
+	// (CLOCK_SKEW_ALERT, FA-OBS-01, ADR 0020, ADR 0025).
+	ClockSkewAlert time.Duration
+	// DiskFreeAlert is the free share of the data directory below which a
+	// system alert is raised (DISK_FREE_ALERT, FA-OBS-01, ADR 0025), in (0, 1).
+	DiskFreeAlert float64
+	// WALSizeAlert is the size in bytes of a WAL file above which a system
+	// alert is raised (WAL_SIZE_ALERT, FA-OBS-01, ADR 0025).
+	WALSizeAlert    int64
+	LogLevel        slog.Level
+	LogFormat       string
+	ShutdownTimeout time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -249,6 +284,70 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	cfg.AlertMaxAttempts = attempts
 
+	bundleRaw := get("ALERT_BUNDLE_WINDOW", "30s")
+	bundleWindow, err := time.ParseDuration(bundleRaw)
+	if err != nil || bundleWindow < 0 {
+		errs = append(errs, fmt.Errorf("ALERT_BUNDLE_WINDOW: must be a duration of 0 or more, got %q", bundleRaw))
+	}
+	cfg.AlertBundleWindow = bundleWindow
+
+	for _, raw := range strings.Split(getenv("SELF_CHECK_TARGETS"), ",") {
+		if raw = strings.TrimSpace(raw); raw != "" {
+			cfg.SelfCheckTargets = append(cfg.SelfCheckTargets, raw)
+		}
+	}
+	if _, err := selfcheck.ParseTargets(cfg.SelfCheckTargets); err != nil {
+		errs = append(errs, fmt.Errorf("SELF_CHECK_TARGETS: %w", err))
+	}
+
+	ratioRaw := get("SELF_HEALTH_FAIL_RATIO", "0.5")
+	ratio, err := strconv.ParseFloat(ratioRaw, 64)
+	if err != nil || !(ratio > 0 && ratio <= 1) {
+		errs = append(errs, fmt.Errorf("SELF_HEALTH_FAIL_RATIO: must be a number greater than 0 and at most 1, got %q", ratioRaw))
+	}
+	cfg.SelfHealthFailRatio = ratio
+
+	degradedRaw := get("DEGRADED_AFTER", "15s")
+	degradedAfter, err := time.ParseDuration(degradedRaw)
+	if err != nil || degradedAfter < 0 {
+		errs = append(errs, fmt.Errorf("DEGRADED_AFTER: must be a duration of 0 or more, got %q", degradedRaw))
+	}
+	cfg.DegradedAfter = degradedAfter
+
+	cfg.MetricsAddr = get("METRICS_ADDR", "")
+	if cfg.MetricsAddr != "" {
+		_, port, err := net.SplitHostPort(cfg.MetricsAddr)
+		if n, perr := strconv.Atoi(port); err != nil || perr != nil || n < 1 || n > 65535 {
+			errs = append(errs, fmt.Errorf("METRICS_ADDR: must be host:port with a port from 1 to 65535, got %q", cfg.MetricsAddr))
+		}
+	}
+	cfg.MetricsToken = strings.TrimSpace(getenv("METRICS_TOKEN"))
+	cfg.MetricsTokenFile = get("METRICS_TOKEN_FILE", "")
+	if cfg.MetricsToken != "" && cfg.MetricsTokenFile != "" {
+		errs = append(errs, errors.New("METRICS_TOKEN and METRICS_TOKEN_FILE: set only one"))
+	}
+
+	cfg.ReplicationLagAlert, err = durationAbove(get("REPLICATION_LAG_ALERT", "5m"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("REPLICATION_LAG_ALERT: must be a duration above 0, got %q", getenv("REPLICATION_LAG_ALERT")))
+	}
+	cfg.ClockSkewAlert, err = durationAbove(get("CLOCK_SKEW_ALERT", "2s"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("CLOCK_SKEW_ALERT: must be a duration above 0, got %q", getenv("CLOCK_SKEW_ALERT")))
+	}
+	diskRaw := get("DISK_FREE_ALERT", "0.15")
+	disk, err := strconv.ParseFloat(diskRaw, 64)
+	if err != nil || !(disk > 0 && disk < 1) {
+		errs = append(errs, fmt.Errorf("DISK_FREE_ALERT: must be a number greater than 0 and less than 1, got %q", diskRaw))
+	}
+	cfg.DiskFreeAlert = disk
+	walRaw := get("WAL_SIZE_ALERT", "512MiB")
+	wal, err := parseByteSize(walRaw)
+	if err != nil || wal <= 0 {
+		errs = append(errs, fmt.Errorf("WAL_SIZE_ALERT: must be a size above 0 such as 512MiB (B, KiB, MiB or GiB), got %q", walRaw))
+	}
+	cfg.WALSizeAlert = wal
+
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
 		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: must be a positive duration, got %q", getenv("SHUTDOWN_TIMEOUT")))
@@ -256,6 +355,66 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.ShutdownTimeout = timeout
 
 	return cfg, errors.Join(errs...)
+}
+
+// durationAbove parses a duration that must be greater than floor.
+func durationAbove(raw string, floor time.Duration) (time.Duration, error) {
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if d <= floor {
+		return 0, fmt.Errorf("duration %v is not above %v", d, floor)
+	}
+	return d, nil
+}
+
+// byteUnits are the suffixes of parseByteSize, longest first so that "MiB" is
+// not read as "B".
+var byteUnits = []struct {
+	suffix string
+	factor int64
+}{
+	{"GiB", 1 << 30},
+	{"MiB", 1 << 20},
+	{"KiB", 1 << 10},
+	{"B", 1},
+}
+
+// parseByteSize parses a whole number of bytes with an optional binary unit,
+// such as "512MiB". A number without a unit counts bytes.
+func parseByteSize(raw string) (int64, error) {
+	s := strings.TrimSpace(raw)
+	factor := int64(1)
+	for _, u := range byteUnits {
+		if strings.HasSuffix(s, u.suffix) {
+			s, factor = strings.TrimSpace(strings.TrimSuffix(s, u.suffix)), u.factor
+			break
+		}
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 || n > math.MaxInt64/factor {
+		return 0, fmt.Errorf("invalid byte size %q", raw)
+	}
+	return n * factor, nil
+}
+
+// ResolveMetricsToken returns the bearer token of /metrics. A token file is
+// read and trimmed; an empty result means the endpoint is not protected by a
+// token. The returned value is a secret and must not be logged.
+func (c Config) ResolveMetricsToken() (string, error) {
+	if c.MetricsTokenFile == "" {
+		return c.MetricsToken, nil
+	}
+	raw, err := os.ReadFile(c.MetricsTokenFile)
+	if err != nil {
+		return "", fmt.Errorf("METRICS_TOKEN_FILE: %w", err)
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", errors.New("METRICS_TOKEN_FILE: file is empty")
+	}
+	return token, nil
 }
 
 // ParseOrigin returns the canonical origin (lower-case scheme://host[:port])

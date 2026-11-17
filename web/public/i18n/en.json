@@ -6,7 +6,8 @@
     "maintenance": "Maintenance",
     "users": "Users",
     "cluster": "Cluster",
-    "account": "Account"
+    "account": "Account",
+    "systemChannels": "System channels"
   },
   "shell": {
     "theme": "Theme: {{ mode }}",
@@ -33,7 +34,8 @@
     "PENDING": "Pending",
     "MAINTENANCE": "Maintenance",
     "PAUSED": "Paused",
-    "UNKNOWN": "Unknown"
+    "UNKNOWN": "Unknown",
+    "flapping": "Flapping"
   },
   "uptimeBar": {
     "label": "Uptime history",

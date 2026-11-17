@@ -202,6 +202,12 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 			node.Name, node.Version, node.Healthy = &name, &version, &healthy
 			node.Capabilities, node.HealthChangedAt = &capabilities, &changedAt
 			node.MaxCommandVersion = &maxCommand
+			impaired := n.ConnectivityImpaired
+			node.ConnectivityImpaired = &impaired
+			if n.ConnectivityReason != "" {
+				reason := gen.ClusterNodeConnectivityReason(n.ConnectivityReason)
+				node.ConnectivityReason = &reason
+			}
 			if m.Voter {
 				voterVersions = append(voterVersions, n.MaxCommandVersion)
 			}

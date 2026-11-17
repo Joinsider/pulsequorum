@@ -28,8 +28,43 @@ func probe(id string, healthy bool) store.Node {
 	return store.Node{ID: id, Role: store.NodeRoleProbe, Healthy: healthy}
 }
 
+// impaired returns a healthy voter whose connectivity the leader decided as impaired (ADR 0022).
+func impaired(id string) store.Node {
+	n := voter(id, true)
+	n.ConnectivityImpaired, n.ConnectivityReason = true, "reference"
+	return n
+}
+
 func monitorWith(id, monitorType string, a store.Assignment) store.Monitor {
 	return store.Monitor{ID: id, Type: monitorType, Assignment: a}
+}
+
+// ADR 0022: count assignments skip impaired nodes like unhealthy ones; all and
+// nodes keep them, so their results still come in for the return to the cluster.
+func TestAssignerSkipsImpairedConnectivity(t *testing.T) {
+	a := Assigner{Capability: assignCapability}
+	registry := []store.Node{voter("v1", true), impaired("v2"), voter("v3", true)}
+
+	tests := []struct {
+		name    string
+		monitor store.Monitor
+		want    []string
+	}{
+		{"count 2 picks the connected nodes", monitorWith("m", "http", store.Assignment{Mode: "count", Count: 2}), []string{"v1", "v3"}},
+		{"count 3 never picks impaired", monitorWith("m", "http", store.Assignment{Mode: "count", Count: 3}), []string{"v1", "v3"}},
+		{"all keeps impaired", monitorWith("m", "http", store.Assignment{Mode: "all"}), []string{"v1", "v2", "v3"}},
+		{"nodes keeps impaired", monitorWith("m", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v2"}}), []string{"v2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := a.Nodes(tt.monitor, registry); !slices.Equal(got, tt.want) {
+				t.Errorf("Nodes = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	if a.Runs(monitorWith("m", "http", store.Assignment{Mode: "count", Count: 3}), registry, "v2") {
+		t.Error("impaired node runs a count monitor")
+	}
 }
 
 func TestAssignerNodes(t *testing.T) {

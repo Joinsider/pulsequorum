@@ -14,6 +14,14 @@ linters:
     - usestdlibvars
   exclusions:
     generated: lax
+    rules:
+      # Test harnesses (load generator, chaos runner) start podman/iptables,
+      # read result files given on the command line and use math/rand for
+      # jitter and test data; these gosec rules do not apply there.
+      - path: ^test/
+        linters:
+          - gosec
+        text: "G(115|204|304|401|404)"
     paths:
       - internal/api/gen
       - internal/pb

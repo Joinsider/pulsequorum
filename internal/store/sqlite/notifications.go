@@ -5,6 +5,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,6 +55,18 @@ func (s *StateStore) DueAlerts(ctx context.Context, nowMs int64, limit int) ([]s
 	return out, nil
 }
 
+// CountPendingAlerts returns the number of outbox entries that are not delivered
+// yet (the uptimecluster_outbox_pending metric, ADR 0025).
+func (s *StateStore) CountPendingAlerts(ctx context.Context) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n, err := s.q.CountPendingAlerts(ctx)
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	return int(n), nil
+}
+
 // GetAlert returns one outbox entry.
 func (s *StateStore) GetAlert(ctx context.Context, alertKey, channelID string) (store.AlertDelivery, error) {
 	s.mu.RLock()
@@ -67,7 +80,7 @@ func (t *stateTx) GetMonitor(ctx context.Context, tenantID, id string) (store.Mo
 		return store.Monitor{}, mapErr(err)
 	}
 	m, err := monitorWithTags(ctx, t.q, row.Monitor)
-	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs)
+	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs, row.StateFlapping, row.StateFlappingSinceMs)
 	return m, err
 }
 
@@ -137,13 +150,31 @@ func (t *stateTx) GetChannel(ctx context.Context, tenantID, id string) (store.No
 	return getChannel(ctx, t.q, tenantID, id)
 }
 
+func (t *stateTx) ListChannels(ctx context.Context, tenantID string) ([]store.NotificationChannel, error) {
+	rows, err := t.q.ListChannels(ctx, tenantID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.NotificationChannel, 0, len(rows))
+	for _, r := range rows {
+		c, err := channelFromRow(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func (t *stateTx) SetChannelState(ctx context.Context, tenantID, id, state, lastError string) error {
 	return mapErr(t.q.SetChannelState(ctx, statedb.SetChannelStateParams{State: state, LastError: lastError, TenantID: tenantID, ID: id}))
 }
 
 func (t *stateTx) EnqueueAlert(ctx context.Context, a store.AlertDelivery) error {
 	return mapErr(t.q.InsertAlert(ctx, statedb.InsertAlertParams{
-		TenantID: a.TenantID, AlertKey: a.AlertKey, ChannelID: a.ChannelID, MonitorID: a.MonitorID,
+		TenantID: a.TenantID, AlertKey: a.AlertKey, ChannelID: a.ChannelID,
+		// A system alert has no monitor: NULL, so the monitor foreign key is not checked (ADR 0025).
+		MonitorID:   sql.NullString{String: a.MonitorID, Valid: a.MonitorID != ""},
 		PayloadJson: string(a.Payload), NextAttemptMs: a.NextAttemptMs, CreatedMs: a.CreatedMs, UpdatedMs: a.UpdatedMs,
 	}))
 }
@@ -197,7 +228,7 @@ func channelFromRow(r statedb.NotificationChannel) (store.NotificationChannel, e
 
 func alertFromRow(r statedb.AlertOutbox) store.AlertDelivery {
 	return store.AlertDelivery{
-		TenantID: r.TenantID, AlertKey: r.AlertKey, ChannelID: r.ChannelID, MonitorID: r.MonitorID,
+		TenantID: r.TenantID, AlertKey: r.AlertKey, ChannelID: r.ChannelID, MonitorID: r.MonitorID.String,
 		Payload: json.RawMessage(r.PayloadJson), Attempts: int(r.Attempts), NextAttemptMs: r.NextAttemptMs,
 		State: r.State, LastError: r.LastError, CreatedMs: r.CreatedMs, UpdatedMs: r.UpdatedMs,
 	}

@@ -60,6 +60,7 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"RevokedCerts", testRevokedCerts},
 		{"RevokedNodes", testRevokedNodes},
 		{"Nodes", testNodes},
+		{"NodeConnectivity", testNodeConnectivity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newState(t)) })
@@ -2688,7 +2689,81 @@ func nodeFields(a, b store.Node) bool {
 		a.Region == b.Region && a.Version == b.Version &&
 		a.MaxCommandVersion == b.MaxCommandVersion && a.Healthy == b.Healthy &&
 		a.HealthChangedMs == b.HealthChangedMs && a.RegisteredMs == b.RegisteredMs &&
-		a.UpdatedMs == b.UpdatedMs
+		a.UpdatedMs == b.UpdatedMs && a.ConnectivityImpaired == b.ConnectivityImpaired &&
+		a.ConnectivityReason == b.ConnectivityReason && a.ConnectivityChangedMs == b.ConnectivityChangedMs
+}
+
+// testNodeConnectivity covers the connectivity columns of the node registry
+// (ADR 0022): they round-trip through PutNode and change through SetNodeConnectivity.
+func testNodeConnectivity(t *testing.T, s store.State) {
+	ctx := context.Background()
+	node := store.Node{
+		ID:                    "node-c",
+		Role:                  store.NodeRoleVoter,
+		Healthy:               true,
+		HealthChangedMs:       100,
+		RegisteredMs:          100,
+		UpdatedMs:             100,
+		ConnectivityImpaired:  true,
+		ConnectivityReason:    "reference",
+		ConnectivityChangedMs: 150,
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutNode(ctx, node) }); err != nil {
+		t.Fatal(err)
+	}
+	get := func(id string) store.Node {
+		t.Helper()
+		var got store.Node
+		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+			var err error
+			got, err = tx.GetNode(ctx, id)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := get("node-c"); !nodeFields(got, node) {
+		t.Errorf("connectivity did not round-trip: got %+v, want %+v", got, node)
+	}
+	list, err := s.ListNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || !nodeFields(list[0], node) {
+		t.Errorf("ListNodes = %+v, want the connectivity of %+v", list, node)
+	}
+
+	set := func(impaired bool, reason string, atMs int64) error {
+		return update(t, s, func(ctx context.Context, tx store.StateTx) error {
+			return tx.SetNodeConnectivity(ctx, "node-c", impaired, reason, atMs)
+		})
+	}
+	if err := set(true, "deviation", 400); err != nil {
+		t.Fatal(err)
+	}
+	got := get("node-c")
+	if !got.ConnectivityImpaired || got.ConnectivityReason != "deviation" || got.ConnectivityChangedMs != 400 || got.UpdatedMs != 400 {
+		t.Errorf("after SetNodeConnectivity: %+v", got)
+	}
+	if !got.Healthy || got.HealthChangedMs != 100 {
+		t.Errorf("SetNodeConnectivity changed the health: %+v", got)
+	}
+	if err := set(false, "", 500); err != nil {
+		t.Fatal(err)
+	}
+	got = get("node-c")
+	if got.ConnectivityImpaired || got.ConnectivityReason != "" || got.ConnectivityChangedMs != 500 {
+		t.Errorf("after recovery: %+v", got)
+	}
+	if err := set(true, "reference", 600); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.SetNodeConnectivity(ctx, "node-x", true, "reference", 700)
+	}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetNodeConnectivity unknown node: err = %v, want ErrNotFound", err)
+	}
 }
 
 func testNodes(t *testing.T, s store.State) {

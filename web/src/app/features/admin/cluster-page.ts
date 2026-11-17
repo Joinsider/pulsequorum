@@ -22,6 +22,7 @@ import { PageHeader } from '../../shared/page-header';
 import { problemOf } from '../../shared/problem';
 import { openJoinTokenDialog } from './join-token-dialog';
 import { openRemoveNodeDialog, RemoveNodeDialogData } from './remove-node-dialog';
+import { SystemAlertsSection } from './system-alerts-section';
 import {
   clusterErrorKey,
   faultTolerance,
@@ -90,7 +91,14 @@ export function displayName(node: ClusterNode): string {
  */
 @Component({
   selector: 'app-cluster-page',
-  imports: [MatButtonModule, MatTooltipModule, Icon, PageHeader, TranslocoDirective],
+  imports: [
+    MatButtonModule,
+    MatTooltipModule,
+    Icon,
+    PageHeader,
+    SystemAlertsSection,
+    TranslocoDirective,
+  ],
   templateUrl: './cluster-page.html',
   styleUrl: './cluster-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

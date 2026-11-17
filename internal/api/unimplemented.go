@@ -30,6 +30,41 @@ func (Unimplemented) RemoveClusterNode(context.Context, gen.RemoveClusterNodeReq
 	return nil, ErrNotImplemented
 }
 
+// ListSystemAlerts is not implemented yet.
+func (Unimplemented) ListSystemAlerts(context.Context, gen.ListSystemAlertsRequestObject) (gen.ListSystemAlertsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListSystemChannels is not implemented yet.
+func (Unimplemented) ListSystemChannels(context.Context, gen.ListSystemChannelsRequestObject) (gen.ListSystemChannelsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateSystemChannel is not implemented yet.
+func (Unimplemented) CreateSystemChannel(context.Context, gen.CreateSystemChannelRequestObject) (gen.CreateSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteSystemChannel is not implemented yet.
+func (Unimplemented) DeleteSystemChannel(context.Context, gen.DeleteSystemChannelRequestObject) (gen.DeleteSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetSystemChannel is not implemented yet.
+func (Unimplemented) GetSystemChannel(context.Context, gen.GetSystemChannelRequestObject) (gen.GetSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateSystemChannel is not implemented yet.
+func (Unimplemented) UpdateSystemChannel(context.Context, gen.UpdateSystemChannelRequestObject) (gen.UpdateSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// TestSystemChannel is not implemented yet.
+func (Unimplemented) TestSystemChannel(context.Context, gen.TestSystemChannelRequestObject) (gen.TestSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // Login is not implemented yet.
 func (Unimplemented) Login(context.Context, gen.LoginRequestObject) (gen.LoginResponseObject, error) {
 	return nil, ErrNotImplemented

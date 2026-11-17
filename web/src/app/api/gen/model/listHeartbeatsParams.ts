@@ -16,19 +16,15 @@ import type { NodeFilterParameter } from './nodeFilterParameter';
 import type { ToParameter } from './toParameter';
 
 export type ListHeartbeatsParams = {
-from?: FromParameter;
-to?: ToParameter;
-/**
- * Restrict to one node; omitted = consensus view
- */
-node?: NodeFilterParameter;
-/**
- * Opaque cursor from `nextCursor` of the previous page
- */
-cursor?: CursorParameter;
-/**
- * @minimum 1
- * @maximum 5000
- */
-limit?: number;
+  from?: FromParameter;
+  to?: ToParameter;
+  /** Restrict to one node; omitted = consensus view */
+  node?: NodeFilterParameter;
+  /** Opaque cursor from `nextCursor` of the previous page */
+  cursor?: CursorParameter;
+  /**
+   * @minimum 1
+   * @maximum 5000
+   */
+  limit?: number;
 };

@@ -648,10 +648,19 @@ Protobuf-Definitionen in `proto/`:
 | `RETENTION_HOURLY_DAYS` | `365` | Aufbewahrung Stunden-Rollups in Tagen |
 | `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung Tages-Rollups in Tagen (`0` = unbegrenzt) |
 | `ALERT_MAX_ATTEMPTS` | `10` | Maximale Zustellversuche je Alert und Kanal (FA-ALR-03) |
+| `SELF_CHECK_TARGETS` | leer | Referenzziele der Node-Selbstgesundheit, kommagetrennt (`host:port` für TCP, `https://…` für HTTP-HEAD); leer = Signal aus (FA-CON-04, ADR 0022) |
+| `SELF_HEALTH_FAIL_RATIO` | `0.5` | Schwellwert der Abweichungsquote, ab der ein Node als gestört gilt (FA-CON-04, ADR 0022) |
+| `DEGRADED_AFTER` | `15s` | Dauer ohne bekannten Leader, ab der ein Voter in den Degraded-Modus geht und unbestätigt alarmiert; `0` schaltet den Versand im Degraded-Modus ab (FA-ALR-10, ADR 0024) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | Logging |
+| `METRICS_ADDR` | leer | Eigener Listener für `/metrics` (Prometheus), `host:port`; leer = aus (FA-OBS-02, ADR 0025) |
+| `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | – | Bearer-Token für `/metrics`; nicht zusammen setzen (FA-OBS-02, ADR 0025) |
+| `REPLICATION_LAG_ALERT` | `5m` | Replikationsrückstand, ab dem ein Systemalert ausgelöst wird (FA-REP-05, ADR 0025) |
+| `CLOCK_SKEW_ALERT` | `2s` | Uhrzeitabweichung zwischen Voter, ab der ein Systemalert ausgelöst wird (FA-OBS-01, ADR 0025) |
+| `DISK_FREE_ALERT` | `0.15` | Anteil freien Speichers im Datenverzeichnis, unter dem ein Systemalert ausgelöst wird (FA-OBS-01, ADR 0025) |
+| `WAL_SIZE_ALERT` | `512MiB` | WAL-Größe einer Datenbank, ab der ein Systemalert ausgelöst wird; Einheiten `B`, `KiB`, `MiB`, `GiB` (FA-OBS-01, ADR 0025) |
 
 ---
 

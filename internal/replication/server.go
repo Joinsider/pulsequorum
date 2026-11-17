@@ -41,6 +41,10 @@ type Server struct {
 	// because pushes may have been lost while the stream was down (ADR 0006,
 	// ADR 0012 B6). It may be nil.
 	Triggers interface{ Trigger(nodeID string) }
+	// OnStored is called with the validated heartbeats of a push after they were
+	// stored, so that the leader can evaluate them (ADR 0021). It must not
+	// block, and the slice is only valid during the call. It may be nil.
+	OnStored func([]store.Heartbeat)
 	Log      *slog.Logger
 
 	// identity returns the verified caller. nil means clusternet.Peer; tests
@@ -146,6 +150,9 @@ func (s *Server) persist(ctx context.Context, req *pb.StreamHeartbeatsRequest) (
 	if len(valid) > 0 {
 		if _, err := s.Metrics.InsertHeartbeats(ctx, valid); err != nil {
 			return nil, s.storeErr("insert heartbeats", err)
+		}
+		if s.OnStored != nil {
+			s.OnStored(valid)
 		}
 	}
 	positions, err := s.Metrics.StreamPositions(ctx)

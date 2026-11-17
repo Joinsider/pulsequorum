@@ -14,9 +14,7 @@ import type { GetUptimeRange } from './getUptimeRange';
 import type { NodeFilterParameter } from './nodeFilterParameter';
 
 export type GetUptimeParams = {
-range: GetUptimeRange;
-/**
- * Restrict to one node; omitted = consensus view
- */
-node?: NodeFilterParameter;
+  range: GetUptimeRange;
+  /** Restrict to one node; omitted = consensus view */
+  node?: NodeFilterParameter;
 };

@@ -6,19 +6,24 @@ package aggregator
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
 	"go.uber.org/goleak"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
 	"github.com/joinsider/uptimecluster/internal/store"
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 )
 
 const nodeID = "66666666-6666-6666-6666-666666666666"
+
+// base is far in the future, so that monitors created by the test (CreatedMs
+// is real time) start before the rounds the test evaluates.
+var base = time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)
 
 type fixture struct {
 	t       *testing.T
@@ -30,7 +35,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 	dir := t.TempDir()
 	log := slog.New(slog.DiscardHandler)
@@ -56,10 +61,6 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	return &fixture{t: t, ctx: ctx, state: state, metrics: metrics, node: node}
-}
-
-func (f *fixture) aggregator() *Aggregator {
-	return New(Options{State: f.state, Metrics: f.metrics, Cluster: f.node, NodeID: nodeID, Logger: slog.New(slog.DiscardHandler)})
 }
 
 func (f *fixture) putMonitor(doc cluster.MonitorDocument, rev uint64) store.Monitor {
@@ -90,161 +91,367 @@ func (f *fixture) expect(status store.MonitorStatus, sinceMs int64) {
 	}
 }
 
-func outcome(m store.Monitor, atMs int64, status checker.Status) scheduler.Outcome {
-	r := checker.Result{Status: status, LatencyMs: 5}
-	if status == checker.StatusDown {
-		r.Message, r.ErrorClass = "connection refused", checker.ClassConnect
-	}
-	return scheduler.Outcome{Monitor: m, Started: time.UnixMilli(atMs), Scheduled: time.UnixMilli(atMs), Result: r}
-}
-
 func doc(retries, recovery int, paused bool) cluster.MonitorDocument {
 	return cluster.MonitorDocument{Name: "web", Type: "http", IntervalSeconds: 60, TimeoutSeconds: 10, Retries: retries,
 		RecoveryThreshold: recovery, Assignment: store.Assignment{Mode: "all"}, ConsensusPolicy: "majority", Paused: paused}
 }
 
-// TestIncidentLifecycle drives a monitor through DOWN and back and checks the
-// replicated state and incident (FA-CON-03, FA-INC-01).
-func TestIncidentLifecycle(t *testing.T) {
+// recorder keeps the commands the aggregator proposes and passes them on.
+type recorder struct {
+	inner Applier
+	cmds  []*pb.Command
+}
+
+func (r *recorder) Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error) {
+	r.cmds = append(r.cmds, cmd)
+	return r.inner.Apply(ctx, cmd)
+}
+
+// rig drives an Aggregator with a fake clock. Rounds of monitor "m1" (60 s
+// interval, 10 s timeout, deadline 15 s) are addressed by their index: r.slot(i).
+type rig struct {
+	t        *testing.T
+	f        *fixture
+	a        *Aggregator
+	rec      *recorder
+	now      time.Time
+	leader   bool
+	registry []store.Node
+	phase    int64 // ms
+	k0       int64 // slot index of round 0
+	inc      string
+	seq      uint64
+}
+
+const intervalMs = 60_000
+
+func newRig(t *testing.T, d cluster.MonitorDocument) *rig {
+	t.Helper()
 	f := newFixture(t)
-	a := f.aggregator()
-	m := f.putMonitor(doc(1, 2, false), 0)
-	b := m.CreatedMs
+	r := &rig{t: t, f: f, now: base, leader: true, inc: f.metrics.Incarnation()}
+	r.rec = &recorder{inner: f.node}
+	m := f.putMonitor(d, 0)
+	r.phase = scheduler.Phase("m1", time.Minute).Milliseconds()
+	r.k0 = floorDiv(base.UnixMilli()-r.phase, intervalMs) + 1
+	r.a = New(Options{State: f.state, Metrics: f.metrics, Cluster: r.rec, NodeID: nodeID,
+		IsLeader: func() bool { return r.leader },
+		Registry: func(context.Context) ([]store.Node, error) { return r.registry, nil },
+		Now:      func() time.Time { return r.now },
+		Logger:   slog.New(slog.DiscardHandler)})
+	// Tests skip the grace period unless they test it (zero is not a default
+	// after New, and a fake clock does not advance within one step).
+	r.a.opts.LeaderGrace = 0
+	r.a.Sync([]store.Monitor{m})
+	return r
+}
 
-	a.process(f.ctx, outcome(m, b+10_000, checker.StatusDown))
-	f.expect(store.StatusPending, m.CreatedMs) // still the initial PENDING
-	a.process(f.ctx, outcome(m, b+70_000, checker.StatusDown))
-	f.expect(store.StatusDown, b+10_000)
+// slot returns the start of round i in Unix milliseconds.
+func (r *rig) slot(i int64) int64 { return r.phase + (r.k0+i)*intervalMs }
 
-	page, err := f.state.ListIncidents(f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
+// hb returns a heartbeat of node for round i, off milliseconds after its start.
+func (r *rig) hb(node string, i, off int64, st store.CheckStatus) store.Heartbeat {
+	r.seq++
+	h := store.Heartbeat{NodeID: node, Incarnation: r.inc, Seq: r.seq, TenantID: cluster.DefaultTenantID,
+		MonitorID: "m1", TsMs: r.slot(i) + off, Status: st}
+	if st == store.CheckDown {
+		h.Message, h.ErrorClass = "connection refused", "connect"
+	}
+	return h
+}
+
+// deliver stores heartbeats, then passes them on as the heartbeat writer and
+// the replication do, and runs one evaluation at atMs.
+func (r *rig) deliver(atMs int64, hbs ...store.Heartbeat) {
+	r.t.Helper()
+	r.now = time.UnixMilli(atMs)
+	if _, err := r.f.metrics.InsertHeartbeats(r.f.ctx, hbs); err != nil {
+		r.t.Fatal(err)
+	}
+	r.a.absorb(hbs)
+	r.a.step(r.f.ctx)
+}
+
+// tick runs one evaluation at atMs without new heartbeats.
+func (r *rig) tick(atMs int64) {
+	r.now = time.UnixMilli(atMs)
+	r.a.step(r.f.ctx)
+}
+
+func (r *rig) wantCommands(n int) {
+	r.t.Helper()
+	if len(r.rec.cmds) != n {
+		r.t.Fatalf("proposed %d commands, want %d", len(r.rec.cmds), n)
+	}
+}
+
+func (r *rig) nodes(ids ...string) []store.Node {
+	out := make([]store.Node, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, store.Node{ID: id, Role: store.NodeRoleVoter, Healthy: true})
+	}
+	return out
+}
+
+// TestRoundEvaluatedWhenAllReported checks that a round is evaluated as soon as
+// every responsible node reported, without waiting for the deadline (ADR 0021).
+func TestRoundEvaluatedWhenAllReported(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckUp), r.hb("n2", 0, 100, store.CheckUp), r.hb("n3", 0, 100, store.CheckUp))
+	r.f.expect(store.StatusUp, r.slot(0))
+	r.wantCommands(1)
+}
+
+// TestRoundWaitsForDeadline checks that a round with a missing node is
+// evaluated at its deadline: timeout plus 5 s, at most one interval.
+func TestRoundWaitsForDeadline(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckUp), r.hb("n2", 0, 100, store.CheckUp))
+	r.tick(r.slot(0) + 1000)
+	r.tick(r.slot(0) + 15000 - 1)
+	r.wantCommands(0)
+	r.tick(r.slot(0) + 15000)
+	r.f.expect(store.StatusUp, r.slot(0))
+	r.wantCommands(1)
+}
+
+// TestLateReportCountsForNextRound checks that a heartbeat arriving after the
+// deadline does not change its round, but is the latest report of its node for
+// the next round (FA-CON-05).
+func TestLateReportCountsForNextRound(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckUp), r.hb("n2", 0, 100, store.CheckUp))
+	r.tick(r.slot(0) + 15000)
+	r.f.expect(store.StatusUp, r.slot(0))
+
+	// n3 reports DOWN for round 0 after the deadline: round 0 stays UP.
+	r.deliver(r.slot(0)+16000, r.hb("n3", 0, 500, store.CheckDown))
+	r.f.expect(store.StatusUp, r.slot(0))
+
+	// Round 1: n1 and n2 are UP, n3 is missing, so its round 0 report counts.
+	// One DOWN of three is PARTIAL.
+	r.deliver(r.slot(1)+100, r.hb("n1", 1, 100, store.CheckUp), r.hb("n2", 1, 100, store.CheckUp))
+	r.tick(r.slot(1) + 15000)
+	r.f.expect(store.StatusPartial, r.slot(1))
+	r.wantCommands(2)
+}
+
+// TestRetriesCountRoundsNotReports checks that three DOWN reports in one round
+// count as one failed round (FA-CON-03): with retries 1 the monitor is PENDING.
+func TestRetriesCountRoundsNotReports(t *testing.T) {
+	r := newRig(t, doc(1, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckDown), r.hb("n2", 0, 100, store.CheckDown), r.hb("n3", 0, 100, store.CheckDown))
+	if st := r.f.monitor().State.Status; st != store.StatusPending {
+		t.Fatalf("status after one failed round = %s, want PENDING", st)
+	}
+	r.wantCommands(0)
+
+	r.deliver(r.slot(1)+100, r.hb("n1", 1, 100, store.CheckDown), r.hb("n2", 1, 100, store.CheckDown), r.hb("n3", 1, 100, store.CheckDown))
+	r.f.expect(store.StatusDown, r.slot(0))
+	r.wantCommands(1)
+	page, err := r.f.state.ListIncidents(r.f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("open incidents = %+v, %v", page.Items, err)
 	}
 	inc := page.Items[0]
-	if inc.StartedMs != b+10_000 || inc.Cause != "connection refused" || inc.ErrorClass != "connect" ||
-		len(inc.AffectedNodes) != 1 || inc.AffectedNodes[0] != nodeID {
+	if inc.StartedMs != r.slot(0) || inc.Cause != "connection refused" || inc.ErrorClass != "connect" ||
+		!equalStrings(inc.AffectedNodes, []string{"n1", "n2", "n3"}) {
 		t.Fatalf("incident = %+v", inc)
 	}
-
-	a.process(f.ctx, outcome(m, b+130_000, checker.StatusUp))
-	f.expect(store.StatusDown, b+10_000) // recovery threshold 2
-	a.process(f.ctx, outcome(m, b+190_000, checker.StatusUp))
-	f.expect(store.StatusUp, b+130_000)
-	got, err := f.state.GetIncident(f.ctx, cluster.DefaultTenantID, inc.ID)
-	if err != nil || got.ResolvedMs != b+130_000 {
-		t.Fatalf("resolved incident = %+v, %v", got, err)
-	}
-
-	// Pausing ends the evaluation: a stale result cannot leave PAUSED.
-	paused := f.putMonitor(doc(1, 2, true), m.Revision)
-	a.process(f.ctx, outcome(m, b+250_000, checker.StatusDown))
-	a.process(f.ctx, outcome(m, b+310_000, checker.StatusDown))
-	if st := f.monitor().State.Status; st != store.StatusPaused {
-		t.Fatalf("state after pause = %s", st)
-	}
-	resumed := f.putMonitor(doc(1, 2, false), paused.Revision)
-	f.expect(store.StatusPending, resumed.UpdatedMs)
-	a.process(f.ctx, outcome(resumed, resumed.UpdatedMs+1000, checker.StatusUp))
-	f.expect(store.StatusUp, resumed.UpdatedMs+1000)
 }
 
-// TestRetryCountSurvivesRestart checks that a new aggregator rebuilds the
-// failure streak from this node's heartbeats (NFA-REL-03).
-func TestRetryCountSurvivesRestart(t *testing.T) {
-	f := newFixture(t)
-	m := f.putMonitor(doc(2, 1, false), 0)
-	b := m.CreatedMs
-	a := f.aggregator()
-	a.process(f.ctx, outcome(m, b+10_000, checker.StatusUp))
-	f.expect(store.StatusUp, b+10_000)
-
-	// Two failures were recorded before the restart; one by another node
-	// and one older than the last status change must not count.
-	hbs := []store.Heartbeat{
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 5_000, Status: store.CheckDown},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 2, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 10_000, Status: store.CheckUp},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 3, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 70_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
-		{NodeID: "other", Incarnation: "x", Seq: 1, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 100_000, Status: store.CheckDown},
-		{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 4, TenantID: cluster.DefaultTenantID, MonitorID: "m1", TsMs: b + 130_000, Status: store.CheckDown, Message: "timeout", ErrorClass: "timeout"},
+// TestProposalCarriesReportersAndSender checks that a proposed change names the
+// nodes of its deciding round and this node as sender (FA-ALR-11, ADR 0024).
+func TestProposalCarriesReportersAndSender(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckDown), r.hb("n2", 0, 100, store.CheckDown))
+	r.tick(r.slot(0) + 15000) // n3 is missing: the round is decided at its deadline
+	r.f.expect(store.StatusDown, r.slot(0))
+	r.wantCommands(1)
+	set := r.rec.cmds[0].GetSetMonitorState()
+	if !equalStrings(set.GetReporters(), []string{"n1", "n2"}) || set.GetSenderNodeId() != nodeID {
+		t.Fatalf("reporters = %v, sender = %q, want [n1 n2] and %q", set.GetReporters(), set.GetSenderNodeId(), nodeID)
 	}
-	if _, err := f.metrics.InsertHeartbeats(f.ctx, hbs); err != nil {
+}
+
+// TestPartialWithOneDown checks that one DOWN of three under majority is PARTIAL.
+func TestPartialWithOneDown(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckDown), r.hb("n2", 0, 100, store.CheckUp), r.hb("n3", 0, 100, store.CheckUp))
+	r.f.expect(store.StatusPartial, r.slot(0))
+	r.wantCommands(1)
+}
+
+// TestUnknownWhenNobodyReports checks that a monitor without reports becomes
+// UNKNOWN once its last report is older than two intervals, and that DOWN
+// stays DOWN without reports (FA-CON-05, ADR 0021).
+func TestUnknownWhenNobodyReports(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.deliver(r.slot(0)+100, r.hb(nodeID, 0, 100, store.CheckUp))
+	// Round 1 still sees the report of round 0; at the deadline of round 2 it
+	// is older than two intervals and counts as missing (FA-CON-05).
+	r.tick(r.slot(1) + 15000)
+	r.f.expect(store.StatusUp, r.slot(0))
+	r.tick(r.slot(2) + 15000)
+	r.f.expect(store.StatusUnknown, r.slot(2))
+
+	r.deliver(r.slot(4)+100, r.hb(nodeID, 4, 100, store.CheckDown))
+	r.f.expect(store.StatusDown, r.slot(4))
+	for i := int64(5); i <= 7; i++ {
+		r.tick(r.slot(i) + 15000)
+	}
+	r.f.expect(store.StatusDown, r.slot(4))
+	r.wantCommands(3)
+}
+
+// TestFollowerProposesNothing checks that a node that is not the leader only
+// stores heartbeats and proposes no status change (FA-CON-06).
+func TestFollowerProposesNothing(t *testing.T) {
+	r := newRig(t, doc(0, 0, false))
+	r.leader = false
+	r.registry = r.nodes("n1", "n2")
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckDown), r.hb("n2", 0, 100, store.CheckDown))
+	r.tick(r.slot(0) + 15000)
+	r.tick(r.slot(1) + 15000)
+	r.f.expect(store.StatusPending, r.f.monitor().State.SinceMs)
+	r.wantCommands(0)
+	if w := r.a.watches[monitorKey{cluster.DefaultTenantID, "m1"}]; w.ready {
+		t.Fatal("follower keeps an evaluation state")
+	}
+}
+
+// TestNewLeaderRebuildsSameDecision checks that a new leader waits for the
+// grace period, rebuilds the streaks from the stored heartbeats and reaches the
+// decision the previous leader would have made (NFA-REL-03, ADR 0021).
+func TestNewLeaderRebuildsSameDecision(t *testing.T) {
+	r := newRig(t, doc(1, 1, false))
+	r.a.opts.LeaderGrace = 10 * time.Second
+	r.leader = false
+	// The previous leader sees two failed rounds: PENDING, then DOWN since round 0.
+	r.deliver(r.slot(0)+100, r.hb(nodeID, 0, 100, store.CheckDown))
+	r.deliver(r.slot(1)+100, r.hb(nodeID, 1, 100, store.CheckDown))
+	r.wantCommands(0)
+
+	r.leader = true
+	r.tick(r.slot(1) + 200) // leadership starts
+	r.tick(r.slot(1) + 5000)
+	r.wantCommands(0)
+	r.tick(r.slot(1) + 10200) // grace period over: rebuild and replay
+	r.f.expect(store.StatusDown, r.slot(0))
+	r.wantCommands(1)
+	page, err := r.f.state.ListIncidents(r.f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
+	if err != nil || len(page.Items) != 1 || page.Items[0].StartedMs != r.slot(0) ||
+		!equalStrings(page.Items[0].AffectedNodes, []string{nodeID}) {
+		t.Fatalf("incident = %+v, %v", page.Items, err)
+	}
+}
+
+// TestMaintenanceRoundsResetStreaks checks that a round in maintenance is not
+// evaluated and that the streaks before it do not count (FA-MNT-02).
+func TestMaintenanceRoundsResetStreaks(t *testing.T) {
+	r := newRig(t, doc(1, 1, false))
+	r.a.opts.Maintenance = func(_ store.Monitor, at time.Time) bool { return at.UnixMilli() == r.slot(0) }
+	r.deliver(r.slot(0)+100, r.hb(nodeID, 0, 100, store.CheckDown))
+	r.deliver(r.slot(1)+100, r.hb(nodeID, 1, 100, store.CheckDown))
+	r.f.expect(store.StatusPending, r.f.monitor().State.SinceMs)
+	r.wantCommands(0)
+	r.deliver(r.slot(2)+100, r.hb(nodeID, 2, 100, store.CheckDown))
+	r.f.expect(store.StatusDown, r.slot(1))
+	r.wantCommands(1)
+}
+
+// TestTenantBoundary checks that a heartbeat of another tenant with the same
+// monitor ID is ignored (FA-TEN, ADR 0005).
+func TestTenantBoundary(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	foreign := r.hb(nodeID, 0, 100, store.CheckDown)
+	foreign.TenantID = "other-tenant"
+	r.deliver(r.slot(0)+100, foreign)
+	r.tick(r.slot(0) + 15000)
+	r.f.expect(store.StatusPending, r.f.monitor().State.SinceMs)
+	r.wantCommands(0)
+
+	r.deliver(r.slot(1)+100, r.hb(nodeID, 1, 100, store.CheckDown))
+	r.f.expect(store.StatusDown, r.slot(1))
+}
+
+// TestExcludedNodeIsNotAwaited checks that an excluded node is neither awaited
+// nor counted (FA-CON-04 hook).
+func TestExcludedNodeIsNotAwaited(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.registry = r.nodes("n1", "n2", "n3")
+	r.a.opts.Exclude = func(id string) bool { return id == "n3" }
+	r.deliver(r.slot(0)+100, r.hb("n1", 0, 100, store.CheckUp), r.hb("n2", 0, 100, store.CheckUp), r.hb("n3", 0, 100, store.CheckDown))
+	r.f.expect(store.StatusUp, r.slot(0))
+}
+
+// TestObserveNeverBlocks checks that Observe returns at once even when nobody
+// consumes the queue.
+func TestObserveNeverBlocks(t *testing.T) {
+	a := New(Options{Logger: slog.New(slog.DiscardHandler)})
+	done := make(chan struct{})
+	go func() {
+		for range 3 * observeQueueSize {
+			a.Observe([]store.Heartbeat{{TenantID: cluster.DefaultTenantID, MonitorID: "m1"}})
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Observe blocks")
+	}
+}
+
+// TestRunEvaluatesObservedHeartbeats runs the loop with the real clock: a
+// heartbeat stored and observed through Run decides the round at once, and Sync
+// with no monitors forgets all of them.
+func TestRunEvaluatesObservedHeartbeats(t *testing.T) {
+	f := newFixture(t)
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	d := doc(0, 1, false)
+	d.IntervalSeconds = 3600
+	m := f.putMonitor(d, 0)
+	phase := scheduler.Phase("m1", time.Hour).Milliseconds()
+	// The first round that starts after the monitor was created.
+	k := floorDiv(m.CreatedMs-phase, 3_600_000) + 1
+	hb := store.Heartbeat{NodeID: nodeID, Incarnation: f.metrics.Incarnation(), Seq: 1, TenantID: cluster.DefaultTenantID,
+		MonitorID: "m1", TsMs: phase + k*3_600_000, Status: store.CheckDown, Message: "connection refused", ErrorClass: "connect"}
+	if _, err := f.metrics.InsertHeartbeats(f.ctx, []store.Heartbeat{hb}); err != nil {
 		t.Fatal(err)
 	}
-	// The state is still UP: the failures above happened while no aggregator ran.
-	restarted := f.aggregator()
-	restarted.process(f.ctx, outcome(m, b+190_000, checker.StatusDown))
-	f.expect(store.StatusDown, b+70_000)
-}
 
-// TestMaintenanceIgnoresOutcomes checks that outcomes during maintenance change
-// neither the status nor the incidents, and that evaluation resumes afterwards
-// (FA-MNT-02).
-func TestMaintenanceIgnoresOutcomes(t *testing.T) {
-	f := newFixture(t)
-	m := f.putMonitor(doc(1, 1, false), 0)
-	b := m.CreatedMs
-	inMaintenance := false
-	a := f.aggregator()
-	a.opts.Maintenance = func(store.Monitor, time.Time) bool { return inMaintenance }
-	change := func(from, to store.MonitorStatus, sinceMs int64) {
-		t.Helper()
-		cmd := cluster.NewSetMonitorState(cluster.StateChange{TenantID: cluster.DefaultTenantID, MonitorID: "m1",
-			From: from, To: to, SinceMs: sinceMs})
-		if _, err := f.node.Apply(f.ctx, cmd); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// One failure before the maintenance: with retries 1 it starts a streak.
-	a.process(f.ctx, outcome(m, b+10_000, checker.StatusDown))
-	f.expect(store.StatusPending, b)
-
-	// The controller enters MAINTENANCE; outcomes during it are ignored.
-	change(store.StatusPending, store.StatusMaintenance, b+20_000)
-	inMaintenance = true
-	a.process(f.ctx, outcome(m, b+25_000, checker.StatusDown))
-	a.process(f.ctx, outcome(m, b+30_000, checker.StatusDown))
-	f.expect(store.StatusMaintenance, b+20_000)
-	page, err := f.state.ListIncidents(f.ctx, cluster.DefaultTenantID, store.IncidentQuery{OpenOnly: true})
-	if err != nil || len(page.Items) != 0 {
-		t.Fatalf("open incidents during maintenance = %+v, %v", page.Items, err)
-	}
-
-	// The controller leaves MAINTENANCE at the window end. The failure before
-	// the maintenance must not count: the next failure starts a new streak.
-	inMaintenance = false
-	change(store.StatusMaintenance, store.StatusPending, b+40_000)
-	a.process(f.ctx, outcome(m, b+50_000, checker.StatusDown))
-	f.expect(store.StatusPending, b+40_000)
-	a.process(f.ctx, outcome(m, b+60_000, checker.StatusDown))
-	f.expect(store.StatusDown, b+50_000)
-}
-
-func TestRunAndSync(t *testing.T) {
-	f := newFixture(t)
-	// Only the aggregator's own goroutine is checked; the fixture stops in Cleanup.
-	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	m := f.putMonitor(doc(0, 1, false), 0)
-	a := f.aggregator()
+	a := New(Options{State: f.state, Metrics: f.metrics, Cluster: f.node, NodeID: nodeID,
+		IsLeader: func() bool { return true }, LeaderGrace: time.Nanosecond, Logger: slog.New(slog.DiscardHandler)})
+	a.Sync([]store.Monitor{m})
 	ctx, cancel := context.WithCancel(f.ctx)
 	done := make(chan struct{})
 	go func() { a.Run(ctx); close(done) }()
+	a.Observe([]store.Heartbeat{hb})
 
-	a.Record(ctx, outcome(m, 10_000, checker.StatusDown))
 	deadline := time.Now().Add(5 * time.Second)
 	for f.monitor().State.Status != store.StatusDown {
 		if time.Now().After(deadline) {
-			t.Fatal("status not recorded")
+			t.Fatalf("status = %s, want DOWN", f.monitor().State.Status)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	a.Sync(nil)
 	a.mu.Lock()
-	n := len(a.trackers)
+	n := len(a.watches)
 	a.mu.Unlock()
 	if n != 0 {
-		t.Fatalf("trackers after sync = %d, want 0", n)
+		t.Fatalf("watches after sync = %d, want 0", n)
 	}
 	cancel()
 	<-done
+}
+
+func equalStrings(a, b []string) bool {
+	return slices.Equal(a, b)
 }

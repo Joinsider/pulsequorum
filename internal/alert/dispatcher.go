@@ -30,6 +30,14 @@ const (
 	ackTimeout              = 5 * time.Second
 )
 
+// Rate limit per channel (ADR 0023, FA-ALR-04): a token bucket that holds
+// rateBurst messages and refills ratePerSecond. Every message takes one token,
+// bundles included. The buckets live in memory.
+const (
+	ratePerSecond = 1.0
+	rateBurst     = 5.0
+)
+
 // Applier proposes commands to the cluster. *cluster.Node satisfies it.
 type Applier interface {
 	Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
@@ -38,6 +46,12 @@ type Applier interface {
 // Deliverer sends one alert to one target. *Sender satisfies it.
 type Deliverer interface {
 	Send(ctx context.Context, t Target, p cluster.AlertPayload) error
+}
+
+// BundleDeliverer sends several alerts as one message (ADR 0023). A dispatcher
+// whose sender lacks it never bundles. *Sender satisfies it.
+type BundleDeliverer interface {
+	SendBundle(ctx context.Context, t Target, ps []cluster.AlertPayload) error
 }
 
 // DispatcherOptions configures the leader's outbox dispatcher. Zero values
@@ -65,16 +79,35 @@ type DispatcherOptions struct {
 	Concurrency int
 	// BatchSize bounds the outbox entries read per DeliverDue (default 50).
 	BatchSize int
+	// BundleWindow bundles the alerts of one Shoutrrr channel (ADR 0023). The
+	// alerts due in the window after a send wait and go out as one message at
+	// its end. A DOWN alert due in the window does not wait: it sends the due
+	// alerts at once and leaves the window end as it is (ADR 0026). Zero
+	// disables bundling.
+	BundleWindow time.Duration
+	// OnOutcome is called once per delivery attempt with the kind of the
+	// channel and the outcome (OutcomeSent, OutcomeThrottled or OutcomeFailed),
+	// for the delivery metrics (ADR 0025). It may be called concurrently. Nil
+	// means none.
+	OnOutcome func(kind, outcome string)
 }
 
 // Dispatcher delivers due outbox entries and repeats DOWN alerts (ADR 0014).
 // It runs on the leader only; the FSM records every outcome.
 type Dispatcher struct {
-	opts DispatcherOptions
+	opts    DispatcherOptions
+	bundler BundleDeliverer // nil if the sender cannot bundle
+	// wasLeader is the leadership seen by the last DeliverDue. Only DeliverDue
+	// reads and writes it.
+	wasLeader bool
 
 	// mu guards reminders, the last reminder proposed per monitor.
 	mu        sync.Mutex
 	reminders map[string]reminderProposal
+
+	// chMu guards channels, the in-memory rate and bundle state per channel.
+	chMu     sync.Mutex
+	channels map[channelKey]*channelState
 }
 
 // reminderProposal remembers the last reminder proposed for a monitor, so the
@@ -82,6 +115,56 @@ type Dispatcher struct {
 type reminderProposal struct {
 	sinceMs int64
 	n       int64
+}
+
+// channelKey identifies a notification channel across tenants.
+type channelKey struct {
+	tenant  string
+	channel string
+}
+
+// channelState is the in-memory delivery state of one channel. A change of
+// leadership drops it (ADR 0023).
+type channelState struct {
+	tokens float64
+	last   time.Time
+	// blockedUntil is set when the receiver asked to wait (HTTP 429).
+	blockedUntil time.Time
+	// windowEnd ends the bundling window that opened with the last send. A
+	// flush of DOWN alerts inside the window does not move it (ADR 0026).
+	windowEnd time.Time
+}
+
+// take spends one token if one is available after refilling up to now.
+func (s *channelState) take(now time.Time) bool {
+	if now.After(s.last) {
+		s.tokens = min(rateBurst, s.tokens+now.Sub(s.last).Seconds()*ratePerSecond)
+		s.last = now
+	}
+	if s.tokens < 1 {
+		return false
+	}
+	s.tokens--
+	return true
+}
+
+// job is one message of a dispatch round: one outbox entry, or the entries of
+// one Shoutrrr channel that go out as a bundle.
+type job struct {
+	key     channelKey
+	ch      store.NotificationChannel
+	entries []store.AlertDelivery
+	// disabled marks a channel disabled by an earlier permanent failure: the
+	// entries fail with the channel's error and no attempt is made.
+	disabled bool
+}
+
+// result is the classified outcome of one send.
+type result struct {
+	delivered  bool
+	msg        string
+	permanent  bool
+	retryAfter time.Duration
 }
 
 // NewDispatcher creates a dispatcher with defaults applied to opts.
@@ -114,7 +197,13 @@ func NewDispatcher(opts DispatcherOptions) *Dispatcher {
 	if opts.BatchSize <= 0 {
 		opts.BatchSize = defaultBatchSize
 	}
-	return &Dispatcher{opts: opts, reminders: make(map[string]reminderProposal)}
+	bundler, _ := opts.Sender.(BundleDeliverer)
+	return &Dispatcher{
+		opts:      opts,
+		bundler:   bundler,
+		reminders: make(map[string]reminderProposal),
+		channels:  make(map[channelKey]*channelState),
+	}
 }
 
 // Run calls DeliverDue and EnqueueReminders on their intervals while this node
@@ -129,9 +218,6 @@ func (d *Dispatcher) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-deliver.C:
-			if !d.opts.IsLeader() {
-				continue
-			}
 			if err := d.DeliverDue(ctx); err != nil && ctx.Err() == nil {
 				d.opts.Logger.Warn("deliver due alerts", "error", err)
 			}
@@ -147,68 +233,295 @@ func (d *Dispatcher) Run(ctx context.Context) {
 }
 
 // DeliverDue sends the outbox entries that are due and records each attempt.
-// It returns after all of them are finished.
+// It returns after all of them are finished. Entries that the rate limit or a
+// bundling window holds back stay due for a later round.
 func (d *Dispatcher) DeliverDue(ctx context.Context) error {
-	due, err := d.opts.State.DueAlerts(ctx, d.opts.Now().UnixMilli(), d.opts.BatchSize)
+	if !d.isLeader() {
+		return nil
+	}
+	now := d.opts.Now()
+	due, err := d.opts.State.DueAlerts(ctx, now.UnixMilli(), d.opts.BatchSize)
 	if err != nil {
 		return fmt.Errorf("load due alerts: %w", err)
 	}
+	d.run(ctx, d.plan(ctx, now, due))
+	return nil
+}
+
+// isLeader reports whether this node leads. A change of leadership drops the
+// in-memory channel state: the new leader starts with full buckets, and bundles
+// pending on the old leader stay in the outbox for the new one (ADR 0023).
+func (d *Dispatcher) isLeader() bool {
+	leader := d.opts.IsLeader()
+	if leader != d.wasLeader {
+		d.wasLeader = leader
+		d.chMu.Lock()
+		d.channels = make(map[channelKey]*channelState)
+		d.chMu.Unlock()
+	}
+	return leader
+}
+
+// plan decides which due entries go out in this round, per channel.
+func (d *Dispatcher) plan(ctx context.Context, now time.Time, due []store.AlertDelivery) []job {
+	var keys []channelKey
+	groups := make(map[channelKey][]store.AlertDelivery)
+	for _, a := range due {
+		k := channelKey{tenant: a.TenantID, channel: a.ChannelID}
+		if _, ok := groups[k]; !ok {
+			keys = append(keys, k)
+		}
+		groups[k] = append(groups[k], a)
+	}
+	var jobs []job
+	for _, k := range keys {
+		ch, err := d.opts.State.GetChannel(ctx, k.tenant, k.channel)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			// The channel was deleted; its entries are gone with it.
+			d.chMu.Lock()
+			delete(d.channels, k)
+			d.chMu.Unlock()
+			continue
+		case err != nil:
+			if ctx.Err() == nil {
+				d.opts.Logger.Warn("load notification channel", "tenant", k.tenant, "channel", k.channel, "error", err)
+			}
+			continue
+		}
+		d.chMu.Lock()
+		jobs = append(jobs, d.planChannel(now, k, ch, groups[k])...)
+		d.chMu.Unlock()
+	}
+	return jobs
+}
+
+// planChannel decides the messages of one channel. The Retry-After block, the
+// rate limit and the bundling window decide how many entries go out. It must
+// be called with chMu held.
+func (d *Dispatcher) planChannel(now time.Time, k channelKey, ch store.NotificationChannel, due []store.AlertDelivery) []job {
+	// A channel disabled by an earlier permanent failure gets no more attempts
+	// (FA-ALR-05). Its entries fail with the channel's error and use no token.
+	if ch.State == store.ChannelDisabled {
+		delete(d.channels, k)
+		if len(due) == 0 {
+			return nil
+		}
+		return []job{{key: k, ch: ch, entries: due, disabled: true}}
+	}
+	if len(due) == 0 {
+		return nil
+	}
+	st := d.channels[k]
+	if st == nil {
+		st = &channelState{tokens: rateBurst, last: now}
+		d.channels[k] = st
+	}
+	if now.Before(st.blockedUntil) {
+		return nil
+	}
+	if d.opts.BundleWindow > 0 && d.bundler != nil && ch.Kind == store.ChannelShoutrrr {
+		// The first alerts go out at once. Alerts due inside the window wait;
+		// when it ends, all due alerts go out as one message (ADR 0023). A
+		// bundle of one alert is sent as a normal message.
+		if now.Before(st.windowEnd) {
+			// A DOWN alert never waits for the window (ADR 0026): it sends all
+			// due alerts of the channel now. The window keeps its end.
+			if !anyDown(due) || !st.take(now) {
+				return nil
+			}
+			return []job{{key: k, ch: ch, entries: due}}
+		}
+		if !st.take(now) {
+			return nil
+		}
+		st.windowEnd = now.Add(d.opts.BundleWindow)
+		return []job{{key: k, ch: ch, entries: due}}
+	}
+	var jobs []job
+	for _, a := range due {
+		if !st.take(now) {
+			break // the rest waits for the next round
+		}
+		jobs = append(jobs, job{key: k, ch: ch, entries: []store.AlertDelivery{a}})
+	}
+	return jobs
+}
+
+// run sends the planned messages. The messages of one channel go one after
+// the other, so a Retry-After block stops the rest of that channel. Channels
+// run in parallel, up to Concurrency.
+func (d *Dispatcher) run(ctx context.Context, jobs []job) {
+	var order []channelKey
+	byChannel := make(map[channelKey][]job)
+	for _, j := range jobs {
+		if _, ok := byChannel[j.key]; !ok {
+			order = append(order, j.key)
+		}
+		byChannel[j.key] = append(byChannel[j.key], j)
+	}
 	sem := make(chan struct{}, d.opts.Concurrency)
 	var wg sync.WaitGroup
-	for _, a := range due {
-		if ctx.Err() != nil {
+	for _, k := range order {
+		sem <- struct{}{}
+		// Checked after the slot is free: a node that lost leadership while
+		// the batch was running leaves the rest to the new leader (ADR 0014).
+		if ctx.Err() != nil || !d.opts.IsLeader() {
+			<-sem
 			break
 		}
-		sem <- struct{}{}
 		wg.Add(1)
-		go func() {
+		go func(list []job) {
 			defer func() {
 				<-sem
 				wg.Done()
 			}()
-			d.deliver(ctx, a)
-		}()
+			for _, j := range list {
+				if ctx.Err() != nil || !d.opts.IsLeader() || d.blocked(j.key) {
+					return
+				}
+				d.runJob(ctx, j)
+			}
+		}(byChannel[k])
 	}
 	wg.Wait()
-	return nil
 }
 
-// deliver makes one attempt for one outbox entry and proposes its outcome.
-func (d *Dispatcher) deliver(ctx context.Context, a store.AlertDelivery) {
-	attempt := a.Attempts + 1
-	logger := d.opts.Logger.With("tenant", a.TenantID, "monitor", a.MonitorID, "channel", a.ChannelID,
-		"alert", a.AlertKey, "attempt", attempt)
-
-	ch, err := d.opts.State.GetChannel(ctx, a.TenantID, a.ChannelID)
-	if errors.Is(err, store.ErrNotFound) {
-		return // the channel was deleted; the entry stays untouched
+// anyDown reports whether one of the entries is a DOWN alert (ADR 0026). The
+// event is read from the stored payload, once per entry.
+func anyDown(entries []store.AlertDelivery) bool {
+	for _, a := range entries {
+		var head struct {
+			Event string `json:"event"`
+		}
+		if json.Unmarshal(a.Payload, &head) == nil && head.Event == store.EventDown {
+			return true
+		}
 	}
-	if err != nil {
-		if ctx.Err() == nil {
-			logger.Warn("load notification channel", "error", err)
+	return false
+}
+
+// blocked reports whether the receiver of a channel asked to wait.
+func (d *Dispatcher) blocked(k channelKey) bool {
+	d.chMu.Lock()
+	defer d.chMu.Unlock()
+	st := d.channels[k]
+	return st != nil && d.opts.Now().Before(st.blockedUntil)
+}
+
+// block holds back the channel until the given instant.
+func (d *Dispatcher) block(k channelKey, until time.Time) {
+	d.chMu.Lock()
+	defer d.chMu.Unlock()
+	if st := d.channels[k]; st != nil && until.After(st.blockedUntil) {
+		st.blockedUntil = until
+	}
+}
+
+// runJob makes one message of a job and records the outcome of every entry in it.
+func (d *Dispatcher) runJob(ctx context.Context, j job) {
+	if j.disabled {
+		for _, a := range j.entries {
+			logger := d.entryLogger(a, a.Attempts+1)
+			logger.Warn("alert not sent: notification channel is disabled", "error", j.ch.LastError)
+			d.record(ctx, logger, a, a.Attempts+1, cluster.DeliveryOutcome{Permanent: true, Error: j.ch.LastError})
 		}
 		return
 	}
 
-	// A channel disabled by an earlier permanent failure gets no more attempts
-	// (FA-ALR-05). The entry fails with the channel's own error.
-	if ch.State == store.ChannelDisabled {
-		logger.Warn("alert not sent: notification channel is disabled", "error", ch.LastError)
-		d.record(ctx, logger, a, attempt, cluster.DeliveryOutcome{Permanent: true, Error: ch.LastError})
+	target, decErr := DecryptTarget(ctx, d.opts.Keyring, j.ch)
+	var live []store.AlertDelivery
+	var payloads []cluster.AlertPayload
+	for _, a := range j.entries {
+		attempt := a.Attempts + 1
+		msg, permanent := "cannot decrypt channel secrets", false
+		if decErr == nil {
+			var p cluster.AlertPayload
+			if err := json.Unmarshal(a.Payload, &p); err == nil {
+				live = append(live, a)
+				payloads = append(payloads, p)
+				continue
+			}
+			msg, permanent = "invalid alert payload", true
+		}
+		d.finish(ctx, a, attempt, d.failure(attempt, permanent, msg, 0), msg)
+		d.observe(j.ch.Kind, OutcomeFailed)
+	}
+	if len(live) == 0 {
 		return
 	}
 
-	outcome, msg := d.attempt(ctx, ch, a)
-	if msg != "" && ctx.Err() != nil {
-		return // shutting down: not counted as an attempt, the entry stays pending
+	var sendErr error
+	switch {
+	case len(live) == 1:
+		sendErr = d.opts.Sender.Send(ctx, target, payloads[0])
+	case d.bundler != nil:
+		sendErr = d.bundler.SendBundle(ctx, target, payloads)
+	default:
+		sendErr = &DeliveryError{Permanent: true, Msg: "this sender cannot bundle alerts"}
 	}
-	if outcome.Delivered {
+	if sendErr != nil && ctx.Err() != nil {
+		return // shutting down: not counted as an attempt, the entries stay pending
+	}
+	res := classify(sendErr)
+	if res.retryAfter > 0 {
+		d.block(j.key, d.opts.Now().Add(res.retryAfter))
+	}
+	for _, a := range live {
+		attempt := a.Attempts + 1
+		d.finish(ctx, a, attempt, d.outcome(attempt, res), res.msg)
+		d.observe(j.ch.Kind, outcomeOf(res))
+	}
+}
+
+// observe reports one delivery attempt to OnOutcome, if set.
+func (d *Dispatcher) observe(kind, outcome string) {
+	if d.opts.OnOutcome != nil {
+		d.opts.OnOutcome(kind, outcome)
+	}
+}
+
+// classify maps the error of a send to its result. The message is empty on
+// success and free of secrets otherwise.
+func classify(err error) result {
+	if err == nil {
+		return result{delivered: true}
+	}
+	res := result{msg: "delivery failed"}
+	var de *DeliveryError
+	if errors.As(err, &de) {
+		res.msg, res.permanent, res.retryAfter = de.Msg, de.Permanent, de.RetryAfter
+	}
+	return res
+}
+
+// outcome turns the result of one attempt into the leader's decision.
+func (d *Dispatcher) outcome(attempt int, res result) cluster.DeliveryOutcome {
+	if res.delivered {
+		return cluster.DeliveryOutcome{Delivered: true}
+	}
+	return d.failure(attempt, res.permanent, res.msg, res.retryAfter)
+}
+
+// finish logs and records the outcome of one attempt. An attempt cut short by
+// shutdown is not recorded: it stays pending and is not counted.
+func (d *Dispatcher) finish(ctx context.Context, a store.AlertDelivery, attempt int, out cluster.DeliveryOutcome, msg string) {
+	logger := d.entryLogger(a, attempt)
+	if out.Delivered {
 		logger.Info("alert delivered")
 	} else {
-		logger.Warn("alert delivery failed", "error", msg, "permanent", outcome.Permanent, "give_up", outcome.GiveUp,
-			"next_attempt_ms", outcome.NextAttemptMs)
+		if ctx.Err() != nil {
+			return
+		}
+		logger.Warn("alert delivery failed", "error", msg, "permanent", out.Permanent, "give_up", out.GiveUp,
+			"next_attempt_ms", out.NextAttemptMs)
 	}
-	d.record(ctx, logger, a, attempt, outcome)
+	d.record(ctx, logger, a, attempt, out)
+}
+
+func (d *Dispatcher) entryLogger(a store.AlertDelivery, attempt int) *slog.Logger {
+	return d.opts.Logger.With("tenant", a.TenantID, "monitor", a.MonitorID, "channel", a.ChannelID,
+		"alert", a.AlertKey, "attempt", attempt)
 }
 
 // record proposes the outcome of one attempt to the cluster.
@@ -225,54 +538,36 @@ func (d *Dispatcher) record(ctx context.Context, logger *slog.Logger, a store.Al
 	}
 }
 
-// attempt sends the alert and maps the result to the leader's decision. The
-// returned message is empty on success and free of secrets otherwise.
-func (d *Dispatcher) attempt(ctx context.Context, ch store.NotificationChannel, a store.AlertDelivery) (cluster.DeliveryOutcome, string) {
-	attempt := a.Attempts + 1
-	target, err := DecryptTarget(ctx, d.opts.Keyring, ch)
-	if err != nil {
-		return d.failure(attempt, false, "cannot decrypt channel secrets"), "cannot decrypt channel secrets"
-	}
-	var p cluster.AlertPayload
-	if err := json.Unmarshal(a.Payload, &p); err != nil {
-		return d.failure(attempt, true, "invalid alert payload"), "invalid alert payload"
-	}
-
-	err = d.opts.Sender.Send(ctx, target, p)
-	if err == nil {
-		return cluster.DeliveryOutcome{Delivered: true}, ""
-	}
-	msg := "delivery failed"
-	permanent := false
-	var de *DeliveryError
-	if errors.As(err, &de) {
-		msg, permanent = de.Msg, de.Permanent
-	}
-	return d.failure(attempt, permanent, msg), msg
-}
-
 // failure decides how a failed attempt continues: permanent failures stop,
-// the last allowed attempt gives up, others retry after a backoff.
-func (d *Dispatcher) failure(attempt int, permanent bool, msg string) cluster.DeliveryOutcome {
+// the last allowed attempt gives up, others retry after the backoff or the
+// receiver's Retry-After if that is longer (ADR 0023).
+func (d *Dispatcher) failure(attempt int, permanent bool, msg string, retryAfter time.Duration) cluster.DeliveryOutcome {
 	switch {
 	case permanent:
 		return cluster.DeliveryOutcome{Permanent: true, Error: msg}
 	case attempt >= d.opts.MaxAttempts:
 		return cluster.DeliveryOutcome{GiveUp: true, Error: msg}
 	default:
-		now := d.opts.Now()
-		return cluster.DeliveryOutcome{Error: msg, NextAttemptMs: now.Add(d.backoff(attempt)).UnixMilli()}
+		wait := max(d.backoff(attempt), retryAfter)
+		return cluster.DeliveryOutcome{Error: msg, NextAttemptMs: d.opts.Now().Add(wait).UnixMilli()}
 	}
 }
 
 // backoff returns min(30 s * 2^(attempt-1), 1 h) scaled by a factor in [0.8, 1.2).
 func (d *Dispatcher) backoff(attempt int) time.Duration {
+	return backoffDelay(attempt, d.opts.Jitter())
+}
+
+// backoffDelay is the retry delay after attempt failed attempts. jitter is in
+// [0,1) and selects the factor in [0.8, 1.2) (ADR 0014). It is shared with the
+// degraded mode's local dispatcher.
+func backoffDelay(attempt int, jitter float64) time.Duration {
 	base := retryBase
 	for i := 1; i < attempt && base < retryMax; i++ {
 		base *= 2
 	}
 	base = min(base, retryMax)
-	return time.Duration(float64(base) * (0.8 + 0.4*d.opts.Jitter()))
+	return time.Duration(float64(base) * (0.8 + 0.4*jitter))
 }
 
 // EnqueueReminders proposes the repeated DOWN alert of every monitor that is

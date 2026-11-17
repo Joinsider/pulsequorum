@@ -57,9 +57,15 @@ Alle Variablen werden beim Start gelesen. Ungültige Werte beenden den Start mit
 | `RETENTION_DAILY_DAYS` | `0` | Aufbewahrung der Tagesaggregate in Tagen; `0` = unbegrenzt. |
 | `AUTH_COOKIE_DOMAIN` | leer | `Domain` des Refresh-Cookies. Leer = nur für den aufgerufenen Host. Nur bei Subdomain-Setups nötig. |
 | `ALERT_MAX_ATTEMPTS` | `10` | Zustellversuche je Alarm und Kanal, von 1 bis 100. |
+| `ALERT_BUNDLE_WINDOW` | `30s` | Bündelungsfenster je Shoutrrr-Kanal: Alarme, die in diesem Fenster fällig werden, gehen als eine Nachricht raus. `0` schaltet die Bündelung aus. Webhooks werden nie gebündelt. |
+| `SELF_CHECK_TARGETS` | leer | Referenzziele der Selbstprüfung des Nodes, kommagetrennt: `host:port` (TCP) oder `https://…` (HTTP-HEAD; jede Antwort zählt). Schlagen alle fehl, gilt der Node als gestört, sofern die anderen Nodes gesund sind. Empfehlung: 2 bis 3 unabhängige Ziele. Leer = aus. |
+| `SELF_HEALTH_FAIL_RATIO` | `0.5` | Anteil fehlgeschlagener Checks, ab dem ein Node als gestört gilt (Wert über 0 bis 1). |
+| `DEGRADED_AFTER` | `15s` | Dauer ohne bekannten Leader, ab der ein Voter ohne Quorum unbestätigt alarmiert. `0` schaltet das aus. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` oder `error`. |
 | `LOG_FORMAT` | `json` | `json` oder `text`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Wartezeit beim Herunterfahren für laufende Hintergrundarbeit. |
+| `METRICS_ADDR` | leer | Listen-Adresse `host:port` für Prometheus unter `/metrics`, eigener Port, nur diese Route. Leer = aus. |
+| `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | leer | Bearer-Token für `/metrics`. Nicht zusammen setzen. Ohne Token nur über das Netzwerk absichern. |
 
 Die Zeitzone ist nicht relevant: Intern wird UTC verwendet, `TZ` muss nicht gesetzt werden. Wartungsfenster mit eigener Zeitzone werden unabhängig davon ausgewertet.
 

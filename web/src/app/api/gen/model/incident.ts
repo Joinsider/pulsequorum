@@ -25,4 +25,6 @@ export interface Incident {
   affectedNodes?: string[];
   /** false if raised in degraded mode without quorum (phase 3) */
   confirmed?: boolean;
+  /** true if the incident was added to a gap in the history after the quorum returned (FA-UPT-07, ADR 0024) */
+  reevaluated?: boolean;
 }

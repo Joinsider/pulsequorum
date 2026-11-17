@@ -96,6 +96,7 @@ func toAPIIncident(inc store.Incident) gen.Incident {
 		Cause:         inc.Cause,
 		AffectedNodes: &nodes,
 		Confirmed:     &inc.Confirmed,
+		Reevaluated:   &inc.Reevaluated,
 	}
 	if inc.ResolvedMs != 0 {
 		at := time.UnixMilli(inc.ResolvedMs).UTC()

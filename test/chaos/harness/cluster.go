@@ -515,6 +515,12 @@ func (c *Cluster) voterSpec(i int, image string, join *joinSpec) RunSpec {
 		Volumes: []string{c.names.Volume(i) + ":/data"},
 		AddHost: c.addHost(),
 	}
+	if c.cfg.AlertBundleWindow != "" {
+		env["ALERT_BUNDLE_WINDOW"] = c.cfg.AlertBundleWindow
+	}
+	if len(c.cfg.SelfCheckTargets) > 0 {
+		env["SELF_CHECK_TARGETS"] = strings.Join(c.cfg.SelfCheckTargets, ",")
+	}
 	if join != nil {
 		env["CLUSTER_JOIN"] = join.Seed
 		env["JOIN_TOKEN_FILE"] = secretsMount

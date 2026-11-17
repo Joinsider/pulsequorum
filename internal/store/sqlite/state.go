@@ -121,7 +121,7 @@ func (s *StateStore) GetMonitor(ctx context.Context, tenantID, id string) (store
 		return store.Monitor{}, mapErr(err)
 	}
 	m, err := monitorWithTags(ctx, s.q, row.Monitor)
-	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs)
+	m.State = monitorState(row.StateStatus, row.StateConfirmed, row.StateSinceMs, row.StateFlapping, row.StateFlappingSinceMs)
 	return m, err
 }
 
@@ -152,7 +152,7 @@ func (s *StateStore) ListMonitors(ctx context.Context, tenantID string, q store.
 		if err != nil {
 			return store.MonitorPage{}, err
 		}
-		m.State = monitorState(r.StateStatus, r.StateConfirmed, r.StateSinceMs)
+		m.State = monitorState(r.StateStatus, r.StateConfirmed, r.StateSinceMs, r.StateFlapping, r.StateFlappingSinceMs)
 		page.Items = append(page.Items, m)
 	}
 	return page, nil
@@ -270,7 +270,7 @@ func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error
 	if err != nil {
 		return fmt.Errorf("begin state transaction: %w", err)
 	}
-	if err := fn(&stateTx{q: statedb.New(tx)}); err != nil {
+	if err := fn(&stateTx{q: statedb.New(tx), tx: tx}); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -281,7 +281,8 @@ func (s *StateStore) Update(ctx context.Context, fn func(tx store.StateTx) error
 }
 
 type stateTx struct {
-	q *statedb.Queries
+	q  *statedb.Queries
+	tx *sql.Tx // the write transaction; Fingerprint reads through it
 }
 
 func (t *stateTx) PutTenant(ctx context.Context, tn store.Tenant) error {
@@ -493,7 +494,32 @@ func (t *stateTx) GetMonitorState(ctx context.Context, tenantID, monitorID strin
 	if err != nil {
 		return store.MonitorState{}, mapErr(err)
 	}
-	return monitorState(r.Status, r.Confirmed, r.SinceMs), nil
+	return monitorState(r.Status, r.Confirmed, r.SinceMs, r.Flapping, r.FlappingSinceMs), nil
+}
+
+func (t *stateTx) SetMonitorFlapping(ctx context.Context, tenantID, monitorID string, flapping bool, sinceMs int64) error {
+	n, err := t.q.SetMonitorFlapping(ctx, statedb.SetMonitorFlappingParams{
+		Flapping: boolToInt(flapping), FlappingSinceMs: sinceMs, TenantID: tenantID, MonitorID: monitorID,
+	})
+	if err != nil {
+		return mapErr(err)
+	}
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (t *stateTx) StatusChangesSince(ctx context.Context, tenantID, monitorID string, fromMs int64) ([]store.StatusChange, error) {
+	rows, err := t.q.StatusChangesSince(ctx, statedb.StatusChangesSinceParams{TenantID: tenantID, MonitorID: monitorID, FromMs: fromMs})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.StatusChange, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.StatusChange{SinceMs: r.SinceMs, Status: store.MonitorStatus(r.Status)})
+	}
+	return out, nil
 }
 
 func (t *stateTx) PutMonitorState(ctx context.Context, tenantID, monitorID string, st store.MonitorState) error {
@@ -536,10 +562,12 @@ func (t *stateTx) OpenIncident(ctx context.Context, inc store.Incident) error {
 		ID:                inc.ID,
 		MonitorID:         inc.MonitorID,
 		StartedMs:         inc.StartedMs,
+		ResolvedMs:        inc.ResolvedMs,
 		Cause:             inc.Cause,
 		ErrorClass:        inc.ErrorClass,
 		AffectedNodesJson: string(affected),
 		Confirmed:         boolToInt(inc.Confirmed),
+		Reevaluated:       boolToInt(inc.Reevaluated),
 	}))
 }
 
@@ -548,8 +576,11 @@ func (t *stateTx) ResolveIncident(ctx context.Context, tenantID, monitorID strin
 	return mapErr(err)
 }
 
-func monitorState(status string, confirmed, sinceMs int64) store.MonitorState {
-	return store.MonitorState{Status: store.MonitorStatus(status), Confirmed: confirmed != 0, SinceMs: sinceMs}
+func monitorState(status string, confirmed, sinceMs, flapping, flappingSinceMs int64) store.MonitorState {
+	return store.MonitorState{
+		Status: store.MonitorStatus(status), Confirmed: confirmed != 0, SinceMs: sinceMs,
+		Flapping: flapping != 0, FlappingSinceMs: flappingSinceMs,
+	}
 }
 
 func incidentFromRow(r statedb.Incident, monitorName string) (store.Incident, error) {
@@ -568,6 +599,7 @@ func incidentFromRow(r statedb.Incident, monitorName string) (store.Incident, er
 		ErrorClass:    r.ErrorClass,
 		AffectedNodes: nodes,
 		Confirmed:     r.Confirmed != 0,
+		Reevaluated:   r.Reevaluated != 0,
 	}, nil
 }
 
