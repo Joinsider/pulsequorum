@@ -36,8 +36,10 @@ import (
 	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/configsecret"
 	"github.com/joinsider/uptimecluster/internal/degraded"
+	"github.com/joinsider/uptimecluster/internal/diskstat"
 	"github.com/joinsider/uptimecluster/internal/maintenance"
 	"github.com/joinsider/uptimecluster/internal/membership"
+	ucmetrics "github.com/joinsider/uptimecluster/internal/metrics"
 	"github.com/joinsider/uptimecluster/internal/node"
 	"github.com/joinsider/uptimecluster/internal/pki"
 	"github.com/joinsider/uptimecluster/internal/scheduler"
@@ -146,6 +148,10 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	joinToken, err := readJoinToken(cfg)
+	if err != nil {
+		return err
+	}
+	metricsToken, err := cfg.ResolveMetricsToken()
 	if err != nil {
 		return err
 	}
@@ -374,7 +380,53 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		GapDone: gapJob.Done, RetentionRaw: cfg.RetentionRaw, Now: clock, Logger: log,
 	})
 	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: hub, NodeID: nodeID}}
+	// Prometheus metrics (ADR 0025, section 7). The sources are read on each scrape.
+	nodeMetrics := ucmetrics.New(ucmetrics.Sources{
+		RaftState: func() string { return raftNode.Status().RaftState },
+		RaftIndexes: func() (applied, commit uint64, lastContact time.Duration) {
+			st := raftNode.Status()
+			return st.AppliedIndex, st.CommitIndex, time.Duration(st.LastContactMs) * time.Millisecond
+		},
+		ReplicationLag: func() map[string]time.Duration {
+			now := clock()
+			lags := make(map[string]time.Duration)
+			for _, p := range host.Replication.Status() {
+				lag, ok := p.Lag(now)
+				if !ok {
+					lag = -time.Nanosecond // negative = the peer never caught up
+				}
+				lags[p.ID] = lag
+			}
+			return lags
+		},
+		ReplicationDropped: func() map[string]uint64 {
+			dropped := make(map[string]uint64)
+			for _, p := range host.Replication.Status() {
+				dropped[p.ID] = p.Dropped
+			}
+			return dropped
+		},
+		DBSizes: func() map[string]struct{ Size, WAL int64 } {
+			return map[string]struct{ Size, WAL int64 }{
+				"state":   dbFileSizes(state.DB()),
+				"metrics": dbFileSizes(metrics.DB()),
+			}
+		},
+		DiskFree: func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
+		// OutboxPending stays nil: the store has no method that counts pending deliveries.
+		Degraded: func() bool { return detector.State().Degraded },
+		// SystemAlertsActive stays nil until the system alerts of ADR 0025 exist.
+		ClockOffsets: func() map[string]time.Duration {
+			offsets := make(map[string]time.Duration)
+			for id, ms := range host.ClockOffsets() {
+				offsets[id] = time.Duration(ms) * time.Millisecond
+			}
+			return offsets
+		},
+		Version: version.Version,
+	})
 	sched := scheduler.New(scheduler.Options{Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: log, Now: clock,
+		Observer: nodeMetrics,
 		Resolve: func(ctx context.Context, m store.Monitor) (json.RawMessage, error) {
 			return configsecret.ResolveMonitor(ctx, keyring, m)
 		}})
@@ -424,6 +476,14 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
+	if cfg.MetricsAddr != "" {
+		// The endpoint is optional; if it cannot listen, the node keeps running without it.
+		bg.Go(func() {
+			if err := nodeMetrics.Serve(ctx, cfg.MetricsAddr, metricsToken, log); err != nil {
+				log.Error("metrics endpoint failed", "addr", cfg.MetricsAddr, "err", err)
+			}
+		})
+	}
 	// The scheduler runs only the monitors assigned to this node; the aggregator
 	// keeps all monitors, because it tracks results of other nodes too (ADR 0017).
 	// The degraded aggregator needs the same monitors, or it never evaluates (ADR 0024).
@@ -460,6 +520,19 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return cause
 	}
 	return err
+}
+
+// dbFileSizes returns the size of the database file and of its WAL in bytes.
+// A file that cannot be stat'ed counts as 0; the metric then shows the drop.
+func dbFileSizes(db *sqlite.DB) struct{ Size, WAL int64 } {
+	var sizes struct{ Size, WAL int64 }
+	if info, err := os.Stat(db.Path()); err == nil {
+		sizes.Size = info.Size()
+	}
+	if wal, err := db.WALSize(); err == nil {
+		sizes.WAL = wal
+	}
+	return sizes
 }
 
 // disabledIfZero maps the configured DEGRADED_AFTER to the detector option: a

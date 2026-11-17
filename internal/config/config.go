@@ -94,10 +94,17 @@ type Config struct {
 	// DegradedAfter is how long a voter may know no leader before it enters the
 	// degraded mode (DEGRADED_AFTER, ADR 0024). Zero disables the degraded
 	// mode, so nothing is sent without quorum.
-	DegradedAfter   time.Duration
-	LogLevel        slog.Level
-	LogFormat       string
-	ShutdownTimeout time.Duration
+	DegradedAfter time.Duration
+	// MetricsAddr is the listen address of the Prometheus endpoint, host:port
+	// (FA-OBS-02, ADR 0025). Empty disables it.
+	MetricsAddr string
+	// MetricsToken or MetricsTokenFile protect /metrics with a bearer token.
+	// Never log them. Read the token with ResolveMetricsToken.
+	MetricsToken     string
+	MetricsTokenFile string
+	LogLevel         slog.Level
+	LogFormat        string
+	ShutdownTimeout  time.Duration
 }
 
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
@@ -294,6 +301,19 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	cfg.DegradedAfter = degradedAfter
 
+	cfg.MetricsAddr = get("METRICS_ADDR", "")
+	if cfg.MetricsAddr != "" {
+		_, port, err := net.SplitHostPort(cfg.MetricsAddr)
+		if n, perr := strconv.Atoi(port); err != nil || perr != nil || n < 1 || n > 65535 {
+			errs = append(errs, fmt.Errorf("METRICS_ADDR: must be host:port with a port from 1 to 65535, got %q", cfg.MetricsAddr))
+		}
+	}
+	cfg.MetricsToken = strings.TrimSpace(getenv("METRICS_TOKEN"))
+	cfg.MetricsTokenFile = get("METRICS_TOKEN_FILE", "")
+	if cfg.MetricsToken != "" && cfg.MetricsTokenFile != "" {
+		errs = append(errs, errors.New("METRICS_TOKEN and METRICS_TOKEN_FILE: set only one"))
+	}
+
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
 		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: must be a positive duration, got %q", getenv("SHUTDOWN_TIMEOUT")))
@@ -301,6 +321,24 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.ShutdownTimeout = timeout
 
 	return cfg, errors.Join(errs...)
+}
+
+// ResolveMetricsToken returns the bearer token of /metrics. A token file is
+// read and trimmed; an empty result means the endpoint is not protected by a
+// token. The returned value is a secret and must not be logged.
+func (c Config) ResolveMetricsToken() (string, error) {
+	if c.MetricsTokenFile == "" {
+		return c.MetricsToken, nil
+	}
+	raw, err := os.ReadFile(c.MetricsTokenFile) //nolint:gosec // G304: the operator names the file
+	if err != nil {
+		return "", fmt.Errorf("METRICS_TOKEN_FILE: %w", err)
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		return "", errors.New("METRICS_TOKEN_FILE: file is empty")
+	}
+	return token, nil
 }
 
 // ParseOrigin returns the canonical origin (lower-case scheme://host[:port])

@@ -5,6 +5,7 @@ package config
 
 import (
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -307,6 +308,75 @@ func TestDegradedAfter(t *testing.T) {
 			}
 			if cfg.DegradedAfter != tc.want {
 				t.Errorf("DegradedAfter = %v, want %v", cfg.DegradedAfter, tc.want)
+			}
+		})
+	}
+}
+
+// TestMetrics covers METRICS_ADDR (ADR 0025, section 7): off by default, a
+// host:port with a valid port otherwise. METRICS_TOKEN and METRICS_TOKEN_FILE
+// are exclusive.
+func TestMetrics(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil || cfg.MetricsAddr != "" || cfg.MetricsToken != "" || cfg.MetricsTokenFile != "" {
+		t.Fatalf("defaults = %q, %q, %q, %v; want all empty", cfg.MetricsAddr, cfg.MetricsToken, cfg.MetricsTokenFile, err)
+	}
+
+	valid := []string{"127.0.0.1:9100", ":9100", "[::1]:9100"}
+	for _, addr := range valid {
+		if _, err := Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_ADDR": addr})); err != nil {
+			t.Errorf("METRICS_ADDR %q: unexpected error %v", addr, err)
+		}
+	}
+	invalid := []string{"9100", "127.0.0.1", "host:", "host:0", "host:70000", "host:http"}
+	for _, addr := range invalid {
+		_, err := Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_ADDR": addr}))
+		if err == nil || !strings.Contains(err.Error(), "METRICS_ADDR") {
+			t.Errorf("METRICS_ADDR %q: error = %v, want a METRICS_ADDR error", addr, err)
+		}
+	}
+
+	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "a", "METRICS_TOKEN_FILE": "/run/secrets/m"}))
+	if err == nil || !strings.Contains(err.Error(), "METRICS_TOKEN_FILE") {
+		t.Errorf("both token sources: error = %v, want a METRICS_TOKEN error", err)
+	}
+}
+
+func TestResolveMetricsToken(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		p := dir + "/" + name
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		file    func() string
+		want    string
+		wantErr bool
+	}{
+		{name: "none", env: map[string]string{"NODE_NAME": "n1"}, want: ""},
+		{name: "env token trimmed", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN": "  s3cret \n"}, want: "s3cret"},
+		{name: "file trimmed", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": write("ok", "s3cret\n")}, want: "s3cret"},
+		{name: "empty file", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": write("empty", " \n")}, wantErr: true},
+		{name: "missing file", env: map[string]string{"NODE_NAME": "n1", "METRICS_TOKEN_FILE": dir + "/missing"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(env(tt.env))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			got, err := cfg.ResolveMetricsToken()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ResolveMetricsToken error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("token = %q, want %q", got, tt.want)
 			}
 		})
 	}

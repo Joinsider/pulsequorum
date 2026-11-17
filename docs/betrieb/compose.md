@@ -64,6 +64,8 @@ Alle Variablen werden beim Start gelesen. Ungültige Werte beenden den Start mit
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` oder `error`. |
 | `LOG_FORMAT` | `json` | `json` oder `text`. |
 | `SHUTDOWN_TIMEOUT` | `10s` | Wartezeit beim Herunterfahren für laufende Hintergrundarbeit. |
+| `METRICS_ADDR` | leer | Listen-Adresse `host:port` für Prometheus unter `/metrics`, eigener Port, nur diese Route. Leer = aus. |
+| `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | leer | Bearer-Token für `/metrics`. Nicht zusammen setzen. Ohne Token nur über das Netzwerk absichern. |
 
 Die Zeitzone ist nicht relevant: Intern wird UTC verwendet, `TZ` muss nicht gesetzt werden. Wartungsfenster mit eigener Zeitzone werden unabhängig davon ausgewertet.
 

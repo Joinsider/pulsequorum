@@ -655,6 +655,8 @@ Protobuf-Definitionen in `proto/`:
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
 | `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | Logging |
+| `METRICS_ADDR` | leer | Eigener Listener für `/metrics` (Prometheus), `host:port`; leer = aus (FA-OBS-02, ADR 0025) |
+| `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | – | Bearer-Token für `/metrics`; nicht zusammen setzen (FA-OBS-02, ADR 0025) |
 
 ---
 

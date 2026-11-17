@@ -1,7 +1,7 @@
 # ADR 0025: Selbstüberwachung, Systemalerts und Prometheus-Metriken
 
 | | |
-|---|---|
+| --- | --- |
 | **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
@@ -34,7 +34,7 @@ Der Cluster erkennt schon viele Störungen, meldet sie aber nur im Log, in der H
 Was schon da ist:
 
 | Signal | Wo |
-|---|---|
+| --- | --- |
 | Voter erreichbar (`healthy`) | Register, der Leader entscheidet (ADR 0017) |
 | Konnektivität eingeschränkt | Register (ADR 0022) |
 | Uhrversatz je Peer | `clockwatch` auf jedem Voter (ADR 0020) |
@@ -110,7 +110,7 @@ Der Leader fragt alle Voter alle 15 s per `GetStatus` ab. Prometheus-Metriken gi
 Jeder Voter meldet:
 
 | Feld | Inhalt |
-|---|---|
+| --- | --- |
 | `incarnation` | Inkarnation aus `metrics.db` |
 | `disk_free_ratio` | Anteil freier Bytes im Datenverzeichnis, per `statfs` |
 | `state_wal_bytes`, `metrics_wal_bytes` | WAL-Größen beider Datenbanken |
@@ -125,7 +125,7 @@ Jeder Voter meldet:
 Ein Collector auf dem Leader bewertet alle 30 s:
 
 | Art (`kind`) | Betreff | Bedingung (Standard) | Hysterese |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `voter_offline` | Node | `healthy = false` im Register | sofort (das Register hat schon eine eigene) |
 | `node_impaired` | Node | `connectivity_impaired` im Register | sofort |
 | `replication_lag` | Node | `replication_lag_ms` ≥ `REPLICATION_LAG_ALERT` (5 min) oder nie aufgeholt seit > 5 min | 2 Bewertungen |
@@ -178,7 +178,7 @@ Ein Collector auf dem Leader bewertet alle 30 s:
 - Es gibt keine Labels mit Mandanten- oder Monitornamen, nur Typen, Node-IDs und Zustände. So bleiben die Metriken mandantenneutral und die Kardinalität klein.
 
 | Metrik | Typ |
-|---|---|
+| --- | --- |
 | `uptimecluster_checks_total{type,result}` | Counter |
 | `uptimecluster_check_duration_seconds{type}` | Histogramm |
 | `uptimecluster_checks_running` | Gauge |
