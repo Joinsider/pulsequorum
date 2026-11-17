@@ -173,7 +173,7 @@
     "usage": {
       "monitors": "{{ used }} / {{ limit }} Monitore",
       "channels": "{{ used }} / {{ limit }} Kanäle",
-      "interval": "Kürzestes Intervall {{ used }} s (mindestens {{ limit }} s)"
+      "interval": "Kürzestes Intervall {{ used }} (mindestens {{ limit }})"
     },
     "exceededTitle": "Limits überschritten: Bestehendes läuft weiter, Neues wird abgelehnt.",
     "exceeded": {

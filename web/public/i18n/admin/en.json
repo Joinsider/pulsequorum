@@ -173,7 +173,7 @@
     "usage": {
       "monitors": "{{ used }} / {{ limit }} monitors",
       "channels": "{{ used }} / {{ limit }} channels",
-      "interval": "Shortest interval {{ used }} s (minimum {{ limit }} s)"
+      "interval": "Shortest interval {{ used }} (minimum {{ limit }})"
     },
     "exceededTitle": "Limits exceeded: existing items keep running, new ones are refused.",
     "exceeded": {

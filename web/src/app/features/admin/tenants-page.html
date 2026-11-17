@@ -120,9 +120,14 @@
             <li>
               {{
                 t('admin.tenants.usage.interval', {
-                  used: row.tenant.usage.minIntervalSeconds ?? '–',
+                  used:
+                    row.tenant.usage.minIntervalSeconds != null
+                      ? row.tenant.usage.minIntervalSeconds + ' s'
+                      : '–',
                   limit:
-                    row.tenant.effectiveLimits.minIntervalSeconds ?? t('admin.limits.unlimited'),
+                    row.tenant.effectiveLimits.minIntervalSeconds != null
+                      ? row.tenant.effectiveLimits.minIntervalSeconds + ' s'
+                      : t('admin.limits.unlimited'),
                 })
               }}
             </li>
