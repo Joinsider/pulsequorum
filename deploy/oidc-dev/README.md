@@ -107,7 +107,7 @@ Zusätzlich gibt es den Admin `zitadel-admin` in `platform` (Passwort: `DEV_ADMI
 
 ### Hinweise
 
-- Zitadel verwendet für Maschinenbenutzer als Client-ID den Benutzernamen (`platform-bot`, `acme-bot`), nicht die Benutzer-ID. Ihre Tokens enthalten **kein** `azp`, sondern nur `client_id`. Der Cluster prüft `azp`. Mit `OIDC_REQUIRE_AZP=true` (Standard) lehnt er diese Tokens deshalb ab. Für die Bot-Tokens muss `OIDC_REQUIRE_AZP=false` gesetzt werden. Das schwächt die Prüfung für alle Tokens ohne `azp` ab.
+- Zitadel verwendet für Maschinenbenutzer als Client-ID den Benutzernamen (`platform-bot`, `acme-bot`), nicht die Benutzer-ID. Ihre Tokens enthalten **kein** `azp`, sondern nur `client_id` (RFC 9068). Seit ADR 0028 zählt `client_id` wie `azp`, der Standard `OIDC_REQUIRE_AZP=true` bleibt also richtig. Die Client-IDs der Bots stehen in `OIDC_CLIENT_IDS`.
 - `setup.sh` ist idempotent und lässt Ressourcen bestehen. Die Passwörter und Bot-Secrets werden jedes Mal neu erzeugt.
 - Nach `./down.sh` ist die Datenbank leer. Ein neues `./setup.sh` legt die Instanz neu an und überschreibt die Bootstrap-Dateien.
 - Nur Entwicklung: HTTP, Loopback-Ports, Passwörter in Dateien unter `.generated/`.
