@@ -1,7 +1,7 @@
 # ADR 0027: OIDC-Anbindung mit Profilen (generisch und Zitadel)
 
 | | |
-|---|---|
+| --- | --- |
 | **Status** | Proposed |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
@@ -51,16 +51,19 @@ Im Code gilt heute:
 ### Frage 0: Welche IdPs werden unterstützt?
 
 **Option 0A: nur Zitadel**, wie im Pflichtenheft.
+
 - Vorteile: Nur ein Claim-Format, am wenigsten Testaufwand.
 - Nachteile: Wer einen anderen IdP hat, kann das Produkt nur mit einem zweiten IdP nutzen. Damit fällt ein großer Teil der Zielgruppe weg.
 
 **Option 0B: generisches OIDC mit Profilen.**
+
 - Das Profil `generic` ist auf einen Mandanten beschränkt, die Rollen kommen aus einem konfigurierbaren Claim.
 - Das Profil `zitadel` kann zusätzlich mehrere Mandanten über Organisationen abbilden.
 - Vorteile: Jeder OIDC-Anbieter mit JWT-Access-Tokens ist nutzbar. Prüfung, Cache und SPA-Login sind für alle Anbieter derselbe Code.
 - Nachteile: Etwa 20–30 % mehr Aufwand für AP-4.1, vor allem für das Claim-Mapping, Tests und die Einrichtungsdoku. Zudem weicht das vom Pflichtenheft ab.
 
 **Option 0C: mehrere IdPs gleichzeitig in einem Cluster.**
+
 - Vorteile: Jeder Mandant könnte seinen eigenen IdP mitbringen.
 - Nachteile: Die SPA braucht eine Issuer-Auswahl, und jeder Issuer muss einem Mandanten zugeordnet werden. Das ist deutlich mehr Angriffsfläche bei wenig Nutzen für den Anfang.
 
@@ -69,70 +72,90 @@ Reines OAuth2 ohne OIDC wird in keiner Option unterstützt, weil es FA-AUTH-07 n
 ### Frage 1: JWT- und JWKS-Prüfung im Backend
 
 **Option 1A: eigener Verifier auf Basis der Standardbibliothek** (`crypto/rsa`, `crypto/ecdsa`, `crypto/ed25519`), nach dem Muster von `jwt.go`.
+
 - Vorteile: Keine neue Abhängigkeit. Algorithmen werden per Allow-List festgelegt, nie per Header. Gleicher Stil wie der lokale Verifier. Etwa 300 Zeilen, vollständig testbar.
 - Nachteile: Sicherheitskritischer Eigenbau, deshalb besonders gründliche Tests nötig (Negativtests, Fuzzing des Parsers).
 
 **Option 1B: `github.com/go-jose/go-jose/v4`** (Apache-2.0) für JWS und JWK, Cache und Claims-Prüfung selbst.
+
 - Vorteile: Weit verbreitet.
 - Nachteile: Neue Abhängigkeit mit mehreren Sicherheitsmeldungen in den letzten Jahren, darunter fünf GHSAs, die in v4.1.7 behoben wurden. Die Claims-Prüfung und den Cache mit Rate-Limit müssen wir trotzdem selbst schreiben.
 
 **Option 1C: `github.com/coreos/go-oidc/v3`** (Apache-2.0, nutzt go-jose).
-- Vorteile: Discovery und `RemoteKeySet` sind fertig.
-- Nachteile: Das Nachladen bei unbekanntem `kid` hat kein dokumentiertes Rate-Limit. Es gibt keine persistente Ablage für Neustarts während eines IdP-Ausfalls. Die Claims-Prüfung bleibt trotzdem unsere Aufgabe.
+
+- Vorteile:
+  - `IDTokenVerifier` prüft schon die Algorithmus-Allow-List vor dem Parsen, genau eine Signatur, `iss` exakt, `aud` enthält einen Wert, `exp` und `nbf`.
+  - Derselbe Pfad schützt den OIDC-Authenticator des Kubernetes-API-Servers und ist entsprechend viel genutzt und geprüft.
+  - Über das Interface `KeySet` lässt sich der Schlüsselspeicher austauschen, ohne die Prüfung anzufassen.
+- Nachteile:
+  - Der mitgelieferte `RemoteKeySet` hat kein Rate-Limit und keine Ablage auf Platte. Wir ersetzen ihn deshalb durch einen eigenen `KeySet`.
+  - Die Bibliothek ist für ID-Tokens gebaut. `azp`, `iat` und die Höchstlaufzeit prüfen wir selbst danach.
+  - Drei neue Module: go-oidc, go-jose (indirekt) und `golang.org/x/oauth2`.
 
 ### Frage 2: OIDC in der SPA
 
 **Option 2A: `oidc-client-ts`** (Apache-2.0, einzige Abhängigkeit `jwt-decode`). Der `userStore` wird auf `InMemoryWebStorage` gesetzt.
+
 - Vorteile: Framework-unabhängig und unabhängig vom IdP, klein, PKCE und Refresh-Token-Grant sind eingebaut. Speicherort und Ablauf sind explizit steuerbar.
 - Nachteile: Wir brauchen eine dünne Angular-Hülle. Dass `InMemoryWebStorage` in der aktuellen Version vorhanden ist, prüft der Umsetzungsauftrag.
 
 **Option 2B: `angular-auth-oidc-client`** (MIT, v22).
-- Vorteile: Für Angular gebaut, wird aktiv gepflegt.
-- Nachteile: Ob Tokens ausschließlich im Speicher gehalten werden können, ist nicht belegt. Die Bibliothek bringt eigene Konventionen mit, etwa iframe-Silent-Renew.
+
+- Vorteile: Für Angular gebaut (Provider, Guards, Interceptor), zertifiziert gegen beliebige OIDC-Anbieter, wird aktiv gepflegt. PKCE und Refresh-Tokens sind eingebaut, Silent Renew geht auch ohne iframe über Refresh-Tokens.
+- Nachteile: Ob Tokens ausschließlich im Speicher gehalten werden können, ist nicht belegt. Die Bibliothek legt Tokens und Redirect-Zustand im selben Speicher ab. Ein reiner Speicher im RAM würde den `code_verifier` beim Redirect verlieren.
 
 **Option 2C: eigene PKCE-Implementierung**, etwa 200 Zeilen mit Web Crypto.
+
 - Vorteile: Keine Abhängigkeit, volle Kontrolle.
 - Nachteile: Eigenbau im Sicherheitspfad der SPA.
 
 ### Frage 3: JWKS bei Ausfall des IdP und bei Neustart
 
 **Option 3A: Cache je Voter im Speicher und als Datei** `<DATA_DIR>/oidc-jwks.json`, zusammen mit dem Discovery-Dokument.
+
 - Vorteile: Einfach. Ein Voter, der während eines IdP-Ausfalls neu startet, kann weiter prüfen.
 - Nachteile: Ein Voter, der den IdP nie erreicht hat, prüft gar nicht. Bei neuen Votern bekommt man das mit.
 
 **Option 3B: JWKS über Raft replizieren.** Der Leader holt die Schlüssel und schreibt sie per FSM-Befehl.
+
 - Vorteile: Alle Voter haben dieselben Schlüssel, auch abgeschnittene Voter und neue Voter.
 - Nachteile: Neuer FSM-Befehl und neue Tabelle. Die Schlüsselrotation hängt dann am Quorum. Fürs Erste mehr Aufwand als nötig.
 
 ### Frage 4: lokale Anmeldung im Modus `oidc`
 
 **Option 4A: Die Modi schließen sich aus.**
+
 - Bei `oidc` antworten `/auth/setup`, `/auth/login`, `/auth/refresh`, `/auth/password` und die Nutzerverwaltung `/users` mit `409 Conflict` und dem Hinweis „managed by the identity provider“.
 - Notzugang nur über die Recovery-CLI aus ADR 0019, mit Wechsel des `AUTH_MODE`.
 - Vorteile: Eine einzige Vertrauensquelle, kleinere Angriffsfläche.
 - Nachteile: Ist der IdP lange ausgefallen, kommt man ohne bestehende Sitzung nur über die CLI an das System.
 
 **Option 4B: wie 4A, zusätzlich ein Notzugang** `AUTH_LOCAL_BREAKGLASS=true` (Standard aus).
+
 - Lokale `platform-admin`-Konten können sich weiter anmelden. Der Authenticator unterscheidet die Tokens am `iss`.
 - Vorteile: Bedienbar bei langem IdP-Ausfall.
 - Nachteile: Zwei Vertrauensquellen. Passwortkonten bleiben ein Angriffsziel. Die Logik in der SPA wird komplexer.
 
 ## Entscheidung
 
-Vorschlag: **0B, 1A, 2A, 3A, 4A.**
+Vorschlag: **0B, 1C, 2B, 3A, 4A.**
 
-Projektinhaber hat sich im Chat schon für die Richtung entschieden: generisches OIDC mit einem Mandanten als Standard, mehrere Mandanten weiterhin über Zitadel. Dieser Entwurf setzt das um, bis zur Annahme ist er aber nur ein Vorschlag.
+Projektinhaber hat im Chat 0B, 2B, 3A und 4A festgelegt. Für Frage 1 wollte er „1B oder 1C, je nachdem, was sicherer ist“, aber keinen Eigenbau (1A). Dieser Entwurf setzt das um, bis zur Annahme ist er aber nur ein Vorschlag.
 
 **Begründung:**
+
 - **0B:** Das Produkt ist für Nutzer mit jedem verbreiteten IdP nutzbar. Prüfung, Cache und SPA bleiben für alle Anbieter derselbe Code. Mehrere Mandanten gibt es nur dort, wo der IdP die Organisation zuverlässig mitliefert, also bei Zitadel.
-- **1A:** Die Claims-Prüfung, der Cache und das Rate-Limit müssen in jeder Variante selbst geschrieben werden. Der Teil, den eine Bibliothek abnimmt, ist bei festen Algorithmen klein: JWS-Parsing und RSA/ECDSA-Verify aus der Standardbibliothek. Das passt zu ADR 0008 und zur Regel „Standardbibliothek zuerst“.
-- **2A:** Die Speicherung lässt sich explizit steuern, und die Bibliothek hat die wenigsten Abhängigkeiten.
+- **1C statt 1B:**
+  - Beide Optionen hängen an go-jose. Dessen Meldungen der letzten Jahre betrafen vor allem JWE (Entschlüsselung) und Speicherverbrauch beim Parsen. JWE nutzen wir nicht.
+  - Der Unterschied liegt im eigenen Code. Mit 1B schreiben wir die Prüfung von Algorithmus, Signaturanzahl, `iss`, `aud`, `exp` und `nbf` selbst. Mit 1C übernimmt das der viel genutzte `IDTokenVerifier` von go-oidc (geprüft am Quelltext von v3.21.0, `oidc/verify.go`).
+  - Eigener Code bleibt nur für den Schlüsselspeicher (Cache, Datei, Rate-Limit) und für die zusätzlichen Claims. Weniger sicherheitskritischer Eigenbau ist hier das sicherere Ergebnis.
+- **2B:** Die Bibliothek ist für Angular gebaut und unabhängig vom IdP. Für den Speicher gibt es eine Auflage, siehe Abschnitt SPA.
 - **3A und 4A:** jeweils die einfachste Variante, die die Anforderungen erfüllt.
 
 ### Modi und Profile
 
 | `AUTH_MODE` | `OIDC_PROFILE` | Mandanten | Rollenquelle |
-|-------------|----------------|-----------|--------------|
+| ------------- | ---------------- | ----------- | -------------- |
 | `local` (Standard) | – | einer (`default`) | lokale Nutzer (ADR 0008) |
 | `oidc` | `generic` (Standard) | einer (`default`) | konfigurierbarer Claim, z.B. `groups`, `roles`, `realm_access.roles` |
 | `oidc` | `zitadel` | `OIDC_TENANCY=single` (Standard) oder `multi` | Zitadel-Projekt-Rollen-Claim |
@@ -141,6 +164,16 @@ Projektinhaber hat sich im Chat schon für die Richtung entschieden: generisches
 - Mehrere IdPs gleichzeitig (0C) sind nicht vorgesehen. Ein Cluster vertraut genau einem Issuer.
 
 ### Backend: gemeinsame Token-Prüfung (`internal/auth/oidc`, Code vom Hauptagenten)
+
+**Umsetzung:**
+- Die Prüfung läuft über `oidc.NewVerifier(OIDC_ISSUER, keySet, &oidc.Config{ClientID: OIDC_AUDIENCE, SupportedSigningAlgs: OIDC_ALGORITHMS})` aus `github.com/coreos/go-oidc/v3`.
+- `keySet` ist ein eigener `oidc.KeySet` (siehe JWKS-Cache). Er prüft die Signatur mit `github.com/go-jose/go-jose/v4`.
+- Nicht verwendet werden: `oidc.NewProvider`, `RemoteKeySet` und die Schalter `Skip*` und `InsecureSkipSignatureCheck`. Ein Test stellt sicher, dass keiner davon gesetzt ist.
+- Die Versionen werden gepinnt, go-jose mindestens auf v4.1.9. Neue Meldungen fängt `govulncheck` in CI ab (NFA-SEC-06).
+- Was go-oidc nicht prüft, prüfen wir danach selbst: `azp`, `iat`, die Höchstlaufzeit, `sub`, `nbf` mit 30 s statt 5 min Leeway, sowie Mandant und Rollen.
+- Vor dem Parsen werden Tokens über 16 KiB abgelehnt.
+
+**Prüfregeln:**
 
 1. **Form:**
    - Ein Bearer-Token, das kein JWT aus drei Teilen ist, wird mit `401` und dem Problem-Detail „opaque access tokens are not supported; configure the identity provider to issue JWT access tokens“ abgelehnt (FA-AUTH-05).
@@ -201,6 +234,8 @@ Projektinhaber hat sich im Chat schon für die Richtung entschieden: generisches
 
 ### Backend: JWKS-Cache
 
+- **Form:** eigener Typ, der `oidc.KeySet` erfüllt. Die Schlüssel liegen als `jose.JSONWebKeySet` vor.
+- **Schlüsselwahl:** nach `kid`. Hat der JWK ein `alg`, muss es zum `alg` im Header passen. Der Schlüsseltyp muss zum Algorithmus passen. RSA-Schlüssel unter 2048 Bit werden beim Laden verworfen. Schlüssel mit `use` ≠ `sig` werden ignoriert.
 - **Discovery:** Beim Start wird das Discovery-Dokument geladen. Sein `issuer` muss exakt gleich `OIDC_ISSUER` sein. `jwks_uri` wird daraus übernommen.
 - **Regelmäßiges Nachladen:** alle 5 min, oder früher, wenn `max-age` kürzer ist.
 - **Unbekanntes `kid`:** löst sofort ein Nachladen aus, höchstens einmal je 30 s pro Voter. Parallele Anfragen warten auf denselben Abruf (single-flight).
@@ -226,18 +261,20 @@ Projektinhaber hat sich im Chat schon für die Richtung entschieden: generisches
 
 ### SPA
 
-- **Bibliothek:** `oidc-client-ts`, gekapselt in einen `OidcAuthStrategy` hinter dem bestehenden `AuthService` (ADR 0008). Die Strategy ist für alle Profile gleich.
+- **Bibliothek:** `angular-auth-oidc-client` (MIT), gekapselt in einen `OidcAuthStrategy` hinter dem bestehenden `AuthService` (ADR 0008). Die Strategy ist für alle Profile gleich. Die Konfiguration kommt zur Laufzeit aus `/config.json` (Loader der Bibliothek), nie fest im Build.
 - **Speicherorte:**
-  - Access-, ID- und Refresh-Token liegen nur im Speicher (`InMemoryWebStorage`).
-  - Nur der kurzlebige Zustand des Redirects (`state`, `code_verifier`) liegt in `sessionStorage` und wird nach dem Callback gelöscht.
-- **Verlängerung:** über den Refresh-Token-Grant, kurz vor `exp`.
+  - Access-, ID- und Refresh-Token liegen nur im Speicher.
+  - Nur der kurzlebige Zustand des Redirects (`state`, `nonce`, `code_verifier`) liegt in `sessionStorage` und wird nach dem Callback gelöscht.
+  - Umgesetzt wird das über einen eigenen Speicher-Provider der Bibliothek (`AbstractSecurityStorage`). Er legt Token-Einträge im RAM ab und nur die Einträge des Redirect-Zustands in `sessionStorage`.
+- **Auflage:** Der erste Umsetzungsschritt prüft an der aktuellen Version, dass sich Tokens und Redirect-Zustand so trennen lassen. Geht das nicht, ohne NFA-SEC-04 zu verletzen, wird dieser ADR vor der weiteren Umsetzung wieder geöffnet. Ausweichen würde man dann auf 2A.
+- **Verlängerung:** über Refresh-Tokens (`useRefreshToken: true`, `silentRenew: true`), ohne iframe.
 - **Nach einem Reload:** Die Tokens sind dann weg. Die SPA leitet auf oberster Ebene mit `prompt=none` zum IdP um und kommt mit der IdP-Sitzung ohne Eingabe zurück. Es gibt kein iframe, und es sind keine Third-Party-Cookies nötig. Liefert der IdP `login_required`, startet ein normaler Login.
 - **Logout:** über `end_session_endpoint` mit `id_token_hint`, falls der IdP ihn anbietet. Sonst wird nur lokal abgemeldet, und die SPA weist darauf hin.
 
 ### Konfiguration
 
 | Variable | Bedeutung |
-|----------|-----------|
+| ---------- | ----------- |
 | `AUTH_MODE` | `local` (Standard) oder `oidc`; `zitadel` ist ein Alias |
 | `OIDC_PROFILE` | `generic` (Standard) oder `zitadel` |
 | `OIDC_ISSUER` | Pflicht |
@@ -275,7 +312,10 @@ Ist die Konfiguration unvollständig oder widersprüchlich, startet der Voter ni
 - **Ausfall (FA-AUTH-07):** IdP abschalten. Gecachte Tokens werden weiter akzeptiert, das Nachladen bleibt gedrosselt. Ein Neustart mit Cache-Datei funktioniert.
 - **FSM:** Tests für `BindTenantOrg`, einschließlich Feature-Gate und Sperre von `_system`.
 - **Konfiguration:** Tabellentests für Pflichtfelder, Widersprüche und den Alias `AUTH_MODE=zitadel`.
-- **SPA:** Unit-Tests der Strategy mit gemocktem `UserManager`. Ein Test stellt sicher, dass weder `localStorage` noch `sessionStorage` Tokens enthalten.
+- **SPA:**
+  - Unit-Tests der Strategy mit gemocktem `OidcSecurityService`.
+  - Tests des Speicher-Providers: Token-Einträge landen nie in `localStorage` oder `sessionStorage`, und der Redirect-Zustand wird nach dem Callback gelöscht.
+- **Konfiguration der Bibliothek:** Ein Test stellt sicher, dass am `oidc.Config` keiner der Schalter `Skip*` oder `InsecureSkipSignatureCheck` gesetzt ist.
 - **Gegen echte IdPs:**
   - `deploy/oidc-dev/` bietet Compose-Beispiele mit Zitadel und Keycloak für manuelle End-to-End-Läufe, nicht in CI.
   - Je IdP dient ein dabei aufgezeichnetes, echtes Token (ohne Signaturschlüssel) als Fixture für die Claim-Formen.
@@ -285,7 +325,8 @@ Ist die Konfiguration unvollständig oder widersprüchlich, startet der Voter ni
 
 - **Positiv:**
   - Jeder OIDC-Anbieter mit JWT-Access-Tokens ist nutzbar, nicht nur Zitadel.
-  - Keine neue Go-Abhängigkeit.
+  - Die Prüfung von Signatur und Standard-Claims übernimmt eine viel genutzte Bibliothek. Eigener Sicherheitscode bleibt nur für Schlüsselspeicher, Zusatz-Claims und Mapping.
+  - Die SPA nutzt eine Angular-Bibliothek, die mit jedem OIDC-Anbieter funktioniert.
   - Die Autorisierung prüft immer Mandant und Rolle zusammen (PF-31).
   - Ein Ausfall des IdP stört bestehende Sitzungen und Neustarts mit Cache-Datei nicht.
   - Es sind keine Third-Party-Cookies nötig.
@@ -293,10 +334,12 @@ Ist die Konfiguration unvollständig oder widersprüchlich, startet der Voter ni
   - Mehr Konfiguration und mehr Testfälle, etwa 20–30 % mehr Aufwand für AP-4.1.
   - Mehrere Mandanten gibt es nur mit Zitadel.
   - Fehler im Rollen-Mapping des Profils `generic` können Rechte verschieben. Das wird abgefedert: Unbekannte Werte zählen nicht, und `OIDC_AUDIENCE` ist Pflicht.
-  - Der Verifier ist sicherheitskritischer Eigenbau. Das wird durch strenge Negativtests und Fuzzing abgefedert.
+  - Neue Go-Abhängigkeiten: `github.com/coreos/go-oidc/v3`, `github.com/go-jose/go-jose/v4` und `golang.org/x/oauth2` (alle Apache-2.0 bzw. BSD-3-Clause, passend zur Allow-List aus ADR 0010; `make licenses` bestätigt das bei der Umsetzung). Sicherheitsmeldungen zu go-jose sind wahrscheinlich und müssen zügig nachgezogen werden.
+  - Der eigene `KeySet` und die Zusatzprüfungen bleiben sicherheitskritisch. Das wird durch strenge Negativtests und Fuzzing abgefedert.
+  - Für den Token-Speicher in der SPA gibt es eine Auflage (siehe Abschnitt SPA). Schlägt sie fehl, muss der ADR erneut entschieden werden.
   - Rollenentzug wirkt erst nach Ablauf des Tokens, höchstens nach `OIDC_MAX_TOKEN_TTL`.
   - Ein Reload kostet einen Redirect zum IdP. Ist der IdP dabei nicht erreichbar, ist nach dem Reload keine Anmeldung möglich, eine bestehende Sitzung ohne Reload dagegen schon.
-  - Neue npm-Abhängigkeit `oidc-client-ts` (Apache-2.0, passt zur Allow-List aus ADR 0010).
+  - Neue npm-Abhängigkeit `angular-auth-oidc-client` (MIT, Abhängigkeiten `tslib` und `rfc4648`, passt zur Allow-List aus ADR 0010).
 - **Folgearbeiten:**
   - **Pflichtenheft:** FA-AUTH-05..08 sprechen von „Zitadel“ und werden auf „OIDC (Profil `zitadel` für mehrere Mandanten)“ verallgemeinert. FA-TEN-03 (Auto-Provisionierung) gilt nur für das Profil `zitadel` mit `multi`. Die Änderung wird im selben Commit gemacht, in dem der ADR angenommen wird.
   - AP-4.2: automatische Anlage beim ersten Login und Admin-API zur Org-Bindung.
@@ -312,3 +355,4 @@ Ist die Konfiguration unvollständig oder widersprüchlich, startet der Voter ni
 |-------|--------|-------|-----------|
 | 2026-11-17 | Proposed | Claude | erster Entwurf nur für Zitadel |
 | 2026-11-17 | Proposed | Claude | überarbeitet: generisches OIDC mit Profilen, ein Mandant als Standard, mehrere Mandanten über Zitadel (Richtung im Chat vorgegeben) |
+| 2026-11-17 | Proposed | Claude | nach Review von Projektinhaber: 0B, 2B, 3A, 4A festgelegt; Frage 1 auf 1C (go-oidc mit eigenem `KeySet`), weil das weniger sicherheitskritischen Eigenbau braucht als 1B |
