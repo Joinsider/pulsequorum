@@ -5,6 +5,9 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/store"
@@ -33,6 +36,9 @@ func (h *Handlers) ListSystemChannels(ctx context.Context, _ gen.ListSystemChann
 // server-side.
 func (h *Handlers) CreateSystemChannel(ctx context.Context, req gen.CreateSystemChannelRequestObject) (gen.CreateSystemChannelResponseObject, error) {
 	if _, err := principal(ctx, platformAccess); err != nil {
+		return nil, err
+	}
+	if err := h.systemTenantReady(ctx); err != nil {
 		return nil, err
 	}
 	out, err := h.createChannel(ctx, store.SystemTenantID, req.Params.IdempotencyKey, req.Body)
@@ -87,4 +93,19 @@ func (h *Handlers) TestSystemChannel(ctx context.Context, req gen.TestSystemChan
 		return nil, err
 	}
 	return gen.TestSystemChannel200JSONResponse(out), nil
+}
+
+// systemTenantReady answers 503 while the leader has not created the system
+// tenant yet; that happens right after the bootstrap or the upgrade to command
+// level 6 (ADR 0025), so a retry succeeds.
+func (h *Handlers) systemTenantReady(ctx context.Context) error {
+	_, err := h.deps.State.GetTenant(ctx, store.SystemTenantID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+			Detail: "system channels are not available yet, retry", RetryAfter: 5}
+	case err != nil:
+		return fmt.Errorf("read the system tenant: %w", err)
+	}
+	return nil
 }

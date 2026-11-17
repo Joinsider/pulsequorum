@@ -349,3 +349,13 @@ func TestListSystemAlerts(t *testing.T) {
 		}
 	}
 }
+
+// TestSystemChannelBeforeSystemTenant: until the leader created the system
+// tenant, creating a system channel answers 503 with Retry-After, not 404.
+func TestSystemChannelBeforeSystemTenant(t *testing.T) {
+	e := newEnv(t)
+	res := e.do("POST", systemChannelsPath, platformAdmin, webhookBody("sys-hook", "https://example.com/hook", nil))
+	if res.code != http.StatusServiceUnavailable {
+		t.Fatalf("create before the system tenant = %d %s, want 503", res.code, res.body)
+	}
+}
