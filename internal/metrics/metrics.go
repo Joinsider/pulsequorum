@@ -62,6 +62,8 @@ type Metrics struct {
 	checksRunning   prometheus.Gauge
 	alertDeliveries *prometheus.CounterVec
 	jwksFailures    prometheus.Counter
+	userInfoCalls   prometheus.Counter
+	userInfoFails   prometheus.Counter
 }
 
 // CheckObserver receives check start and finish events from the scheduler.
@@ -98,8 +100,16 @@ func New(src Sources) *Metrics {
 			Name: "uptimecluster_auth_jwks_fetch_failures_total",
 			Help: "Failed fetches of the identity provider's signing keys (ADR 0027).",
 		}),
+		userInfoCalls: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "uptimecluster_auth_userinfo_requests_total",
+			Help: "Userinfo lookups at the identity provider, one per new access token (ADR 0028).",
+		}),
+		userInfoFails: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "uptimecluster_auth_userinfo_failures_total",
+			Help: "Failed userinfo lookups at the identity provider (ADR 0028).",
+		}),
 	}
-	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.jwksFailures)
+	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.jwksFailures, m.userInfoCalls, m.userInfoFails)
 	m.reg.MustRegister(newCollector(src))
 	return m
 }
@@ -125,6 +135,16 @@ func (m *Metrics) AlertDelivered(kind, outcome string) {
 // JWKSFetchFailed counts one failed fetch of the identity provider's keys.
 func (m *Metrics) JWKSFetchFailed() {
 	m.jwksFailures.Inc()
+}
+
+// UserInfoCalled counts one userinfo lookup.
+func (m *Metrics) UserInfoCalled() {
+	m.userInfoCalls.Inc()
+}
+
+// UserInfoFailed counts one failed userinfo lookup.
+func (m *Metrics) UserInfoFailed() {
+	m.userInfoFails.Inc()
 }
 
 // Handler serves the metrics of the private registry in the Prometheus text format.

@@ -61,6 +61,14 @@ const (
 	TenancyMulti  Tenancy = "multi"
 )
 
+// Supported role sources of the generic profile (ADR 0028).
+const (
+	// RolesSourceAccessToken reads the roles claim from the access token (default).
+	RolesSourceAccessToken = "access_token"
+	// RolesSourceUserInfo reads the roles claim from the userinfo endpoint.
+	RolesSourceUserInfo = "userinfo"
+)
+
 // OIDCConfig is the OpenID Connect configuration (ADR 0027). It is zero unless
 // AuthMode is AuthOIDC. Secrets do not occur here; the client IDs are public.
 type OIDCConfig struct {
@@ -88,6 +96,11 @@ type OIDCConfig struct {
 	RolesClaim string
 	// RoleMap maps identity provider values to roles, generic profile only (OIDC_ROLE_MAP).
 	RoleMap map[string]string
+	// RolesSource is access_token or userinfo, generic profile only (OIDC_ROLES_SOURCE).
+	RolesSource string
+	// DefaultRole is the role for a valid token without a role from the roles source,
+	// empty or a tenant role, generic profile only (OIDC_DEFAULT_ROLE).
+	DefaultRole string
 	// Tenancy is single or multi, zitadel profile only (OIDC_TENANCY). The generic profile is always single.
 	Tenancy Tenancy
 	// PlatformOrgID is the Zitadel organization of the platform, zitadel profile only (ZITADEL_PLATFORM_ORG_ID).
@@ -592,6 +605,12 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 		if get("OIDC_ROLE_MAP", "") != "" {
 			fail("OIDC_ROLE_MAP: not used with OIDC_PROFILE=zitadel")
 		}
+		if get("OIDC_ROLES_SOURCE", "") != "" {
+			fail("OIDC_ROLES_SOURCE: not used with OIDC_PROFILE=zitadel")
+		}
+		if get("OIDC_DEFAULT_ROLE", "") != "" {
+			fail("OIDC_DEFAULT_ROLE: not used with OIDC_PROFILE=zitadel")
+		}
 		c.Tenancy = Tenancy(get("OIDC_TENANCY", string(TenancySingle)))
 		if c.Tenancy != TenancySingle && c.Tenancy != TenancyMulti {
 			fail("OIDC_TENANCY: must be %q or %q, got %q", TenancySingle, TenancyMulti, c.Tenancy)
@@ -620,6 +639,18 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 	c.RoleMap, err = parseRoleMap(get("OIDC_ROLE_MAP", ""))
 	if err != nil {
 		fail("OIDC_ROLE_MAP: %v", err)
+	}
+	c.RolesSource = get("OIDC_ROLES_SOURCE", RolesSourceAccessToken)
+	if c.RolesSource != RolesSourceAccessToken && c.RolesSource != RolesSourceUserInfo {
+		fail("OIDC_ROLES_SOURCE: must be %q or %q, got %q", RolesSourceAccessToken, RolesSourceUserInfo, c.RolesSource)
+	}
+	c.DefaultRole = get("OIDC_DEFAULT_ROLE", "")
+	switch c.DefaultRole {
+	case "", "tenant-admin", "tenant-editor", "tenant-viewer":
+	case "platform-admin":
+		fail("OIDC_DEFAULT_ROLE: platform-admin cannot be a default role")
+	default:
+		fail("OIDC_DEFAULT_ROLE: must be empty, tenant-admin, tenant-editor or tenant-viewer, got %q", c.DefaultRole)
 	}
 	return c, errs
 }

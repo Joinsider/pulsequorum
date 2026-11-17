@@ -264,7 +264,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log, Now: clock})
 	}
 	bg.Go(func() {
-		if bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) {
+		if bootstrapCluster(ctx, log, raftNode, state, kek, keyring, local, stop) {
 			bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			if err := host.Bootstrap(bootCtx); err != nil && ctx.Err() == nil {
 				log.Error("cluster PKI setup failed", "err", err)
@@ -569,7 +569,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	case local != nil:
 		apiDeps.Local, apiDeps.Authenticator = local, local
 	case cfg.AuthMode == config.AuthOIDC:
-		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics.JWKSFetchFailed)
+		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics)
 		if err != nil {
 			return fmt.Errorf("oidc: %w", err)
 		}
@@ -622,7 +622,7 @@ func disabledIfZero(after time.Duration) time.Duration {
 // leader exists, then loads the keyring. A master key that does not match the
 // cluster stops the node (ADR 0011). It reports whether the keys are
 // available, which everything that encrypts depends on.
-func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, n *cluster.Node,
+func bootstrapCluster(ctx context.Context, log *slog.Logger, n *cluster.Node,
 	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, local *auth.Local, stop context.CancelCauseFunc) bool {
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

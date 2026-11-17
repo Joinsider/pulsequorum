@@ -39,6 +39,9 @@ type Generic struct {
 	// RoleMap maps provider values to roles. If empty, only values equal to
 	// a role name count.
 	RoleMap map[string]auth.Role
+	// DefaultRole is given when the claim yields no valid role; empty means
+	// none. It is never platform-admin (ADR 0028).
+	DefaultRole auth.Role
 }
 
 // Map implements Profile.
@@ -57,6 +60,9 @@ func (g Generic) Map(_ context.Context, claims map[string]json.RawMessage) (Iden
 			}
 		}
 		roles = addRole(roles, r)
+	}
+	if len(roles) == 0 && g.DefaultRole != "" && g.DefaultRole != auth.RolePlatformAdmin {
+		roles = addRole(roles, g.DefaultRole)
 	}
 	if len(roles) == 0 {
 		return Identity{}, errNoRole

@@ -30,11 +30,18 @@ type oidcTenants interface {
 
 // newOIDC builds the key set and the authenticator for AUTH_MODE=oidc. Keys
 // are loaded in the background by runOIDCKeys; until then requests get 503.
-func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func() time.Time, onFetchFailure func()) (*oidc.KeySet, *oidc.Authenticator, error) {
+// oidcMetrics are the counters the OIDC authenticator reports to.
+type oidcMetrics interface {
+	JWKSFetchFailed()
+	UserInfoCalled()
+	UserInfoFailed()
+}
+
+func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func() time.Time, m oidcMetrics) (*oidc.KeySet, *oidc.Authenticator, error) {
 	c := cfg.OIDC
 	keys, err := oidc.NewKeySet(oidc.KeySetOptions{
 		Issuer: c.Issuer, Algorithms: c.Algorithms, AllowHTTP: c.InsecureHTTP,
-		CacheFile: filepath.Join(cfg.DataDir, oidcKeyCacheFile), OnFetchFailure: onFetchFailure,
+		CacheFile: filepath.Join(cfg.DataDir, oidcKeyCacheFile), OnFetchFailure: m.JWKSFetchFailed,
 		Now: now, Log: log,
 	})
 	if err != nil {
@@ -52,12 +59,22 @@ func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func(
 		for k, v := range c.RoleMap {
 			roleMap[k] = auth.Role(v)
 		}
-		profile = oidc.Generic{TenantID: cluster.DefaultTenantID, RolesClaim: c.RolesClaim, RoleMap: roleMap}
+		profile = oidc.Generic{TenantID: cluster.DefaultTenantID, RolesClaim: c.RolesClaim, RoleMap: roleMap,
+			DefaultRole: auth.Role(c.DefaultRole)}
+	}
+	var userInfo *oidc.UserInfo
+	if c.RolesSource == config.RolesSourceUserInfo {
+		userInfo = oidc.NewUserInfo(oidc.UserInfoOptions{Keys: keys, OnCall: m.UserInfoCalled, OnFailure: m.UserInfoFailed, Now: now})
+		log.Info("OIDC roles are read from the userinfo endpoint, once per access token (ADR 0028)")
+	}
+	if c.DefaultRole != "" {
+		log.Warn("every token without a role gets OIDC_DEFAULT_ROLE; restrict access to the client at the identity provider",
+			"default_role", c.DefaultRole)
 	}
 	authn, err := oidc.NewAuthenticator(oidc.Options{
 		Issuer: c.Issuer, Audience: c.Audience, ClientIDs: c.ClientIDs, RequireAZP: c.RequireAZP,
 		Algorithms: c.Algorithms, MaxTokenTTL: c.MaxTokenTTL, Profile: profile, Tenants: tenants,
-		Keys: keys, Now: now, Log: log,
+		Keys: keys, UserInfo: userInfo, Now: now, Log: log,
 	})
 	if err != nil {
 		return nil, nil, err

@@ -48,8 +48,11 @@ type Options struct {
 	Profile     Profile
 	Tenants     TenantStore
 	Keys        *KeySet
-	Now         func() time.Time
-	Log         *slog.Logger
+	// UserInfo, if set, supplies the claims the profile maps instead of the
+	// access token (OIDC_ROLES_SOURCE=userinfo, ADR 0028).
+	UserInfo *UserInfo
+	Now      func() time.Time
+	Log      *slog.Logger
 }
 
 // Authenticator implements auth.Authenticator for OIDC access tokens.
@@ -94,6 +97,7 @@ func NewAuthenticator(opts Options) (*Authenticator, error) {
 type tokenClaims struct {
 	Subject   string          `json:"sub"`
 	AZP       string          `json:"azp"`
+	ClientID  string          `json:"client_id"` // RFC 9068; used like azp (ADR 0028)
 	IssuedAt  *int64          `json:"iat"`
 	NotBefore *int64          `json:"nbf"`
 	ExpiresAt int64           `json:"exp"`
@@ -134,6 +138,19 @@ func (a *Authenticator) Authenticate(r *http.Request) (auth.Principal, error) {
 	if err := idt.Claims(&raw); err != nil {
 		return a.reject("claims: " + err.Error())
 	}
+	if a.opts.UserInfo != nil {
+		// Only after the token passed every check: invalid tokens never
+		// reach the provider (ADR 0028).
+		info, err := a.opts.UserInfo.Claims(ctx, token, c.Subject, time.Unix(c.ExpiresAt, 0))
+		switch {
+		case errors.Is(err, auth.ErrAuthUnavailable):
+			a.opts.Log.Warn("oidc: userinfo unavailable", "err", err)
+			return auth.Principal{}, auth.ErrAuthUnavailable
+		case err != nil:
+			return a.reject("userinfo: " + err.Error())
+		}
+		raw = info
+	}
 	id, err := a.opts.Profile.Map(ctx, raw)
 	if err != nil {
 		return a.deny(c.Subject, err)
@@ -165,10 +182,20 @@ func (a *Authenticator) checkClaims(c tokenClaims) string {
 		return "not valid yet"
 	case c.ExpiresAt-*c.IssuedAt > int64(a.opts.MaxTokenTTL/time.Second):
 		return fmt.Sprintf("lifetime %ds exceeds the maximum %s", c.ExpiresAt-*c.IssuedAt, a.opts.MaxTokenTTL)
-	case c.AZP == "" && a.opts.RequireAZP:
-		return "no azp"
-	case c.AZP != "" && !slices.Contains(a.opts.ClientIDs, c.AZP):
-		return "azp is not an allowed client"
+	}
+	// The client is azp, or client_id from RFC 9068 tokens (ADR 0028).
+	client := c.AZP
+	switch {
+	case c.AZP != "" && c.ClientID != "" && c.AZP != c.ClientID:
+		return "azp and client_id differ"
+	case client == "":
+		client = c.ClientID
+	}
+	switch {
+	case client == "" && a.opts.RequireAZP:
+		return "no azp or client_id"
+	case client != "" && !slices.Contains(a.opts.ClientIDs, client):
+		return "client is not allowed"
 	}
 	return ""
 }

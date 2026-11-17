@@ -759,6 +759,9 @@ func TestOIDCProfileSpecificVariables(t *testing.T) {
 		{"platform org with generic", with(genericOIDC(), "ZITADEL_PLATFORM_ORG_ID", "300000000000003"), "ZITADEL_PLATFORM_ORG_ID"},
 		{"tenancy multi with zitadel", with(zitadelOIDC(), "OIDC_TENANCY", "multi"), ""},
 		{"tenancy invalid with zitadel", with(zitadelOIDC(), "OIDC_TENANCY", "many"), "OIDC_TENANCY"},
+		{"roles source with zitadel", with(zitadelOIDC(), "OIDC_ROLES_SOURCE", "access_token"), "OIDC_ROLES_SOURCE"},
+		{"roles source userinfo with zitadel", with(zitadelOIDC(), "OIDC_ROLES_SOURCE", "userinfo"), "OIDC_ROLES_SOURCE"},
+		{"default role with zitadel", with(zitadelOIDC(), "OIDC_DEFAULT_ROLE", "tenant-viewer"), "OIDC_DEFAULT_ROLE"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { expectErr(t, tt.env, tt.wantErr) })
@@ -766,6 +769,54 @@ func TestOIDCProfileSpecificVariables(t *testing.T) {
 	cfg := expectErr(t, with(zitadelOIDC(), "OIDC_TENANCY", "multi"), "")
 	if cfg.OIDC.Tenancy != TenancyMulti || cfg.OIDC.RolesClaim != "" || cfg.OIDC.RoleMap != nil {
 		t.Errorf("zitadel multi: %+v", cfg.OIDC)
+	}
+}
+
+func TestOIDCRolesSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    string
+		wantErr string
+	}{
+		{"default", genericOIDC(), RolesSourceAccessToken, ""},
+		{"access token", with(genericOIDC(), "OIDC_ROLES_SOURCE", "access_token"), RolesSourceAccessToken, ""},
+		{"userinfo", with(genericOIDC(), "OIDC_ROLES_SOURCE", "userinfo"), RolesSourceUserInfo, ""},
+		{"unknown value", with(genericOIDC(), "OIDC_ROLES_SOURCE", "id_token"), "", "OIDC_ROLES_SOURCE"},
+		{"case sensitive", with(genericOIDC(), "OIDC_ROLES_SOURCE", "UserInfo"), "", "OIDC_ROLES_SOURCE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr == "" && cfg.OIDC.RolesSource != tt.want {
+				t.Errorf("RolesSource = %q, want %q", cfg.OIDC.RolesSource, tt.want)
+			}
+		})
+	}
+}
+
+func TestOIDCDefaultRole(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    string
+		wantErr string
+	}{
+		{"default empty", genericOIDC(), "", ""},
+		{"tenant-admin", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "tenant-admin"), "tenant-admin", ""},
+		{"tenant-editor", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "tenant-editor"), "tenant-editor", ""},
+		{"tenant-viewer", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "tenant-viewer"), "tenant-viewer", ""},
+		{"platform-admin rejected", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "platform-admin"), "", "platform-admin cannot be a default role"},
+		{"unknown role", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "superuser"), "", "OIDC_DEFAULT_ROLE"},
+		{"case sensitive", with(genericOIDC(), "OIDC_DEFAULT_ROLE", "Tenant-Viewer"), "", "OIDC_DEFAULT_ROLE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr == "" && cfg.OIDC.DefaultRole != tt.want {
+				t.Errorf("DefaultRole = %q, want %q", cfg.OIDC.DefaultRole, tt.want)
+			}
+		})
 	}
 }
 
@@ -777,6 +828,8 @@ func TestOIDCIgnoredInLocalMode(t *testing.T) {
 		"OIDC_ALGORITHMS":         "HS256",
 		"OIDC_TENANCY":            "many",
 		"OIDC_MAX_TOKEN_TTL":      "forever",
+		"OIDC_ROLES_SOURCE":       "id_token",
+		"OIDC_DEFAULT_ROLE":       "platform-admin",
 		"ZITADEL_PLATFORM_ORG_ID": "300000000000003",
 	}, "")
 	if cfg.AuthMode != AuthLocal || !reflect.DeepEqual(cfg.OIDC, OIDCConfig{}) || cfg.AuthModeAlias {

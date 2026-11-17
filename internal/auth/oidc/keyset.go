@@ -89,6 +89,7 @@ type KeySet struct {
 	mu       sync.RWMutex
 	keys     []jose.JSONWebKey
 	jwksURI  string
+	userinfo string // userinfo_endpoint from discovery, "" if none
 	loaded   bool
 	maxAge   time.Duration
 	lastTry  time.Time // last fetch attempt, for the refetch rate limit
@@ -103,6 +104,7 @@ type KeySet struct {
 type cacheDocument struct {
 	Issuer    string          `json:"issuer"`
 	JWKSURI   string          `json:"jwks_uri"`
+	UserInfo  string          `json:"userinfo_endpoint,omitempty"`
 	JWKS      json.RawMessage `json:"jwks"`
 	FetchedAt time.Time       `json:"fetched_at"`
 }
@@ -302,17 +304,17 @@ func (k *KeySet) fetch(ctx context.Context) error {
 }
 
 func (k *KeySet) doFetch(ctx context.Context) error {
-	jwksURI, err := k.discover(ctx)
+	jwksURI, userinfo, err := k.discover(ctx)
 	if err != nil {
 		k.mu.RLock()
-		known := k.jwksURI
+		known, knownInfo := k.jwksURI, k.userinfo
 		k.mu.RUnlock()
 		if known == "" {
 			return err
 		}
-		// Keep using the last known JWKS URI if only discovery fails.
-		k.opts.Log.Warn("oidc discovery failed, using the last known JWKS URI", "err", err)
-		jwksURI = known
+		// Keep using the last known endpoints if only discovery fails.
+		k.opts.Log.Warn("oidc discovery failed, using the last known endpoints", "err", err)
+		jwksURI, userinfo = known, knownInfo
 	}
 	body, maxAge, err := k.get(ctx, jwksURI)
 	if err != nil {
@@ -324,36 +326,49 @@ func (k *KeySet) doFetch(ctx context.Context) error {
 	}
 	now := k.opts.Now()
 	k.mu.Lock()
-	k.keys, k.jwksURI, k.loaded, k.maxAge, k.lastGood = keys, jwksURI, true, maxAge, now
+	k.keys, k.jwksURI, k.userinfo, k.loaded, k.maxAge, k.lastGood = keys, jwksURI, userinfo, true, maxAge, now
 	k.mu.Unlock()
-	if err := k.writeCache(cacheDocument{Issuer: k.opts.Issuer, JWKSURI: jwksURI, JWKS: body, FetchedAt: now}); err != nil {
+	if err := k.writeCache(cacheDocument{Issuer: k.opts.Issuer, JWKSURI: jwksURI, UserInfo: userinfo, JWKS: body, FetchedAt: now}); err != nil {
 		k.opts.Log.Warn("oidc key cache not written", "file", k.opts.CacheFile, "err", err)
 	}
 	return nil
 }
 
-// discover returns the JWKS URI from the discovery document, whose issuer
-// must equal the configured issuer exactly.
-func (k *KeySet) discover(ctx context.Context) (string, error) {
+// discover returns the JWKS and userinfo URIs from the discovery document,
+// whose issuer must equal the configured issuer exactly. A missing or
+// unusable userinfo endpoint is returned as "".
+func (k *KeySet) discover(ctx context.Context) (jwksURI, userinfo string, err error) {
 	u := strings.TrimSuffix(k.opts.Issuer, "/") + "/.well-known/openid-configuration"
 	body, _, err := k.get(ctx, u)
 	if err != nil {
-		return "", fmt.Errorf("fetch discovery document: %w", err)
+		return "", "", fmt.Errorf("fetch discovery document: %w", err)
 	}
 	var doc struct {
-		Issuer  string `json:"issuer"`
-		JWKSURI string `json:"jwks_uri"`
+		Issuer   string `json:"issuer"`
+		JWKSURI  string `json:"jwks_uri"`
+		UserInfo string `json:"userinfo_endpoint"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
-		return "", fmt.Errorf("discovery document: %w", err)
+		return "", "", fmt.Errorf("discovery document: %w", err)
 	}
 	if doc.Issuer != k.opts.Issuer {
-		return "", fmt.Errorf("discovery issuer %q does not match the configured issuer %q", doc.Issuer, k.opts.Issuer)
+		return "", "", fmt.Errorf("discovery issuer %q does not match the configured issuer %q", doc.Issuer, k.opts.Issuer)
 	}
 	if err := k.checkURL(doc.JWKSURI); err != nil {
-		return "", fmt.Errorf("discovery jwks_uri: %w", err)
+		return "", "", fmt.Errorf("discovery jwks_uri: %w", err)
 	}
-	return doc.JWKSURI, nil
+	if doc.UserInfo != "" && k.checkURL(doc.UserInfo) != nil {
+		k.opts.Log.Warn("oidc: ignoring unusable userinfo_endpoint", "url", doc.UserInfo)
+		doc.UserInfo = ""
+	}
+	return doc.JWKSURI, doc.UserInfo, nil
+}
+
+// UserInfoEndpoint returns the userinfo endpoint from discovery, "" if unknown.
+func (k *KeySet) UserInfoEndpoint() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.userinfo
 }
 
 func (k *KeySet) checkURL(raw string) error {
@@ -487,7 +502,7 @@ func (k *KeySet) readCache() error {
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.keys, k.jwksURI, k.loaded, k.lastGood = keys, doc.JWKSURI, true, doc.FetchedAt
+	k.keys, k.jwksURI, k.userinfo, k.loaded, k.lastGood = keys, doc.JWKSURI, doc.UserInfo, true, doc.FetchedAt
 	return nil
 }
 
