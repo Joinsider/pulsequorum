@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-17 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-OBS-01/02, FA-REP-05/06, FA-PKI-06, Z-S-03, AS-05, PF-12, PF-21; ADR 0012 (A7, Snapshot-Timeout), 0013 (WAL-Größe), 0014 (Outbox), 0017 (Node-Gesundheit), 0018 (Feature-Gates, gemischte Versionen), 0020 (Uhrversatz), 0022 (Selbstgesundheit), 0023 (Drosselung), 0024 (Degraded-Modus) |
@@ -225,3 +225,4 @@ Ein Collector auf dem Leader bewertet alle 30 s:
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-17 | Proposed | Claude | |
+| 2026-11-17 | Accepted | Projektinhaber | im Chat angenommen („Annehmen, umsetzen“), eingetragen durch Claude |
