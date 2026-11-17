@@ -1,12 +1,12 @@
 # Handoff für die nächste Claude-Code-Session
 
-**Stand:** 2026-11-17, nach Abschluss von AP-4.1 (OIDC-Anbindung, ADR 0027/0028). PR [Joinsider/uptime-cluster#16](https://github.com/Joinsider/uptime-cluster/pull/16) ist gemergt. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
+**Stand:** 2026-11-17, AP-4.2 (ADR 0029) ist auf dem Branch `feat/AP4.2` umgesetzt und committet, aber nicht gepusht. Offen ist der Ende-zu-Ende-Test gegen Zitadel. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
 
 ## 1. Zuerst lesen
 
 1. [CLAUDE.md](../CLAUDE.md): Regeln für Delegation, ADRs, Git und Sprache.
 2. [docs/roadmap.md](roadmap.md): „Aktueller Stand“ und P4. Der Eintrag zu AP-4.1 listet, was gebaut ist und was offen blieb.
-3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0028 sind alle Accepted. Für P4 zentral: [0027](adr/0027-oidc-anbindung.md) (OIDC, Profile, Mandanten-Bindung) und [0028](adr/0028-rollen-aus-userinfo-und-client-id.md) (Rollen aus `/userinfo`, `client_id`).
+3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0029 sind alle Accepted. Für P4 zentral: [0027](adr/0027-oidc-anbindung.md) (OIDC, Profile, Mandanten-Bindung), [0028](adr/0028-rollen-aus-userinfo-und-client-id.md) (Rollen aus `/userinfo`, `client_id`) und [0029](adr/0029-mandantenverwaltung-plaene-limits.md) (Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung).
 4. [docs/betrieb/oidc.md](betrieb/oidc.md): Betriebsdoku zu OIDC mit den Befunden aus den Tests gegen echte Anbieter.
 5. Pflichtenheft (Version 1.4) für den nächsten Schritt: FA-TEN-03, FA-TEN-04, dazu FA-TEN-01/02/05, NFA-SEC-02 und das Abnahmeszenario AS-06.
 
@@ -16,7 +16,7 @@
 |-------|--------|
 | P0 Fundament | fertig bis auf AP-0.9/0.10 (brauchen GitHub-Läufe) |
 | P1 Kern, P2 Cluster, P3 HA-Logik | abgenommen (`docs/abnahme/p1-kern.md`, `p2-cluster.md`, `p3-ha.md`) |
-| **P4 Mandanten** | **AP-4.1 ✅, nächster Schritt AP-4.2** |
+| **P4 Mandanten** | **AP-4.1 ✅, AP-4.2 umgesetzt (E2E offen), danach AP-4.3** |
 | P5 Reichweite, P6 Ausbau | offen |
 
 **Was AP-4.1 gebracht hat (Kurzfassung):**
@@ -59,7 +59,7 @@
 
 ### ADR-Ablauf
 
-- **Nummer:** Nächster ADR ist **0029**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
+- **Nummer:** Nächster ADR ist **0030**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
 - **Accepted:** setzt nur Projektinhaber, oder Claude auf seine ausdrückliche Anweisung im Chat. In der Approval-Tabelle dann z.B. „im Chat angenommen („Ja ADR 28 annehmen“), eingetragen durch Claude“.
 - **Optionen mit Empfehlung:** Projektinhaber entscheidet Richtungsfragen über kurze Auswahlen mit Kennungen (z.B. „1A, 2B“). Bei Zielkonflikten Optionen mit Vor- und Nachteilen und einer Empfehlung vorlegen; bei Sicherheitsfragen die sicherere Option empfehlen und sagen, warum.
 - **Befund aus Tests → neuer ADR:** Zeigt ein Test, dass ein akzeptierter ADR nicht trägt (so entstand ADR 0028 aus dem PocketID-Test), zuerst einen neuen ADR vorschlagen, nicht still abweichen.
@@ -80,22 +80,29 @@
 - **Browser:** Das eingebaute Browser-Fenster blockiert Skripte mancher externer Seiten (PocketID blieb schwarz, `ERR_BLOCKED_BY_CLIENT`). Dann Claude in Chrome verwenden, nach Rückfrage.
 - **Speicher-Hygiene der SPA** nach jedem Login prüfen: kein JWT, kein Refresh-Token, keine Profildaten in `localStorage`/`sessionStorage`/IndexedDB.
 
-## 4. Nächster Schritt: AP-4.2 Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung
+## 4. Nächster Schritt: AP-4.2 abschließen
 
-Anforderungen: FA-TEN-03 (Verwaltung durch `platform-admin`: anlegen, sperren, löschen mit Datenlöschung, Plan/Limits; automatische Anlage beim ersten Login einer neuen Zitadel-Organisation, abschaltbar, nur Profil `zitadel` mit `OIDC_TENANCY=multi`) und FA-TEN-04 (Limits je Plan: Monitore, kürzestes Intervall, Statusseiten, private Probes, Kanäle; Überschreitung → 403 mit verständlicher Meldung).
+Umgesetzt ist alles aus ADR 0029; den Überblick gibt der Roadmap-Eintrag zu AP-4.2. Die Commits auf `feat/AP4.2`: `internal/tenant`, Store, FSM-Befehle (Version 8), Auth und `internal/provision`, Admin-API, Laufzeit (`internal/tenantpurge`, `scheduler.TenantGate`), Web-UI.
 
-1. **Lesen:** ADR 0027 (Abschnitte Mandanten und Zitadel-Profil), `internal/cluster/tenants.go` (`BindTenantOrg`, `validOrgID`), `internal/cluster/fsm.go` (`PutEntity`), `internal/auth/oidc/profile.go` (`Zitadel.Map` liefert heute 403 „not provisioned“ für unbekannte Organisationen), Store-Methoden für Mandanten, die bestehenden Admin-Endpunkte in `api/openapi.yaml`.
-2. **ADR 0029 entwerfen** (Proposed), weil Schema, FSM-Befehle und OpenAPI-Vertrag sich ändern. Er soll klären:
-   - Datenmodell für Pläne und Limits (fest im Code, konfigurierbar oder im Raft-Zustand) und Standardplan.
-   - FSM-Befehle für Anlegen, Sperren, Plan ändern, Löschen; neue `CommandVersion` 8 mit Feature-Gate.
-   - Löschen mit Datenlöschung: Reihenfolge (sperren → Daten löschen → Mandant entfernen), Metrik-Daten in `metrics.db`, Geheimnisse, Wiederanlauf nach Abbruch, `_system` und `default` nie löschbar.
-   - Auto-Provisionierung: wer den FSM-Befehl auslöst (Anfragepfad des Followers → Leader), Idempotenz bei parallelen ersten Logins, Schalter zum Abschalten, Missbrauchsschutz (Rate-Limit, Höchstzahl).
-   - Durchsetzung der Limits: wo geprüft wird (FSM deterministisch und/oder API), Verhalten bei gesenktem Plan mit schon überschrittenem Bestand.
-   - Offener Punkt aus AP-4.1: `PutEntity` für Mandanten muss die Org-ID genauso prüfen wie `BindTenantOrg` (eindeutig, gültig, `_system` nie gebunden).
-3. **Committen und warten:** `docs(adr): propose 0029 …`, AP-4.2 in der Roadmap auf `blockiert (ADR 0029)`, Projektinhaber um Review bitten. Umsetzen erst nach Accepted.
-4. **Umsetzen:** Autorisierung, Provisionierungsregeln, Org-ID-Validierung und Löschlogik schreibt der Hauptagent. API-Handler nach Vorgabe, Migrationen, Admin-UI, Tests und Doku gehen an Haiku. Mandantentrennung mit zwei Mandanten testen (Vorbereitung für AS-06), auch über den Zitadel-Testaufbau `deploy/oidc-dev/zitadel` (Org `acme` bekommt heute 403, nach AP-4.2 soll sie provisioniert werden).
+1. **Ende-zu-Ende gegen Zitadel** (`deploy/oidc-dev/zitadel`, siehe README dort): Knoten mit `OIDC_PROFILE=zitadel`, `OIDC_TENANCY=multi`, `OIDC_AUTO_PROVISION=true`. Prüfen:
+   - Org `acme` mit Projektrolle wird beim ersten Login als Mandant angelegt; ohne Projektberechtigung bleibt es bei 403.
+   - Zwei Mandanten, ID-Manipulation über API und WebSocket ergibt 404 (Vorbereitung AS-06).
+   - Sperren (403, Stream schließt, Checks ruhen), Entsperren, Löschen (Daten weg in `state.db` und nach ≤ 30 s in `metrics.db`).
+   - Limits: Plan mit `maxMonitors`, 403 mit Meldung in der UI.
+   - Speicher-Hygiene der SPA wie bei AP-4.1.
+   Logins im Browser macht Projektinhaber. Befunde: Regressionstest und Eintrag in `docs/betrieb/oidc.md`.
+2. **Danach:** Roadmap AP-4.2 auf ✅, PR nach Rückfrage.
 
 ## 5. Offene Punkte
+
+**Aus AP-4.2:**
+- Ausstehende Alerts eines gesperrten Mandanten bleiben in der Outbox und werden nach dem Entsperren gesendet. ADR 0029 sagt „verwirft“; dafür bräuchte es einen FSM-Befehl.
+- Entsperrte Monitore starten nicht im Zustand `pending`, sondern mit ihrem letzten Zustand.
+- Purge-Job und Snapshot nach dem Löschen laufen im 30-s-Takt, nicht sofort.
+- Heartbeats werden beim Purge ohne Index gescannt (bewusst, ADR 0016); bei sehr großen `metrics.db` langsam.
+- `request_dedup` behält Ergebnisse früherer Befehle mit der Mandanten-ID; Raft-Log und Backups enthalten gelöschte Daten, bis sie überschrieben sind (in der Betriebsdoku nennen).
+- Lokaler Modus: Die Sperre wird erst nach richtigem Passwort gemeldet (403 statt 401).
+- Angular hat kein `ng lint`-Ziel.
 
 **Aus AP-4.1:**
 - Claim-Fixture aus PocketID fehlt (Claims nur aus dem Quelltext belegt; Keycloak und Zitadel liegen in `internal/auth/oidc/testdata/`). PocketID-Version für die Doku bei Projektinhaber erfragen.
@@ -116,7 +123,7 @@ Anforderungen: FA-TEN-03 (Verwaltung durch `platform-admin`: anlegen, sperren, l
 
 ## 6. Technische Stolpersteine
 
-- **FSM:** `Apply` ist deterministisch (keine Uhr, kein Zufall, kein I/O außer dem lokalen Store). Neue Befehle brauchen eine Befehlsversion und ein Feature-Gate (ADR 0018); aktuell `CommandVersion` 7. Zeitpunkte gehören in den Befehl, nicht ins `Apply`.
+- **FSM:** `Apply` ist deterministisch (keine Uhr, kein Zufall, kein I/O außer dem lokalen Store). Neue Befehle brauchen eine Befehlsversion und ein Feature-Gate (ADR 0018); aktuell `CommandVersion` 8 (`TenantAdminCommandLevel`). Verhalten, das sich mit einer neuen Stufe ändert (z.B. Limit-Prüfung, Fingerprint-Inhalt), nur ab dieser Stufe einschalten, sonst laufen gemischte Voter auseinander. Zeitpunkte gehören in den Befehl, nicht ins `Apply`.
 - **Generierter Code:** nie von Hand ändern. Neue REST-Operationen zuerst in `api/openapi.yaml`, dann `make generate`; SQL über sqlc, Migrationen mit goose.
 - **Mandant `_system`:** reserviert (`store.SystemTenantID`). FSM, Auth und `checkTenant` im OIDC-Verifier sperren ihn; nie an eine Organisation bindbar, nie löschbar. Diese Grenze darf AP-4.2 nicht aufweichen.
 - **Mandant `default`:** wird in jedem Auth-Modus beim Bootstrap angelegt (`EnsureDefaultTenant`). Im Profil `zitadel` bindet der Leader ihn an `ZITADEL_PLATFORM_ORG_ID`.
