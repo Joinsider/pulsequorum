@@ -1,0 +1,52 @@
+{
+  "acme-bot": {
+    "claims": {
+      "aud": [
+        "400025318225609731"
+      ],
+      "client_id": "acme-bot",
+      "exp": 1794930920,
+      "iat": 1794930020,
+      "iss": "http://localhost:8082",
+      "nbf": 1794930020,
+      "sub": "400025321832711171",
+      "urn:zitadel:iam:org:project:400025318225609731:roles": {
+        "tenant-viewer": {
+          "400025318108169219": "acme.localhost"
+        }
+      },
+      "urn:zitadel:iam:user:resourceowner:id": "400025318108169219",
+      "urn:zitadel:iam:user:resourceowner:name": "acme",
+      "urn:zitadel:iam:user:resourceowner:primary_domain": "acme.localhost"
+    },
+    "header": {
+      "alg": "RS256",
+      "typ": "JWT"
+    }
+  },
+  "platform-bot": {
+    "claims": {
+      "aud": [
+        "400025318225609731"
+      ],
+      "client_id": "platform-bot",
+      "exp": 1794930920,
+      "iat": 1794930020,
+      "iss": "http://localhost:8082",
+      "nbf": 1794930020,
+      "sub": "400025321732047875",
+      "urn:zitadel:iam:org:project:400025318225609731:roles": {
+        "tenant-admin": {
+          "400025307035272195": "platform.localhost"
+        }
+      },
+      "urn:zitadel:iam:user:resourceowner:id": "400025307035272195",
+      "urn:zitadel:iam:user:resourceowner:name": "platform",
+      "urn:zitadel:iam:user:resourceowner:primary_domain": "platform.localhost"
+    },
+    "header": {
+      "alg": "RS256",
+      "typ": "JWT"
+    }
+  }
+}

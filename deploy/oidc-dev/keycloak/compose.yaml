@@ -1,0 +1,17 @@
+# Keycloak fuer die manuelle Ende-zu-Ende-Pruefung der OIDC-Anmeldung (Profil generic).
+# NUR ENTWICKLUNG: start-dev, kein TLS, Admin-Zugang nur ueber localhost.
+# Die Zugangsdaten setzt setup.sh in .generated/credentials.env; es gibt keine festen Passwoerter.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    container_name: uptime-oidc-dev-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      # Feste Issuer-URL, unabhaengig davon, unter welchem Host die Anfrage kommt.
+      KC_HOSTNAME: http://localhost:8081
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./realm.json:/opt/keycloak/data/import/realm.json:ro

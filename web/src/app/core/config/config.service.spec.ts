@@ -28,13 +28,23 @@ describe('ConfigService', () => {
     const loading = service.load();
     httpMock.expectOne('/config.json').flush({
       nodes: ['http://node-a:8080'],
-      auth: { mode: 'zitadel', issuer: 'https://id.example.test', clientId: 'uptime' },
+      auth: {
+        mode: 'oidc',
+        issuer: 'https://id.example.test',
+        clientId: 'uptime',
+        scopes: ['openid', 'profile', 'offline_access'],
+      },
     });
     await loading;
 
     expect(service.config()).toEqual({
       nodes: ['http://node-a:8080'],
-      auth: { mode: 'zitadel', issuer: 'https://id.example.test', clientId: 'uptime' },
+      auth: {
+        mode: 'oidc',
+        issuer: 'https://id.example.test',
+        clientId: 'uptime',
+        scopes: ['openid', 'profile', 'offline_access'],
+      },
     });
   });
 
@@ -47,6 +57,24 @@ describe('ConfigService', () => {
 
     expect(service.config()).toEqual({ nodes: [], auth: { mode: 'local' } });
     expect(warn).toHaveBeenCalled();
+  });
+
+  it('whenLoaded resolves with the configuration once load has settled', async () => {
+    const ready = service.whenLoaded();
+    const loading = service.load();
+    httpMock.expectOne('/config.json').flush({ nodes: [], auth: { mode: 'local' } });
+    await loading;
+
+    expect(await ready).toEqual({ nodes: [], auth: { mode: 'local' } });
+  });
+
+  it('whenLoaded resolves with the fallback when loading fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const loading = service.load();
+    httpMock.expectOne('/config.json').flush('x', { status: 500, statusText: 'Error' });
+    await loading;
+
+    expect(await service.whenLoaded()).toEqual({ nodes: [], auth: { mode: 'local' } });
   });
 
   it('returns an empty API base URL for an empty node list', async () => {

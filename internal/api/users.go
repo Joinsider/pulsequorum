@@ -17,6 +17,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
 	"github.com/joinsider/uptimecluster/internal/cluster"
+	"github.com/joinsider/uptimecluster/internal/config"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -74,6 +75,9 @@ func (h *Handlers) ListUsers(ctx context.Context, _ gen.ListUsersRequestObject) 
 	if err != nil {
 		return nil, err
 	}
+	if h.cfg.AuthMode == config.AuthOIDC {
+		return nil, errManagedByIDP()
+	}
 	users, err := h.deps.State.ListUsers(ctx, p.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -95,6 +99,9 @@ func (h *Handlers) CreateUser(ctx context.Context, req gen.CreateUserRequestObje
 	p, err := principal(ctx, readAccess)
 	if err != nil {
 		return nil, err
+	}
+	if h.cfg.AuthMode == config.AuthOIDC {
+		return nil, errManagedByIDP()
 	}
 	if req.Body == nil {
 		return nil, unprocessable("request body is required")
@@ -157,6 +164,9 @@ func (h *Handlers) UpdateUser(ctx context.Context, req gen.UpdateUserRequestObje
 	p, err := principal(ctx, readAccess)
 	if err != nil {
 		return nil, err
+	}
+	if h.cfg.AuthMode == config.AuthOIDC {
+		return nil, errManagedByIDP()
 	}
 	// The admin check runs before the lookup, so non-admins learn nothing about user IDs.
 	if err := h.authorizeUserChange(ctx, p, userChange{}); err != nil {
@@ -230,6 +240,9 @@ func (h *Handlers) DeleteUser(ctx context.Context, req gen.DeleteUserRequestObje
 	p, err := principal(ctx, readAccess)
 	if err != nil {
 		return nil, err
+	}
+	if h.cfg.AuthMode == config.AuthOIDC {
+		return nil, errManagedByIDP()
 	}
 	if err := h.authorizeUserChange(ctx, p, userChange{}); err != nil {
 		return nil, err

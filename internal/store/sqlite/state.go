@@ -97,6 +97,22 @@ func (s *StateStore) GetTenant(ctx context.Context, id string) (store.Tenant, er
 	return tenantFromRow(row), nil
 }
 
+// GetTenantByOrg returns the tenant bound to the identity-provider organization.
+// An empty orgID is ErrNotFound without a query: tenants without an organization
+// have NULL in the column, and NULL never matches (ADR 0027).
+func (s *StateStore) GetTenantByOrg(ctx context.Context, orgID string) (store.Tenant, error) {
+	if orgID == "" {
+		return store.Tenant{}, store.ErrNotFound
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row, err := s.q.GetTenantByOrg(ctx, sql.NullString{String: orgID, Valid: true})
+	if err != nil {
+		return store.Tenant{}, mapErr(err)
+	}
+	return tenantFromRow(row), nil
+}
+
 // ListTenants returns all tenants ordered by ID.
 func (s *StateStore) ListTenants(ctx context.Context) ([]store.Tenant, error) {
 	s.mu.RLock()
@@ -483,6 +499,18 @@ func (t *stateTx) DeleteMonitor(ctx context.Context, tenantID, id string) error 
 
 func (t *stateTx) GetTenant(ctx context.Context, id string) (store.Tenant, error) {
 	row, err := t.q.GetTenant(ctx, id)
+	if err != nil {
+		return store.Tenant{}, mapErr(err)
+	}
+	return tenantFromRow(row), nil
+}
+
+// GetTenantByOrg returns the tenant bound to the organization, or ErrNotFound.
+func (t *stateTx) GetTenantByOrg(ctx context.Context, orgID string) (store.Tenant, error) {
+	if orgID == "" {
+		return store.Tenant{}, store.ErrNotFound
+	}
+	row, err := t.q.GetTenantByOrg(ctx, sql.NullString{String: orgID, Valid: true})
 	if err != nil {
 		return store.Tenant{}, mapErr(err)
 	}

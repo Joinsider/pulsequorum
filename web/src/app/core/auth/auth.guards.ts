@@ -25,6 +25,16 @@ export const guestGuard: CanActivateFn = async () => {
   return auth.authenticated() ? inject(Router).createUrlTree(['/']) : true;
 };
 
+/**
+ * Local password accounts only (ADR 0008): user management and the first-start
+ * setup do not exist in OIDC mode, where the identity provider owns the accounts.
+ * The server answers 409 there; this keeps the pages out of reach.
+ */
+export const localAuthGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return auth.mode() === 'local' ? true : inject(Router).createUrlTree(['/']);
+};
+
 /** Hides admin-only pages; this is convenience only, the server enforces roles (FA-UI-05). */
 export const adminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);

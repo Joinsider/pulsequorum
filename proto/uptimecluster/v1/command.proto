@@ -53,6 +53,7 @@ message Command {
     SetSystemAlert set_system_alert = 31;
     RecordIncarnation record_incarnation = 32;
     Checkpoint checkpoint = 33;
+    BindTenantOrg bind_tenant_org = 34;
   }
 }
 
@@ -372,3 +373,11 @@ message RecordIncarnation {
 // log index (FA-CLU-07, ADR 0025). It changes no replicated data; each replica
 // keeps the result in memory only.
 message Checkpoint {}
+
+// BindTenantOrg binds a tenant to an identity-provider organization (ADR 0027).
+// The FSM sets tenants.zitadel_org_id; an org ID belongs to at most one tenant.
+// A bound tenant is rebound only through the tenant admin API (ADR 0027).
+message BindTenantOrg {
+  string tenant_id = 1;
+  string org_id = 2;
+}

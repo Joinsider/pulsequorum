@@ -7,6 +7,9 @@
     "expired": "Your session has ended. Please sign in again.",
     "toSetup": "First start? Create the administrator"
   },
+  "callback": {
+    "loading": "Signing you in ..."
+  },
   "setup": {
     "title": "Create the first administrator",
     "hint": "The one-time setup token is printed in the server log at first start and is valid for one hour.",

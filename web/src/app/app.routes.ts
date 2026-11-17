@@ -3,7 +3,13 @@
 
 import { Routes } from '@angular/router';
 import { provideTranslocoScope } from '@jsverse/transloco';
-import { adminGuard, authGuard, guestGuard, platformAdminGuard } from './core/auth/auth.guards';
+import {
+  adminGuard,
+  authGuard,
+  guestGuard,
+  localAuthGuard,
+  platformAdminGuard,
+} from './core/auth/auth.guards';
 
 /**
  * Every feature is lazy-loaded and owns its translation scope
@@ -18,9 +24,16 @@ export const routes: Routes = [
   },
   {
     path: 'setup',
-    canActivate: [guestGuard],
+    canActivate: [localAuthGuard, guestGuard],
     providers: [provideTranslocoScope('auth')],
     loadComponent: () => import('./features/auth/setup-page').then((m) => m.SetupPage),
+  },
+  {
+    // Not guarded: it finishes the identity provider sign-in (ADR 0027).
+    path: 'auth/callback',
+    providers: [provideTranslocoScope('auth')],
+    loadComponent: () =>
+      import('./features/auth/auth-callback-page').then((m) => m.AuthCallbackPage),
   },
   {
     path: 'status',
@@ -78,7 +91,7 @@ export const routes: Routes = [
       },
       {
         path: 'users',
-        canActivate: [adminGuard],
+        canActivate: [localAuthGuard, adminGuard],
         providers: [provideTranslocoScope('users')],
         loadChildren: () => import('./features/users/users.routes').then((m) => m.routes),
       },

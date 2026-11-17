@@ -59,6 +59,8 @@ func TestMinVersion(t *testing.T) {
 		{"constructor report degraded alerts", NewReportDegradedAlerts("node-1", nil), 5},
 		{"constructor resolve unconfirmed alerts", NewResolveUnconfirmedAlerts(nil), 5},
 		{"constructor record monitor history", NewRecordMonitorHistory("t1", "m1", store.StatusUp, 1, 2, nil), 5},
+		{"bind tenant org", &pb.Command{Payload: &pb.Command_BindTenantOrg{BindTenantOrg: &pb.BindTenantOrg{}}}, 7},
+		{"constructor bind tenant org", NewBindTenantOrg("t1", "org-1"), 7},
 		{"constructor set monitor state stays at 1", NewSetMonitorState(StateChange{TenantID: "t1", MonitorID: "m1", From: store.StatusUp, To: store.StatusDown, SinceMs: 1, Incident: &store.Incident{ID: "i"}, Reporters: []string{"n1"}}), 1},
 	}
 	for _, tt := range tests {

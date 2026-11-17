@@ -18,9 +18,21 @@ const FALLBACK_CONFIG: AppConfig = {
 export class ConfigService {
   private readonly http = inject(HttpClient);
   private readonly configSignal = signal<AppConfig>(FALLBACK_CONFIG);
+  private resolveLoaded!: (config: AppConfig) => void;
+  private readonly loaded = new Promise<AppConfig>((resolve) => {
+    this.resolveLoaded = resolve;
+  });
 
   /** The loaded configuration (or the fallback if loading failed). */
   readonly config = this.configSignal.asReadonly();
+
+  /**
+   * Resolves with the configuration once `load()` has settled, for code that
+   * must not run before the runtime configuration is known (e.g. the OIDC loader).
+   */
+  whenLoaded(): Promise<AppConfig> {
+    return this.loaded;
+  }
 
   /** Fetches `/config.json`. Never rejects; falls back to a local-only configuration on error. */
   async load(): Promise<void> {
@@ -31,6 +43,7 @@ export class ConfigService {
       console.warn(`Could not load ${CONFIG_URL}, using defaults.`, error);
       this.configSignal.set(FALLBACK_CONFIG);
     }
+    this.resolveLoaded(this.configSignal());
   }
 
   /** Base URL for API calls without trailing slash, or `''` for same-origin requests. */

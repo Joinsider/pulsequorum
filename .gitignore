@@ -16,3 +16,6 @@ coverage.out
 
 # Generated third-party notices (make notices)
 /THIRD_PARTY_NOTICES.md
+
+# Generated dev credentials for the local OIDC test setups (deploy/oidc-dev)
+deploy/oidc-dev/*/.generated/

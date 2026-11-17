@@ -3,7 +3,11 @@
 
 package server
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/joinsider/uptimecluster/internal/config"
+)
 
 // FrontendConfig is the runtime configuration consumed by the SPA (FA-UI-02).
 type FrontendConfig struct {
@@ -15,6 +19,10 @@ type FrontendConfig struct {
 // FrontendAuthConfig tells the SPA how to authenticate.
 type FrontendAuthConfig struct {
 	Mode string `json:"mode"`
+	// Issuer, ClientID and Scopes are set in oidc mode only (ADR 0027).
+	Issuer   string   `json:"issuer,omitempty"`
+	ClientID string   `json:"clientId,omitempty"`
+	Scopes   []string `json:"scopes,omitempty"`
 }
 
 func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
@@ -40,8 +48,16 @@ func (s *Server) handleFrontendConfig(w http.ResponseWriter, _ *http.Request) {
 	if s.cfg.PublicURL != "" {
 		nodes = append(nodes, s.cfg.PublicURL)
 	}
+	auth := FrontendAuthConfig{Mode: string(s.cfg.AuthMode)}
+	if s.cfg.AuthMode == config.AuthOIDC {
+		auth.Issuer = s.cfg.OIDC.Issuer
+		if len(s.cfg.OIDC.ClientIDs) > 0 {
+			auth.ClientID = s.cfg.OIDC.ClientIDs[0]
+		}
+		auth.Scopes = s.cfg.OIDC.Scopes
+	}
 	writeJSON(w, http.StatusOK, FrontendConfig{
 		Nodes: nodes,
-		Auth:  FrontendAuthConfig{Mode: string(s.cfg.AuthMode)},
+		Auth:  auth,
 	})
 }

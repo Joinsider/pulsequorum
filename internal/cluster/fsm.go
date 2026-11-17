@@ -310,6 +310,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRecordIncarnation(ctx, tx, cmd, p.RecordIncarnation)
 	case *pb.Command_Checkpoint:
 		return applyCheckpoint(ctx, tx)
+	case *pb.Command_BindTenantOrg:
+		return applyBindTenantOrg(ctx, tx, cmd, p.BindTenantOrg)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -331,6 +333,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		var doc TenantDocument
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("tenant document: %v", err)
+		}
+		if put.GetId() == store.SystemTenantID && doc.ZitadelOrgID != "" {
+			return nil, invalid("the system tenant cannot be bound to an organization")
 		}
 		err := tx.PutTenant(ctx, store.Tenant{
 			ID: put.GetId(), Name: doc.Name, Plan: doc.Plan, ZitadelOrgID: doc.ZitadelOrgID,

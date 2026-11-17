@@ -5,6 +5,7 @@ package server
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -19,8 +20,26 @@ const (
 	cspAPI = "default-src 'none'; frame-ancestors 'none'"
 )
 
-// securityHeaders sets headers that are safe for every response.
-func securityHeaders(next http.Handler) http.Handler {
+// spaCSP returns the SPA policy. With OIDC the SPA calls the token endpoint
+// of the identity provider, so connect-src also allows the issuer's origin
+// (ADR 0027); nothing else is widened.
+func spaCSP(issuer string) string {
+	if issuer == "" {
+		return cspSPA
+	}
+	u, err := url.Parse(issuer)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+		strings.ContainsAny(u.Host, " ;,'\"") {
+		return cspSPA
+	}
+	origin := u.Scheme + "://" + u.Host
+	return strings.Replace(cspSPA, "connect-src 'self';", "connect-src 'self' "+origin+";", 1)
+}
+
+// securityHeaders sets headers that are safe for every response. issuer is
+// the OIDC issuer, empty in local mode.
+func securityHeaders(next http.Handler, issuer string) http.Handler {
+	csp := spaCSP(issuer)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -30,7 +49,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		if isAPIPath(r.URL.Path) {
 			h.Set("Content-Security-Policy", cspAPI)
 		} else {
-			h.Set("Content-Security-Policy", cspSPA)
+			h.Set("Content-Security-Policy", csp)
 		}
 		next.ServeHTTP(w, r)
 	})

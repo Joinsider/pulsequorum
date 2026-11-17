@@ -8,6 +8,9 @@
 -- name: GetTenant :one
 SELECT * FROM tenants WHERE id = ?;
 
+-- name: GetTenantByOrg :one
+SELECT * FROM tenants WHERE zitadel_org_id = ?;
+
 -- name: ListTenants :many
 SELECT * FROM tenants ORDER BY id;
 

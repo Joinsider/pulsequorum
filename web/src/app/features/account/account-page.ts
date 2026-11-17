@@ -40,8 +40,16 @@ export class AccountPage {
   private readonly auth = inject(AuthService);
 
   protected readonly me = this.auth.me;
-  /** Passwords of external identity providers are changed there, not here. */
-  protected readonly localAuth = computed(() => this.me()?.authMode === 'local');
+  /** OIDC mode: the account name comes from the identity provider's claims, not the username. */
+  protected readonly oidc = computed(() => this.auth.mode() === 'oidc');
+  protected readonly displayName = this.auth.displayName;
+  /**
+   * Passwords of external identity providers are changed there, not here. In OIDC
+   * mode the backend answers 409 to password changes, so the form stays hidden.
+   */
+  protected readonly localAuth = computed(
+    () => this.auth.mode() === 'local' && this.me()?.authMode === 'local',
+  );
   protected readonly minLength = MIN_PASSWORD_LENGTH;
   protected readonly maxLength = MAX_PASSWORD_LENGTH;
 

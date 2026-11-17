@@ -24,8 +24,9 @@ import (
 // RegisterNode and SetNodeHealth (ADR 0017), version 3 SetNodeConnectivity (ADR 0022),
 // version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023),
 // version 5 the degraded-mode commands and the sender view of alerts (ADR 0024),
-// version 6 the system alerts, incarnation records and checkpoints (ADR 0025).
-const CommandVersion = 6
+// version 6 the system alerts, incarnation records and checkpoints (ADR 0025),
+// version 7 BindTenantOrg (ADR 0027).
+const CommandVersion = 7
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this

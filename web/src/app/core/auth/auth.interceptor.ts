@@ -46,7 +46,19 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
             void auth.sessionExpired();
             return throwError(() => err);
           }
-          return next(withToken(req.clone({ context: req.context.set(RETRIED, true) })));
+          return next(withToken(req.clone({ context: req.context.set(RETRIED, true) }))).pipe(
+            catchError((retryErr: unknown) => {
+              // OIDC: the freshly refreshed token was rejected too, so the session is over.
+              if (
+                auth.mode() === 'oidc' &&
+                retryErr instanceof HttpErrorResponse &&
+                retryErr.status === 401
+              ) {
+                void auth.sessionExpired();
+              }
+              return throwError(() => retryErr);
+            }),
+          );
         }),
       );
     }),

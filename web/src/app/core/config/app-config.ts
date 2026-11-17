@@ -3,9 +3,10 @@
 
 /** Authentication settings delivered by the backend in `config.json`. */
 export interface AuthConfig {
-  mode: 'local' | 'zitadel';
+  mode: 'local' | 'oidc';
   issuer?: string;
   clientId?: string;
+  scopes?: string[];
 }
 
 /** Runtime configuration served as `/config.json` next to the SPA. */

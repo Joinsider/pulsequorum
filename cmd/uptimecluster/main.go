@@ -171,7 +171,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	log.Info("master key loaded", "source", kek.Source, "fingerprint", kek.Fingerprint)
-	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthZitadel {
+	if kek.Source == secrets.SourceGenerated && cfg.AuthMode == config.AuthOIDC && cfg.OIDC.Tenancy == config.TenancyMulti {
 		log.Warn("master key is stored next to the data; set MASTER_KEY_FILE for multi-tenant operation (ADR 0011)")
 	}
 
@@ -264,7 +264,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		local = auth.NewLocal(auth.LocalOptions{State: state, Cluster: raftNode, Keyring: keyring, Logger: log, Now: clock})
 	}
 	bg.Go(func() {
-		if bootstrapCluster(ctx, cfg, log, raftNode, state, kek, keyring, local, stop) {
+		if bootstrapCluster(ctx, log, raftNode, state, kek, keyring, local, stop) {
 			bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			if err := host.Bootstrap(bootCtx); err != nil && ctx.Err() == nil {
 				log.Error("cluster PKI setup failed", "err", err)
@@ -564,10 +564,21 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		ClockOffsets: host.ClockOffsets,
 		Now:          clock,
 	}
-	if local != nil {
+	readiness := raftNode.Ready
+	switch {
+	case local != nil:
 		apiDeps.Local, apiDeps.Authenticator = local, local
+	case cfg.AuthMode == config.AuthOIDC:
+		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics)
+		if err != nil {
+			return fmt.Errorf("oidc: %w", err)
+		}
+		apiDeps.Authenticator = authn
+		readiness = oidcReadiness(readiness, keys)
+		bg.Go(func() { runOIDCKeys(ctx, keys, log) })
+		bg.Go(func() { bindPlatformOrg(ctx, cfg, log, raftNode, state) })
 	}
-	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(raftNode.Ready).Run(ctx)
+	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(readiness).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return cause
@@ -611,14 +622,14 @@ func disabledIfZero(after time.Duration) time.Duration {
 // leader exists, then loads the keyring. A master key that does not match the
 // cluster stops the node (ADR 0011). It reports whether the keys are
 // available, which everything that encrypts depends on.
-func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, n *cluster.Node,
+func bootstrapCluster(ctx context.Context, log *slog.Logger, n *cluster.Node,
 	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, local *auth.Local, stop context.CancelCauseFunc) bool {
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if cfg.AuthMode == config.AuthLocal {
-		if err := cluster.EnsureDefaultTenant(bootCtx, n, state); err != nil && ctx.Err() == nil {
-			log.Error("could not create the default tenant", "err", err)
-		}
+	// Every mode needs the default tenant: local users, the generic OIDC
+	// profile and the platform organization of the zitadel profile (ADR 0027).
+	if err := cluster.EnsureDefaultTenant(bootCtx, n, state); err != nil && ctx.Err() == nil {
+		log.Error("could not create the default tenant", "err", err)
 	}
 	if err := cluster.EnsureSecretKey(bootCtx, n, state, kek); err != nil && ctx.Err() == nil {
 		log.Error("could not create the data key", "err", err)

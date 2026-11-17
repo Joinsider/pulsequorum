@@ -18,6 +18,7 @@ import (
 
 	"github.com/joinsider/uptimecluster/internal/api/gen"
 	"github.com/joinsider/uptimecluster/internal/auth"
+	"github.com/joinsider/uptimecluster/internal/store"
 )
 
 // Live stream (FA-API-04, FA-AUTH-11, FA-TEN-05). A browser fetches a
@@ -102,9 +103,16 @@ func (h *Handlers) allowedOrigin(r *http.Request) bool {
 }
 
 // revalidate checks that the user still exists, is enabled and may read.
+// With OIDC there is no local user: the roles come from the token and hold
+// until it expires, when the stream is closed; the tenant can be suspended
+// or deleted at any time, so that is checked (ADR 0027).
 func (h *Handlers) revalidate(ctx context.Context, p auth.Principal) bool {
-	if h.deps.State == nil || h.deps.Local == nil {
+	if h.deps.State == nil {
 		return true
+	}
+	if h.deps.Local == nil {
+		t, err := h.deps.State.GetTenant(ctx, p.TenantID)
+		return err == nil && !t.Suspended && t.ID != store.SystemTenantID
 	}
 	u, err := h.deps.State.GetUser(ctx, p.TenantID, p.UserID)
 	if err != nil || u.Disabled {

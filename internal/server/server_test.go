@@ -93,6 +93,44 @@ func TestFrontendConfig(t *testing.T) {
 	}
 }
 
+func TestFrontendConfigOIDC(t *testing.T) {
+	cfg := testConfig()
+	cfg.AuthMode = config.AuthOIDC
+	cfg.OIDC = config.OIDCConfig{
+		Profile:   config.ProfileGeneric,
+		Issuer:    "https://idp.example.com",
+		ClientIDs: []string{"spa-client", "other-client"},
+		Scopes:    []string{"openid", "profile", "offline_access"},
+	}
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "spa") })
+	s := New(cfg, slog.New(slog.DiscardHandler), ui)
+
+	rec := get(t, s.Handler(), "/config.json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	want := "{\"nodes\":[\"https://mon1.example.com\"],\"auth\":{\"mode\":\"oidc\",\"issuer\":\"https://idp.example.com\",\"clientId\":\"spa-client\",\"scopes\":[\"openid\",\"profile\",\"offline_access\"]}}\n"
+	if body := rec.Body.String(); body != want {
+		t.Errorf("body = %q, want %q", body, want)
+	}
+}
+
+func TestFrontendConfigLocalOmitsOIDCFields(t *testing.T) {
+	cfg := testConfig()
+	cfg.OIDC = config.OIDCConfig{
+		Issuer:    "https://idp.example.com",
+		ClientIDs: []string{"spa-client"},
+		Scopes:    []string{"openid"},
+	}
+	ui := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "spa") })
+	s := New(cfg, slog.New(slog.DiscardHandler), ui)
+
+	rec := get(t, s.Handler(), "/config.json")
+	if body := rec.Body.String(); !strings.Contains(body, `"auth":{"mode":"local"}`) {
+		t.Errorf("local mode: body = %q, want auth to contain only mode", body)
+	}
+}
+
 func TestProtectedOperationRequiresAuth(t *testing.T) {
 	// Without an authenticator every protected operation is denied.
 	rec := get(t, testServer().Handler(), "/api/v1/monitors")

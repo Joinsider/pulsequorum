@@ -31,7 +31,7 @@ func assertNoHash(t *testing.T, res response) {
 // resets and the response shape.
 func TestUserManagement(t *testing.T) {
 	e, admin := newLocalAdminEnv(t)
-	adminID := decode[gen.Me](t, e.do("GET", "/api/v1/me", "", nil, bearer(admin)...)).Id.String()
+	adminID := decode[gen.Me](t, e.do("GET", "/api/v1/me", "", nil, bearer(admin)...)).Id
 
 	tenantAdminID, tenantAdmin := e.addUser(admin, "tadmin", "tenant-admin")
 	editorID, editor := e.addUser(tenantAdmin, "editor", "tenant-editor")

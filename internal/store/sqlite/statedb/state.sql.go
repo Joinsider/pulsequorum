@@ -635,6 +635,26 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 	return i, err
 }
 
+const getTenantByOrg = `-- name: GetTenantByOrg :one
+SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants WHERE zitadel_org_id = ?
+`
+
+func (q *Queries) GetTenantByOrg(ctx context.Context, zitadelOrgID sql.NullString) (Tenant, error) {
+	row := q.db.QueryRowContext(ctx, getTenantByOrg, zitadelOrgID)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ZitadelOrgID,
+		&i.Plan,
+		&i.LimitsJson,
+		&i.Suspended,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+	)
+	return i, err
+}
+
 const getUnconfirmedAlert = `-- name: GetUnconfirmedAlert :one
 SELECT node_id, local_id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported_ms, verdict, resolved_ms FROM unconfirmed_alerts WHERE node_id = ? AND local_id = ?
 `

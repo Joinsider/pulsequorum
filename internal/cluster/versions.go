@@ -52,6 +52,8 @@ func minVersion(cmd *pb.Command) uint32 {
 		*pb.Command_RecordIncarnation,
 		*pb.Command_Checkpoint:
 		return SystemAlertCommandLevel
+	case *pb.Command_BindTenantOrg:
+		return OIDCCommandLevel
 	}
 	return 0
 }
