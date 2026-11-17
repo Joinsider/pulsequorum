@@ -263,3 +263,8 @@ export class MaintenanceService {
   }
 };
 
+export type ListMaintenanceWindowsClientResult = NonNullable<MaintenanceWindow[]>
+export type CreateMaintenanceWindowClientResult = NonNullable<MaintenanceWindow>
+export type GetMaintenanceWindowClientResult = NonNullable<MaintenanceWindow>
+export type UpdateMaintenanceWindowClientResult = NonNullable<MaintenanceWindow>
+export type DeleteMaintenanceWindowClientResult = NonNullable<void>

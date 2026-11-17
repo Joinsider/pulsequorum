@@ -12,8 +12,6 @@
  */
 
 export type ListSystemAlertsParams = {
-/**
- * Only active alerts (default) or all alerts including cleared ones
- */
-active?: boolean;
+  /** Only active alerts (default) or all alerts including cleared ones */
+  active?: boolean;
 };

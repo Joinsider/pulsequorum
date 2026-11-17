@@ -231,3 +231,7 @@ export class UsersService {
   }
 };
 
+export type ListUsersClientResult = NonNullable<User[]>
+export type CreateUserClientResult = NonNullable<User>
+export type UpdateUserClientResult = NonNullable<User>
+export type DeleteUserClientResult = NonNullable<void>

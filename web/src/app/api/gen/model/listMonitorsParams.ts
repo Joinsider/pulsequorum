@@ -15,20 +15,18 @@ import type { LimitParameter } from './limitParameter';
 import type { MonitorStatus } from './monitorStatus';
 
 export type ListMonitorsParams = {
-/**
- * Opaque cursor from `nextCursor` of the previous page
- */
-cursor?: CursorParameter;
-/**
- * @minimum 1
- * @maximum 500
- */
-limit?: LimitParameter;
-tag?: string;
-status?: MonitorStatus;
-/**
- * Case-insensitive search in name and target
- * @maxLength 200
- */
-q?: string;
+  /** Opaque cursor from `nextCursor` of the previous page */
+  cursor?: CursorParameter;
+  /**
+   * @minimum 1
+   * @maximum 500
+   */
+  limit?: LimitParameter;
+  tag?: string;
+  status?: MonitorStatus;
+  /**
+   * Case-insensitive search in name and target
+   * @maxLength 200
+   */
+  q?: string;
 };

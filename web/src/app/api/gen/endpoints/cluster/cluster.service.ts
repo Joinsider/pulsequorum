@@ -202,3 +202,6 @@ export class ClusterService {
   }
 };
 
+export type CreateJoinTokenClientResult = NonNullable<JoinToken>
+export type ListClusterNodesClientResult = NonNullable<ClusterNodeList>
+export type RemoveClusterNodeClientResult = NonNullable<NodeRemoval>

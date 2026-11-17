@@ -125,3 +125,4 @@ export class StreamService {
   }
 };
 
+export type CreateStreamTicketClientResult = NonNullable<StreamTicket>

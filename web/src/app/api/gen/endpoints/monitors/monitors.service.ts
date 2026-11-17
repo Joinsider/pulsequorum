@@ -89,31 +89,31 @@ type AngularHttpParamValue = string | number | boolean | Array<string | number |
 type AngularHttpParamValueWithNullable = AngularHttpParamValue | null;
 
 function filterParams(
-  params: Record<string, unknown>,
+  params: object,
   requiredNullableKeys?: ReadonlySet<string>,
   preserveRequiredNullables?: false,
   passthroughKeys?: undefined,
 ): Record<string, AngularHttpParamValue>;
 function filterParams(
-  params: Record<string, unknown>,
+  params: object,
   requiredNullableKeys: ReadonlySet<string> | undefined,
   preserveRequiredNullables: true,
   passthroughKeys?: undefined,
 ): Record<string, AngularHttpParamValueWithNullable>;
 function filterParams(
-  params: Record<string, unknown>,
+  params: object,
   requiredNullableKeys: ReadonlySet<string> | undefined,
   preserveRequiredNullables: boolean | undefined,
   passthroughKeys: ReadonlySet<string>,
 ): Record<string, unknown>;
 function filterParams(
-  params: Record<string, unknown>,
+  params: object,
   requiredNullableKeys: ReadonlySet<string> = new Set(),
   preserveRequiredNullables = false,
   passthroughKeys: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
   const filteredParams: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
     if (passthroughKeys.has(key)) {
       if (value !== undefined) {
         filteredParams[key] = value;
@@ -599,3 +599,15 @@ export class MonitorsService {
   }
 };
 
+export type ListMonitorTypesClientResult = NonNullable<MonitorType[]>
+export type ListMonitorsClientResult = NonNullable<MonitorPage>
+export type CreateMonitorClientResult = NonNullable<Monitor>
+export type GetMonitorClientResult = NonNullable<Monitor>
+export type UpdateMonitorClientResult = NonNullable<Monitor>
+export type DeleteMonitorClientResult = NonNullable<void>
+export type PauseMonitorClientResult = NonNullable<Monitor>
+export type ResumeMonitorClientResult = NonNullable<Monitor>
+export type CloneMonitorClientResult = NonNullable<Monitor>
+export type TestMonitorClientResult = NonNullable<CheckResult>
+export type ListHeartbeatsClientResult = NonNullable<HeartbeatPage>
+export type GetUptimeClientResult = NonNullable<UptimeStats>

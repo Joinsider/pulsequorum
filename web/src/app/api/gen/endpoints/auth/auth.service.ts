@@ -305,3 +305,9 @@ export class AuthService {
   }
 };
 
+export type SetupClientResult = NonNullable<TokenResponse>
+export type LoginClientResult = NonNullable<TokenResponse>
+export type RefreshClientResult = NonNullable<TokenResponse>
+export type LogoutClientResult = NonNullable<void>
+export type GetMeClientResult = NonNullable<Me>
+export type ChangeMyPasswordClientResult = NonNullable<void>
