@@ -1,0 +1,88 @@
+{
+  "admin": {
+    "claims": {
+      "acr": "1",
+      "aud": [
+        "uptimecluster-api",
+        "account"
+      ],
+      "azp": "uptimecluster-cli",
+      "email": "admin@example.test",
+      "email_verified": true,
+      "exp": 1794930249,
+      "family_name": "Admin",
+      "given_name": "Test",
+      "iat": 1794929349,
+      "iss": "http://localhost:8081/realms/uptime",
+      "name": "Test Admin",
+      "preferred_username": "admin@example.test",
+      "realm_access": {
+        "roles": [
+          "offline_access",
+          "platform-admin",
+          "uma_authorization",
+          "default-roles-uptime"
+        ]
+      },
+      "resource_access": {
+        "account": {
+          "roles": [
+            "manage-account",
+            "manage-account-links",
+            "view-profile"
+          ]
+        }
+      },
+      "scope": "openid profile email",
+      "sub": "b2094dc2-dc5a-4214-8907-13007631e345",
+      "typ": "Bearer"
+    },
+    "header": {
+      "alg": "RS256",
+      "typ": "JWT"
+    }
+  },
+  "nobody": {
+    "claims": {
+      "acr": "1",
+      "aud": [
+        "uptimecluster-api",
+        "account"
+      ],
+      "azp": "uptimecluster-cli",
+      "email": "nobody@example.test",
+      "email_verified": true,
+      "exp": 1794930249,
+      "family_name": "Nobody",
+      "given_name": "Test",
+      "iat": 1794929349,
+      "iss": "http://localhost:8081/realms/uptime",
+      "name": "Test Nobody",
+      "preferred_username": "nobody@example.test",
+      "realm_access": {
+        "roles": [
+          "offline_access",
+          "staff",
+          "uma_authorization",
+          "default-roles-uptime"
+        ]
+      },
+      "resource_access": {
+        "account": {
+          "roles": [
+            "manage-account",
+            "manage-account-links",
+            "view-profile"
+          ]
+        }
+      },
+      "scope": "openid profile email",
+      "sub": "b66ff295-6a99-4643-a113-82b3c29d1028",
+      "typ": "Bearer"
+    },
+    "header": {
+      "alg": "RS256",
+      "typ": "JWT"
+    }
+  }
+}

@@ -626,10 +626,10 @@ func bootstrapCluster(ctx context.Context, cfg config.Config, log *slog.Logger, 
 	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, local *auth.Local, stop context.CancelCauseFunc) bool {
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if cfg.AuthMode == config.AuthLocal {
-		if err := cluster.EnsureDefaultTenant(bootCtx, n, state); err != nil && ctx.Err() == nil {
-			log.Error("could not create the default tenant", "err", err)
-		}
+	// Every mode needs the default tenant: local users, the generic OIDC
+	// profile and the platform organization of the zitadel profile (ADR 0027).
+	if err := cluster.EnsureDefaultTenant(bootCtx, n, state); err != nil && ctx.Err() == nil {
+		log.Error("could not create the default tenant", "err", err)
 	}
 	if err := cluster.EnsureSecretKey(bootCtx, n, state, kek); err != nil && ctx.Err() == nil {
 		log.Error("could not create the data key", "err", err)
