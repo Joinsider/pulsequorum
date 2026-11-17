@@ -49,6 +49,11 @@ type Minute struct {
 	ErrCount int64
 }
 
+type PurgedTenant struct {
+	TenantID string
+	PurgedMs int64
+}
+
 type Rollup struct {
 	SeriesID     int64
 	BucketMs     int64

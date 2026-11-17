@@ -55,6 +55,11 @@ func RunState(t *testing.T, newState func(t *testing.T) store.State) {
 		{"EnabledUsersWithRole", testEnabledUsersWithRole},
 		{"SigningKeys", testSigningKeys},
 		{"Sessions", testSessions},
+		{"TenantSessionRevocation", testTenantSessionRevocation},
+		{"Plans", testPlans},
+		{"TenantSource", testTenantSource},
+		{"TenantUsage", testTenantUsage},
+		{"DeleteTenant", testDeleteTenant},
 		{"StatusHistoryBatch", testStatusHistoryBatch},
 		{"ClusterCAs", testClusterCAs},
 		{"JoinTokens", testJoinTokens},
@@ -96,6 +101,7 @@ func RunMetrics(t *testing.T, newMetrics func(t *testing.T) store.Metrics) {
 		{"StreamPositionPerStream", testStreamPositionPerStream},
 		{"HeartbeatsAfter", testHeartbeatsAfter},
 		{"StreamPositionSurvivesDelete", testStreamPositionSurvivesDelete},
+		{"PurgeTenant", testPurgeTenant},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, newMetrics(t)) })
@@ -1762,6 +1768,357 @@ func testSessions(t *testing.T, s store.State) {
 	}
 }
 
+// testTenantSessionRevocation checks that revoking a tenant's sessions touches
+// only that tenant: sessions of all its users are revoked, earlier revocations
+// are kept, and the sessions of another tenant stay valid.
+func testTenantSessionRevocation(t *testing.T, s store.State) {
+	seedTenants(t, s, tenantA, tenantB)
+	for _, u := range []store.User{newUser(tenantA, "u1", "alice"), newUser(tenantA, "u2", "bob"), newUser(tenantB, "u3", "carol")} {
+		if err := putUser(t, s, u, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessA1 := newSession("ta1", "fa1", "u1", 5000)
+	sessA2 := newSession("ta2", "fa2", "u2", 5000)
+	sessB := store.Session{TokenHash: "tb1", FamilyID: "fb1", TenantID: tenantB, UserID: "u3", CreatedMs: 1000, ExpiresMs: 5000}
+	for _, sess := range []store.Session{sessA1, sessA2, sessB} {
+		if err := putSession(t, s, sess); err != nil {
+			t.Fatalf("insert %s: %v", sess.TokenHash, err)
+		}
+	}
+	// An earlier revocation of one of A's sessions must be kept.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.RevokeSessionFamily(ctx, "fa2", 1500)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.RevokeTenantSessions(ctx, tenantA, 2000)
+	}); err != nil {
+		t.Fatalf("revoke tenant sessions: %v", err)
+	}
+	if got := sessionRevoked(t, s, "ta1"); got != 2000 {
+		t.Errorf("ta1 revoked = %d, want 2000", got)
+	}
+	if got := sessionRevoked(t, s, "ta2"); got != 1500 {
+		t.Errorf("ta2 revoked = %d, want earlier 1500 kept", got)
+	}
+	if got := sessionRevoked(t, s, "tb1"); got != 0 {
+		t.Errorf("tenant B session revoked = %d, want 0", got)
+	}
+}
+
+func putPlan(t *testing.T, s store.State, p store.Plan) error {
+	t.Helper()
+	return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutPlan(ctx, p) })
+}
+
+// testPlans covers the seeded plans and plan CRUD (ADR 0029).
+func testPlans(t *testing.T, s store.State) {
+	ctx := context.Background()
+	for _, id := range []string{"default", "system"} {
+		p, err := s.GetPlan(ctx, id)
+		if err != nil {
+			t.Fatalf("seeded plan %s: %v", id, err)
+		}
+		if string(p.Limits) != "{}" {
+			t.Errorf("seeded plan %s limits = %s, want {}", id, p.Limits)
+		}
+	}
+	if plans, err := s.ListPlans(ctx); err != nil || len(plans) != 2 || plans[0].ID != "default" || plans[1].ID != "system" {
+		t.Fatalf("seeded plans = %+v, %v", plans, err)
+	}
+
+	if err := putPlan(t, s, store.Plan{ID: "starter", Name: "Starter", Limits: json.RawMessage(`{"maxMonitors":10}`), CreatedMs: 100, UpdatedMs: 100}); err != nil {
+		t.Fatalf("put plan: %v", err)
+	}
+	got, err := s.GetPlan(ctx, "starter")
+	if err != nil || got.Name != "Starter" || string(got.Limits) != `{"maxMonitors":10}` || got.CreatedMs != 100 {
+		t.Fatalf("GetPlan = %+v, %v", got, err)
+	}
+
+	// Replacing keeps created_ms; empty limits are stored as {}.
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		if err := tx.PutPlan(ctx, store.Plan{ID: "starter", Name: "Starter 2", CreatedMs: 999, UpdatedMs: 200}); err != nil {
+			return err
+		}
+		p, err := tx.GetPlan(ctx, "starter")
+		if err != nil || p.Name != "Starter 2" {
+			return fmt.Errorf("GetPlan in transaction = %+v, %v", p, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetPlan(ctx, "starter")
+	if got.Name != "Starter 2" || string(got.Limits) != "{}" || got.CreatedMs != 100 || got.UpdatedMs != 200 {
+		t.Errorf("replaced plan = %+v, want name Starter 2, limits {}, created 100, updated 200", got)
+	}
+
+	plans, _ := s.ListPlans(ctx)
+	if len(plans) != 3 || plans[1].ID != "starter" {
+		t.Errorf("ListPlans = %+v, want default, starter, system", plans)
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeletePlan(ctx, "starter") }); err != nil {
+		t.Fatalf("delete plan: %v", err)
+	}
+	if _, err := s.GetPlan(ctx, "starter"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetPlan after delete error = %v, want ErrNotFound", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeletePlan(ctx, "starter") }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete unknown plan error = %v, want ErrNotFound", err)
+	}
+}
+
+// testTenantSource covers the source column: default, round trip, and that
+// an upsert keeps created_ms and source.
+func testTenantSource(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA)
+	if got, _ := s.GetTenant(ctx, tenantA); got.Source != "bootstrap" {
+		t.Errorf("default source = %q, want bootstrap", got.Source)
+	}
+
+	put := func(tn store.Tenant) error {
+		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutTenant(ctx, tn) })
+	}
+	if err := put(store.Tenant{ID: "t-admin", Name: "admin", Plan: "default", Source: "admin", CreatedMs: 5, UpdatedMs: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTenant(ctx, "t-admin"); got.Source != "admin" {
+		t.Errorf("source = %q, want admin", got.Source)
+	}
+	if err := put(store.Tenant{ID: "t-admin", Name: "renamed", Plan: "default", Source: "auto", CreatedMs: 999, UpdatedMs: 6}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetTenant(ctx, "t-admin")
+	if got.Name != "renamed" || got.CreatedMs != 5 || got.Source != "admin" || got.UpdatedMs != 6 {
+		t.Errorf("upserted tenant = %+v, want created 5 and source admin kept", got)
+	}
+	if err := put(store.Tenant{ID: "t-bad", Name: "bad", Plan: "default", Source: "robot", CreatedMs: 1, UpdatedMs: 1}); err == nil {
+		t.Error("unknown source accepted")
+	}
+	if _, err := s.GetTenant(ctx, "t-bad"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("rejected tenant error = %v, want ErrNotFound", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		admin, err := tx.CountTenants(ctx, "admin")
+		if err != nil || admin != 1 {
+			return fmt.Errorf("CountTenants(admin) = %d, %v; want 1", admin, err)
+		}
+		boot, err := tx.CountTenants(ctx, "bootstrap")
+		if err != nil || boot != 1 {
+			return fmt.Errorf("CountTenants(bootstrap) = %d, %v; want 1", boot, err)
+		}
+		n, err := tx.CountTenantsWithPlan(ctx, "default")
+		if err != nil || n != 2 {
+			return fmt.Errorf("CountTenantsWithPlan(default) = %d, %v; want 2", n, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// testTenantUsage counts monitors and channels per tenant and the shortest interval.
+func testTenantUsage(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	if u, err := s.TenantUsage(ctx, tenantA); err != nil || u != (store.TenantUsage{}) {
+		t.Fatalf("empty usage = %+v, %v", u, err)
+	}
+	m1 := newMonitor(tenantA, "m1")
+	m2 := newMonitor(tenantA, "m2")
+	m2.IntervalSeconds = 30
+	m3 := newMonitor(tenantB, "m3")
+	m3.IntervalSeconds = 10
+	for _, m := range []store.Monitor{m1, m2, m3} {
+		if err := put(t, s, m, 0); err != nil {
+			t.Fatalf("put monitor %s: %v", m.ID, err)
+		}
+	}
+	for _, c := range []store.NotificationChannel{newChannel(tenantA, "c1"), newChannel(tenantA, "c2"), newChannel(tenantB, "c3")} {
+		if err := putChannel(t, s, c, 0); err != nil {
+			t.Fatalf("put channel %s: %v", c.ID, err)
+		}
+	}
+	if u, _ := s.TenantUsage(ctx, tenantA); u != (store.TenantUsage{Monitors: 2, Channels: 2, MinIntervalSeconds: 30}) {
+		t.Errorf("usage A = %+v, want 2 monitors, 2 channels, min 30", u)
+	}
+	if u, _ := s.TenantUsage(ctx, tenantB); u != (store.TenantUsage{Monitors: 1, Channels: 1, MinIntervalSeconds: 10}) {
+		t.Errorf("usage B = %+v, want 1 monitor, 1 channel, min 10", u)
+	}
+	if err := del(t, s, tenantA, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := del(t, s, tenantA, "m2"); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.TenantUsage(ctx, tenantA); u != (store.TenantUsage{Channels: 2}) {
+		t.Errorf("usage without monitors = %+v, want min interval 0", u)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		u, err := tx.TenantUsage(ctx, tenantB)
+		if err != nil || u != (store.TenantUsage{Monitors: 1, Channels: 1, MinIntervalSeconds: 10}) {
+			return fmt.Errorf("tx usage B = %+v, %v", u, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// testDeleteTenant deletes tenant A with data in every state table and checks
+// that B is untouched. The sqlite package checks that no row is left anywhere.
+func testDeleteTenant(t *testing.T, s store.State) {
+	ctx := context.Background()
+	seedTenants(t, s, tenantA, tenantB)
+	for _, tid := range []string{tenantA, tenantB} {
+		suffix := tid[len(tid)-1:] // "a" or "b"
+		if err := putChannel(t, s, newChannel(tid, "c"+suffix), 0); err != nil {
+			t.Fatal(err)
+		}
+		m := newMonitor(tid, "m"+suffix)
+		m.Tags = []string{"web"}
+		m.ChannelIDs = []string{"c" + suffix}
+		if err := put(t, s, m, 0); err != nil {
+			t.Fatal(err)
+		}
+		setState(t, s, tid, "m"+suffix, store.StatusDown, 2000)
+		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+			return tx.OpenIncident(ctx, store.Incident{TenantID: tid, ID: "inc-" + suffix, MonitorID: "m" + suffix, StartedMs: 2000,
+				Cause: "refused", AffectedNodes: []string{"n1"}, Confirmed: true})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+			return tx.EnqueueAlert(ctx, store.AlertDelivery{TenantID: tid, AlertKey: "key-" + suffix, ChannelID: "c" + suffix,
+				MonitorID: "m" + suffix, Payload: json.RawMessage(`{"event":"down"}`), NextAttemptMs: 3000,
+				State: store.AlertPending, CreatedMs: 3000, UpdatedMs: 3000})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := putWindow(t, s, newWindow(tid, "w"+suffix), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := putUser(t, s, newUser(tid, "u"+suffix, "user-"+suffix), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := putSession(t, s, store.Session{TokenHash: "s" + suffix, FamilyID: "f" + suffix, TenantID: tid,
+			UserID: "u" + suffix, CreatedMs: 1000, ExpiresMs: 9000}); err != nil {
+			t.Fatal(err)
+		}
+		if err := putJoinToken(t, s, newJoinToken("j"+suffix, "probe", tid, 1000, 9000)); err != nil {
+			t.Fatal(err)
+		}
+		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+			return tx.InsertUnconfirmedAlerts(ctx, []store.UnconfirmedAlert{{NodeID: "n" + suffix, LocalID: 1, TenantID: tid,
+				MonitorID: "m" + suffix, ChannelID: "c" + suffix, Status: "DOWN", SinceMs: 2000, SentMs: 2100,
+				Outcome: "sent", Reachable: 1, Total: 3, Reporters: []string{"n" + suffix}, ReportedMs: 2200}})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		if err := tx.DeleteTenant(ctx, "ghost", 1); !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("delete unknown tenant error = %v", err)
+		}
+		return tx.DeleteTenant(ctx, tenantA, 9999)
+	}); err != nil {
+		t.Fatalf("delete tenant A: %v", err)
+	}
+
+	if _, err := s.GetTenant(ctx, tenantA); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("tenant A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetMonitor(ctx, tenantA, "ma"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("monitor of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetChannel(ctx, tenantA, "ca"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("channel of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetUser(ctx, tenantA, "ua"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("user of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetSession(ctx, "sa"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetAlert(ctx, "key-a", "ca"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("alert of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetIncident(ctx, tenantA, "inc-a"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("incident of A error = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetJoinToken(ctx, "ja"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("join token of A error = %v, want ErrNotFound", err)
+	}
+	if u, _ := s.TenantUsage(ctx, tenantA); u != (store.TenantUsage{}) {
+		t.Errorf("usage of deleted A = %+v, want zero", u)
+	}
+
+	// B keeps everything.
+	if _, err := s.GetMonitor(ctx, tenantB, "mb"); err != nil {
+		t.Errorf("monitor of B: %v", err)
+	}
+	if _, err := s.GetChannel(ctx, tenantB, "cb"); err != nil {
+		t.Errorf("channel of B: %v", err)
+	}
+	if _, err := s.GetUser(ctx, tenantB, "ub"); err != nil {
+		t.Errorf("user of B: %v", err)
+	}
+	if got, err := s.GetSession(ctx, "sb"); err != nil || got.RevokedMs != 0 {
+		t.Errorf("session of B = %+v, %v", got, err)
+	}
+	if _, err := s.GetAlert(ctx, "key-b", "cb"); err != nil {
+		t.Errorf("alert of B: %v", err)
+	}
+	if _, err := s.GetIncident(ctx, tenantB, "inc-b"); err != nil {
+		t.Errorf("incident of B: %v", err)
+	}
+	if _, err := s.GetJoinToken(ctx, "jb"); err != nil {
+		t.Errorf("join token of B: %v", err)
+	}
+	if u, _ := s.TenantUsage(ctx, tenantB); u != (store.TenantUsage{Monitors: 1, Channels: 1, MinIntervalSeconds: 60}) {
+		t.Errorf("usage of B = %+v", u)
+	}
+	if tn, err := s.GetTenant(ctx, tenantB); err != nil || tn.Name != tenantB {
+		t.Errorf("tenant B = %+v, %v", tn, err)
+	}
+
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		deleted, err := tx.IsTenantDeleted(ctx, tenantA)
+		if err != nil || !deleted {
+			return fmt.Errorf("IsTenantDeleted(A) = %v, %v; want true", deleted, err)
+		}
+		deleted, err = tx.IsTenantDeleted(ctx, tenantB)
+		if err != nil || deleted {
+			return fmt.Errorf("IsTenantDeleted(B) = %v, %v; want false", deleted, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tombs, err := s.ListDeletedTenants(ctx)
+	if err != nil || len(tombs) != 1 || tombs[0] != (store.DeletedTenant{ID: tenantA, DeletedMs: 9999}) {
+		t.Errorf("ListDeletedTenants = %+v, %v", tombs, err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeleteTenant(ctx, tenantA, 10000) }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("delete again error = %v, want ErrNotFound", err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		n, err := tx.CountTenants(ctx, "bootstrap")
+		if err != nil || n != 1 {
+			return fmt.Errorf("CountTenants = %d, %v; want 1", n, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // --- Metrics ----------------------------------------------------------------
 
 func heartbeats(tenantID, monitorID, node string, fromSeq, count int, startMs int64) []store.Heartbeat {
@@ -3008,5 +3365,91 @@ func testRevokedCerts(t *testing.T, s store.State) {
 	list, err = s.ListRevokedCerts(ctx)
 	if err != nil || len(list) != 1 || list[0].Serial != "b2" {
 		t.Errorf("after prune = %+v, %v", list, err)
+	}
+}
+
+// testPurgeTenant purges tenant A in small batches until nothing is left, and
+// checks that B keeps its data and that the purge markers are kept (ADR 0029).
+func testPurgeTenant(t *testing.T, m store.Metrics) {
+	ctx := context.Background()
+	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 25, 0))
+	insert(t, m, heartbeats(tenantB, "m1", "n2", 1, 10, 0)) // own node: heartbeats are unique by node, incarnation and seq
+	if err := m.PutRollups(ctx, []store.Rollup{
+		hourRollup(tenantA, "m1", "n1", 0, 10), hourRollup(tenantA, "m1", "n1", 3_600_000, 20), hourRollup(tenantA, "m1", "", 0, 30),
+		hourRollup(tenantB, "m1", "n1", 0, 40),
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CompactHeartbeats(ctx, []store.LatencyMinute{
+		{TenantID: tenantA, MonitorID: "m1", NodeID: "n1", MinuteMs: 0, Min: 1, Max: 2, Avg: 1.5, P95: 2, OKCount: 2},
+		{TenantID: tenantA, MonitorID: "m1", NodeID: "n1", MinuteMs: 60_000, Min: 1, Max: 2, Avg: 1.5, P95: 2, OKCount: 2},
+		{TenantID: tenantB, MonitorID: "m1", NodeID: "n1", MinuteMs: 0, Min: 1, Max: 2, Avg: 1.5, P95: 2, OKCount: 2},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for i, at := range []int64{1, 2} {
+		if _, err := m.InsertDegradedAlert(ctx, store.DegradedAlert{TenantID: tenantA, MonitorID: "m1", ChannelID: "c", Status: "DOWN",
+			SinceMs: at, SentMs: at, Outcome: "sent", Reachable: 1, Total: 3}); err != nil {
+			t.Fatalf("degraded alert %d: %v", i, err)
+		}
+	}
+	if _, err := m.InsertDegradedAlert(ctx, store.DegradedAlert{TenantID: tenantB, MonitorID: "m1", ChannelID: "c", Status: "DOWN",
+		SinceMs: 1, SentMs: 1, Outcome: "sent", Reachable: 1, Total: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.PurgeTenant(ctx, tenantA, 0); err == nil {
+		t.Error("batch size 0 accepted")
+	}
+	batches := 0
+	for {
+		n, err := m.PurgeTenant(ctx, tenantA, 4)
+		if err != nil {
+			t.Fatalf("purge: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+		if batches++; batches > 1000 {
+			t.Fatal("purge does not finish")
+		}
+	}
+	if batches < 2 {
+		t.Errorf("purge finished in %d batches, want several", batches)
+	}
+
+	if page, _ := m.ListHeartbeats(ctx, tenantA, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 0 {
+		t.Errorf("heartbeats of A left = %d", len(page.Items))
+	}
+	if got, _ := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 0 {
+		t.Errorf("rollups of A left = %+v", got)
+	}
+	if page, _ := m.ListHeartbeats(ctx, tenantB, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 10 {
+		t.Errorf("heartbeats of B = %d, want 10", len(page.Items))
+	}
+	if got, _ := m.ListRollups(ctx, tenantB, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 1 {
+		t.Errorf("rollups of B = %+v, want 1", got)
+	}
+	if alerts, _ := m.ListUnreportedDegradedAlerts(ctx, 10); len(alerts) != 1 || alerts[0].TenantID != tenantB {
+		t.Errorf("degraded alerts = %+v, want only B's", alerts)
+	}
+
+	if purged, err := m.PurgedTenants(ctx); err != nil || len(purged) != 0 {
+		t.Fatalf("purged before marking = %v, %v", purged, err)
+	}
+	if err := m.MarkTenantPurged(ctx, tenantB, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MarkTenantPurged(ctx, tenantA, 6); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.MarkTenantPurged(ctx, tenantA, 7); err != nil {
+		t.Fatalf("repeated mark: %v", err)
+	}
+	if purged, err := m.PurgedTenants(ctx); err != nil || len(purged) != 2 || purged[0] != tenantA || purged[1] != tenantB {
+		t.Errorf("PurgedTenants = %v, %v; want [tenant-a tenant-b]", purged, err)
+	}
+	if err := m.MarkTenantPurged(ctx, "", 1); err == nil {
+		t.Error("empty tenant ID accepted")
 	}
 }

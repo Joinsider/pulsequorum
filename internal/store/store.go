@@ -36,8 +36,35 @@ type Tenant struct {
 	Plan         string
 	Limits       json.RawMessage
 	Suspended    bool
-	CreatedMs    int64
-	UpdatedMs    int64
+	// Source is how the tenant was created: admin, auto or bootstrap (ADR 0029).
+	Source    string
+	CreatedMs int64
+	UpdatedMs int64
+}
+
+// Plan is a named set of tenant limits (ADR 0029). Limits is the canonical
+// JSON of tenant.Limits.
+type Plan struct {
+	ID        string
+	Name      string
+	Limits    json.RawMessage
+	CreatedMs int64
+	UpdatedMs int64
+}
+
+// TenantUsage counts what a tenant uses of its limits (ADR 0029).
+type TenantUsage struct {
+	Monitors int
+	Channels int
+	// MinIntervalSeconds is the shortest monitor interval, 0 without monitors.
+	MinIntervalSeconds int
+}
+
+// DeletedTenant is the tombstone of a deleted tenant (ADR 0029). Its ID is
+// never reused.
+type DeletedTenant struct {
+	ID        string
+	DeletedMs int64
 }
 
 // Assignment selects the nodes that run a monitor (E1).
@@ -404,6 +431,14 @@ type State interface {
 	// or ErrNotFound. An empty orgID is always ErrNotFound (ADR 0027).
 	GetTenantByOrg(ctx context.Context, orgID string) (Tenant, error)
 	ListTenants(ctx context.Context) ([]Tenant, error)
+	// TenantUsage counts the tenant's monitors and channels (ADR 0029).
+	TenantUsage(ctx context.Context, tenantID string) (TenantUsage, error)
+	// GetPlan returns a plan or ErrNotFound.
+	GetPlan(ctx context.Context, id string) (Plan, error)
+	// ListPlans returns all plans ordered by ID.
+	ListPlans(ctx context.Context) ([]Plan, error)
+	// ListDeletedTenants returns the tombstones ordered by ID (ADR 0029).
+	ListDeletedTenants(ctx context.Context) ([]DeletedTenant, error)
 	GetMonitor(ctx context.Context, tenantID, id string) (Monitor, error)
 	ListMonitors(ctx context.Context, tenantID string, q MonitorQuery) (MonitorPage, error)
 	GetIncident(ctx context.Context, tenantID, id string) (Incident, error)
@@ -487,6 +522,24 @@ type StateTx interface {
 	GetTenant(ctx context.Context, id string) (Tenant, error)
 	// GetTenantByOrg returns the tenant bound to the organization, or ErrNotFound.
 	GetTenantByOrg(ctx context.Context, orgID string) (Tenant, error)
+	// CountTenants returns the number of tenants created with the source.
+	CountTenants(ctx context.Context, source string) (int, error)
+	// CountTenantsWithPlan returns the number of tenants on the plan.
+	CountTenantsWithPlan(ctx context.Context, planID string) (int, error)
+	// TenantUsage counts the tenant's monitors and channels (ADR 0029).
+	TenantUsage(ctx context.Context, tenantID string) (TenantUsage, error)
+	// IsTenantDeleted reports whether a tombstone exists for the ID.
+	IsTenantDeleted(ctx context.Context, id string) (bool, error)
+	// DeleteTenant removes the tenant and every row of it in every table and
+	// records a tombstone with deletedMs, in the caller's transaction (ADR 0029).
+	// An unknown tenant is ErrNotFound.
+	DeleteTenant(ctx context.Context, id string, deletedMs int64) error
+	// GetPlan returns a plan or ErrNotFound.
+	GetPlan(ctx context.Context, id string) (Plan, error)
+	// PutPlan creates or replaces a plan; created_ms of an existing plan is kept.
+	PutPlan(ctx context.Context, p Plan) error
+	// DeletePlan deletes a plan or returns ErrNotFound.
+	DeletePlan(ctx context.Context, id string) error
 	// PutMonitor creates the monitor if expectedRevision is 0, otherwise it
 	// replaces the monitor at that revision. On success m.Revision is stored as
 	// expectedRevision+1. Channels of another tenant are ErrNotFound.
@@ -625,6 +678,9 @@ type StateTx interface {
 	RevokeSessionFamily(ctx context.Context, familyID string, ms int64) error
 	// RevokeUserSessions revokes all tokens of the user that are not revoked yet.
 	RevokeUserSessions(ctx context.Context, tenantID, userID string, ms int64) error
+	// RevokeTenantSessions revokes the refresh sessions of all users of the
+	// tenant at ms (ADR 0029, suspending a tenant).
+	RevokeTenantSessions(ctx context.Context, tenantID string, ms int64) error
 	// PruneSessions deletes the tokens that expired before beforeMs.
 	PruneSessions(ctx context.Context, beforeMs int64) error
 
@@ -894,6 +950,15 @@ type StreamPosition struct {
 
 // Metrics stores data class B.
 type Metrics interface {
+	// PurgeTenant deletes up to batchSize rows of the tenant from each
+	// metrics table and returns how many rows it deleted in total; 0 means
+	// nothing of the tenant is left (ADR 0029).
+	PurgeTenant(ctx context.Context, tenantID string, batchSize int) (int64, error)
+	// PurgedTenants returns the IDs of the tenants whose purge finished on
+	// this node, ordered by ID.
+	PurgedTenants(ctx context.Context) ([]string, error)
+	// MarkTenantPurged records that the purge of the tenant finished on this node.
+	MarkTenantPurged(ctx context.Context, tenantID string, purgedMs int64) error
 	// Incarnation identifies this metrics database; it changes whenever the
 	// database is recreated (ADR 0012 B4).
 	Incarnation() string

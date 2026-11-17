@@ -194,3 +194,53 @@ UPDATE degraded_alerts SET reported = 1 WHERE id = ?;
 
 -- name: PruneDegradedAlerts :execrows
 DELETE FROM degraded_alerts WHERE sent_ms < ?;
+
+-- name: PurgeHeartbeatsOfTenant :execrows
+-- One purge batch of a tenant (ADR 0029); the tenant has no index here, so each
+-- batch scans heartbeats until it has found row_limit rows of the tenant.
+DELETE FROM heartbeats
+WHERE rowid IN (SELECT h.rowid FROM heartbeats AS h WHERE h.tenant_id = sqlc.arg(tenant_id) LIMIT sqlc.arg(row_limit));
+
+-- name: PurgeDegradedAlertsOfTenant :execrows
+DELETE FROM degraded_alerts
+WHERE rowid IN (SELECT d.rowid FROM degraded_alerts AS d WHERE d.tenant_id = sqlc.arg(tenant_id) LIMIT sqlc.arg(row_limit));
+
+-- name: ListSeriesIDsOfTenantAfter :many
+-- Pages through the series of one tenant in ID order.
+SELECT id FROM series
+WHERE tenant_id = sqlc.arg(tenant_id) AND id > sqlc.arg(after_id)
+ORDER BY id
+LIMIT sqlc.arg(row_limit);
+
+-- name: PurgeRollupsOfSeries :execrows
+-- One series: the primary key prefix series_id drives the subquery and the delete.
+DELETE FROM rollups
+WHERE (rollups.series_id, rollups.bucket_ms, rollups.start_ms) IN (
+    SELECT r.series_id, r.bucket_ms, r.start_ms FROM rollups AS r
+    WHERE r.series_id = sqlc.arg(series_id)
+    LIMIT sqlc.arg(row_limit));
+
+-- name: PurgeMinutesOfSeries :execrows
+-- One series: the primary key prefix series_id drives the subquery and the delete.
+DELETE FROM minutes
+WHERE minutes.series_id = sqlc.arg(series_id)
+  AND minutes.minute_ms IN (SELECT m.minute_ms FROM minutes AS m
+                    WHERE m.series_id = sqlc.arg(series_id)
+                    LIMIT sqlc.arg(row_limit));
+
+-- name: PurgeSeriesOfTenant :execrows
+-- Removes series only once no rollup or latency minute references them.
+DELETE FROM series
+WHERE series.id IN (
+    SELECT s.id FROM series AS s
+    WHERE s.tenant_id = sqlc.arg(tenant_id)
+      AND NOT EXISTS (SELECT 1 FROM rollups AS r WHERE r.series_id = s.id)
+      AND NOT EXISTS (SELECT 1 FROM minutes AS m WHERE m.series_id = s.id)
+    LIMIT sqlc.arg(row_limit));
+
+-- name: UpsertPurgedTenant :exec
+INSERT INTO purged_tenants (tenant_id, purged_ms) VALUES (?, ?)
+ON CONFLICT (tenant_id) DO UPDATE SET purged_ms = excluded.purged_ms;
+
+-- name: ListPurgedTenants :many
+SELECT tenant_id FROM purged_tenants ORDER BY tenant_id;

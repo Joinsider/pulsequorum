@@ -15,8 +15,9 @@ SELECT * FROM tenants WHERE zitadel_org_id = ?;
 SELECT * FROM tenants ORDER BY id;
 
 -- name: UpsertTenant :exec
-INSERT INTO tenants (id, name, zitadel_org_id, plan, limits_json, suspended, created_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+-- created_ms and source are kept on conflict: they are set once by the creation (ADR 0029).
+INSERT INTO tenants (id, name, zitadel_org_id, plan, limits_json, suspended, source, created_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name           = excluded.name,
     zitadel_org_id = excluded.zitadel_org_id,
@@ -24,6 +25,95 @@ ON CONFLICT (id) DO UPDATE SET
     limits_json    = excluded.limits_json,
     suspended      = excluded.suspended,
     updated_ms     = excluded.updated_ms;
+
+-- name: CountTenantsBySource :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM tenants WHERE source = ?;
+
+-- name: CountTenantsWithPlan :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM tenants WHERE plan = ?;
+
+-- name: CountTenantMonitors :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM monitors WHERE tenant_id = ?;
+
+-- name: CountTenantChannels :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM notification_channels WHERE tenant_id = ?;
+
+-- name: MinTenantMonitorInterval :one
+-- The shortest monitor interval of the tenant, 0 without monitors.
+SELECT CAST(COALESCE(MIN(interval_s), 0) AS INTEGER) FROM monitors WHERE tenant_id = ?;
+
+-- name: GetPlan :one
+SELECT * FROM plans WHERE id = ?;
+
+-- name: ListPlans :many
+SELECT * FROM plans ORDER BY id;
+
+-- name: UpsertPlan :exec
+-- created_ms is kept on update (ADR 0029).
+INSERT INTO plans (id, name, limits_json, created_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    name        = excluded.name,
+    limits_json = excluded.limits_json,
+    updated_ms  = excluded.updated_ms;
+
+-- name: DeletePlan :execrows
+DELETE FROM plans WHERE id = ?;
+
+-- name: IsTenantDeleted :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM deleted_tenants WHERE id = ?;
+
+-- name: InsertDeletedTenant :exec
+INSERT INTO deleted_tenants (id, deleted_ms) VALUES (?, ?);
+
+-- name: ListDeletedTenants :many
+SELECT * FROM deleted_tenants ORDER BY id;
+
+-- The deletes below remove every row of one tenant from one table of state.db
+-- (ADR 0029). DeleteTenant runs them in this order; the tenants row goes last.
+
+-- name: DeleteTenantAlerts :exec
+DELETE FROM alert_outbox WHERE tenant_id = ?;
+
+-- name: DeleteTenantMonitorChannels :exec
+DELETE FROM monitor_channels WHERE tenant_id = ?;
+
+-- name: DeleteTenantSessions :exec
+DELETE FROM refresh_sessions WHERE tenant_id = ?;
+
+-- name: DeleteTenantUsers :exec
+DELETE FROM users WHERE tenant_id = ?;
+
+-- name: DeleteTenantMaintenanceWindows :exec
+DELETE FROM maintenance_windows WHERE tenant_id = ?;
+
+-- name: DeleteTenantChannels :exec
+DELETE FROM notification_channels WHERE tenant_id = ?;
+
+-- name: DeleteTenantIncidents :exec
+DELETE FROM incidents WHERE tenant_id = ?;
+
+-- name: DeleteTenantStatusHistory :exec
+DELETE FROM monitor_status_history WHERE tenant_id = ?;
+
+-- name: DeleteTenantMonitorStates :exec
+DELETE FROM monitor_states WHERE tenant_id = ?;
+
+-- name: DeleteTenantMonitorTags :exec
+DELETE FROM monitor_tags WHERE tenant_id = ?;
+
+-- name: DeleteTenantMonitors :exec
+DELETE FROM monitors WHERE tenant_id = ?;
+
+-- name: DeleteTenantUnconfirmedAlerts :exec
+DELETE FROM unconfirmed_alerts WHERE tenant_id = ?;
+
+-- name: DeleteTenantJoinTokens :exec
+-- Only probe tokens of a private tenant carry the tenant ID (no foreign key).
+DELETE FROM join_tokens WHERE tenant_id = ?;
+
+-- name: DeleteTenantRow :execrows
+DELETE FROM tenants WHERE id = ?;
 
 -- name: GetMonitor :one
 -- Monitors and their state are written in the same FSM transaction; the
@@ -384,6 +474,9 @@ UPDATE refresh_sessions SET revoked_ms = ? WHERE family_id = ? AND revoked_ms = 
 
 -- name: RevokeUserSessions :exec
 UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? AND revoked_ms = 0;
+
+-- name: RevokeTenantSessions :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND revoked_ms = 0;
 
 -- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?;
