@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,10 +28,49 @@ func invalidChannel(detail string) *Problem {
 	return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: detail}
 }
 
-// channelDocument validates the input and encrypts its secrets for the
-// channel id. current is nil on create; on update an omitted URL or a value
-// containing the mask keeps the stored secret.
-func (h *Handlers) channelDocument(ctx context.Context, id string, in *gen.NotificationChannelInput, current *store.NotificationChannel) (cluster.ChannelDocument, error) {
+// channelEvents returns the events a channel of tenantID subscribes to (ADR
+// 0023, 0025). Tenant channels never subscribe to system: the event is reserved
+// for the system tenant and answers 400. System channels always subscribe to
+// it; without requested events they get only that one.
+func (h *Handlers) channelEvents(ctx context.Context, tenantID string, requested *[]gen.NotificationEvent) ([]string, error) {
+	system := tenantID == store.SystemTenantID
+	if requested == nil {
+		if system {
+			return []string{store.EventSystem}, nil
+		}
+		events := []string{store.EventDown, store.EventUp}
+		// New channels also get flapping and channel_failed once the cluster supports them (ADR 0023).
+		level, err := h.deps.State.CommandLevel(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read command level: %w", err)
+		}
+		if cluster.EffectiveCommandLevel(level) >= cluster.FlappingCommandLevel {
+			events = append(events, store.EventFlapping, store.EventChannelFailed)
+		}
+		return events, nil
+	}
+	events := make([]string, 0, len(*requested)+1)
+	for _, e := range *requested {
+		switch {
+		case !e.Valid():
+			return nil, invalidChannel("unknown event " + string(e))
+		case e == gen.System && !system:
+			return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request",
+				Detail: "the event system is reserved for system channels"}
+		}
+		events = append(events, string(e))
+	}
+	if system && !slices.Contains(events, store.EventSystem) {
+		events = append(events, store.EventSystem)
+	}
+	return events, nil
+}
+
+// channelDocument validates the input and encrypts its secrets for the channel
+// id of tenantID. tenantID is the caller's tenant or store.SystemTenantID; it
+// decides the event policy (channelEvents). current is nil on create; on update
+// an omitted URL or a value containing the mask keeps the stored secret.
+func (h *Handlers) channelDocument(ctx context.Context, tenantID, id string, in *gen.NotificationChannelInput, current *store.NotificationChannel) (cluster.ChannelDocument, error) {
 	if in == nil {
 		return cluster.ChannelDocument{}, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
 	}
@@ -41,27 +81,13 @@ func (h *Handlers) channelDocument(ctx context.Context, id string, in *gen.Notif
 	if name == "" || len([]rune(name)) > 200 {
 		return cluster.ChannelDocument{}, invalidChannel("name must have 1 to 200 characters")
 	}
-	doc := cluster.ChannelDocument{Name: name, Kind: string(in.Kind), Events: []string{store.EventDown, store.EventUp}}
-	if in.Events == nil {
-		// New channels also get flapping and channel_failed once the cluster supports them (ADR 0023).
-		level, err := h.deps.State.CommandLevel(ctx)
-		if err != nil {
-			return cluster.ChannelDocument{}, fmt.Errorf("read command level: %w", err)
-		}
-		if cluster.EffectiveCommandLevel(level) >= cluster.FlappingCommandLevel {
-			doc.Events = append(doc.Events, store.EventFlapping, store.EventChannelFailed)
-		}
+	events, err := h.channelEvents(ctx, tenantID, in.Events)
+	if err != nil {
+		return cluster.ChannelDocument{}, err
 	}
-	if in.Events != nil {
-		doc.Events = make([]string, 0, len(*in.Events))
-		for _, e := range *in.Events {
-			if !e.Valid() {
-				return cluster.ChannelDocument{}, invalidChannel("unknown event " + string(e))
-			}
-			doc.Events = append(doc.Events, string(e))
-		}
-	}
-	if in.IsDefault != nil {
+	doc := cluster.ChannelDocument{Name: name, Kind: string(in.Kind), Events: events}
+	// System channels have no monitors to attach to, so they are never a default.
+	if in.IsDefault != nil && tenantID != store.SystemTenantID {
 		doc.IsDefault = *in.IsDefault
 	}
 	sameKind := current != nil && current.Kind == doc.Kind

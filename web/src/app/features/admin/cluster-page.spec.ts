@@ -13,6 +13,7 @@ import { ClusterNode, ClusterNodeList } from '../../api/gen/model';
 import { JoinTokenDialog } from './join-token-dialog';
 import { ClusterPage } from './cluster-page';
 import { RemoveNodeDialog } from './remove-node-dialog';
+import { SystemAlertsService } from './system-alerts.service';
 
 const NODES: ClusterNode[] = [
   {
@@ -119,6 +120,7 @@ describe('ClusterPage', () => {
       ],
       providers: [
         { provide: ClusterService, useValue: api },
+        { provide: SystemAlertsService, useValue: { active: () => of([]) } },
         { provide: MatDialog, useValue: dialog },
         { provide: MatSnackBar, useValue: snack },
       ],

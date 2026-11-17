@@ -103,5 +103,29 @@
       "notMember": "Dieser Node ist kein Mitglied des Clusters.",
       "conflict": "Der Cluster hat die Änderung wegen seines aktuellen Zustands abgelehnt."
     }
+  },
+  "alerts": {
+    "title": "Aktive Systemalarme",
+    "empty": "Keine aktiven Systemalarme.",
+    "loadError": "Die Systemalarme konnten nicht geladen werden.",
+    "subject": "Betrifft",
+    "since": "Seit",
+    "level": "Stufe",
+    "details": "Details",
+    "kinds": {
+      "voter_offline": "Voter offline",
+      "node_impaired": "Node-Konnektivität eingeschränkt",
+      "replication_lag": "Replikationsrückstand",
+      "clock_skew": "Uhrzeitabweichung",
+      "disk_low": "Speicherplatz knapp",
+      "wal_large": "WAL-Datei groß",
+      "raft_stale": "Raft-Stand veraltet",
+      "cert_expiry": "Zertifikat läuft ab",
+      "incarnation_changed": "Inkarnationswechsel",
+      "fingerprint_mismatch": "FSM-Fingerprint weicht ab",
+      "mixed_versions": "Gemischte Versionen",
+      "quorum": "Quorum",
+      "test": "Testalarm"
+    }
   }
 }

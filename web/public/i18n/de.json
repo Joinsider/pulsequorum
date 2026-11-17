@@ -6,7 +6,8 @@
     "maintenance": "Wartung",
     "users": "Benutzer",
     "cluster": "Cluster",
-    "account": "Konto"
+    "account": "Konto",
+    "systemChannels": "Systemkanäle"
   },
   "shell": {
     "theme": "Design: {{ mode }}",

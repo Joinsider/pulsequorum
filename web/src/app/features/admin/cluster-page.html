@@ -11,6 +11,8 @@
     </button>
   </app-page-header>
 
+  <app-system-alerts-section />
+
   @if (!data()) {
     @if (loading()) {
       <p class="state" role="status">{{ t('common.loading') }}</p>

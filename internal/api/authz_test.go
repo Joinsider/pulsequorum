@@ -94,6 +94,15 @@ func TestPermissionMatrix(t *testing.T) {
 		{"create join token", "POST", "/api/v1/admin/join-tokens", map[string]any{"role": "probe"}, needPlatform},
 		{"list cluster nodes", "GET", "/api/v1/admin/nodes", nil, needPlatform},
 		{"remove cluster node", "DELETE", "/api/v1/admin/nodes/" + missing, nil, needPlatform},
+
+		// System channels and system alerts: platform admins only (ADR 0025).
+		{"list system channels", "GET", "/api/v1/admin/system-channels", nil, needPlatform},
+		{"create system channel", "POST", "/api/v1/admin/system-channels", map[string]any{}, needPlatform},
+		{"get system channel", "GET", "/api/v1/admin/system-channels/" + missing, nil, needPlatform},
+		{"update system channel", "PUT", "/api/v1/admin/system-channels/" + missing, map[string]any{}, needPlatform},
+		{"delete system channel", "DELETE", "/api/v1/admin/system-channels/" + missing, nil, needPlatform},
+		{"test system channel", "POST", "/api/v1/admin/system-channels/" + missing + "/test", nil, needPlatform},
+		{"list system alerts", "GET", "/api/v1/admin/system-alerts", nil, needPlatform},
 	}
 
 	for _, o := range ops {

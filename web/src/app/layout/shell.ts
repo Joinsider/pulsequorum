@@ -43,6 +43,12 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/maintenance', labelKey: 'nav.maintenance', icon: 'build' },
   { path: '/users', labelKey: 'nav.users', icon: 'group', adminOnly: true },
   { path: '/admin/cluster', labelKey: 'nav.cluster', icon: 'hub', platformOnly: true },
+  {
+    path: '/admin/system-channels',
+    labelKey: 'nav.systemChannels',
+    icon: 'notifications',
+    platformOnly: true,
+  },
   { path: '/account', labelKey: 'nav.account', icon: 'person' },
 ];
 

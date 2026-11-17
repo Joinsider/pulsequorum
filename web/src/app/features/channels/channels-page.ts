@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The UptimeCluster Authors
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
@@ -10,7 +18,7 @@ import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { AuthService } from '../../core/auth/auth.service';
 import { DeliveryResult, NotificationChannel } from '../../api/gen/model';
-import { NotificationsService } from '../../api/gen/endpoints/notifications/notifications.service';
+import { ChannelApi, ChannelScope, channelListPath } from './channel-api';
 import { confirm } from '../../shared/confirm-dialog';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header';
@@ -35,11 +43,13 @@ export type TestOutcome =
   ],
   template: `
     <ng-container *transloco="let t">
-      <app-page-header [title]="t('channels.title')">
+      <app-page-header
+        [title]="scope() === 'system' ? t('channels.system.title') : t('channels.title')"
+      >
         @if (auth.canAdmin()) {
-          <a mat-flat-button routerLink="/channels/new">
+          <a mat-flat-button [routerLink]="[base(), 'new']">
             <app-icon name="add" size="1.125rem" />
-            {{ t('channels.new') }}
+            {{ scope() === 'system' ? t('channels.system.new') : t('channels.new') }}
           </a>
         }
       </app-page-header>
@@ -60,8 +70,10 @@ export type TestOutcome =
         </div>
       } @else if (channels().length === 0) {
         <div class="state">
-          <p>{{ t('channels.empty') }}</p>
-          <p class="muted">{{ t('channels.emptyHint') }}</p>
+          <p>{{ scope() === 'system' ? t('channels.system.empty') : t('channels.empty') }}</p>
+          <p class="muted">
+            {{ scope() === 'system' ? t('channels.system.emptyHint') : t('channels.emptyHint') }}
+          </p>
         </div>
       } @else {
         <ul class="list">
@@ -112,7 +124,7 @@ export type TestOutcome =
 
               @if (auth.canAdmin()) {
                 <div class="actions">
-                  <a mat-stroked-button [routerLink]="['/channels', c.id]">
+                  <a mat-stroked-button [routerLink]="[base(), c.id]">
                     <app-icon name="edit" size="1.125rem" />
                     {{ t('common.edit') }}
                   </a>
@@ -244,9 +256,13 @@ export type TestOutcome =
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ChannelsPage {
+export class ChannelsPage implements OnInit {
+  /** Tenant channels, or the platform's system channels for platform admins (ADR 0025). */
+  readonly scope = input<ChannelScope>('tenant');
+  protected readonly base = computed(() => channelListPath(this.scope()));
+
   protected readonly auth = inject(AuthService);
-  private readonly api = inject(NotificationsService);
+  private readonly api = inject(ChannelApi);
   private readonly dialog = inject(MatDialog);
   private readonly transloco = inject(TranslocoService);
 
@@ -257,14 +273,14 @@ export class ChannelsPage {
   protected readonly testResults = signal<Readonly<Record<string, TestOutcome>>>({});
   protected readonly notice = signal<{ text: string; error: boolean } | null>(null);
 
-  constructor() {
+  ngOnInit(): void {
     this.load();
   }
 
   protected load(): void {
     this.loading.set(true);
     this.loadError.set(false);
-    this.api.listNotificationChannels().subscribe({
+    this.api.list(this.scope()).subscribe({
       next: (list) => {
         this.channels.set(list);
         this.loading.set(false);
@@ -289,7 +305,7 @@ export class ChannelsPage {
     this.setBusy(c.id, true);
     try {
       const result: DeliveryResult = await new Promise((resolve, reject) =>
-        this.api.testNotificationChannel(c.id).subscribe({ next: resolve, error: reject }),
+        this.api.test(this.scope(), c.id).subscribe({ next: resolve, error: reject }),
       );
       const outcome: TestOutcome = result.delivered
         ? { delivered: true, durationMs: result.durationMs }
@@ -315,9 +331,7 @@ export class ChannelsPage {
     this.setBusy(c.id, true);
     try {
       await new Promise<void>((resolve, reject) =>
-        this.api
-          .deleteNotificationChannel(c.id)
-          .subscribe({ next: () => resolve(), error: reject }),
+        this.api.remove(this.scope(), c.id).subscribe({ next: () => resolve(), error: reject }),
       );
       this.channels.update((list) => list.filter((x) => x.id !== c.id));
       this.notice.set({ text: this.transloco.translate('channels.deleted'), error: false });

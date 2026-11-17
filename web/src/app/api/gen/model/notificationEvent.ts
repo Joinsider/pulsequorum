@@ -11,6 +11,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * `system` is reserved for the system channels (ADR 0025); tenant channels
+ * answer 400 when they request it.
+ */
 export type NotificationEvent = typeof NotificationEvent[keyof typeof NotificationEvent];
 
 
@@ -21,4 +25,5 @@ export const NotificationEvent = {
   partial: 'partial',
   flapping: 'flapping',
   channel_failed: 'channel_failed',
+  system: 'system',
 } as const;

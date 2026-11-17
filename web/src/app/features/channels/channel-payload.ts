@@ -61,8 +61,14 @@ export function buildHeaders(rows: readonly HeaderRow[]): HeadersBuild {
   return { ok: true, headers: Object.keys(headers).length > 0 ? headers : undefined };
 }
 
+/**
+ * Events a tenant channel can subscribe to. `system` is reserved for the system
+ * channels (ADR 0025), so it has no checkbox.
+ */
+export type TenantEvent = Exclude<NotificationEvent, 'system'>;
+
 /** Event checkboxes by name, in the order the API lists them. */
-export const EVENT_ORDER: readonly NotificationEvent[] = [
+export const EVENT_ORDER: readonly TenantEvent[] = [
   NotificationEvent.down,
   NotificationEvent.up,
   NotificationEvent.degraded,
@@ -72,16 +78,12 @@ export const EVENT_ORDER: readonly NotificationEvent[] = [
 ];
 
 /** Selected events in API order. */
-export function selectedEvents(
-  flags: Readonly<Record<NotificationEvent, boolean>>,
-): NotificationEvent[] {
+export function selectedEvents(flags: Readonly<Record<TenantEvent, boolean>>): TenantEvent[] {
   return EVENT_ORDER.filter((event) => flags[event]);
 }
 
 /** Checkbox state for an existing channel's events. */
-export function eventFlags(
-  events: readonly NotificationEvent[],
-): Record<NotificationEvent, boolean> {
+export function eventFlags(events: readonly NotificationEvent[]): Record<TenantEvent, boolean> {
   return {
     down: events.includes(NotificationEvent.down),
     up: events.includes(NotificationEvent.up),

@@ -39,6 +39,8 @@ tags:
     description: Live updates over WebSocket
   - name: cluster
     description: Cluster administration (platform admins only, FA-CLU-08)
+  - name: system-admin
+    description: System channels and system alerts (platform admins only, ADR 0025)
 
 paths:
   /health:
@@ -468,6 +470,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -501,6 +504,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
@@ -740,6 +744,143 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  # --- System channels and system alerts (ADR 0025) ----------------------------
+  /admin/system-channels:
+    get:
+      tags: [system-admin]
+      operationId: listSystemChannels
+      summary: List the system notification channels
+      description: |
+        Platform admins only. System channels belong to the reserved tenant
+        `_system`, subscribe to the event `system` and receive system alerts
+        (FA-OBS-01). Tenant admins cannot see or change them.
+      responses:
+        "200":
+          description: System channels (secrets masked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NotificationChannel" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [system-admin]
+      operationId: createSystemChannel
+      summary: Create a system notification channel
+      description: |
+        Platform admins only. The tenant is always `_system`, never taken from
+        the request. The event `system` is always included. Without `events`,
+        the channel subscribes to `system` only.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/system-channels/{channelId}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags: [system-admin]
+      operationId: getSystemChannel
+      summary: Get a system notification channel
+      responses:
+        "200":
+          description: Channel (secrets masked)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [system-admin]
+      operationId: updateSystemChannel
+      summary: Update a system notification channel
+      description: |
+        Same rules as the tenant channels. An omitted URL or a masked value
+        keeps the stored secret.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationChannelInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationChannel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [system-admin]
+      operationId: deleteSystemChannel
+      summary: Delete a system notification channel
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/system-channels/{channelId}/test:
+    parameters:
+      - $ref: "#/components/parameters/ChannelId"
+    post:
+      tags: [system-admin]
+      operationId: testSystemChannel
+      summary: Send a test message to a system channel synchronously
+      responses:
+        "200":
+          description: Delivery result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/system-alerts:
+    get:
+      tags: [system-admin]
+      operationId: listSystemAlerts
+      summary: List the system alerts
+      description: |
+        Platform admins only. Lists the replicated state of the system alerts
+        (FA-OBS-01, ADR 0025), ordered by kind and subject. `details` holds
+        measured values and node IDs only.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: Only active alerts (default) or all alerts including cleared ones
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: System alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SystemAlert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
 components:
@@ -1179,7 +1320,10 @@ components:
       enum: [shoutrrr, webhook]
     NotificationEvent:
       type: string
-      enum: [down, up, degraded, partial, flapping, channel_failed]
+      enum: [down, up, degraded, partial, flapping, channel_failed, system]
+      description: |
+        `system` is reserved for the system channels (ADR 0025); tenant channels
+        answer 400 when they request it.
     WebhookConfig:
       type: object
       required: [url]
@@ -1212,7 +1356,8 @@ components:
           default: [down, up]
           description: |
             Omitted on create: `down` and `up`, plus `flapping` and `channel_failed`
-            once the cluster command level is 4 or higher (ADR 0023).
+            once the cluster command level is 4 or higher (ADR 0023). System channels
+            always get `system`; without `events` they get only `system`.
         isDefault:
           type: boolean
           default: false
@@ -1246,6 +1391,29 @@ components:
         error: { type: string }
         durationMs: { type: integer }
 
+    # --- System alerts (ADR 0025) -------------------------------------------
+    SystemAlert:
+      type: object
+      required: [kind, subject, active, level, since, updated, details]
+      properties:
+        kind:
+          type: string
+          description: "Kind of the alert, e.g. voter_offline, replication_lag, clock_skew, quorum (ADR 0025)"
+        subject:
+          type: string
+          description: "What the alert is about: a node ID, a certificate or the cluster"
+        active: { type: boolean }
+        level:
+          type: integer
+          format: int32
+          minimum: 0
+          description: "Expiry stage (certificates) or counter; 0 for plain alerts"
+        since: { type: string, format: date-time, description: "When the alert became active or cleared" }
+        updated: { type: string, format: date-time, description: "When the alert last changed" }
+        details:
+          type: object
+          additionalProperties: true
+          description: "Measured values and node IDs; never secrets or target error texts"
     # --- Maintenance --------------------------------------------------------
     MaintenanceWindowInput:
       type: object
