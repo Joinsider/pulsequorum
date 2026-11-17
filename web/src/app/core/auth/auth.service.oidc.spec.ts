@@ -219,6 +219,20 @@ describe('AuthService in OIDC mode', () => {
     expect(oidc.authorize).not.toHaveBeenCalled();
   });
 
+  it('re-arms the silent login after a successful sign-in, so every reload can restore the session', async () => {
+    sessionStorage.setItem('uc.oidc-silent-tried', '1');
+    const { auth, http } = setup();
+    await signIn(auth, http);
+    expect(sessionStorage.getItem('uc.oidc-silent-tried')).toBeNull();
+
+    // Reload: tokens were in memory only, so the next load tries prompt=none again.
+    const next = setup();
+    await next.auth.restore();
+    expect(oidc.authorize).toHaveBeenCalledWith(OIDC_CONFIG_ID, {
+      customParams: { prompt: 'none' },
+    });
+  });
+
   it('does not start a silent login on the callback page itself', async () => {
     history.replaceState(null, '', '/auth/callback');
     const { auth } = setup();

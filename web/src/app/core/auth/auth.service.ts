@@ -256,6 +256,10 @@ export class AuthService {
       const result = await firstValueFrom(oidc.checkAuth(undefined, OIDC_CONFIG_ID));
       if (result.isAuthenticated && this.cacheToken(result.accessToken)) {
         this.storage().clearRedirectState(OIDC_CONFIG_ID);
+        // A working session re-arms the one silent login, so the next reload
+        // (tokens live in memory only) can sign in again without the login page.
+        // A failed silent login leaves the flag set: no redirect loop.
+        removeSession(SILENT_TRIED_KEY);
         // With autoUserInfo, the library's userData holds the userinfo claims.
         this.claimsSignal.set(isClaims(result.userData) ? result.userData : null);
         this.meSignal.set(await firstValueFrom(this.api.getMe()));
