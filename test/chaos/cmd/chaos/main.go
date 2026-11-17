@@ -275,7 +275,7 @@ func findRepoRoot() (string, error) {
 		return "", err
 	}
 	for {
-		data, err := os.ReadFile(filepath.Join(dir, "go.mod")) //nolint:gosec // G304: fixed name in a directory of the working tree
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 		if err == nil && strings.Contains(string(data), modulePath+"\n") {
 			return dir, nil
 		}

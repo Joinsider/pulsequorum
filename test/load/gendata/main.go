@@ -172,8 +172,10 @@ func run(ctx context.Context, opts options, end time.Time, out io.Writer, log *s
 	})
 	w := &heartbeatWriter{ctx: ctx, metrics: metrics, nodeID: nodeID, incarnation: metrics.Incarnation(), size: insertBatch}
 
-	fmt.Fprintf(out, "generating %d days for %d monitors of tenant %s (%d paused skipped), node %s, down-rate %g, seed %d\n",
-		opts.Days, len(gens), opts.Tenant, sum.Skipped, nodeID, opts.DownRate, opts.Seed)
+	if _, err := fmt.Fprintf(out, "generating %d days for %d monitors of tenant %s (%d paused skipped), node %s, down-rate %g, seed %d\n",
+		opts.Days, len(gens), opts.Tenant, sum.Skipped, nodeID, opts.DownRate, opts.Seed); err != nil {
+		return summary{}, err
+	}
 	// Hourly steps, as the live job runs: the job rolls up at most 24 hours per
 	// run, so a daily step would fall behind.
 	hours := opts.Days * 24
@@ -193,7 +195,9 @@ func run(ctx context.Context, opts options, end time.Time, out io.Writer, log *s
 			return summary{}, fmt.Errorf("uptime job at hour %d: %w", h+1, err)
 		}
 		if (h+1)%24 == 0 {
-			printProgress(out, (h+1)/24, opts.Days, w.rows, time.Since(started), opts.DataDir)
+			if err := printProgress(out, (h+1)/24, opts.Days, w.rows, time.Since(started), opts.DataDir); err != nil {
+				return summary{}, err
+			}
 		}
 	}
 
@@ -204,7 +208,9 @@ func run(ctx context.Context, opts options, end time.Time, out io.Writer, log *s
 	if _, err := state.DB().Checkpoint(ctx); err != nil {
 		return summary{}, err
 	}
-	printSizes(out, opts.DataDir)
+	if err := printSizes(out, opts.DataDir); err != nil {
+		return summary{}, err
+	}
 
 	sum.Rows = w.rows
 	sum.Elapsed = time.Since(started)
@@ -244,7 +250,7 @@ func loadMonitors(ctx context.Context, state store.State, tenant string) ([]*mon
 
 // readNodeID returns the node ID the voter stored in DIR/node_id.
 func readNodeID(dataDir string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(dataDir, node.IDFile)) //nolint:gosec // G304: operator-given data directory
+	raw, err := os.ReadFile(filepath.Join(dataDir, node.IDFile))
 	if err != nil {
 		return "", fmt.Errorf("read node ID: %w (the voter creates it on its first start)", err)
 	}
@@ -273,10 +279,11 @@ func (s backfillState) ListMonitors(ctx context.Context, tenantID string, q stor
 	return page, nil
 }
 
-func printProgress(out io.Writer, day, days int, rows int64, elapsed time.Duration, dataDir string) {
+func printProgress(out io.Writer, day, days int, rows int64, elapsed time.Duration, dataDir string) error {
 	rate := float64(rows) / max(elapsed.Seconds(), 1e-9)
-	fmt.Fprintf(out, "day %2d/%d  rows %12d  elapsed %8s  %8.0f rows/s  %s\n",
+	_, err := fmt.Fprintf(out, "day %2d/%d  rows %12d  elapsed %8s  %8.0f rows/s  %s\n",
 		day, days, rows, elapsed.Round(time.Second), rate, sizeLine(dataDir))
+	return err
 }
 
 // sizeLine lists the sizes of state.db, metrics.db and their WAL files.
@@ -291,16 +298,21 @@ func sizeLine(dataDir string) string {
 	return strings.Join(parts, "  ") + "  total " + humanBytes(total)
 }
 
-func printSizes(out io.Writer, dataDir string) {
-	fmt.Fprintln(out, "final sizes:")
+func printSizes(out io.Writer, dataDir string) error {
+	if _, err := fmt.Fprintln(out, "final sizes:"); err != nil {
+		return err
+	}
 	for _, name := range []string{sqlite.StateFile, sqlite.StateFile + "-wal", sqlite.MetricsFile, sqlite.MetricsFile + "-wal"} {
-		fmt.Fprintf(out, "  %-18s %12d bytes  %10s\n", name, fileSize(filepath.Join(dataDir, name)), humanBytes(fileSize(filepath.Join(dataDir, name))))
+		if _, err := fmt.Fprintf(out, "  %-18s %12d bytes  %10s\n", name, fileSize(filepath.Join(dataDir, name)), humanBytes(fileSize(filepath.Join(dataDir, name)))); err != nil {
+			return err
+		}
 	}
 	var total int64
 	for _, name := range []string{sqlite.StateFile, sqlite.StateFile + "-wal", sqlite.MetricsFile, sqlite.MetricsFile + "-wal"} {
 		total += fileSize(filepath.Join(dataDir, name))
 	}
-	fmt.Fprintf(out, "  %-18s %12d bytes  %10s\n", "total", total, humanBytes(total))
+	_, err := fmt.Fprintf(out, "  %-18s %12d bytes  %10s\n", "total", total, humanBytes(total))
+	return err
 }
 
 // fileSize returns the size of a file, 0 if it does not exist.

@@ -170,8 +170,11 @@ func runAS04(ctx context.Context, env *Env) error {
 	})
 	rep.Check("Isolated follower is degraded", "health degraded true, partition = [itself]",
 		fmt.Sprintf("degraded %v after %s, partition %v%s", degraded, time.Since(t0).Round(time.Second),
-			lastMinorityHealth.Partition, errSuffixIf(!degraded)), degraded)
+			lastMinorityHealth.Partition, errSuffixIf(!degraded)+errSuffix(err)), degraded)
 	if !degraded {
+		if err != nil {
+			return fmt.Errorf("minority does not turn degraded: %w", err)
+		}
 		return errors.New("minority does not turn degraded")
 	}
 
