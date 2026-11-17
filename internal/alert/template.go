@@ -30,6 +30,7 @@ var Variables = []string{
 	"incidentId", "reminder", "confirmed", "message", "monitor.id", "monitor.name", "monitor.type", "tenant.id",
 	"flapping", "changeCount", "channel.id", "channel.name", "channel.error",
 	"verdict", "sender.nodeId", "sender.reachableVoters", "sender.totalVoters",
+	"system.kind", "system.subject", "system.active", "system.level",
 }
 
 // flappingWindow names the window of the flapping rule (ADR 0023, FA-ALR-06).
@@ -62,7 +63,19 @@ func values(p cluster.AlertPayload) map[string]any {
 		"sender.nodeId":          senderOf(p).NodeID,
 		"sender.reachableVoters": senderOf(p).ReachableVoters,
 		"sender.totalVoters":     senderOf(p).TotalVoters,
+		"system.kind":            systemOf(p).Kind,
+		"system.subject":         systemOf(p).Subject,
+		"system.active":          systemOf(p).Active,
+		"system.level":           systemOf(p).Level,
 	}
+}
+
+// systemOf returns the system alert of p, or the zero value for other events (ADR 0025).
+func systemOf(p cluster.AlertPayload) cluster.SystemAlertInfo {
+	if p.System == nil {
+		return cluster.SystemAlertInfo{}
+	}
+	return *p.System
 }
 
 // senderOf returns the sender view of p, or the zero view if p has none.
@@ -82,6 +95,8 @@ const DefaultTemplate = `{"alertId":"{{alertId}}","event":"{{event}}","status":"
 	`"reachableVoters":"{{sender.reachableVoters}}","totalVoters":"{{sender.totalVoters}}"},` +
 	`"flapping":"{{flapping}}","changeCount":"{{changeCount}}",` +
 	`"channel":{"id":"{{channel.id}}","name":"{{channel.name}}","error":"{{channel.error}}"},` +
+	`"system":{"kind":"{{system.kind}}","subject":"{{system.subject}}","active":"{{system.active}}",` +
+	`"level":"{{system.level}}"},` +
 	`"message":"{{message}}"}`
 
 // ValidateTemplate checks that a template is JSON and uses known placeholders

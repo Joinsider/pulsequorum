@@ -105,3 +105,27 @@ func TestLocalOnOutcomeReportsEachAttempt(t *testing.T) {
 		t.Errorf("OnOutcome = %v, want %v", seen, want)
 	}
 }
+
+// TestDefaultTemplateCarriesSystemAlert: a webhook without its own template
+// receives kind, subject, active and level of a system alert (ADR 0025).
+func TestDefaultTemplateCarriesSystemAlert(t *testing.T) {
+	p := cluster.AlertPayload{AlertID: "sys:voter_offline:n2:1:active", Event: store.EventSystem, TenantID: store.SystemTenantID,
+		Confirmed: true, System: &cluster.SystemAlertInfo{Kind: "voter_offline", Subject: "n2", Active: true, Level: 0}}
+	body, err := Render(DefaultTemplate, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		System struct {
+			Kind, Subject string
+			Active        bool
+			Level         int
+		} `json:"system"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("body is not JSON: %v\n%s", err, body)
+	}
+	if got.System.Kind != "voter_offline" || got.System.Subject != "n2" || !got.System.Active || got.System.Level != 0 {
+		t.Errorf("system = %+v", got.System)
+	}
+}
