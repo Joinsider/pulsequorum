@@ -283,6 +283,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 
 	switch put.GetKind() {
 	case pb.EntityKind_ENTITY_KIND_TENANT:
+		if put.GetId() == store.SystemTenantID && cmd.GetActor().GetKind() != pb.Actor_KIND_SYSTEM {
+			return nil, invalid("the system tenant is reserved")
+		}
 		var doc TenantDocument
 		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
 			return nil, invalid("tenant document: %v", err)
@@ -297,6 +300,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 		return json.Marshal(PutResult{ID: put.GetId()})
 
 	case pb.EntityKind_ENTITY_KIND_MONITOR:
+		if cmd.GetTenantId() == store.SystemTenantID {
+			return nil, invalid("the system tenant has no monitors")
+		}
 		if cmd.GetTenantId() == "" {
 			return nil, invalid("monitor command without tenant")
 		}

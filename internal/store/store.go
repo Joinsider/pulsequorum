@@ -16,6 +16,11 @@ import (
 	"slices"
 )
 
+// SystemTenantID is the reserved tenant that holds the system channels of the
+// platform admins (ADR 0025). It has no monitors and no users; principals of
+// it are rejected, and only the system actor may create it.
+const SystemTenantID = "_system"
+
 var (
 	// ErrNotFound is returned when an object does not exist or belongs to another tenant.
 	ErrNotFound = errors.New("not found")
