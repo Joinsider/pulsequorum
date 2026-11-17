@@ -30,3 +30,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0022](0022-node-selbstgesundheit.md) | Node-Selbstgesundheit (Konnektivität) und Ausschluss aus der Bewertung | Accepted | 2026-11-16 |
 | [0023](0023-alert-drosselung-buendelung-flapping.md) | Alert-Drosselung, Bündelung, dauerhafte Fehler und Flapping | Accepted | 2026-11-16 |
 | [0024](0024-degraded-modus-und-korrektur.md) | Degraded-Modus, Absender-Sicht und Korrektur nach Quorum-Rückkehr | Accepted | 2026-11-16 |
+| [0025](0025-selbstueberwachung-und-systemalerts.md) | Selbstüberwachung, Systemalerts und Prometheus-Metriken | Proposed | 2026-11-17 |
