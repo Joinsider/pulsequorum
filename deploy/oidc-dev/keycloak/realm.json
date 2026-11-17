@@ -1,0 +1,92 @@
+{
+  "realm": "uptime",
+  "displayName": "UptimeCluster (Entwicklung)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "platform-admin", "description": "Plattform-Administrator (UptimeCluster)" },
+      { "name": "tenant-admin", "description": "Administrator im eigenen Mandanten (UptimeCluster)" },
+      { "name": "tenant-editor", "description": "Bearbeitung im eigenen Mandanten (UptimeCluster)" },
+      { "name": "tenant-viewer", "description": "Nur Lesezugriff im eigenen Mandanten (UptimeCluster)" },
+      { "name": "staff", "description": "Kein UptimeCluster-Recht; Testrolle fuer abgelehnte Anmeldungen" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "uptimecluster-spa",
+      "name": "UptimeCluster SPA",
+      "enabled": true,
+      "publicClient": true,
+      "secret": null,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:8080",
+      "baseUrl": "/",
+      "redirectUris": ["http://localhost:8080/auth/callback"],
+      "webOrigins": ["http://localhost:8080"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/login",
+        "use.refresh.tokens": "true"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt"],
+      "protocolMappers": [
+        {
+          "name": "uptimecluster-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "uptimecluster-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "uptimecluster-cli",
+      "name": "UptimeCluster CLI (nur Entwicklung, Password Grant)",
+      "enabled": true,
+      "publicClient": true,
+      "secret": null,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "use.refresh.tokens": "true"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt"],
+      "protocolMappers": [
+        {
+          "name": "uptimecluster-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "uptimecluster-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

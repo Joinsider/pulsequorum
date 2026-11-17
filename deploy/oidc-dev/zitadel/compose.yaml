@@ -1,0 +1,114 @@
+# Lokaler Zitadel für manuelle End-to-End-Tests des OIDC-Modus (Profil zitadel, OIDC_TENANCY=multi).
+# NUR ENTWICKLUNG: HTTP statt TLS, Geheimnisse liegen in .generated/ (chmod 600), keine Backups.
+#
+# Start über setup.sh (erzeugt .generated/compose.env mit Masterkey und Passwörtern).
+# Manuell: podman-compose -f compose.yaml --env-file .generated/compose.env up -d
+#
+# Ports (nur Loopback):
+#   Zitadel API und Konsole  http://localhost:8082   (ExternalDomain localhost, ExternalPort 8082, kein TLS)
+#   Login V2 (eigene UI)     http://localhost:3000/ui/v2/login/
+#
+# Versionen: Zitadel v4.20.3 (letztes stabiles v4-Release), Postgres 17.12.
+# Login V2 ist in v4 Pflicht und läuft als eigener Container (zitadel-login).
+# Der Zitadel-Core liefert die UI nicht selbst aus; deshalb liegt Login V2 auf Port 3000 statt
+# unter /ui/v2/login auf Port 8082 (kein Reverse-Proxy nötig). Siehe Abschnitt Zitadel in deploy/oidc-dev/README.md.
+#
+# Bootstrap-Dateien (PAT des IAM-Admins, Login-Client-PAT) landen per Bind-Mount in .generated/bootstrap.
+
+name: uptimecluster-zitadel
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17.12-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zitadel
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d zitadel -U zitadel"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v4.20.3
+    restart: unless-stopped
+    user: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["start-from-init", "--masterkey", "${ZITADEL_MASTERKEY}", "--tlsMode", "disabled"]
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      ZITADEL_PORT: "8080"
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNALPORT: "8082"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgres://zitadel:${PG_PASSWORD}@postgres:5432/zitadel?sslmode=disable"
+
+      # Erster Start: Organisation der Plattform, Maschinenbenutzer für die Verwaltung per PAT.
+      ZITADEL_FIRSTINSTANCE_INSTANCENAME: uptimecluster-dev
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: platform
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/iam-admin.pat
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: iam-admin
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "IAM admin (dev, setup.sh)"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: "Login V2 client (dev)"
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: zitadel-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME: Dev
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME: Admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: zitadel-admin@platform.example.test
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${DEV_ADMIN_PASSWORD}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+
+      # Login V2 ist Pflicht und liegt auf Port 3000 (siehe Kopf der Datei).
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: "http://localhost:3000/ui/v2/login/"
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: "http://localhost:3000/ui/v2/login/login?authRequest="
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: "http://localhost:3000/ui/v2/login/logout?post_logout_redirect="
+      ZITADEL_SAML_DEFAULTLOGINURLV2: "http://localhost:3000/ui/v2/login/login?samlRequest="
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
+    volumes:
+      - ./.generated/bootstrap:/zitadel/bootstrap
+
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:v4.20.3
+    restart: unless-stopped
+    user: "0"
+    depends_on:
+      zitadel:
+        condition: service_healthy
+    environment:
+      ZITADEL_API_URL: http://zitadel:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${LOGIN_SESSION_COOKIE_SECRET}
+      CUSTOM_REQUEST_HEADERS: "Host:localhost:8082,X-Forwarded-Proto:http"
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
+    volumes:
+      - ./.generated/bootstrap:/zitadel/bootstrap
+
+volumes:
+  postgres-data:
