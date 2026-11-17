@@ -187,6 +187,9 @@ func TestAuthenticateRejects(t *testing.T) {
 		{"issued in the future", func() string { return with(func(c map[string]any) { c["iat"] = now + 120 }) }, auth.ErrUnauthenticated},
 		{"no iat", func() string { return with(func(c map[string]any) { delete(c, "iat") }) }, auth.ErrUnauthenticated},
 		{"lifetime above maximum", func() string { return with(func(c map[string]any) { c["iat"] = now; c["exp"] = now + 12*3600 }) }, auth.ErrUnauthenticated},
+		{"lifetime just above maximum plus leeway", func() string {
+			return with(func(c map[string]any) { c["iat"] = now; c["exp"] = now + 3600 + 31 })
+		}, auth.ErrUnauthenticated},
 		{"no subject", func() string { return with(func(c map[string]any) { delete(c, "sub") }) }, auth.ErrUnauthenticated},
 		{"ID token with nonce", func() string { return with(func(c map[string]any) { c["nonce"] = "n-1" }) }, auth.ErrUnauthenticated},
 		{"ID token with at_hash", func() string { return with(func(c map[string]any) { c["at_hash"] = "x" }) }, auth.ErrUnauthenticated},
@@ -205,6 +208,21 @@ func TestAuthenticateRejects(t *testing.T) {
 				t.Fatalf("principal %+v returned with error", p)
 			}
 		})
+	}
+}
+
+// TestLifetimeLeeway covers PocketID, whose one-hour tokens have exp-iat of
+// 3601s (found against PocketID, ADR 0028).
+func TestLifetimeLeeway(t *testing.T) {
+	h := newHarness(t)
+	now := h.clock.Now().Unix()
+	for _, life := range []int64{3600, 3601, 3630} {
+		c := h.claims()
+		c["iat"] = now
+		c["exp"] = now + life
+		if _, err := h.authenticate(h.idp.Sign(c)); err != nil {
+			t.Fatalf("lifetime %ds: %v", life, err)
+		}
 	}
 }
 

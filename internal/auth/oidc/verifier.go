@@ -180,7 +180,9 @@ func (a *Authenticator) checkClaims(c tokenClaims) string {
 		return "issued in the future"
 	case c.NotBefore != nil && *c.NotBefore > now+leeway:
 		return "not valid yet"
-	case c.ExpiresAt-*c.IssuedAt > int64(a.opts.MaxTokenTTL/time.Second):
+	// The same leeway applies: PocketID issues "1h" tokens with exp-iat of
+	// 3601s because iat and exp are rounded separately.
+	case c.ExpiresAt-*c.IssuedAt > int64(a.opts.MaxTokenTTL/time.Second)+leeway:
 		return fmt.Sprintf("lifetime %ds exceeds the maximum %s", c.ExpiresAt-*c.IssuedAt, a.opts.MaxTokenTTL)
 	}
 	// The client is azp, or client_id from RFC 9068 tokens (ADR 0028).
