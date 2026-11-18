@@ -283,6 +283,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { host.Run(ctx) })
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
+	bg.Go(func() { cluster.RunAuditPrune(ctx, raftNode, state, cfg.AuditRetention, log) })
 	bg.Go(func() { bridge.Run(ctx) })
 
 	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, ingest, nodeID, log)
@@ -605,6 +606,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		if cfg.OIDC.AutoProvision {
 			bg.Go(func() { watchProvisionPlan(ctx, log, state, cfg.OIDC.AutoProvisionPlan) })
 		}
+	}
+	// API tokens work in every auth mode (ADR 0031). Without an
+	// authenticator every request is denied, and tokens must not change that.
+	if apiDeps.Authenticator != nil {
+		apiDeps.Authenticator = auth.WithAPITokens(apiDeps.Authenticator, state, clock)
 	}
 	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(readiness).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.

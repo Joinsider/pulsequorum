@@ -22,6 +22,34 @@ type AlertOutbox struct {
 	UpdatedMs     int64
 }
 
+type ApiToken struct {
+	ID            string
+	TenantID      string
+	Scope         string
+	Name          string
+	Role          string
+	SecretHash    string
+	CreatedMs     int64
+	ExpiresMs     int64
+	CreatedByKind string
+	CreatedByID   string
+	CreatedByName string
+}
+
+type AuditLog struct {
+	RaftIndex  int64
+	Sub        int64
+	AtMs       int64
+	TenantID   string
+	ActorKind  string
+	ActorID    string
+	ActorName  string
+	Action     string
+	ObjectKind string
+	ObjectID   string
+	RequestID  string
+}
+
 type ClusterCa struct {
 	Fingerprint string
 	ClusterID   string

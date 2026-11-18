@@ -179,9 +179,20 @@ func (f *FSM) Apply(l *raft.Log) any {
 				return err
 			}
 		}
+		// The level is read before the command runs, so a command that raises
+		// it is audited only from the next command on (ADR 0031, section 4).
+		level, err := currentCommandLevel(ctx, tx)
+		if err != nil {
+			return err
+		}
 		result, err := applyPayload(txCtx, tx, &cmd)
 		if err != nil {
 			return err
+		}
+		if level >= AuditCommandLevel {
+			if err := writeAudit(ctx, tx, l.Index, &cmd); err != nil {
+				return err
+			}
 		}
 		if err := recordIssuedAt(ctx, tx, &cmd); err != nil {
 			return err
@@ -266,6 +277,9 @@ func resultFromDedup(index uint64, e store.DedupEntry) ApplyResult {
 // applyPayload executes one command. Deterministic rejections are returned as
 // *CommandError; any other error is an infrastructure failure.
 func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.RawMessage, error) {
+	if err := checkAuditHints(ctx, tx, cmd); err != nil {
+		return nil, err
+	}
 	switch p := cmd.GetPayload().(type) {
 	case *pb.Command_PutEntity:
 		return applyPut(ctx, tx, cmd, p.PutEntity)
@@ -325,6 +339,14 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyPutPlan(ctx, tx, cmd, p.PutPlan)
 	case *pb.Command_DeletePlan:
 		return applyDeletePlan(ctx, tx, cmd, p.DeletePlan)
+	case *pb.Command_CreateApiToken:
+		return applyCreateAPIToken(ctx, tx, cmd, p.CreateApiToken)
+	case *pb.Command_RevokeApiToken:
+		return applyRevokeAPIToken(ctx, tx, cmd, p.RevokeApiToken)
+	case *pb.Command_PruneAudit:
+		return applyPruneAudit(ctx, tx, cmd, p.PruneAudit)
+	case *pb.Command_Batch:
+		return applyBatch(ctx, tx, cmd, p.Batch)
 	case nil:
 		return nil, invalid("command without payload")
 	default:
@@ -335,6 +357,9 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity) (json.RawMessage, error) {
 	if put.GetId() == "" {
 		return nil, invalid("put %s without ID", put.GetKind())
+	}
+	if err := checkEntityActor(ctx, tx, cmd, put.GetKind()); err != nil {
+		return nil, err
 	}
 	issuedAt := cmd.GetIssuedAtMs()
 
@@ -489,6 +514,9 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 }
 
 func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb.DeleteEntity) (json.RawMessage, error) {
+	if err := checkEntityActor(ctx, tx, cmd, del.GetKind()); err != nil {
+		return nil, err
+	}
 	switch del.GetKind() {
 	case pb.EntityKind_ENTITY_KIND_MONITOR:
 		if err := tx.DeleteMonitor(ctx, cmd.GetTenantId(), del.GetId()); err != nil {

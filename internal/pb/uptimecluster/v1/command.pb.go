@@ -214,6 +214,9 @@ type Command struct {
 	Actor      *Actor `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
 	// Empty for platform-level commands.
 	TenantId string `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	// Optional refinement of the audit action of a PutEntity (e.g. "pause",
+	// "resume", "tags"). The FSM validates it (ADR 0031).
+	AuditAction string `protobuf:"bytes,6,opt,name=audit_action,json=auditAction,proto3" json:"audit_action,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*Command_PutEntity
@@ -245,6 +248,10 @@ type Command struct {
 	//	*Command_DeleteTenant
 	//	*Command_PutPlan
 	//	*Command_DeletePlan
+	//	*Command_CreateApiToken
+	//	*Command_RevokeApiToken
+	//	*Command_PruneAudit
+	//	*Command_Batch
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -311,6 +318,13 @@ func (x *Command) GetActor() *Actor {
 func (x *Command) GetTenantId() string {
 	if x != nil {
 		return x.TenantId
+	}
+	return ""
+}
+
+func (x *Command) GetAuditAction() string {
+	if x != nil {
+		return x.AuditAction
 	}
 	return ""
 }
@@ -583,6 +597,42 @@ func (x *Command) GetDeletePlan() *DeletePlan {
 	return nil
 }
 
+func (x *Command) GetCreateApiToken() *CreateAPIToken {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_CreateApiToken); ok {
+			return x.CreateApiToken
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetRevokeApiToken() *RevokeAPIToken {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RevokeApiToken); ok {
+			return x.RevokeApiToken
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetPruneAudit() *PruneAudit {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_PruneAudit); ok {
+			return x.PruneAudit
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetBatch() *Batch {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_Batch); ok {
+			return x.Batch
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -703,6 +753,23 @@ type Command_DeletePlan struct {
 	DeletePlan *DeletePlan `protobuf:"bytes,40,opt,name=delete_plan,json=deletePlan,proto3,oneof"`
 }
 
+type Command_CreateApiToken struct {
+	// API tokens, audit log and bulk actions (ADR 0031).
+	CreateApiToken *CreateAPIToken `protobuf:"bytes,41,opt,name=create_api_token,json=createApiToken,proto3,oneof"`
+}
+
+type Command_RevokeApiToken struct {
+	RevokeApiToken *RevokeAPIToken `protobuf:"bytes,42,opt,name=revoke_api_token,json=revokeApiToken,proto3,oneof"`
+}
+
+type Command_PruneAudit struct {
+	PruneAudit *PruneAudit `protobuf:"bytes,43,opt,name=prune_audit,json=pruneAudit,proto3,oneof"`
+}
+
+type Command_Batch struct {
+	Batch *Batch `protobuf:"bytes,44,opt,name=batch,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -761,11 +828,21 @@ func (*Command_PutPlan) isCommand_Payload() {}
 
 func (*Command_DeletePlan) isCommand_Payload() {}
 
+func (*Command_CreateApiToken) isCommand_Payload() {}
+
+func (*Command_RevokeApiToken) isCommand_Payload() {}
+
+func (*Command_PruneAudit) isCommand_Payload() {}
+
+func (*Command_Batch) isCommand_Payload() {}
+
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          Actor_Kind             `protobuf:"varint,1,opt,name=kind,proto3,enum=uptimecluster.v1.Actor_Kind" json:"kind,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  Actor_Kind             `protobuf:"varint,1,opt,name=kind,proto3,enum=uptimecluster.v1.Actor_Kind" json:"kind,omitempty"`
+	Id    string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Display name of the actor at the time of the command, for the audit log (ADR 0031).
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -810,6 +887,13 @@ func (x *Actor) GetKind() Actor_Kind {
 func (x *Actor) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *Actor) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -3128,11 +3212,337 @@ func (x *DeletePlan) GetPlanId() string {
 	return ""
 }
 
+// CreateAPIToken stores a new API token of a tenant (ADR 0031, FA-AUTH-10).
+// Only the SHA-256 of the secret is sent, never the secret itself.
+type CreateAPIToken struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// "tenant"; other scopes need a later ADR (ADR 0031).
+	Scope string `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
+	Name  string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// tenant-viewer, tenant-editor or tenant-admin.
+	Role       string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	SecretHash string `protobuf:"bytes,5,opt,name=secret_hash,json=secretHash,proto3" json:"secret_hash,omitempty"`
+	// Expiry in UTC milliseconds; the FSM checks it against issued_at_ms (ADR 0031).
+	ExpiresAtMs   int64 `protobuf:"varint,6,opt,name=expires_at_ms,json=expiresAtMs,proto3" json:"expires_at_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAPIToken) Reset() {
+	*x = CreateAPIToken{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAPIToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAPIToken) ProtoMessage() {}
+
+func (x *CreateAPIToken) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAPIToken.ProtoReflect.Descriptor instead.
+func (*CreateAPIToken) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *CreateAPIToken) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CreateAPIToken) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *CreateAPIToken) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateAPIToken) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *CreateAPIToken) GetSecretHash() string {
+	if x != nil {
+		return x.SecretHash
+	}
+	return ""
+}
+
+func (x *CreateAPIToken) GetExpiresAtMs() int64 {
+	if x != nil {
+		return x.ExpiresAtMs
+	}
+	return 0
+}
+
+// RevokeAPIToken deletes an API token of the command's tenant (ADR 0031).
+type RevokeAPIToken struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAPIToken) Reset() {
+	*x = RevokeAPIToken{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAPIToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAPIToken) ProtoMessage() {}
+
+func (x *RevokeAPIToken) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAPIToken.ProtoReflect.Descriptor instead.
+func (*RevokeAPIToken) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *RevokeAPIToken) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// PruneAudit deletes audit entries and expired API tokens that are older than
+// the given times (ADR 0031). The leader sends it hourly with the time in the command.
+type PruneAudit struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	AuditBeforeMs         int64                  `protobuf:"varint,1,opt,name=audit_before_ms,json=auditBeforeMs,proto3" json:"audit_before_ms,omitempty"`
+	TokensExpiredBeforeMs int64                  `protobuf:"varint,2,opt,name=tokens_expired_before_ms,json=tokensExpiredBeforeMs,proto3" json:"tokens_expired_before_ms,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PruneAudit) Reset() {
+	*x = PruneAudit{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneAudit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneAudit) ProtoMessage() {}
+
+func (x *PruneAudit) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneAudit.ProtoReflect.Descriptor instead.
+func (*PruneAudit) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *PruneAudit) GetAuditBeforeMs() int64 {
+	if x != nil {
+		return x.AuditBeforeMs
+	}
+	return 0
+}
+
+func (x *PruneAudit) GetTokensExpiredBeforeMs() int64 {
+	if x != nil {
+		return x.TokensExpiredBeforeMs
+	}
+	return 0
+}
+
+// Batch applies several PutEntity and DeleteEntity commands atomically: either
+// all operations apply or none does (ADR 0031, FA-MON-06).
+type Batch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ops           []*BatchOp             `protobuf:"bytes,1,rep,name=ops,proto3" json:"ops,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Batch) Reset() {
+	*x = Batch{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Batch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Batch) ProtoMessage() {}
+
+func (x *Batch) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Batch.ProtoReflect.Descriptor instead.
+func (*Batch) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *Batch) GetOps() []*BatchOp {
+	if x != nil {
+		return x.Ops
+	}
+	return nil
+}
+
+// BatchOp is one operation of a Batch.
+type BatchOp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*BatchOp_PutEntity
+	//	*BatchOp_DeleteEntity
+	Op isBatchOp_Op `protobuf_oneof:"op"`
+	// Optional refinement of the audit action of this operation (ADR 0031).
+	AuditAction   string `protobuf:"bytes,3,opt,name=audit_action,json=auditAction,proto3" json:"audit_action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchOp) Reset() {
+	*x = BatchOp{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchOp) ProtoMessage() {}
+
+func (x *BatchOp) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchOp.ProtoReflect.Descriptor instead.
+func (*BatchOp) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *BatchOp) GetOp() isBatchOp_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *BatchOp) GetPutEntity() *PutEntity {
+	if x != nil {
+		if x, ok := x.Op.(*BatchOp_PutEntity); ok {
+			return x.PutEntity
+		}
+	}
+	return nil
+}
+
+func (x *BatchOp) GetDeleteEntity() *DeleteEntity {
+	if x != nil {
+		if x, ok := x.Op.(*BatchOp_DeleteEntity); ok {
+			return x.DeleteEntity
+		}
+	}
+	return nil
+}
+
+func (x *BatchOp) GetAuditAction() string {
+	if x != nil {
+		return x.AuditAction
+	}
+	return ""
+}
+
+type isBatchOp_Op interface {
+	isBatchOp_Op()
+}
+
+type BatchOp_PutEntity struct {
+	PutEntity *PutEntity `protobuf:"bytes,1,opt,name=put_entity,json=putEntity,proto3,oneof"`
+}
+
+type BatchOp_DeleteEntity struct {
+	DeleteEntity *DeleteEntity `protobuf:"bytes,2,opt,name=delete_entity,json=deleteEntity,proto3,oneof"`
+}
+
+func (*BatchOp_PutEntity) isBatchOp_Op() {}
+
+func (*BatchOp_DeleteEntity) isBatchOp_Op() {}
+
 var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xa4\x13\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xd5\x15\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -3140,7 +3550,8 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\fissued_at_ms\x18\x03 \x01(\x03R\n" +
 	"issuedAtMs\x12-\n" +
 	"\x05actor\x18\x04 \x01(\v2\x17.uptimecluster.v1.ActorR\x05actor\x12\x1b\n" +
-	"\ttenant_id\x18\x05 \x01(\tR\btenantId\x12<\n" +
+	"\ttenant_id\x18\x05 \x01(\tR\btenantId\x12!\n" +
+	"\faudit_action\x18\x06 \x01(\tR\vauditAction\x12<\n" +
 	"\n" +
 	"put_entity\x18\n" +
 	" \x01(\v2\x1b.uptimecluster.v1.PutEntityH\x00R\tputEntity\x12E\n" +
@@ -3175,11 +3586,17 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\rdelete_tenant\x18& \x01(\v2\x1e.uptimecluster.v1.DeleteTenantH\x00R\fdeleteTenant\x126\n" +
 	"\bput_plan\x18' \x01(\v2\x19.uptimecluster.v1.PutPlanH\x00R\aputPlan\x12?\n" +
 	"\vdelete_plan\x18( \x01(\v2\x1c.uptimecluster.v1.DeletePlanH\x00R\n" +
-	"deletePlanB\t\n" +
-	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
+	"deletePlan\x12L\n" +
+	"\x10create_api_token\x18) \x01(\v2 .uptimecluster.v1.CreateAPITokenH\x00R\x0ecreateApiToken\x12L\n" +
+	"\x10revoke_api_token\x18* \x01(\v2 .uptimecluster.v1.RevokeAPITokenH\x00R\x0erevokeApiToken\x12?\n" +
+	"\vprune_audit\x18+ \x01(\v2\x1c.uptimecluster.v1.PruneAuditH\x00R\n" +
+	"pruneAudit\x12/\n" +
+	"\x05batch\x18, \x01(\v2\x17.uptimecluster.v1.BatchH\x00R\x05batchB\t\n" +
+	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\xaf\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"P\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"P\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_USER\x10\x01\x12\x12\n" +
@@ -3377,7 +3794,29 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"limitsJson\"%\n" +
 	"\n" +
 	"DeletePlan\x12\x17\n" +
-	"\aplan_id\x18\x01 \x01(\tR\x06planId*\xab\x02\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\"\xa3\x01\n" +
+	"\x0eCreateAPIToken\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1f\n" +
+	"\vsecret_hash\x18\x05 \x01(\tR\n" +
+	"secretHash\x12\"\n" +
+	"\rexpires_at_ms\x18\x06 \x01(\x03R\vexpiresAtMs\" \n" +
+	"\x0eRevokeAPIToken\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"m\n" +
+	"\n" +
+	"PruneAudit\x12&\n" +
+	"\x0faudit_before_ms\x18\x01 \x01(\x03R\rauditBeforeMs\x127\n" +
+	"\x18tokens_expired_before_ms\x18\x02 \x01(\x03R\x15tokensExpiredBeforeMs\"4\n" +
+	"\x05Batch\x12+\n" +
+	"\x03ops\x18\x01 \x03(\v2\x19.uptimecluster.v1.BatchOpR\x03ops\"\xb7\x01\n" +
+	"\aBatchOp\x12<\n" +
+	"\n" +
+	"put_entity\x18\x01 \x01(\v2\x1b.uptimecluster.v1.PutEntityH\x00R\tputEntity\x12E\n" +
+	"\rdelete_entity\x18\x02 \x01(\v2\x1e.uptimecluster.v1.DeleteEntityH\x00R\fdeleteEntity\x12!\n" +
+	"\faudit_action\x18\x03 \x01(\tR\vauditActionB\x04\n" +
+	"\x02op*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -3404,7 +3843,7 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),                  // 0: uptimecluster.v1.EntityKind
 	(Actor_Kind)(0),                  // 1: uptimecluster.v1.Actor.Kind
@@ -3445,8 +3884,13 @@ var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(*DeleteTenant)(nil),             // 36: uptimecluster.v1.DeleteTenant
 	(*PutPlan)(nil),                  // 37: uptimecluster.v1.PutPlan
 	(*DeletePlan)(nil),               // 38: uptimecluster.v1.DeletePlan
-	nil,                              // 39: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),                  // 40: uptimecluster.v1.ErrorClass
+	(*CreateAPIToken)(nil),           // 39: uptimecluster.v1.CreateAPIToken
+	(*RevokeAPIToken)(nil),           // 40: uptimecluster.v1.RevokeAPIToken
+	(*PruneAudit)(nil),               // 41: uptimecluster.v1.PruneAudit
+	(*Batch)(nil),                    // 42: uptimecluster.v1.Batch
+	(*BatchOp)(nil),                  // 43: uptimecluster.v1.BatchOp
+	nil,                              // 44: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 45: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -3479,22 +3923,29 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	36, // 27: uptimecluster.v1.Command.delete_tenant:type_name -> uptimecluster.v1.DeleteTenant
 	37, // 28: uptimecluster.v1.Command.put_plan:type_name -> uptimecluster.v1.PutPlan
 	38, // 29: uptimecluster.v1.Command.delete_plan:type_name -> uptimecluster.v1.DeletePlan
-	1,  // 30: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 31: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 32: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 33: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	40, // 34: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	19, // 35: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 36: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	39, // 37: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	24, // 38: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
-	26, // 39: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
-	28, // 40: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
-	41, // [41:41] is the sub-list for method output_type
-	41, // [41:41] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	39, // 30: uptimecluster.v1.Command.create_api_token:type_name -> uptimecluster.v1.CreateAPIToken
+	40, // 31: uptimecluster.v1.Command.revoke_api_token:type_name -> uptimecluster.v1.RevokeAPIToken
+	41, // 32: uptimecluster.v1.Command.prune_audit:type_name -> uptimecluster.v1.PruneAudit
+	42, // 33: uptimecluster.v1.Command.batch:type_name -> uptimecluster.v1.Batch
+	1,  // 34: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 35: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 36: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 37: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	45, // 38: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	19, // 39: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 40: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	44, // 41: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	24, // 42: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
+	26, // 43: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
+	28, // 44: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
+	43, // 45: uptimecluster.v1.Batch.ops:type_name -> uptimecluster.v1.BatchOp
+	5,  // 46: uptimecluster.v1.BatchOp.put_entity:type_name -> uptimecluster.v1.PutEntity
+	6,  // 47: uptimecluster.v1.BatchOp.delete_entity:type_name -> uptimecluster.v1.DeleteEntity
+	48, // [48:48] is the sub-list for method output_type
+	48, // [48:48] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -3533,15 +3984,23 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_DeleteTenant)(nil),
 		(*Command_PutPlan)(nil),
 		(*Command_DeletePlan)(nil),
+		(*Command_CreateApiToken)(nil),
+		(*Command_RevokeApiToken)(nil),
+		(*Command_PruneAudit)(nil),
+		(*Command_Batch)(nil),
 	}
 	file_uptimecluster_v1_command_proto_msgTypes[31].OneofWrappers = []any{}
+	file_uptimecluster_v1_command_proto_msgTypes[40].OneofWrappers = []any{
+		(*BatchOp_PutEntity)(nil),
+		(*BatchOp_DeleteEntity)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   37,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

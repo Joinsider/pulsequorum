@@ -53,6 +53,9 @@ type Principal struct {
 	Roles    []Role
 	// ExpiresAt is when the presented credentials expire; zero if unknown.
 	ExpiresAt time.Time
+	// ViaToken is set when the caller authenticated with an API token
+	// (ADR 0031); UserID is then the token ID and Username the token name.
+	ViaToken bool
 }
 
 // Has reports whether the principal holds one of the roles.

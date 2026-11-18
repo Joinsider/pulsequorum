@@ -316,6 +316,69 @@ type Session struct {
 	RevokedMs int64
 }
 
+// APIToken is a long-lived service token of a tenant (ADR 0031, FA-AUTH-10).
+// Only the SHA-256 of the secret is stored.
+type APIToken struct {
+	ID         string // public ID, "tok_" + base32
+	TenantID   string
+	Scope      string // "tenant"; other scopes need a later ADR
+	Name       string
+	Role       string // tenant-viewer, tenant-editor or tenant-admin
+	SecretHash string
+	CreatedMs  int64
+	ExpiresMs  int64
+	// CreatedBy is who created the token.
+	CreatedByKind string
+	CreatedByID   string
+	CreatedByName string
+}
+
+// AuditEntry is one entry of the audit log (ADR 0031, FA-DAT-01). It names
+// the action and the object, never contents or secrets.
+type AuditEntry struct {
+	// Index is the Raft index of the command, Sub the position within a
+	// Batch command (0 otherwise). Together they order the log.
+	Index      uint64
+	Sub        int
+	AtMs       int64
+	TenantID   string
+	ActorKind  string // user, api_token or system
+	ActorID    string
+	ActorName  string
+	Action     string // e.g. monitor.create
+	ObjectKind string
+	ObjectID   string
+	RequestID  string
+}
+
+// AuditCursor continues an audit listing after the given entry.
+type AuditCursor struct {
+	Index uint64
+	Sub   int
+}
+
+// AuditQuery filters the audit log. Empty fields do not filter. Results are
+// ordered newest first.
+type AuditQuery struct {
+	// TenantID restricts the result to one tenant; empty means all tenants
+	// (platform admins only, enforced by the API).
+	TenantID   string
+	FromMs     int64 // inclusive, 0 = unbounded
+	ToMs       int64 // exclusive, 0 = unbounded
+	Action     string
+	ObjectKind string
+	ObjectID   string
+	ActorID    string
+	After      *AuditCursor
+	Limit      int
+}
+
+// AuditPage is one page of the audit log; Next is nil on the last page.
+type AuditPage struct {
+	Entries []AuditEntry
+	Next    *AuditCursor
+}
+
 // StatusChange is one entry of the consensus status history.
 type StatusChange struct {
 	SinceMs int64
@@ -499,6 +562,13 @@ type State interface {
 	// ListNodeIncarnations returns the last known incarnations ordered by node ID (ADR 0025).
 	ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error)
 
+	// GetAPITokenBySecretHash returns the API token with the hash or
+	// ErrNotFound (ADR 0031).
+	GetAPITokenBySecretHash(ctx context.Context, secretHash string) (APIToken, error)
+	// ListAPITokens returns the API tokens of the tenant, newest first.
+	ListAPITokens(ctx context.Context, tenantID string) ([]APIToken, error)
+	// ListAudit returns a page of the audit log (ADR 0031).
+	ListAudit(ctx context.Context, q AuditQuery) (AuditPage, error)
 	// AppliedIndex returns the last Raft log index applied to the state (0 if none).
 	AppliedIndex(ctx context.Context) (uint64, error)
 	// CommandLevel returns the command version the cluster may use (ADR 0018),
@@ -683,6 +753,22 @@ type StateTx interface {
 	RevokeTenantSessions(ctx context.Context, tenantID string, ms int64) error
 	// PruneSessions deletes the tokens that expired before beforeMs.
 	PruneSessions(ctx context.Context, beforeMs int64) error
+
+	// InsertAPIToken stores a new API token. A duplicate ID, secret hash or
+	// name within the tenant is ErrConflict (ADR 0031).
+	InsertAPIToken(ctx context.Context, t APIToken) error
+	// GetAPIToken returns the API token of the tenant or ErrNotFound.
+	GetAPIToken(ctx context.Context, tenantID, id string) (APIToken, error)
+	// CountAPITokens returns the number of API tokens of the tenant.
+	CountAPITokens(ctx context.Context, tenantID string) (int, error)
+	// DeleteAPIToken removes the API token; ErrNotFound if it does not exist.
+	DeleteAPIToken(ctx context.Context, tenantID, id string) error
+	// PruneAPITokens deletes the API tokens that expired before beforeMs.
+	PruneAPITokens(ctx context.Context, beforeMs int64) error
+	// InsertAudit appends audit entries. (Index, Sub) is unique.
+	InsertAudit(ctx context.Context, entries []AuditEntry) error
+	// PruneAudit deletes the audit entries with AtMs before beforeMs.
+	PruneAudit(ctx context.Context, beforeMs int64) error
 
 	// SetAppliedIndex records the Raft index applied by this transaction (ADR 0005).
 	SetAppliedIndex(ctx context.Context, index uint64) error

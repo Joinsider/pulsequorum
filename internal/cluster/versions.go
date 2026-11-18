@@ -61,6 +61,11 @@ func minVersion(cmd *pb.Command) uint32 {
 		*pb.Command_PutPlan,
 		*pb.Command_DeletePlan:
 		return TenantAdminCommandLevel
+	case *pb.Command_CreateApiToken,
+		*pb.Command_RevokeApiToken,
+		*pb.Command_PruneAudit,
+		*pb.Command_Batch:
+		return AuditCommandLevel
 	}
 	return 0
 }

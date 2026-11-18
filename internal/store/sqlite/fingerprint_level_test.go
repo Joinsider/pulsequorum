@@ -11,24 +11,30 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
-// TestFingerprintTenantAdminLevelGate covers ADR 0029 and ADR 0018: the plans,
-// the tombstones and the column tenants.source enter the fingerprint only from
-// command level 8 on, so that a rolling update does not look like divergence.
+// TestFingerprintLevelGates covers ADR 0029, ADR 0031 and ADR 0018: the plans,
+// the tombstones and the column tenants.source enter the fingerprint from
+// command level 8 on, the API tokens and the audit log from level 9 on, so
+// that a rolling update does not look like divergence.
 // Rows are changed directly in SQL, bypassing the command level on purpose.
-func TestFingerprintTenantAdminLevelGate(t *testing.T) {
+func TestFingerprintLevelGates(t *testing.T) {
 	changes := []struct {
 		name string
 		sql  string
-		// always is true for a change that the fingerprint covers at every level.
-		always bool
+		// from is the lowest command level at which the change enters the fingerprint.
+		from uint32
 	}{
-		{"plan limits", `UPDATE plans SET limits_json = '{"maxMonitors":5}' WHERE id = 'default'`, false},
-		{"plan name", `UPDATE plans SET name = 'Renamed' WHERE id = 'default'`, false},
-		{"tenant source", `UPDATE tenants SET source = 'auto' WHERE id = 't1'`, false},
-		{"tombstone", `INSERT INTO deleted_tenants (id, deleted_ms) VALUES ('gone', 5)`, false},
-		{"tenant name (control, always hashed)", `UPDATE tenants SET name = 'Other' WHERE id = 't1'`, true},
+		{"plan limits", `UPDATE plans SET limits_json = '{"maxMonitors":5}' WHERE id = 'default'`, 8},
+		{"plan name", `UPDATE plans SET name = 'Renamed' WHERE id = 'default'`, 8},
+		{"tenant source", `UPDATE tenants SET source = 'auto' WHERE id = 't1'`, 8},
+		{"tombstone", `INSERT INTO deleted_tenants (id, deleted_ms) VALUES ('gone', 5)`, 8},
+		{"api token", `INSERT INTO api_tokens (id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms,
+			created_by_kind, created_by_id) VALUES ('tok_1', 't1', 'tenant', 'ci', 'tenant-editor', 'hash', 1, 9000000000000,
+			'user', 'usr-1')`, 9},
+		{"audit entry", `INSERT INTO audit_log (raft_index, sub, at_ms, tenant_id, actor_kind, action)
+			VALUES (7, 0, 1, 't1', 'user', 'monitor.create')`, 9},
+		{"tenant name (control, always hashed)", `UPDATE tenants SET name = 'Other' WHERE id = 't1'`, 0},
 	}
-	for _, level := range []uint32{7, 8} {
+	for _, level := range []uint32{7, 8, 9} {
 		for _, c := range changes {
 			t.Run(fmt.Sprintf("level %d: %s", level, c.name), func(t *testing.T) {
 				ctx := context.Background()
@@ -54,7 +60,7 @@ func TestFingerprintTenantAdminLevelGate(t *testing.T) {
 					t.Fatal(err)
 				}
 				changed := before != after
-				want := c.always || level >= 8
+				want := level >= c.from
 				if changed != want {
 					t.Errorf("fingerprint changed = %v at level %d, want %v", changed, level, want)
 				}

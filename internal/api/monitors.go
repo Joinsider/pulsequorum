@@ -84,7 +84,14 @@ func requestID(tenantID string, key *uuid.UUID) string {
 }
 
 // apply proposes a command and maps cluster errors to HTTP (ADR 0012 A8).
+// Commands without an actor get the caller as actor, so the FSM can apply the
+// token rules and write the audit log (ADR 0031).
 func (h *Handlers) apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error) {
+	if cmd.GetActor() == nil {
+		if p, ok := auth.FromContext(ctx); ok {
+			cmd.Actor = actorOf(p)
+		}
+	}
 	res, err := h.deps.Cluster.Apply(ctx, cmd)
 	if err == nil {
 		return res, nil
@@ -98,6 +105,11 @@ func (h *Handlers) apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyRes
 				// The FSM messages of the tenant commands name the cause
 				// (organization bound, ID of a deleted tenant, not suspended).
 				return res, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: ce.Message}
+			}
+			if cmd.GetBatch() != nil {
+				// The FSM names the operation and monitor (ADR 0031, section 3).
+				return res, &Problem{Status: http.StatusConflict, Title: "Conflict",
+					Detail: "nothing was applied; a monitor was changed concurrently: " + ce.Message}
 			}
 			return res, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "the object was changed concurrently or already exists; reload and retry"}
 		case cluster.CodeNotFound:
@@ -190,7 +202,7 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_MONITOR, true, doc.IntervalSeconds, 0); err != nil {
 		return nil, err
 	}
-	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
+	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), "", func(id string) (cluster.MonitorDocument, error) {
 		return h.sealSecrets(doc, id, nil)
 	})
 	if err != nil {
@@ -204,8 +216,9 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 }
 
 // create proposes a new monitor. prepare builds its document for the new ID,
-// because secrets are encrypted for that ID (ADR 0015).
-func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID string,
+// because secrets are encrypted for that ID (ADR 0015). hint is the audit
+// action refinement ("clone" or empty, ADR 0031).
+func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID, hint string,
 	prepare func(id string) (cluster.MonitorDocument, error)) (store.Monitor, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -219,6 +232,7 @@ func (h *Handlers) create(ctx context.Context, p auth.Principal, reqID string,
 	if err != nil {
 		return store.Monitor{}, err
 	}
+	cmd.AuditAction = hint
 	res, err := h.apply(ctx, cmd)
 	if err != nil {
 		return store.Monitor{}, err
@@ -255,7 +269,7 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	if doc, err = h.sealSecrets(doc, current.ID, previous); err != nil {
 		return nil, err
 	}
-	m, err := h.replace(ctx, p, current, doc)
+	m, err := h.replace(ctx, p, current, doc, "")
 	if err != nil {
 		return nil, err
 	}
@@ -266,11 +280,14 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	return gen.UpdateMonitor200JSONResponse(out), nil
 }
 
-func (h *Handlers) replace(ctx context.Context, p auth.Principal, current store.Monitor, doc cluster.MonitorDocument) (store.Monitor, error) {
+// replace stores doc as the new version of current. hint is the audit action
+// refinement ("pause", "resume" or empty, ADR 0031).
+func (h *Handlers) replace(ctx context.Context, p auth.Principal, current store.Monitor, doc cluster.MonitorDocument, hint string) (store.Monitor, error) {
 	cmd, err := cluster.NewPutMonitor(uuid.NewString(), p.TenantID, current.ID, doc, current.Revision)
 	if err != nil {
 		return store.Monitor{}, err
 	}
+	cmd.AuditAction = hint
 	if _, err := h.apply(ctx, cmd); err != nil {
 		return store.Monitor{}, err
 	}
@@ -333,7 +350,11 @@ func (h *Handlers) setPaused(ctx context.Context, id uuid.UUID, paused bool) (st
 	}
 	doc := cluster.MonitorDocumentFrom(current)
 	doc.Paused = paused
-	return h.replace(ctx, p, current, doc)
+	hint := "resume"
+	if paused {
+		hint = "pause"
+	}
+	return h.replace(ctx, p, current, doc, hint)
 }
 
 // CloneMonitor copies a monitor; the copy starts paused (FA-MON-05).
@@ -352,7 +373,7 @@ func (h *Handlers) CloneMonitor(ctx context.Context, req gen.CloneMonitorRequest
 	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_MONITOR, true, doc.IntervalSeconds, 0); err != nil {
 		return nil, err
 	}
-	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
+	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), "clone", func(id string) (cluster.MonitorDocument, error) {
 		var err error
 		doc.Secrets, err = configsecret.Reencrypt(ctx, h.keyring(), src.ID, id, src.Secrets)
 		return doc, err

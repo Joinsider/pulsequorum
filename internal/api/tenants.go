@@ -502,7 +502,17 @@ func limitProblem(ce *cluster.CommandError) *Problem {
 // adminCommand starts a tenant or plan command of the platform admin. The actor
 // is the user: the FSM admits users and the system, never API tokens (ADR 0029).
 func adminCommand(p auth.Principal, reqID string) *pb.Command {
-	return &pb.Command{RequestId: reqID, Actor: &pb.Actor{Kind: pb.Actor_KIND_USER, Id: p.UserID}}
+	return &pb.Command{RequestId: reqID, Actor: actorOf(p)}
+}
+
+// actorOf returns the actor of commands the principal causes (ADR 0031). The
+// name is kept in the audit log as it was at the time of the action.
+func actorOf(p auth.Principal) *pb.Actor {
+	kind := pb.Actor_KIND_USER
+	if p.ViaToken {
+		kind = pb.Actor_KIND_API_TOKEN
+	}
+	return &pb.Actor{Kind: kind, Id: p.UserID, Name: p.Username}
 }
 
 // applyTenant proposes a tenant command and returns the tenant as the FSM left it.

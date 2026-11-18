@@ -161,6 +161,9 @@ type Config struct {
 	RetentionRaw    time.Duration
 	RetentionHourly time.Duration
 	RetentionDaily  time.Duration
+	// AuditRetention is how long audit log entries are kept, in command time
+	// (AUDIT_RETENTION, FA-DAT-01, ADR 0031). At least 24 hours.
+	AuditRetention time.Duration
 	// AuthCookieDomain is the Domain of the refresh cookie; empty = host-only cookie (ADR 0008).
 	AuthCookieDomain string
 	// AlertMaxAttempts is the number of delivery attempts per alert and channel (FA-ALR-03).
@@ -360,6 +363,13 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.RetentionRaw = days("RETENTION_RAW_DAYS", "30", 3)
 	cfg.RetentionHourly = days("RETENTION_HOURLY_DAYS", "365", 1)
 	cfg.RetentionDaily = days("RETENTION_DAILY_DAYS", "0", 0)
+
+	auditRaw := get("AUDIT_RETENTION", "8760h")
+	auditRetention, err := time.ParseDuration(auditRaw)
+	if err != nil || auditRetention < 24*time.Hour {
+		errs = append(errs, fmt.Errorf("AUDIT_RETENTION: must be a duration of at least 24h, got %q", auditRaw))
+	}
+	cfg.AuditRetention = auditRetention
 
 	cfg.AuthCookieDomain = get("AUTH_COOKIE_DOMAIN", "")
 	if strings.ContainsAny(cfg.AuthCookieDomain, " ;,/:") {

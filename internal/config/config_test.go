@@ -38,6 +38,27 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DegradedAfter != 15*time.Second {
 		t.Errorf("DegradedAfter = %v, want 15s", cfg.DegradedAfter)
 	}
+	if cfg.AuditRetention != 8760*time.Hour {
+		t.Errorf("AuditRetention = %v, want 8760h", cfg.AuditRetention)
+	}
+}
+
+// ADR 0031: AUDIT_RETENTION is a duration of at least 24 hours.
+func TestLoadAuditRetention(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "AUDIT_RETENTION": "720h"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuditRetention != 720*time.Hour {
+		t.Errorf("AuditRetention = %v, want 720h", cfg.AuditRetention)
+	}
+	cfg, err = Load(env(map[string]string{"NODE_NAME": "n1", "AUDIT_RETENTION": "24h"}))
+	if err != nil {
+		t.Fatalf("minimum 24h rejected: %v", err)
+	}
+	if cfg.AuditRetention != 24*time.Hour {
+		t.Errorf("AuditRetention = %v, want 24h", cfg.AuditRetention)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -101,6 +122,9 @@ func TestLoadInvalid(t *testing.T) {
 		{"alert attempts above limit", map[string]string{"ALERT_MAX_ATTEMPTS": "101"}, "ALERT_MAX_ATTEMPTS"},
 		{"alert bundle window not a duration", map[string]string{"ALERT_BUNDLE_WINDOW": "soon"}, "ALERT_BUNDLE_WINDOW"},
 		{"alert bundle window negative", map[string]string{"ALERT_BUNDLE_WINDOW": "-5s"}, "ALERT_BUNDLE_WINDOW"},
+		{"audit retention not a duration", map[string]string{"AUDIT_RETENTION": "a year"}, "AUDIT_RETENTION"},
+		{"audit retention below 24h", map[string]string{"AUDIT_RETENTION": "23h"}, "AUDIT_RETENTION"},
+		{"audit retention zero", map[string]string{"AUDIT_RETENTION": "0"}, "AUDIT_RETENTION"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

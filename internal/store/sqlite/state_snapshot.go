@@ -31,6 +31,11 @@ const (
 // a rolling update does not raise fingerprint_mismatch (ADR 0018, 0025).
 const tenantAdminLevel = 8
 
+// auditLevel is the command level of ADR 0031. Below it the API tokens and the
+// audit log are left out of the fingerprint: voters of the previous version
+// write neither, so a rolling update does not look like divergence.
+const auditLevel = 9
+
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
 // is excluded: the applied index legitimately differs between replicas that
 // are at different log positions. minLevel > 0 hashes a table only from that
@@ -64,6 +69,8 @@ var fingerprintTables = []struct {
 	{"unconfirmed_alerts", "node_id, local_id", 0},
 	{"system_alerts", "kind, subject", 0},
 	{"node_incarnations", "node_id", 0},
+	{"api_tokens", "tenant_id, id", auditLevel},
+	{"audit_log", "raft_index, sub", auditLevel},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.

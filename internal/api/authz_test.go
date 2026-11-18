@@ -89,6 +89,17 @@ func TestPermissionMatrix(t *testing.T) {
 		{"update user", "PUT", "/api/v1/users/" + missing, map[string]any{"displayName": "x"}, needAdmin},
 		{"delete user", "DELETE", "/api/v1/users/" + missing, nil, needAdmin},
 
+		// API tokens and the tenant's audit log (ADR 0031): tenant-admin and above.
+		{"list API tokens", "GET", "/api/v1/api-tokens", nil, needAdmin},
+		{"create API token", "POST", "/api/v1/api-tokens", map[string]any{}, needAdmin},
+		{"revoke API token", "DELETE", "/api/v1/api-tokens/tok_aaaaaaaaaaaaaaaa", nil, needAdmin},
+		{"list audit log", "GET", "/api/v1/audit", nil, needAdmin},
+		// Bulk monitor actions: editor and above.
+		{"bulk monitor action", "POST", "/api/v1/monitors/bulk",
+			map[string]any{"action": "pause", "ids": []string{missing}}, needEdit},
+		// The audit log of all tenants: platform admins only (ADR 0031).
+		{"list admin audit log", "GET", "/api/v1/admin/audit", nil, needPlatform},
+
 		// Cluster administration: platform admins only (FA-CLU-08). The
 		// matrix env has no cluster host, so platform admins get 503.
 		{"create join token", "POST", "/api/v1/admin/join-tokens", map[string]any{"role": "probe"}, needPlatform},

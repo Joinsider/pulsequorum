@@ -1,3 +1,5 @@
+export * from './api-tokens/api-tokens.service';
+export * from './audit/audit.service';
 export * from './auth/auth.service';
 export * from './cluster/cluster.service';
 export * from './incidents/incidents.service';

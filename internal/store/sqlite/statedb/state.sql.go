@@ -27,6 +27,17 @@ func (q *Queries) ChannelRevision(ctx context.Context, arg ChannelRevisionParams
 	return revision, err
 }
 
+const countAPITokens = `-- name: CountAPITokens :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM api_tokens WHERE tenant_id = ?
+`
+
+func (q *Queries) CountAPITokens(ctx context.Context, tenantID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAPITokens, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countEnabledUsersWithRole = `-- name: CountEnabledUsersWithRole :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users
 WHERE tenant_id = ? AND role = ? AND disabled = 0 AND id != ?
@@ -109,6 +120,23 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const deleteAPIToken = `-- name: DeleteAPIToken :execrows
+DELETE FROM api_tokens WHERE tenant_id = ? AND id = ?
+`
+
+type DeleteAPITokenParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) DeleteAPIToken(ctx context.Context, arg DeleteAPITokenParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAPIToken, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteChannel = `-- name: DeleteChannel :execrows
@@ -250,6 +278,15 @@ func (q *Queries) DeleteStatusHistoryBetween(ctx context.Context, arg DeleteStat
 	return err
 }
 
+const deleteTenantAPITokens = `-- name: DeleteTenantAPITokens :exec
+DELETE FROM api_tokens WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantAPITokens(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantAPITokens, tenantID)
+	return err
+}
+
 const deleteTenantAlerts = `-- name: DeleteTenantAlerts :exec
 
 DELETE FROM alert_outbox WHERE tenant_id = ?
@@ -259,6 +296,15 @@ DELETE FROM alert_outbox WHERE tenant_id = ?
 // (ADR 0029). DeleteTenant runs them in this order; the tenants row goes last.
 func (q *Queries) DeleteTenantAlerts(ctx context.Context, tenantID string) error {
 	_, err := q.db.ExecContext(ctx, deleteTenantAlerts, tenantID)
+	return err
+}
+
+const deleteTenantAudit = `-- name: DeleteTenantAudit :exec
+DELETE FROM audit_log WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantAudit(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantAudit, tenantID)
 	return err
 }
 
@@ -445,6 +491,57 @@ func (q *Queries) DueAlerts(ctx context.Context, arg DueAlertsParams) ([]AlertOu
 		return nil, err
 	}
 	return items, nil
+}
+
+const getAPIToken = `-- name: GetAPIToken :one
+SELECT id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms, created_by_kind, created_by_id, created_by_name FROM api_tokens WHERE tenant_id = ? AND id = ?
+`
+
+type GetAPITokenParams struct {
+	TenantID string
+	ID       string
+}
+
+func (q *Queries) GetAPIToken(ctx context.Context, arg GetAPITokenParams) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPIToken, arg.TenantID, arg.ID)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Scope,
+		&i.Name,
+		&i.Role,
+		&i.SecretHash,
+		&i.CreatedMs,
+		&i.ExpiresMs,
+		&i.CreatedByKind,
+		&i.CreatedByID,
+		&i.CreatedByName,
+	)
+	return i, err
+}
+
+const getAPITokenBySecretHash = `-- name: GetAPITokenBySecretHash :one
+SELECT id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms, created_by_kind, created_by_id, created_by_name FROM api_tokens WHERE secret_hash = ?
+`
+
+func (q *Queries) GetAPITokenBySecretHash(ctx context.Context, secretHash string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenBySecretHash, secretHash)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Scope,
+		&i.Name,
+		&i.Role,
+		&i.SecretHash,
+		&i.CreatedMs,
+		&i.ExpiresMs,
+		&i.CreatedByKind,
+		&i.CreatedByID,
+		&i.CreatedByName,
+	)
+	return i, err
 }
 
 const getAlert = `-- name: GetAlert :one
@@ -946,6 +1043,43 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	return i, err
 }
 
+const insertAPIToken = `-- name: InsertAPIToken :exec
+INSERT INTO api_tokens (id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms,
+                        created_by_kind, created_by_id, created_by_name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertAPITokenParams struct {
+	ID            string
+	TenantID      string
+	Scope         string
+	Name          string
+	Role          string
+	SecretHash    string
+	CreatedMs     int64
+	ExpiresMs     int64
+	CreatedByKind string
+	CreatedByID   string
+	CreatedByName string
+}
+
+func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) error {
+	_, err := q.db.ExecContext(ctx, insertAPIToken,
+		arg.ID,
+		arg.TenantID,
+		arg.Scope,
+		arg.Name,
+		arg.Role,
+		arg.SecretHash,
+		arg.CreatedMs,
+		arg.ExpiresMs,
+		arg.CreatedByKind,
+		arg.CreatedByID,
+		arg.CreatedByName,
+	)
+	return err
+}
+
 const insertAlert = `-- name: InsertAlert :exec
 INSERT INTO alert_outbox (
     tenant_id, alert_key, channel_id, monitor_id, payload_json, next_attempt_ms, created_ms, updated_ms
@@ -975,6 +1109,43 @@ func (q *Queries) InsertAlert(ctx context.Context, arg InsertAlertParams) error 
 		arg.NextAttemptMs,
 		arg.CreatedMs,
 		arg.UpdatedMs,
+	)
+	return err
+}
+
+const insertAuditEntry = `-- name: InsertAuditEntry :exec
+INSERT INTO audit_log (raft_index, sub, at_ms, tenant_id, actor_kind, actor_id, actor_name,
+                       action, object_kind, object_id, request_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertAuditEntryParams struct {
+	RaftIndex  int64
+	Sub        int64
+	AtMs       int64
+	TenantID   string
+	ActorKind  string
+	ActorID    string
+	ActorName  string
+	Action     string
+	ObjectKind string
+	ObjectID   string
+	RequestID  string
+}
+
+func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) error {
+	_, err := q.db.ExecContext(ctx, insertAuditEntry,
+		arg.RaftIndex,
+		arg.Sub,
+		arg.AtMs,
+		arg.TenantID,
+		arg.ActorKind,
+		arg.ActorID,
+		arg.ActorName,
+		arg.Action,
+		arg.ObjectKind,
+		arg.ObjectID,
+		arg.RequestID,
 	)
 	return err
 }
@@ -1383,6 +1554,45 @@ func (q *Queries) IsTenantDeleted(ctx context.Context, id string) (int64, error)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const listAPITokens = `-- name: ListAPITokens :many
+SELECT id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms, created_by_kind, created_by_id, created_by_name FROM api_tokens WHERE tenant_id = ? ORDER BY created_ms DESC, id
+`
+
+func (q *Queries) ListAPITokens(ctx context.Context, tenantID string) ([]ApiToken, error) {
+	rows, err := q.db.QueryContext(ctx, listAPITokens, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApiToken{}
+	for rows.Next() {
+		var i ApiToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Scope,
+			&i.Name,
+			&i.Role,
+			&i.SecretHash,
+			&i.CreatedMs,
+			&i.ExpiresMs,
+			&i.CreatedByKind,
+			&i.CreatedByID,
+			&i.CreatedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveSystemAlerts = `-- name: ListActiveSystemAlerts :many
@@ -2347,12 +2557,30 @@ func (q *Queries) MonitorRevision(ctx context.Context, arg MonitorRevisionParams
 	return revision, err
 }
 
+const pruneAPITokens = `-- name: PruneAPITokens :exec
+DELETE FROM api_tokens WHERE expires_ms < ?
+`
+
+func (q *Queries) PruneAPITokens(ctx context.Context, expiresMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneAPITokens, expiresMs)
+	return err
+}
+
 const pruneAlerts = `-- name: PruneAlerts :exec
 DELETE FROM alert_outbox WHERE state <> 'pending' AND updated_ms < ?
 `
 
 func (q *Queries) PruneAlerts(ctx context.Context, updatedMs int64) error {
 	_, err := q.db.ExecContext(ctx, pruneAlerts, updatedMs)
+	return err
+}
+
+const pruneAudit = `-- name: PruneAudit :exec
+DELETE FROM audit_log WHERE at_ms < ?
+`
+
+func (q *Queries) PruneAudit(ctx context.Context, atMs int64) error {
+	_, err := q.db.ExecContext(ctx, pruneAudit, atMs)
 	return err
 }
 

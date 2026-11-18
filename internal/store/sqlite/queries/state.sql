@@ -112,6 +112,12 @@ DELETE FROM unconfirmed_alerts WHERE tenant_id = ?;
 -- Only probe tokens of a private tenant carry the tenant ID (no foreign key).
 DELETE FROM join_tokens WHERE tenant_id = ?;
 
+-- name: DeleteTenantAPITokens :exec
+DELETE FROM api_tokens WHERE tenant_id = ?;
+
+-- name: DeleteTenantAudit :exec
+DELETE FROM audit_log WHERE tenant_id = ?;
+
 -- name: DeleteTenantRow :execrows
 DELETE FROM tenants WHERE id = ?;
 
@@ -638,3 +644,34 @@ ON CONFLICT (node_id) DO UPDATE SET incarnation = excluded.incarnation, seen_ms 
 
 -- name: ListNodeIncarnations :many
 SELECT * FROM node_incarnations ORDER BY node_id;
+
+-- name: GetAPITokenBySecretHash :one
+SELECT * FROM api_tokens WHERE secret_hash = ?;
+
+-- name: GetAPIToken :one
+SELECT * FROM api_tokens WHERE tenant_id = ? AND id = ?;
+
+-- name: ListAPITokens :many
+SELECT * FROM api_tokens WHERE tenant_id = ? ORDER BY created_ms DESC, id;
+
+-- name: InsertAPIToken :exec
+INSERT INTO api_tokens (id, tenant_id, scope, name, role, secret_hash, created_ms, expires_ms,
+                        created_by_kind, created_by_id, created_by_name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: CountAPITokens :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM api_tokens WHERE tenant_id = ?;
+
+-- name: DeleteAPIToken :execrows
+DELETE FROM api_tokens WHERE tenant_id = ? AND id = ?;
+
+-- name: PruneAPITokens :exec
+DELETE FROM api_tokens WHERE expires_ms < ?;
+
+-- name: InsertAuditEntry :exec
+INSERT INTO audit_log (raft_index, sub, at_ms, tenant_id, actor_kind, actor_id, actor_name,
+                       action, object_kind, object_id, request_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: PruneAudit :exec
+DELETE FROM audit_log WHERE at_ms < ?;

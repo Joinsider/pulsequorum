@@ -56,14 +56,15 @@ func countWhere(t *testing.T, db *sql.DB, table, column string, value any) int {
 // must clear every one of them; a new table with tenant_id fails the test until
 // it is listed here and cleared by DeleteTenant.
 var stateTenantTables = []string{
-	"alert_outbox", "incidents", "join_tokens", "maintenance_windows", "monitor_channels",
+	"alert_outbox", "api_tokens", "audit_log", "incidents", "join_tokens", "maintenance_windows", "monitor_channels",
 	"monitor_states", "monitor_status_history", "monitor_tags", "monitors", "notification_channels",
 	"refresh_sessions", "unconfirmed_alerts", "users",
 }
 
 // populateStateTenant writes one row of every kind of tenant data with the
 // store API. IDs carry the tenant suffix, because several IDs are unique across tenants.
-func populateStateTenant(t *testing.T, s *StateStore, tid string) {
+// auditIndex is the Raft index of the audit entry, unique per tenant.
+func populateStateTenant(t *testing.T, s *StateStore, tid string, auditIndex uint64) {
 	t.Helper()
 	ctx := context.Background()
 	x := "-" + tid
@@ -115,6 +116,15 @@ func populateStateTenant(t *testing.T, s *StateStore, tid string) {
 			ExpiresMs: 9_000_000_000_000, CreatedMs: 1}); err != nil {
 			return err
 		}
+		if err := tx.InsertAPIToken(ctx, store.APIToken{ID: "tok" + x, TenantID: tid, Scope: "tenant", Name: "ci" + x,
+			Role: "tenant-editor", SecretHash: "hash" + x, CreatedMs: 1, ExpiresMs: 9_000_000_000_000,
+			CreatedByKind: "user", CreatedByID: "usr" + x, CreatedByName: "User"}); err != nil {
+			return err
+		}
+		if err := tx.InsertAudit(ctx, []store.AuditEntry{{Index: auditIndex, TenantID: tid, AtMs: 1, ActorKind: "user",
+			ActorID: "usr" + x, Action: "monitor.create", ObjectKind: "monitor", ObjectID: "mon" + x}}); err != nil {
+			return err
+		}
 		return tx.InsertUnconfirmedAlerts(ctx, []store.UnconfirmedAlert{{NodeID: "node" + x, LocalID: 1, TenantID: tid,
 			MonitorID: "mon" + x, ChannelID: "ch" + x, Status: "DOWN", SinceMs: 2, SentMs: 3, Outcome: "sent",
 			Reachable: 1, Total: 3, Reporters: []string{"node" + x}, ReportedMs: 4}})
@@ -127,8 +137,8 @@ func populateStateTenant(t *testing.T, s *StateStore, tid string) {
 func TestDeleteTenantLeavesNoRows(t *testing.T) {
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
-	populateStateTenant(t, s, "tenant-a")
-	populateStateTenant(t, s, "tenant-b")
+	populateStateTenant(t, s, "tenant-a", 1)
+	populateStateTenant(t, s, "tenant-b", 2)
 	db := s.DB().reader
 
 	tables := tablesWithColumn(t, db, "tenant_id")

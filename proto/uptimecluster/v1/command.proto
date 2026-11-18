@@ -25,6 +25,9 @@ message Command {
   Actor actor = 4;
   // Empty for platform-level commands.
   string tenant_id = 5;
+  // Optional refinement of the audit action of a PutEntity (e.g. "pause",
+  // "resume", "tags"). The FSM validates it (ADR 0031).
+  string audit_action = 6;
 
   // 13 and 14 were OpenIncident and ResolveIncident; incidents are part of
   // SetMonitorState so that status and incident change atomically.
@@ -60,6 +63,11 @@ message Command {
     DeleteTenant delete_tenant = 38;
     PutPlan put_plan = 39;
     DeletePlan delete_plan = 40;
+    // API tokens, audit log and bulk actions (ADR 0031).
+    CreateAPIToken create_api_token = 41;
+    RevokeAPIToken revoke_api_token = 42;
+    PruneAudit prune_audit = 43;
+    Batch batch = 44;
   }
 }
 
@@ -73,6 +81,8 @@ message Actor {
   }
   Kind kind = 1;
   string id = 2;
+  // Display name of the actor at the time of the command, for the audit log (ADR 0031).
+  string name = 3;
 }
 
 // Kinds of tenant-scoped configuration objects stored as JSON documents.
@@ -439,4 +449,46 @@ message PutPlan {
 // DeletePlan deletes a plan that no tenant uses (ADR 0029).
 message DeletePlan {
   string plan_id = 1;
+}
+
+// CreateAPIToken stores a new API token of a tenant (ADR 0031, FA-AUTH-10).
+// Only the SHA-256 of the secret is sent, never the secret itself.
+message CreateAPIToken {
+  string id = 1;
+  // "tenant"; other scopes need a later ADR (ADR 0031).
+  string scope = 2;
+  string name = 3;
+  // tenant-viewer, tenant-editor or tenant-admin.
+  string role = 4;
+  string secret_hash = 5;
+  // Expiry in UTC milliseconds; the FSM checks it against issued_at_ms (ADR 0031).
+  int64 expires_at_ms = 6;
+}
+
+// RevokeAPIToken deletes an API token of the command's tenant (ADR 0031).
+message RevokeAPIToken {
+  string id = 1;
+}
+
+// PruneAudit deletes audit entries and expired API tokens that are older than
+// the given times (ADR 0031). The leader sends it hourly with the time in the command.
+message PruneAudit {
+  int64 audit_before_ms = 1;
+  int64 tokens_expired_before_ms = 2;
+}
+
+// Batch applies several PutEntity and DeleteEntity commands atomically: either
+// all operations apply or none does (ADR 0031, FA-MON-06).
+message Batch {
+  repeated BatchOp ops = 1;
+}
+
+// BatchOp is one operation of a Batch.
+message BatchOp {
+  oneof op {
+    PutEntity put_entity = 1;
+    DeleteEntity delete_entity = 2;
+  }
+  // Optional refinement of the audit action of this operation (ADR 0031).
+  string audit_action = 3;
 }

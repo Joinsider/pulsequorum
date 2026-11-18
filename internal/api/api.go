@@ -128,9 +128,13 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 	if err != nil {
 		panic(err)
 	}
+	tokenOps, err := tokenOperations()
+	if err != nil {
+		panic(err)
+	}
 	h := &Handlers{cfg: cfg, deps: deps, log: log, uptime: &uptime.Service{State: deps.State, Metrics: deps.Metrics},
 		schemas: &configsecret.Schemas{Registry: deps.Registry}}
-	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, deps.Authenticator)}, gen.StrictHTTPServerOptions{
+	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, tokenOps, deps.Authenticator)}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())
 		},

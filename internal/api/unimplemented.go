@@ -15,6 +15,11 @@ import (
 // embeds it, so an operation goes live once Handlers defines the method.
 type Unimplemented struct{}
 
+// ListAdminAudit is not implemented yet.
+func (Unimplemented) ListAdminAudit(context.Context, gen.ListAdminAuditRequestObject) (gen.ListAdminAuditResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // CreateJoinToken is not implemented yet.
 func (Unimplemented) CreateJoinToken(context.Context, gen.CreateJoinTokenRequestObject) (gen.CreateJoinTokenResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -120,6 +125,26 @@ func (Unimplemented) SuspendTenant(context.Context, gen.SuspendTenantRequestObje
 	return nil, ErrNotImplemented
 }
 
+// ListApiTokens is not implemented yet.
+func (Unimplemented) ListApiTokens(context.Context, gen.ListApiTokensRequestObject) (gen.ListApiTokensResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateApiToken is not implemented yet.
+func (Unimplemented) CreateApiToken(context.Context, gen.CreateApiTokenRequestObject) (gen.CreateApiTokenResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RevokeApiToken is not implemented yet.
+func (Unimplemented) RevokeApiToken(context.Context, gen.RevokeApiTokenRequestObject) (gen.RevokeApiTokenResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListAudit is not implemented yet.
+func (Unimplemented) ListAudit(context.Context, gen.ListAuditRequestObject) (gen.ListAuditResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // Login is not implemented yet.
 func (Unimplemented) Login(context.Context, gen.LoginRequestObject) (gen.LoginResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -202,6 +227,11 @@ func (Unimplemented) ListMonitors(context.Context, gen.ListMonitorsRequestObject
 
 // CreateMonitor is not implemented yet.
 func (Unimplemented) CreateMonitor(context.Context, gen.CreateMonitorRequestObject) (gen.CreateMonitorResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// BulkMonitors is not implemented yet.
+func (Unimplemented) BulkMonitors(context.Context, gen.BulkMonitorsRequestObject) (gen.BulkMonitorsResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

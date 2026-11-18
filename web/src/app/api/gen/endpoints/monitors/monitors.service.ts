@@ -29,6 +29,8 @@ import type {
 } from 'rxjs';
 
 import type {
+  BulkMonitorsInput,
+  BulkMonitorsResult,
   CheckResult,
   GetUptimeParams,
   HeartbeatPage,
@@ -264,6 +266,50 @@ export class MonitorsService {
     return this.http.post<TData>(
       `/api/v1/monitors`,
       monitorInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
+/**
+ * Atomic: either all listed monitors change or none does (ADR 0031). Each
+ * monitor must belong to the caller's tenant; an unknown or duplicate ID is
+ * a 422 that names its position in `ids`. `addTags` and `removeTags` apply
+ * the same rules as a single update (at most 20 tags, 1 to 64 characters).
+ * Monitors that already are in the requested state (paused, resumed, tag
+ * present or absent) are left unchanged and report their current revision.
+ * A monitor that changed concurrently answers 409 and nothing is applied.
+ * Every monitor gets its own audit entry; all share the request ID.
+ * @summary Apply one action to several monitors
+ */
+ bulkMonitors<TData = BulkMonitorsResult>(bulkMonitorsInput: BulkMonitorsInput, options?: HttpClientBodyOptions): Observable<TData>;
+ bulkMonitors<TData = BulkMonitorsResult>(bulkMonitorsInput: BulkMonitorsInput, options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ bulkMonitors<TData = BulkMonitorsResult>(bulkMonitorsInput: BulkMonitorsInput, options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  bulkMonitors<TData = BulkMonitorsResult>(
+    bulkMonitorsInput: BulkMonitorsInput, options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.post<TData>(
+      `/api/v1/monitors/bulk`,
+      bulkMonitorsInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.post<TData>(
+      `/api/v1/monitors/bulk`,
+      bulkMonitorsInput,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.post<TData>(
+      `/api/v1/monitors/bulk`,
+      bulkMonitorsInput,{
         ...(options as Omit<NonNullable<typeof options>, 'observe'>),
         observe: 'body',
       }
@@ -602,6 +648,7 @@ export class MonitorsService {
 export type ListMonitorTypesClientResult = NonNullable<MonitorType[]>
 export type ListMonitorsClientResult = NonNullable<MonitorPage>
 export type CreateMonitorClientResult = NonNullable<Monitor>
+export type BulkMonitorsClientResult = NonNullable<BulkMonitorsResult>
 export type GetMonitorClientResult = NonNullable<Monitor>
 export type UpdateMonitorClientResult = NonNullable<Monitor>
 export type DeleteMonitorClientResult = NonNullable<void>
