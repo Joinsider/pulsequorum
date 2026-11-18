@@ -38,7 +38,7 @@ func bindPlatformOrgEvery(ctx context.Context, cfg config.Config, log *slog.Logg
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if done := TryBindPlatformOrg(ctx, log, n, st, org); done {
+		if TryBindPlatformOrg(ctx, log, n, st, org) {
 			return
 		}
 		select {
