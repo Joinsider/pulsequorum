@@ -182,6 +182,10 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if h.deps.ClockOffsets != nil {
 		offsets = h.deps.ClockOffsets()
 	}
+	var ssrf map[string]bool
+	if h.deps.SSRFProtectionByNode != nil {
+		ssrf = h.deps.SSRFProtectionByNode()
+	}
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
 	// Command versions of the registered voters decide whether a rolling
@@ -214,6 +218,10 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		}
 		if off, ok := offsets[m.ID]; ok && m.ID != self {
 			node.ClockOffsetMs = &off
+		}
+		// Absent for a node without a recent answer, so the SPA ignores it.
+		if enabled, ok := ssrf[m.ID]; ok {
+			node.SsrfProtection = &enabled
 		}
 		if ps, ok := peers[m.ID]; ok && m.ID != self {
 			if lag, caught := ps.Lag(h.deps.Now()); caught {

@@ -12,6 +12,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -119,20 +120,30 @@ func (s *Sender) Validate(t Target) error {
 		}
 		svc, err := router.Locate(t.URL)
 		if err != nil {
-			return &DeliveryError{Permanent: true, Msg: Redact("invalid Shoutrrr URL: "+err.Error(), t.secrets()...)}
+			return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + Redact(err.Error(), t.secrets()...)}
 		}
 		_, http := svc.(types.HTTPClientSetter)
 		_, dial := svc.(types.DialContextSetter)
 		if !http && !dial && s.dialer.Policy != nil {
 			return &DeliveryError{Permanent: true, Msg: "this service cannot be used while SSRF protection is on"}
 		}
+		if err := s.validateShoutrrrHost(t.URL); err != nil {
+			return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + Redact(err.Error(), t.secrets()...)}
+		}
 		return nil
 	case store.ChannelWebhook:
 		if !strings.HasPrefix(t.URL, "http://") && !strings.HasPrefix(t.URL, "https://") {
 			return &DeliveryError{Permanent: true, Msg: "webhook URL must be an absolute http(s) URL"}
 		}
-		if _, err := http.NewRequest(http.MethodPost, t.URL, nil); err != nil {
-			return &DeliveryError{Permanent: true, Msg: Redact("invalid webhook URL: "+err.Error(), t.secrets()...)}
+		req, err := http.NewRequest(http.MethodPost, t.URL, nil)
+		if err != nil {
+			return &DeliveryError{Permanent: true, Msg: "invalid webhook URL: " + Redact(err.Error(), t.secrets()...)}
+		}
+		// Same save-time rules as for monitors (ADR 0030): notation always,
+		// blocked IP literals when SSRF protection is on. Names are checked
+		// when the webhook is sent.
+		if err := checker.ValidateHost(req.URL.Hostname(), s.policy()); err != nil {
+			return &DeliveryError{Permanent: true, Msg: "invalid webhook URL: " + Redact(err.Error(), t.secrets()...)}
 		}
 		switch t.Method {
 		case "", http.MethodPost, http.MethodPut:
@@ -142,6 +153,58 @@ func (s *Sender) Validate(t Target) error {
 		return ValidateTemplate(t.Template)
 	}
 	return &DeliveryError{Permanent: true, Msg: fmt.Sprintf("unknown channel kind %q", t.Kind)}
+}
+
+// urlHostServices are the Shoutrrr services that contact the host of their
+// URL; the others talk to a fixed public API and use the URL host for
+// tokens or IDs (which may well be numeric). The list comes from the
+// per-service test in shoutrrr_ssrf_test.go.
+var urlHostServices = map[string]bool{
+	"bark": true, "generic": true, "gotify": true, "googlechat": true, "hangouts": true,
+	"homeassistant": true, "matrix": true, "mattermost": true, "mqtt": true, "mqtts": true,
+	"ntfy": true, "opsgenie": true, "pagerduty": true, "rocketchat": true, "signal": true,
+	"smtp": true, "xmpp": true, "xmpps": true, "zulip": true,
+}
+
+// validateShoutrrrHost applies the save-time host rules of ADR 0030 to the
+// destination of a Shoutrrr URL. Telegram takes its server from the apiurl
+// query parameter. Teams only accepts hosts below a fixed Microsoft domain,
+// and the fixed-host services never contact the URL host, so these rely on
+// the dial-time check alone.
+func (s *Sender) validateShoutrrrHost(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return errors.New("URL does not parse")
+	}
+	scheme, _, _ := strings.Cut(strings.ToLower(u.Scheme), "+")
+	host := ""
+	switch {
+	case urlHostServices[scheme]:
+		host = u.Hostname()
+	case scheme == "telegram":
+		api := u.Query().Get("apiurl")
+		if api == "" {
+			return nil
+		}
+		au, err := url.Parse(api)
+		if err != nil {
+			return errors.New("apiurl does not parse")
+		}
+		host = au.Hostname()
+	}
+	if host == "" {
+		return nil // the service falls back to its default public host
+	}
+	return checker.ValidateHost(host, s.policy())
+}
+
+// policy is the address policy of the sender's dialer, nil when SSRF
+// protection is off.
+func (s *Sender) policy() checker.AddressPolicy {
+	if s.dialer == nil {
+		return nil
+	}
+	return s.dialer.Policy
 }
 
 // Send delivers one alert. Errors are *DeliveryError without secrets.

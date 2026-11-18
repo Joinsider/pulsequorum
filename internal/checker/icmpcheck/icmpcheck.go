@@ -69,6 +69,11 @@ var (
 	_ checker.CapabilityRequirer = (*Checker)(nil)
 )
 
+var (
+	_ checker.Checker      = (*Checker)(nil)
+	_ checker.TargetLister = (*Checker)(nil)
+)
+
 func init() { checker.Default.Register(&Checker{}) }
 
 // Type implements checker.Checker.
@@ -95,6 +100,16 @@ func (*Checker) Validate(raw json.RawMessage) error {
 		return &checker.ValidationError{Fields: []checker.FieldError{{Field: "/host", Message: "non-canonical IP address notation is not allowed"}}}
 	}
 	return nil
+}
+
+// Targets implements checker.TargetLister: the configured host is the
+// destination (ADR 0030).
+func (*Checker) Targets(raw json.RawMessage) ([]checker.Target, error) {
+	cfg, err := parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []checker.Target{{Field: "/host", Host: cfg.Host}}, nil
 }
 
 func parse(raw json.RawMessage) (*Config, error) {

@@ -56,7 +56,7 @@ func (d *Dialer) Allow(ip netip.Addr) error {
 	if d == nil || d.Policy == nil {
 		return nil
 	}
-	return d.Policy.Check(ip.Unmap())
+	return d.Policy.Check(normalize(ip))
 }
 
 func (d *Dialer) control(_, address string, _ syscall.RawConn) error {
@@ -68,7 +68,14 @@ func (d *Dialer) control(_, address string, _ syscall.RawConn) error {
 		// Control always receives a numeric address; anything else is unexpected.
 		return fmt.Errorf("%w: unparsable destination %q", ErrSSRFBlocked, address)
 	}
-	return d.Policy.Check(ap.Addr().Unmap())
+	return d.Policy.Check(normalize(ap.Addr()))
+}
+
+// normalize unmaps IPv4-mapped IPv6 addresses and drops the IPv6 zone.
+// netip.Prefix.Contains never matches a zoned address, so "fe80::1%eth0" or
+// "::1%lo" would otherwise pass every prefix check.
+func normalize(ip netip.Addr) netip.Addr {
+	return ip.Unmap().WithZone("")
 }
 
 // BlockPrivate denies loopback, private, link-local (including cloud metadata
@@ -94,6 +101,7 @@ var blockedPrefixes = func() []struct {
 		{"240.0.0.0/4", "reserved / broadcast"},
 		{"::/96", "IPv4-compatible / unspecified / loopback"},
 		{"::ffff:0:0/96", "IPv4-mapped"},
+		{"::ffff:0:0:0/96", "IPv4-translated"},
 		{"64:ff9b::/96", "NAT64"},
 		{"64:ff9b:1::/48", "local NAT64"},
 		{"100::/64", "discard"},
@@ -120,6 +128,7 @@ func (BlockPrivate) Check(ip netip.Addr) error {
 	if !ip.IsValid() {
 		return &BlockedError{Addr: ip, Reason: "invalid address"}
 	}
+	ip = normalize(ip)
 	for _, b := range blockedPrefixes {
 		if b.prefix.Contains(ip) {
 			return &BlockedError{Addr: ip, Reason: b.reason}

@@ -38,6 +38,7 @@ import {
   removalImpact,
   RemovalImpact,
   sortNodes,
+  ssrfMismatch,
   statusOf,
 } from './cluster-rules';
 
@@ -138,6 +139,12 @@ export class ClusterPage {
         clockText: node.clockOffsetMs === undefined ? null : formatOffset(node.clockOffsetMs),
       };
     });
+  });
+
+  /** True while the answered nodes report different SSRF settings (ADR 0030). */
+  protected readonly ssrfDiffers = computed(() => {
+    const data = this.data();
+    return data ? ssrfMismatch(data.nodes) : false;
   });
 
   protected readonly summary = computed<ClusterSummary | null>(() => {

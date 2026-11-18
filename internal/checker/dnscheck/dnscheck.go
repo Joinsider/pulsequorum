@@ -65,7 +65,10 @@ type Checker struct {
 	SystemResolvers []string
 }
 
-var _ checker.Checker = (*Checker)(nil)
+var (
+	_ checker.Checker      = (*Checker)(nil)
+	_ checker.TargetLister = (*Checker)(nil)
+)
 
 func init() { checker.Default.Register(&Checker{}) }
 
@@ -102,6 +105,30 @@ func (*Checker) Validate(raw json.RawMessage) error {
 		return &checker.ValidationError{Fields: fields}
 	}
 	return nil
+}
+
+// Targets implements checker.TargetLister. Only a configured resolver is a
+// destination; the queried hostname is only looked up and is not checked
+// (ADR 0030). The address is not validated here: ValidateHost does that, so
+// a non-canonical notation gets its own message.
+func (*Checker) Targets(raw json.RawMessage) ([]checker.Target, error) {
+	cfg, err := parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Resolver == "" {
+		return nil, nil
+	}
+	return []checker.Target{{Field: "/resolver", Host: resolverHost(cfg.Resolver)}}, nil
+}
+
+// resolverHost returns the host part of a resolver given as "IP", "IP:port"
+// or "[IPv6]:port". It does not check the address.
+func resolverHost(s string) string {
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		return host
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
 }
 
 func parse(raw json.RawMessage) (*Config, error) {
@@ -157,8 +184,14 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 
 	details := map[string]any{}
 	var resp *dns.Msg
+	// The system resolver is the operator's, often on an internal address;
+	// with SSRF protection on, tenants only learn that it was used.
+	hideResolver := cfg.Resolver == "" && env.Dialer != nil && env.Dialer.Policy != nil
 	for _, server := range servers {
 		details["resolver"] = server
+		if hideResolver {
+			details["resolver"] = "system"
+		}
 		resp, err = exchange(ctx, dialer, cfg.Transport, server, msg)
 		if err == nil && resp.Truncated && cfg.Transport == "udp" {
 			// Large answers are cut off over UDP; repeat over TCP (FA-CHK-41).
@@ -171,7 +204,12 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 	}
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
-		return checker.Down(err, latency, details)
+		res := checker.Down(err, latency, details)
+		if hideResolver {
+			// Network errors name the resolver's and the node's addresses.
+			res.Message = "system resolver failed (" + string(res.ErrorClass) + ")"
+		}
+		return res
 	}
 
 	details["rcode"] = dns.RcodeToString[resp.Rcode]
@@ -179,6 +217,15 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 	if resp.Rcode != dns.RcodeSuccess {
 		return checker.Result{Status: checker.StatusDown, LatencyMs: latency, ErrorClass: checker.ClassDNS,
 			Message: fmt.Sprintf("%s for %s %s", dns.RcodeToString[resp.Rcode], cfg.RecordType, cfg.Hostname), Details: details}
+	}
+
+	// With SSRF protection on, an answer in a blocked range fails the check
+	// and is not shown: otherwise a tenant could map internal names of the
+	// operator through the system resolver (ADR 0030, FA-SEC-SSRF).
+	if reason, blocked := blockedAnswer(env.Dialer, resp.Answer); blocked {
+		delete(details, "authenticatedData")
+		return checker.Result{Status: checker.StatusDown, LatencyMs: latency, ErrorClass: checker.ClassSSRFBlocked,
+			Message: "answer in a blocked range: " + reason, Details: details}
 	}
 
 	answers := render(qtype, resp.Answer)
@@ -200,6 +247,35 @@ func summarize(answers []string) string {
 		return strings.Join(answers, ", ")
 	}
 	return fmt.Sprintf("%s (+%d more)", strings.Join(answers[:shown], ", "), len(answers)-shown)
+}
+
+// blockedAnswer reports whether an A or AAAA record of the answer section is
+// denied by the dialer's address policy, and the reason without the address.
+// All address records count, not only those of the queried type, because a
+// CNAME query can carry the target's addresses as well.
+func blockedAnswer(d *checker.Dialer, rrs []dns.RR) (string, bool) {
+	for _, rr := range rrs {
+		var ip net.IP
+		switch r := rr.(type) {
+		case *dns.A:
+			ip = r.A
+		case *dns.AAAA:
+			ip = r.AAAA
+		default:
+			continue
+		}
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			return "invalid address", true
+		}
+		var berr *checker.BlockedError
+		if err := d.Allow(addr); errors.As(err, &berr) {
+			return berr.Reason, true
+		} else if err != nil {
+			return "address rejected", true
+		}
+	}
+	return "", false
 }
 
 // servers returns the resolvers to ask and the dialer to use. A resolver set

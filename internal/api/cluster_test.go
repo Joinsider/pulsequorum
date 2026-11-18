@@ -592,3 +592,28 @@ type fakeApplier struct{ err error }
 func (f fakeApplier) Apply(context.Context, *pb.Command) (cluster.ApplyResult, error) {
 	return cluster.ApplyResult{}, f.err
 }
+
+// TestListClusterNodesSSRFProtection checks that each node shows its SSRF
+// setting (ADR 0030) and that a node without a recent answer shows none.
+func TestListClusterNodesSSRFProtection(t *testing.T) {
+	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
+	ssrf := map[string]bool{"n1": true, "n2": false}
+	e := newEnvTweaked(t, false, func(d *Deps) {
+		d.ClusterAdmin = admin
+		d.SSRFProtectionByNode = func() map[string]bool { return ssrf }
+	})
+	got := decode[gen.ClusterNodeList](t, e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil))
+	byID := map[string]gen.ClusterNode{}
+	for _, n := range got.Nodes {
+		byID[n.Id] = n
+	}
+	if n := byID["n1"]; n.SsrfProtection == nil || !*n.SsrfProtection {
+		t.Errorf("n1 ssrfProtection = %v, want true", n.SsrfProtection)
+	}
+	if n := byID["n2"]; n.SsrfProtection == nil || *n.SsrfProtection {
+		t.Errorf("n2 ssrfProtection = %v, want false", n.SsrfProtection)
+	}
+	if n := byID["n3"]; n.SsrfProtection != nil {
+		t.Errorf("n3 ssrfProtection = %v without an answer, want none", *n.SsrfProtection)
+	}
+}

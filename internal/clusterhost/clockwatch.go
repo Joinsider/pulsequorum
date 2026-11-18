@@ -124,6 +124,50 @@ func (t *selfCheckTracker) snapshot(now time.Time) map[string]selfcheck.Remote {
 	return out
 }
 
+// SSRFProtectionByNode returns whether SSRF protection is on for each node,
+// by node ID (ADR 0030). This node reports its own setting; a peer appears
+// only with a GetStatus answer within clockMaxAge.
+func (h *Host) SSRFProtectionByNode() map[string]bool {
+	out := h.ssrf.snapshot(h.clock())
+	out[h.Node.ID()] = h.ssrfProtection
+	return out
+}
+
+// ssrfTracker keeps the last SSRF setting each peer reported in GetStatus.
+type ssrfTracker struct {
+	mu      sync.Mutex
+	entries map[string]ssrfEntry
+}
+
+type ssrfEntry struct {
+	enabled    bool
+	answeredAt time.Time
+}
+
+func (t *ssrfTracker) record(peerID string, enabled bool, at time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.entries == nil {
+		t.entries = map[string]ssrfEntry{}
+	}
+	t.entries[peerID] = ssrfEntry{enabled: enabled, answeredAt: at}
+}
+
+// snapshot returns the settings answered within clockMaxAge of now.
+func (t *ssrfTracker) snapshot(now time.Time) map[string]bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]bool, len(t.entries))
+	for id, e := range t.entries {
+		if now.Sub(e.answeredAt) > clockMaxAge {
+			delete(t.entries, id)
+			continue
+		}
+		out[id] = e.enabled
+	}
+	return out
+}
+
 // clockWait returns the pause between two rounds of measureClocks. While the
 // node knows no leader, the pause is at most leaderlessPollInterval, so that
 // the degraded detector sees fresh peer views (ADR 0024, section 2).
@@ -235,6 +279,11 @@ func (h *Host) measurePeer(ctx context.Context, p replication.Peer) {
 	})
 	// The ADR 0025 signals ride on the same answer.
 	h.signals.record(p.ID, sysalert.FromStatus(p.ID, st, t1))
+	// The SSRF setting rides on the same answer (ADR 0030).
+	// Older nodes do not send it; they stay unknown instead of "off".
+	if st.SsrfProtection != nil {
+		h.ssrf.record(p.ID, st.GetSsrfProtection(), t1)
+	}
 	// The self-check answer rides on the same poll (ADR 0022). Its age is
 	// taken on the peer's clock, so a skewed clock does not distort it.
 	h.selfChecks.record(p.ID, selfcheck.Remote{

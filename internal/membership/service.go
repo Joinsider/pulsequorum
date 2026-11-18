@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/clusternet"
@@ -84,6 +85,9 @@ type Service struct {
 	SelfCheck func() selfcheck.Status
 	// Own reports the signals of this node that the leader evaluates (ADR 0025).
 	Own OwnSignals
+	// SSRFProtection is whether SSRF protection is on for this node's checks
+	// and notifications (ADR 0030); GetStatus reports it.
+	SSRFProtection bool
 }
 
 // OwnSignals are the signals of this node that GetStatus reports (ADR 0025).
@@ -315,6 +319,7 @@ func (s *Service) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStatu
 		LastLogIndex: st.LastLogIndex, LastContactMs: st.LastContactMs, LeaderId: st.LeaderID,
 		LeaderAddress: st.LeaderAddress, WallClockUnixMs: s.now().UnixMilli(),
 		SelfCheckConfigured: sc.Configured, SelfCheckFailed: sc.Failed, SelfCheckAtMs: sc.AtMs,
+		SsrfProtection: proto.Bool(s.SSRFProtection),
 	}
 	s.Own.fill(out)
 	return out, nil

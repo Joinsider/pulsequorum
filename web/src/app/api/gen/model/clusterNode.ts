@@ -47,4 +47,6 @@ export interface ClusterNode {
   connectivityImpaired?: boolean;
   /** Why the connectivity is impaired (ADR 0022); absent unless it is impaired */
   connectivityReason?: ClusterNodeConnectivityReason;
+  /** Whether SSRF protection is on for the node's checks and notifications (ADR 0030); absent while the node has not answered recently or is older than ADR 0030. */
+  ssrfProtection?: boolean;
 }

@@ -606,6 +606,22 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 		for _, f := range verr.Fields {
 			add("/config"+f.Field, f.Message)
 		}
+	default:
+		// The destination hosts are checked against the node's address policy
+		// once the configuration itself is valid (ADR 0030).
+		if h.deps.SSRFPolicy != nil {
+			err := h.deps.Registry.ValidateTargets(in.Type, cfg, h.deps.SSRFPolicy)
+			var verr *checker.ValidationError
+			switch {
+			case err == nil:
+			case !errors.As(err, &verr):
+				return cluster.MonitorDocument{}, err
+			default:
+				for _, f := range verr.Fields {
+					add("/config"+f.Field, f.Message)
+				}
+			}
+		}
 	}
 
 	if len(fields) > 0 {

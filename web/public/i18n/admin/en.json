@@ -38,6 +38,7 @@
     },
     "noLeader": "No leader is known. Writes are refused until an election succeeds.",
     "upgradePending": "A rolling update is in progress: not all voters support the same command version yet.",
+    "ssrfMismatch": "SSRF protection differs between nodes. Set SSRF_PROTECTION to the same value on all nodes.",
     "warningsLabel": "Quorum warnings",
     "node": {
       "voter": "Voter",
@@ -65,7 +66,10 @@
       "replicationLag": "Replication lag",
       "replicationError": "Replication error: {{ error }}",
       "clockOffset": "Clock offset",
-      "clockWarning": "The clock differs by 2 s or more. Enable NTP on all nodes."
+      "clockWarning": "The clock differs by 2 s or more. Enable NTP on all nodes.",
+      "ssrfProtection": "SSRF protection",
+      "ssrfOn": "on",
+      "ssrfOff": "off"
     },
     "actions": {
       "remove": "Remove",

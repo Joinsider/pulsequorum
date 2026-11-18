@@ -35,3 +35,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0027](0027-oidc-anbindung.md) | OIDC-Anbindung mit Profilen (generisch und Zitadel) | Accepted | 2026-11-17 |
 | [0028](0028-rollen-aus-userinfo-und-client-id.md) | Rollen aus `/userinfo` und `client_id` als Ersatz für `azp` | Accepted | 2026-11-17 |
 | [0029](0029-mandantenverwaltung-plaene-limits.md) | Mandantenverwaltung, Pläne, Limits und Auto-Provisionierung | Accepted | 2026-11-17 |
+| [0030](0030-ssrf-durchsetzung.md) | SSRF-Durchsetzung: Bereichslisten, Prüfung beim Speichern, DNS-Antworten | Accepted | 2026-11-18 |

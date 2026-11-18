@@ -24,6 +24,9 @@
     "errorClass": "Error class",
     "message": "Message"
   },
+  "errorHints": {
+    "ssrfBlocked": "The target address is in a blocked network range (private, loopback, link-local or cloud metadata). SSRF protection is on for this installation."
+  },
   "uptime": {
     "title": "Uptime",
     "range": "Time range",

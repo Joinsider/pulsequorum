@@ -16,6 +16,7 @@ import {
   quorumOf,
   removalImpact,
   sortNodes,
+  ssrfMismatch,
   statusOf,
 } from './cluster-rules';
 
@@ -255,5 +256,27 @@ describe('formatOffset', () => {
     [90_000, '+90.0 s'],
   ])('formats %s ms as %s', (ms, want) => {
     expect(formatOffset(ms)).toBe(want);
+  });
+});
+
+describe('ssrfMismatch', () => {
+  const node = (id: string, ssrfProtection?: boolean): ClusterNode => ({
+    id,
+    address: `${id}:7000`,
+    voter: true,
+    leader: false,
+    self: false,
+    ssrfProtection,
+  });
+
+  it.each([
+    ['no node answered', [node('a'), node('b')], false],
+    ['all nodes on', [node('a', true), node('b', true)], false],
+    ['all nodes off', [node('a', false), node('b', false)], false],
+    ['on and off', [node('a', true), node('b', false)], true],
+    ['unanswered nodes are ignored', [node('a', true), node('b'), node('c', true)], false],
+    ['off next to an unanswered node', [node('a', false), node('b'), node('c', true)], true],
+  ])('%s', (_name, nodes, want) => {
+    expect(ssrfMismatch(nodes)).toBe(want);
   });
 });

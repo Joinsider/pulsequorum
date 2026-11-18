@@ -23,7 +23,10 @@ func TestBlockPrivate(t *testing.T) {
 		"169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255", "198.18.0.1",
 		"::1", "::", "::ffff:127.0.0.1", "::ffff:169.254.169.254", "::127.0.0.1",
 		"64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe", "2002:7f00:1::1", "2001:0:4136:e378::1",
-		"fc00::1", "fd12:3456::1", "fe80::1", "ff02::1",
+		"fc00::1", "fd12:3456::1", "fe80::1", "ff02::1", "::ffff:0:7f00:1",
+		// Zoned addresses never match a netip.Prefix; the zone must not
+		// hide them from the check.
+		"fe80::1%eth0", "::1%lo", "fd00::1%en0", "ff02::1%eth0", "::ffff:127.0.0.1%eth0",
 	}
 	allowed := []string{"8.8.8.8", "1.1.1.1", "172.32.0.1", "192.169.0.1", "100.128.0.1", "2606:4700::1111", "2a00:1450::1"}
 
@@ -59,9 +62,13 @@ func FuzzAllowMapped(f *testing.F) {
 	})
 }
 
-func listen(t *testing.T) string {
+func listen(t *testing.T) string { return listenOn(t, "127.0.0.1:0") }
+
+func listen6(t *testing.T) string { return listenOn(t, "[::1]:0") }
+
+func listenOn(t *testing.T, laddr string) string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", laddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +83,47 @@ func listen(t *testing.T) string {
 		}
 	}()
 	return ln.Addr().String()
+}
+
+// TestDialerBlocksZonedLoopback dials ::1 with the zone of the loopback
+// interface: the socket really connects, so only the policy can stop it.
+func TestDialerBlocksZonedLoopback(t *testing.T) {
+	ln, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	}
+	_ = ln.Close()
+	ifs, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zone := ""
+	for _, i := range ifs {
+		if i.Flags&net.FlagLoopback != 0 {
+			zone = i.Name
+			break
+		}
+	}
+	if zone == "" {
+		t.Skip("no loopback interface")
+	}
+	addr := listen6(t)
+	_, port, _ := net.SplitHostPort(addr)
+	target := net.JoinHostPort("::1%"+zone, port)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := (&Dialer{}).DialContext(ctx, "tcp", target)
+	if err != nil {
+		t.Skipf("zoned loopback not dialable here: %v", err)
+	}
+	_ = conn.Close()
+	if _, err := (&Dialer{Policy: BlockPrivate{}}).DialContext(ctx, "tcp", target); !errors.Is(err, ErrSSRFBlocked) {
+		t.Fatalf("dial %s = %v, want blocked", target, err)
+	}
+	if err := (&Dialer{Policy: BlockPrivate{}}).Allow(netip.MustParseAddr("::1%" + zone)); !errors.Is(err, ErrSSRFBlocked) {
+		t.Fatalf("Allow(::1%%%s) = %v, want blocked", zone, err)
+	}
 }
 
 func TestDialerPolicy(t *testing.T) {

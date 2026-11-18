@@ -6,6 +6,7 @@ package dnscheck
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -27,6 +28,11 @@ var zone = map[string][]string{
 	"alias.test.": {"alias.test. 60 IN CNAME a.test.", "a.test. 60 IN A 192.0.2.1"},
 	"srv.test.":   {"srv.test. 60 IN SRV 10 5 5060 sip.test."},
 	"caa.test.":   {`caa.test. 60 IN CAA 0 issue "letsencrypt.org"`},
+	// Internal names that must not leak through the system resolver.
+	"internal.test.": {"internal.test. 60 IN A 10.1.2.3", "internal.test. 60 IN A 192.0.2.1"},
+	"meta.test.":     {"meta.test. 60 IN CNAME md.test.", "md.test. 60 IN A 169.254.169.254"},
+	"ula.test.":      {"ula.test. 60 IN AAAA fd00::1"},
+	"mapped.test.":   {"mapped.test. 60 IN AAAA ::ffff:127.0.0.1"},
 }
 
 // startServer runs a UDP and TCP DNS server on the same port. Answers for
@@ -147,6 +153,71 @@ func TestResolverSSRF(t *testing.T) {
 	if res.Status != checker.StatusUp {
 		t.Errorf("system resolver = %s/%s %s", res.Status, res.ErrorClass, res.Message)
 	}
+}
+
+// TestBlockedAnswers checks that answers in blocked ranges fail the check
+// without showing the addresses, also through the operator's resolver
+// (ADR 0030).
+func TestBlockedAnswers(t *testing.T) {
+	server := startServer(t)
+	sys := &Checker{SystemResolvers: []string{server}}
+	guarded := &checker.Env{Dialer: &checker.Dialer{Policy: checker.BlockPrivate{}}}
+	open := &checker.Env{Dialer: &checker.Dialer{}}
+
+	for _, tt := range []struct{ host, typ, reason string }{
+		{"internal.test", "A", "private"},
+		{"meta.test", "A", "link-local / cloud metadata"},
+		{"ula.test", "AAAA", "unique local"},
+		{"mapped.test", "AAAA", "loopback"},
+	} {
+		cfg := map[string]any{"hostname": tt.host, "recordType": tt.typ}
+		res := check(t, sys, guarded, cfg)
+		if res.Status != checker.StatusDown || res.ErrorClass != checker.ClassSSRFBlocked || res.Message != "answer in a blocked range: "+tt.reason {
+			t.Errorf("%s: result = %s/%s %q", tt.host, res.Status, res.ErrorClass, res.Message)
+		}
+		if _, ok := res.Details["answers"]; ok {
+			t.Errorf("%s: details show answers: %v", tt.host, res.Details)
+		}
+		for _, leak := range []string{"10.1.2.3", "169.254", "fd00", "127.0.0.1", "192.0.2.1"} {
+			if strings.Contains(res.Message, leak) || strings.Contains(fmt.Sprint(res.Details), leak) {
+				t.Errorf("%s: result leaks %s: %q %v", tt.host, leak, res.Message, res.Details)
+			}
+		}
+		if res.Details["resolver"] != "system" {
+			t.Errorf("%s: resolver detail = %v, want system", tt.host, res.Details["resolver"])
+		}
+		// Without protection the answers are shown as before.
+		if res := check(t, sys, open, cfg); res.Status != checker.StatusUp {
+			t.Errorf("%s without protection: %s/%s %s", tt.host, res.Status, res.ErrorClass, res.Message)
+		}
+	}
+	// A failing system resolver does not reveal its address either.
+	dead := listenDead(t)
+	res := check(t, &Checker{SystemResolvers: []string{dead}}, guarded, map[string]any{"hostname": "a.test", "transport": "tcp"})
+	if res.Status != checker.StatusDown || strings.Contains(res.Message, "127.0.0.1") || res.Details["resolver"] != "system" {
+		t.Errorf("dead system resolver: %s/%s %q %v", res.Status, res.ErrorClass, res.Message, res.Details)
+	}
+
+	// Public answers still pass with protection on.
+	if res := check(t, sys, guarded, map[string]any{"hostname": "a.test"}); res.Status != checker.StatusUp {
+		t.Errorf("public answer: %s/%s %s", res.Status, res.ErrorClass, res.Message)
+	}
+	// Record types without addresses are not affected.
+	if res := check(t, sys, guarded, map[string]any{"hostname": "meta.test", "recordType": "CNAME"}); res.Status != checker.StatusUp {
+		t.Errorf("CNAME: %s/%s %s", res.Status, res.ErrorClass, res.Message)
+	}
+}
+
+// listenDead returns a TCP address that refuses connections.
+func listenDead(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
 }
 
 func TestValidation(t *testing.T) {

@@ -113,8 +113,9 @@ func compareStrings(a, b string) int {
 	return 0
 }
 
-// Validate checks cfg against the type's JSON Schema and then its semantic
-// rules. Problems are reported as *ValidationError.
+// Validate checks cfg against the type's JSON Schema, then its semantic
+// rules, then the notation of its destination hosts (ValidateHost without a
+// policy). Problems are reported as *ValidationError.
 func (r *Registry) Validate(typ string, cfg json.RawMessage) error {
 	r.mu.RLock()
 	e, ok := r.checkers[typ]
@@ -143,7 +144,9 @@ func (r *Registry) Validate(typ string, cfg json.RawMessage) error {
 		}
 		return &ValidationError{Fields: []FieldError{{Message: err.Error()}}}
 	}
-	return nil
+	// Notation rules for destination hosts apply even with SSRF protection
+	// off (ADR 0030); the policy itself is checked by ValidateTargets.
+	return validateTargets(e.checker, cfg, nil)
 }
 
 func compileSchema(typ string, raw json.RawMessage) (*jsonschema.Schema, error) {

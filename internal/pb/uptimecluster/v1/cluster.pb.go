@@ -488,8 +488,11 @@ type GetStatusResponse struct {
 	// empty if none ran yet (ADR 0025).
 	FingerprintIndex uint64 `protobuf:"varint,19,opt,name=fingerprint_index,json=fingerprintIndex,proto3" json:"fingerprint_index,omitempty"`
 	Fingerprint      string `protobuf:"bytes,20,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// SSRF protection is on for this node's checks and notifications (ADR 0030).
+	// Nodes older than ADR 0030 do not send this field; it is then unknown.
+	SsrfProtection *bool `protobuf:"varint,21,opt,name=ssrf_protection,json=ssrfProtection,proto3,oneof" json:"ssrf_protection,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -662,6 +665,13 @@ func (x *GetStatusResponse) GetFingerprint() string {
 	return ""
 }
 
+func (x *GetStatusResponse) GetSsrfProtection() bool {
+	if x != nil && x.SsrfProtection != nil {
+		return *x.SsrfProtection
+	}
+	return false
+}
+
 type RemoveNodeRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	NodeId string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
@@ -820,7 +830,7 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10GetStatusRequest\"\xa1\x06\n" +
+	"\x10GetStatusRequest\"\xe3\x06\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -843,7 +853,9 @@ const file_uptimecluster_v1_cluster_proto_rawDesc = "" +
 	"\x11cert_not_after_ms\x18\x11 \x01(\x03R\x0ecertNotAfterMs\x12,\n" +
 	"\x12replication_lag_ms\x18\x12 \x01(\x03R\x10replicationLagMs\x12+\n" +
 	"\x11fingerprint_index\x18\x13 \x01(\x04R\x10fingerprintIndex\x12 \n" +
-	"\vfingerprint\x18\x14 \x01(\tR\vfingerprint\"O\n" +
+	"\vfingerprint\x18\x14 \x01(\tR\vfingerprint\x12,\n" +
+	"\x0fssrf_protection\x18\x15 \x01(\bH\x00R\x0essrfProtection\x88\x01\x01B\x12\n" +
+	"\x10_ssrf_protection\"O\n" +
 	"\x11RemoveNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
 	"\frequested_by\x18\x02 \x01(\tR\vrequestedBy\"\x93\x01\n" +
@@ -916,6 +928,7 @@ func file_uptimecluster_v1_cluster_proto_init() {
 		return
 	}
 	file_uptimecluster_v1_command_proto_init()
+	file_uptimecluster_v1_cluster_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -4,7 +4,7 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | UptimeCluster (Arbeitstitel, E20) |
-| **Version** | 1.4 |
+| **Version** | 1.5 |
 | **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
 | **Datum** | 2026-11-17 |
 | **Grundlage** | [Konzept v0.3](../uptime-cluster-konzept.md), Recherche zu Pitfalls (Kap. 12) |
@@ -20,6 +20,7 @@
 | 1.2 | 2026-10-22 | Geheimnisse in Monitor-Konfigurationen gemäß ADR 0015 (FA-SEC-SEC, FA-API-06) |
 | 1.3 | 2026-11-15 | Teststrategie 13.1: Clock-Skew als Integrationstest statt im Container gemäß ADR 0020 |
 | 1.4 | 2026-11-17 | Externe Anmeldung über beliebige OIDC-Anbieter mit Profilen `generic` und `zitadel` gemäß ADR 0027 (FA-AUTH-05..09, FA-TEN-03, Produktumgebung) |
+| 1.5 | 2026-11-18 | SSRF-Schutz präzisiert gemäß ADR 0030: feste Bereichsliste, schaltbar über `SSRF_PROTECTION`, Prüfung beim Speichern, DNS-Antworten (FA-SEC-SSRF) |
 
 ---
 
@@ -555,7 +556,7 @@ Basierend auf Konzept 6.5, mit folgenden **Präzisierungen**:
 |----|-------------|---|----|
 | NFA-SEC-01 | mTLS für sämtliche Inter-Node-Kommunikation (FA-PKI); TLS ≥ 1.2, bevorzugt 1.3. | M | P2 |
 | NFA-SEC-02 | Strikte Mandantentrennung (FA-TEN-01/02), abgesichert durch automatisierte Isolationstests in CI. | M | P1 |
-| **FA-SEC-SSRF** **[präzisiert]** | SSRF-Schutz für Checks, DNS-Resolver und Benachrichtigungsziele: Prüfung der **tatsächlich verbundenen IP zum Dial-Zeitpunkt** (`net.Dialer.Control`), damit DNS-Rebinding und Redirects abgedeckt sind. Gesperrte Bereiche (konfigurierbar, im Mehrmandantenbetrieb auf öffentlichen Nodes Standard an): Loopback, RFC 1918, Link-Local inkl. Cloud-Metadaten (169.254.169.254), CGNAT 100.64/10, ULA fc00::/7, Unspecified, Multicast, Broadcast, sowie IPv6-Einbettungen von IPv4 (`::ffff:0:0/96`, `64:ff9b::/96`, `2002::/16`, `::/96`). Nicht-kanonische IP-Schreibweisen (oktal, hex, dezimal) werden abgelehnt. Private Probes eines Mandanten sind ausgenommen. | M | P4 (Durchsetzung), P1 (Hook) |
+| **FA-SEC-SSRF** **[präzisiert]** | SSRF-Schutz für Checks, DNS-Resolver und Benachrichtigungsziele: Prüfung der **tatsächlich verbundenen IP zum Dial-Zeitpunkt** (`net.Dialer.Control`), damit DNS-Rebinding und Redirects abgedeckt sind. Gesperrte Bereiche (feste Liste; der Schutz ist über `SSRF_PROTECTION` schaltbar und im Mehrmandantenbetrieb auf öffentlichen Nodes Standard an, ADR 0030): Loopback, RFC 1918, Link-Local inkl. Cloud-Metadaten (169.254.169.254), CGNAT 100.64/10, ULA fc00::/7, Unspecified, Multicast, Broadcast, sowie IPv6-Einbettungen von IPv4 (`::ffff:0:0/96`, `64:ff9b::/96`, `2002::/16`, `::/96`). Nicht-kanonische IP-Schreibweisen (oktal, hex, dezimal, verkürzt) und IPv6-Zonen werden beim Speichern immer abgelehnt, IP-Literale in gesperrten Bereichen bei aktivem Schutz ebenfalls; Namen prüft erst der Verbindungsaufbau. DNS-Checks mit A/AAAA-Antworten in gesperrten Bereichen schlagen bei aktivem Schutz mit `ssrf_blocked` fehl, ohne die Antworten zu zeigen. Private Probes eines Mandanten sind ausgenommen. | M | P4 (Durchsetzung), P1 (Hook) |
 | **FA-SEC-SEC** **[präzisiert]** | Geheimnisse (Kanal-URLs, Webhook-Header, Signaturschlüssel, Zugangsdaten in Monitor-Konfigurationen = Felder mit `writeOnly` im Typ-Schema, ADR 0015) werden mit **Envelope Encryption** gespeichert: AES-256-GCM mit zufälligem Nonce, Datenschlüssel (DEK) je Rotationsepoche, gewrappt mit einem Master-Key (KEK), der **nicht** in der Datenbank liegt (Env/Datei/KMS). Jede Chiffre trägt `key_id`; Kontext (Tabelle + Objekt-ID) als Additional Data. Rotation über Raft mit Hintergrund-Neuverschlüsselung. | M | P1 |
 | NFA-SEC-03 | Passwörter: Argon2id gemäß OWASP; kein Passwort im Klartext in Logs, API-Antworten oder Raft-Log. | M | P1 |
 | NFA-SEC-04 | Tokens in der SPA **nur im Speicher**, nicht in `localStorage`; Refresh-Mechanismus gemäß ADR. | M | P1 |

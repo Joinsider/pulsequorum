@@ -111,3 +111,24 @@ func TestGetStatusReportsOwnSignals(t *testing.T) {
 		t.Errorf("bare GetStatus = %v, want no ADR 0025 signals", got)
 	}
 }
+
+// ADR 0030: GetStatus reports whether SSRF protection is on for the node, in
+// both states.
+func TestGetStatusReportsSSRFProtection(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		s := &Service{
+			Node:           statusNode{st: cluster.Status{NodeID: "n1", RaftState: "Follower"}},
+			SSRFProtection: enabled,
+		}
+		got, err := s.GetStatus(context.Background(), &pb.GetStatusRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SsrfProtection == nil {
+			t.Fatal("ssrf_protection not sent; peers would read it as unknown")
+		}
+		if got.GetSsrfProtection() != enabled {
+			t.Errorf("ssrf_protection = %v, want %v", got.GetSsrfProtection(), enabled)
+		}
+	}
+}

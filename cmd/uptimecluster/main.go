@@ -226,6 +226,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
 		Clock:     clock,
 		SelfCheck: selfProber.Status,
+		// The SSRF setting of this node, reported in GetStatus (ADR 0030).
+		SSRFProtection: cfg.SSRFProtectionEnabled(),
 		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
 			if a := aggPtr.Load(); a != nil {
 				a.Observe(hbs)
@@ -583,6 +585,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Replication:  host.Replication,
 		ClockOffsets: host.ClockOffsets,
 		Now:          clock,
+		SSRFPolicy:   policy,
+		// The SSRF setting of each node in the cluster view (ADR 0030).
+		SSRFProtectionByNode: host.SSRFProtectionByNode,
 	}
 	readiness := raftNode.Ready
 	switch {

@@ -107,6 +107,9 @@
             </div>
           }
         </dl>
+        @if (r.errorClass === 'ssrf_blocked') {
+          <p class="muted hint" role="note">{{ t('monitorDetail.errorHints.ssrfBlocked') }}</p>
+        }
       </section>
     }
 
@@ -216,6 +219,11 @@
                   <td>
                     @if (h.errorClass) {
                       <span>{{ h.errorClass }}</span>
+                    }
+                    @if (h.errorClass === 'ssrf_blocked') {
+                      <span class="muted hint">{{
+                        t('monitorDetail.errorHints.ssrfBlocked')
+                      }}</span>
                     }
                     @if (h.message) {
                       <span class="muted message">{{ h.message }}</span>

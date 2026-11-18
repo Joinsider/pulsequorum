@@ -51,6 +51,9 @@
         }
       </ul>
     }
+    @if (ssrfDiffers()) {
+      <p class="banner banner--warn" role="alert">{{ t('admin.cluster.ssrfMismatch') }}</p>
+    }
 
     @if (summary(); as s) {
       <dl class="summary" [attr.aria-label]="t('admin.cluster.summary.label')">
@@ -155,6 +158,18 @@
                   {{ row.clockText ?? '–' }}
                   @if (row.clockSeverity === 'warn') {
                     <span class="wrap">{{ t('admin.cluster.node.clockWarning') }}</span>
+                  }
+                </dd>
+              </div>
+              <div>
+                <dt>{{ t('admin.cluster.node.ssrfProtection') }}</dt>
+                <dd>
+                  @if (row.node.ssrfProtection === undefined) {
+                    –
+                  } @else if (row.node.ssrfProtection) {
+                    {{ t('admin.cluster.node.ssrfOn') }}
+                  } @else {
+                    {{ t('admin.cluster.node.ssrfOff') }}
                   }
                 </dd>
               </div>

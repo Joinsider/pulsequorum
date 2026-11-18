@@ -136,6 +136,9 @@ message GetStatusResponse {
   // empty if none ran yet (ADR 0025).
   uint64 fingerprint_index = 19;
   string fingerprint = 20;
+  // SSRF protection is on for this node's checks and notifications (ADR 0030).
+  // Nodes older than ADR 0030 do not send this field; it is then unknown.
+  optional bool ssrf_protection = 21;
 }
 
 message RemoveNodeRequest {

@@ -6,11 +6,12 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslocoTestingModule } from '@jsverse/transloco';
+import { provideEchartsCore } from 'ngx-echarts';
 import { Subject, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { IncidentsService } from '../../api/gen/endpoints/incidents/incidents.service';
 import { MonitorsService } from '../../api/gen/endpoints/monitors/monitors.service';
-import { Monitor, UptimeStats } from '../../api/gen/model';
+import { ErrorClass, Heartbeat, Monitor, UptimeStats } from '../../api/gen/model';
 import { AuthService } from '../../core/auth/auth.service';
 import { LiveStreamService } from '../../core/stream/live-stream.service';
 import { MonitorDetailPage } from './monitor-detail-page';
@@ -39,15 +40,23 @@ const UPTIME: UptimeStats = {
   buckets: [],
 };
 
+const SSRF_HINT =
+  'The target address is in a blocked network range (private, loopback, link-local or cloud metadata). SSRF protection is on for this installation.';
+
 interface Setup {
   monitor?: () => ReturnType<MonitorsService['getMonitor']>;
   canEdit?: boolean;
+  heartbeats?: Heartbeat[];
 }
 
-function setup({ monitor, canEdit = false }: Setup = {}): ComponentFixture<MonitorDetailPage> {
+function setup({
+  monitor,
+  canEdit = false,
+  heartbeats = [],
+}: Setup = {}): ComponentFixture<MonitorDetailPage> {
   const monitors = {
     getMonitor: monitor ?? (() => of(MONITOR)),
-    listHeartbeats: () => of({ items: [] }),
+    listHeartbeats: () => of({ items: heartbeats }),
     getUptime: () => of(UPTIME),
   };
   const incidents = { listIncidents: () => of({ items: [] }) };
@@ -57,12 +66,20 @@ function setup({ monitor, canEdit = false }: Setup = {}): ComponentFixture<Monit
     imports: [
       MonitorDetailPage,
       TranslocoTestingModule.forRoot({
-        langs: { en: { monitorDetail: { errors: { notFound: 'Monitor not found' } } } },
+        langs: {
+          en: {
+            monitorDetail: {
+              errors: { notFound: 'Monitor not found' },
+              errorHints: { ssrfBlocked: SSRF_HINT },
+            },
+          },
+        },
         translocoConfig: { availableLangs: ['en'], defaultLang: 'en' },
       }),
     ],
     providers: [
       provideRouter([]),
+      provideEchartsCore({ echarts: () => import('./echarts-setup').then((m) => m.default) }),
       {
         provide: ActivatedRoute,
         useValue: { paramMap: of(convertToParamMap({ id: 'm1' })), parent: null },
@@ -87,6 +104,17 @@ async function settle(fixture: ComponentFixture<MonitorDetailPage>): Promise<str
 }
 
 describe('MonitorDetailPage', () => {
+  beforeAll(() => {
+    // The latency chart observes its size; the test DOM has no ResizeObserver.
+    if (!('ResizeObserver' in globalThis)) {
+      globalThis.ResizeObserver = class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      } as unknown as typeof ResizeObserver;
+    }
+  });
+
   beforeEach(() => {
     TestBed.resetTestingModule();
   });
@@ -120,4 +148,35 @@ describe('MonitorDetailPage', () => {
 
     expect(text).toContain('Monitor not found');
   });
+
+  it('shows the SSRF hint for a node result with error class ssrf_blocked', async () => {
+    const fixture = setup({
+      heartbeats: [heartbeat('ssrf_blocked')],
+    });
+    const text = await settle(fixture);
+
+    expect(text).toContain('ssrf_blocked');
+    expect(text).toContain(SSRF_HINT);
+  });
+
+  it('does not show the SSRF hint for another error class', async () => {
+    const fixture = setup({
+      heartbeats: [heartbeat('timeout')],
+    });
+    const text = await settle(fixture);
+
+    expect(text).toContain('timeout');
+    expect(text).not.toContain(SSRF_HINT);
+  });
 });
+
+function heartbeat(errorClass: ErrorClass): Heartbeat {
+  return {
+    nodeId: 'node-1',
+    ts: new Date(Date.now() - 60_000).toISOString(),
+    status: 'DOWN',
+    latencyMs: 0,
+    errorClass,
+    message: 'check failed',
+  };
+}

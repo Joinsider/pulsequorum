@@ -34,6 +34,7 @@ type Checker struct {
 }
 
 var _ checker.Checker = (*Checker)(nil)
+var _ checker.TargetLister = (*Checker)(nil)
 
 func init() { checker.Default.Register(&Checker{}) }
 

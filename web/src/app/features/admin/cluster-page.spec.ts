@@ -322,4 +322,64 @@ describe('ClusterPage', () => {
 
     expect(root().querySelector('[role="alert"]')?.textContent).toContain('admin.error.forbidden');
   });
+
+  it('shows the SSRF setting of each node (ADR 0030)', async () => {
+    const withSsrf: ClusterNode[] = [
+      { ...NODES[0], ssrfProtection: true },
+      { ...NODES[1], ssrfProtection: false },
+      NODES[2],
+      NODES[3],
+    ];
+    api.listClusterNodes.mockReturnValue(of(listOf(withSsrf)));
+    await render();
+
+    const facts = (name: string) =>
+      [...cardFor(name).querySelectorAll('.facts > div')].find(
+        (el) => el.querySelector('dt')?.textContent?.trim() === 'admin.cluster.node.ssrfProtection',
+      )?.textContent ?? '';
+    expect(facts('frankfurt-1')).toContain('admin.cluster.node.ssrfOn');
+    expect(facts('berlin-1')).toContain('admin.cluster.node.ssrfOff');
+    expect(facts('cologne-1')).toContain('–');
+  });
+
+  it('warns when the answered nodes report different SSRF settings (ADR 0030)', async () => {
+    const differing: ClusterNode[] = [
+      { ...NODES[0], ssrfProtection: true },
+      { ...NODES[1], ssrfProtection: false },
+      { ...NODES[2], ssrfProtection: true },
+      NODES[3],
+    ];
+    api.listClusterNodes.mockReturnValue(of(listOf(differing)));
+    await render();
+
+    expect(root().querySelector('[role="alert"]')?.textContent).toContain(
+      'admin.cluster.ssrfMismatch',
+    );
+  });
+
+  it('shows no SSRF warning when all answered nodes report the same setting', async () => {
+    const equal: ClusterNode[] = [
+      { ...NODES[0], ssrfProtection: true },
+      { ...NODES[1], ssrfProtection: true },
+      { ...NODES[2], ssrfProtection: true },
+      NODES[3],
+    ];
+    api.listClusterNodes.mockReturnValue(of(listOf(equal)));
+    await render();
+
+    expect(root().textContent).not.toContain('admin.cluster.ssrfMismatch');
+  });
+
+  it('ignores nodes without an SSRF answer when comparing', async () => {
+    const partial: ClusterNode[] = [
+      { ...NODES[0], ssrfProtection: true },
+      NODES[1],
+      { ...NODES[2], ssrfProtection: true },
+      NODES[3],
+    ];
+    api.listClusterNodes.mockReturnValue(of(listOf(partial)));
+    await render();
+
+    expect(root().textContent).not.toContain('admin.cluster.ssrfMismatch');
+  });
 });

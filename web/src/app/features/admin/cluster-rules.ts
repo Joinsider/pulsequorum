@@ -144,6 +144,15 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(ms / 3_600_000)} h`;
 }
 
+/**
+ * Whether the nodes report different SSRF settings (ADR 0030). Nodes without
+ * an answer (undefined) are ignored; they say nothing about their setting.
+ */
+export function ssrfMismatch(nodes: readonly ClusterNode[]): boolean {
+  const values = new Set(nodes.map((n) => n.ssrfProtection).filter((v) => v !== undefined));
+  return values.size > 1;
+}
+
 /** Translation key for a failed cluster call, by HTTP status. */
 export function clusterErrorKey(status: number | undefined): string {
   switch (status) {

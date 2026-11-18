@@ -225,6 +225,20 @@ func validate(raw json.RawMessage) error {
 	return nil
 }
 
+// Targets implements checker.TargetLister: the host of the URL is the only
+// destination the check connects to (ADR 0030).
+func (*Checker) Targets(raw json.RawMessage) ([]checker.Target, error) {
+	c, err := parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(c.URL)
+	if err != nil {
+		return nil, fmt.Errorf("not a valid URL: %w", err)
+	}
+	return []checker.Target{{Field: "/url", Host: u.Hostname()}}, nil
+}
+
 func validHeaderName(name string) bool {
 	if name == "" {
 		return false

@@ -60,7 +60,13 @@ type Deps struct {
 	// ClockOffsets returns the fresh clock offsets of the peers in
 	// milliseconds, by node ID (ADR 0020); nil omits them.
 	ClockOffsets func() map[string]int64
-	Registry     *checker.Registry
+	// SSRFProtectionByNode returns whether SSRF protection is on for each node
+	// that answered recently, including this node (ADR 0030). Nil means unknown.
+	SSRFProtectionByNode func() map[string]bool
+	Registry             *checker.Registry
+	// SSRFPolicy checks the destination hosts of saved monitors; nil when
+	// SSRF protection is off (ADR 0030).
+	SSRFPolicy checker.AddressPolicy
 	// CheckEnv runs on-demand checks (POST /monitors/{id}/test).
 	CheckEnv *checker.Env
 	NodeID   string

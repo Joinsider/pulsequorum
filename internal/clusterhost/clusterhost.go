@@ -176,6 +176,9 @@ type Options struct {
 	// WALBytes returns the WAL sizes of state.db and metrics.db; it is reported
 	// in GetStatus (ADR 0025). Nil means unknown.
 	WALBytes func() (state, metrics int64)
+	// SSRFProtection is whether SSRF protection is on for this node (ADR 0030);
+	// it is reported in GetStatus and shown per node in the cluster view.
+	SSRFProtection bool
 }
 
 // Host is the running cluster side of a voter.
@@ -200,8 +203,11 @@ type Host struct {
 	clock      func() time.Time
 	clocks     clockTracker
 	selfChecks selfCheckTracker
-	peerViews  peerViewTracker
-	signals    signalTracker
+	ssrf       ssrfTracker
+	// ssrfProtection is this node's own SSRF setting (Options.SSRFProtection).
+	ssrfProtection bool
+	peerViews      peerViewTracker
+	signals        signalTracker
 	// service answers GetStatus; SelfSignals asks it for this node's signals.
 	service       *membership.Service
 	clockInterval time.Duration
@@ -228,16 +234,17 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		clock = time.Now
 	}
 	h := &Host{
-		Cert:          opts.Prepared.Cert,
-		Revocations:   &clusterpki.Revocations{},
-		Authority:     &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
-		log:           opts.Log,
-		advertise:     opts.Advertise,
-		dataDir:       opts.DataDir,
-		state:         opts.State,
-		self:          selfNode(opts),
-		clock:         clock,
-		clockInterval: opts.ClockInterval,
+		Cert:           opts.Prepared.Cert,
+		ssrfProtection: opts.SSRFProtection,
+		Revocations:    &clusterpki.Revocations{},
+		Authority:      &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
+		log:            opts.Log,
+		advertise:      opts.Advertise,
+		dataDir:        opts.DataDir,
+		state:          opts.State,
+		self:           selfNode(opts),
+		clock:          clock,
+		clockInterval:  opts.ClockInterval,
 	}
 	if h.clockInterval <= 0 {
 		h.clockInterval = clockSampleInterval
@@ -301,7 +308,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	h.service = &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
-		SelfCheck: opts.SelfCheck, Own: h.ownSignals(opts),
+		SelfCheck: opts.SelfCheck, Own: h.ownSignals(opts), SSRFProtection: opts.SSRFProtection,
 	}
 	pb.RegisterClusterServiceServer(h.grpc, h.service)
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{

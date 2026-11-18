@@ -38,6 +38,7 @@
     },
     "noLeader": "Kein Leader bekannt. Schreibzugriffe werden abgelehnt, bis eine Wahl gelingt.",
     "upgradePending": "Ein rollierendes Update läuft: noch nicht alle Voter unterstützen dieselbe Befehlsversion.",
+    "ssrfMismatch": "Der SSRF-Schutz ist nicht auf allen Nodes gleich eingestellt. SSRF_PROTECTION auf allen Nodes gleich setzen.",
     "warningsLabel": "Quorum-Warnungen",
     "node": {
       "voter": "Voter",
@@ -65,7 +66,10 @@
       "replicationLag": "Replikationsverzug",
       "replicationError": "Replikationsfehler: {{ error }}",
       "clockOffset": "Uhrzeitabweichung",
-      "clockWarning": "Die Uhrzeit weicht um 2 s oder mehr ab. Aktiviere NTP auf allen Nodes."
+      "clockWarning": "Die Uhrzeit weicht um 2 s oder mehr ab. Aktiviere NTP auf allen Nodes.",
+      "ssrfProtection": "SSRF-Schutz",
+      "ssrfOn": "an",
+      "ssrfOff": "aus"
     },
     "actions": {
       "remove": "Entfernen",
