@@ -74,7 +74,7 @@ Läuft der Cluster wieder mit voller Ausfallreserve, können die Sicherung `reco
 
 ## Admin-Passwort zurücksetzen
 
-Wenn sich kein `platform-admin` mehr anmelden kann. Voraussetzungen: Der Node läuft, der Cluster hat einen Leader, `AUTH_MODE=local`.
+Wenn sich kein `platform-admin` mehr anmelden kann. Voraussetzungen: Der Node läuft, der Cluster hat einen Leader, `AUTH_MODE=local`. Nach dem Rückwechsel auf `local` müssen sich alle lokalen Nutzer mit ihrem Passwort neu anmelden; der Ablauf steht in [oidc.md](oidc.md#9-wechsel-von-local-zu-oidc).
 
 ```bash
 docker compose exec -it <dienst> /uptimecluster admin reset-password --username admin

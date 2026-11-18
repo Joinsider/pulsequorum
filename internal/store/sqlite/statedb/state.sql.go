@@ -2437,6 +2437,41 @@ func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
 	return items, nil
 }
 
+const listUnrevokedSessionUsers = `-- name: ListUnrevokedSessionUsers :many
+SELECT DISTINCT tenant_id, user_id FROM refresh_sessions
+WHERE revoked_ms = 0
+ORDER BY tenant_id, user_id
+`
+
+type ListUnrevokedSessionUsersRow struct {
+	TenantID string
+	UserID   string
+}
+
+// The users that still hold a refresh token that is not revoked (ADR 0032).
+func (q *Queries) ListUnrevokedSessionUsers(ctx context.Context) ([]ListUnrevokedSessionUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUnrevokedSessionUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUnrevokedSessionUsersRow{}
+	for rows.Next() {
+		var i ListUnrevokedSessionUsersRow
+		if err := rows.Scan(&i.TenantID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT tenant_id, id, username, display_name, password_hash, role, disabled, revision, created_ms, updated_ms, last_login_ms FROM users WHERE tenant_id = ? ORDER BY username, id
 `

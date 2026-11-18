@@ -484,6 +484,12 @@ UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND user_id = ? A
 -- name: RevokeTenantSessions :exec
 UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND revoked_ms = 0;
 
+-- name: ListUnrevokedSessionUsers :many
+-- The users that still hold a refresh token that is not revoked (ADR 0032).
+SELECT DISTINCT tenant_id, user_id FROM refresh_sessions
+WHERE revoked_ms = 0
+ORDER BY tenant_id, user_id;
+
 -- name: PruneSessions :exec
 DELETE FROM refresh_sessions WHERE expires_ms < ?;
 

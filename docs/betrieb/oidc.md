@@ -360,7 +360,82 @@ OIDC_ROLES_CLAIM=roles
 - Antworten sind auf 64 KiB begrenzt. Es gibt Zeitlimits, und Weiterleitungen werden nicht befolgt.
 - Im Modus `oidc` erweitert der Voter die Content-Security-Policy `connect-src` automatisch um den Ursprung (Origin) des Issuers.
 
-## 9. Fehlersuche
+## 9. Wechsel von `local` zu `oidc`
+
+Dieser Abschnitt beschreibt den Umstieg eines laufenden Clusters von `AUTH_MODE=local` auf `oidc`. Grundlage sind FA-AUTH-08 und ADR 0032.
+
+### Was bleibt
+
+- **Alle Daten bleiben.** Monitore, Kanäle, Wartungsfenster, Incidents und Heartbeats werden nicht verändert, weder im Mandanten `default` noch in anderen Mandanten.
+- **Mandantendaten hängen nicht an Nutzern.** Ein Wechsel des Anmeldemodus ändert sie daher nicht. Lokale Konten werden nicht übernommen, und das ist für die Daten unerheblich.
+- **Der Mandant `default` bleibt derselbe.** Im Profil `zitadel` wird er an `ZITADEL_PLATFORM_ORG_ID` gebunden.
+
+### Ablauf
+
+1. **Backup.** Das Datenverzeichnis (`DATA_DIR`) jedes Voters vor dem Wechsel sichern. In `docs/betrieb` gibt es dazu keine eigene Anleitung.
+2. **IdP einrichten.** Den Anbieter nach den Abschnitten 2 bis 6 einrichten (Zitadel: Abschnitt 5, PocketID: Abschnitt 6). Die Variablen stehen in Abschnitt 3. Bei `zitadel` die Plattform-Organisation festlegen: Ihre ID kommt in `ZITADEL_PLATFORM_ORG_ID`, und `default` wird an diese Organisation gebunden.
+3. **Voter umstellen.** Auf jedem Voter `AUTH_MODE=oidc` (oder `zitadel`), die `OIDC_*`-Variablen und bei Bedarf `ZITADEL_PLATFORM_ORG_ID` setzen. Die Voter dann nacheinander neu starten, wie unter [Cluster aktualisieren](cluster.md#cluster-aktualisieren-rolling-update). Während des Neustarts laufen Voter in gemischten Modi (siehe unten).
+4. **Prüfen.**
+   - Die Anmeldung über den IdP im Browser funktioniert.
+   - Monitore und Incidents des Mandanten `default` sind sichtbar.
+   - Eine Anmeldung mit Passwort antwortet mit `409 Conflict`.
+   - Das Log des Leaders enthält die Meldungen aus den Abschnitten unten. Ein Fehler zu `default` erscheint nicht.
+
+### Was mit dem Bestand passiert
+
+| Bestand | Verhalten im Modus `oidc` |
+| --- | --- |
+| **Lokale Konten** (`users`) | Bleiben in der Datenbank und werden ignoriert. Anmeldung, Token-Erneuerung und Nutzerverwaltung antworten mit `409`. Sie bleiben der Notzugang (siehe Rückweg). |
+| **Refresh-Sitzungen** | Der Leader widerruft die Sitzungen lokaler Nutzer alle 30 s, das erste Mal spätestens 30 s nach seiner Wahl. Log: `revoked local refresh sessions after the switch to oidc`, mit der Zahl der Nutzer (`users`). |
+| **Lokale Access-Tokens** | Werden im Modus `oidc` abgewiesen. Nach einem Rückwechsel auf `local` gelten noch nicht abgelaufene Tokens bis zu 15 min weiter. |
+| **API-Tokens** (`uct_…`) | Bleiben gültig, weil sie dem Mandanten gehören. Der Leader protokolliert einmal je Mandant die Zahl der Tokens, die lokale Nutzer angelegt haben (`API tokens created by local users stay valid …`). Widerruf mit `DELETE /api/v1/api-tokens/{id}`. |
+| **Audit-Log** | Alte Einträge zeigen die lokale UUID und den Nutzernamen, neue das `sub`. Beides wird nicht verknüpft. Eine Person sucht man über den Namen. |
+| **Mandant `default`** | Im Profil `zitadel` bindet der Leader `default` beim Start an `ZITADEL_PLATFORM_ORG_ID` und wiederholt den Versuch alle 30 s, bis er gelingt. Bei `single` landet die Plattform-Organisation in `default`. Bei `generic` landet jeder Nutzer in `default`. |
+| **Weitere Mandanten** | Daten bleiben unverändert. Der Leader warnt einmal beim Start, dass die Mandanten keine Organisation haben. Mit `zitadel` und `multi` bindet ein `platform-admin` sie mit `PATCH /api/v1/admin/tenants/{tenantId}` und `orgId`. Mit `single` und `generic` sind sie nicht erreichbar; eine Bindung über `PATCH` wird zwar gespeichert, macht sie aber nicht erreichbar. |
+
+### Rolling-Restart
+
+Während des Neustarts laufen Voter in gemischten Modi:
+
+- Ein Voter im Modus `local` kann kurz Refresh-Sitzungen ausstellen.
+- Der Leader im Modus `oidc` widerruft sie spätestens 30 s, nachdem er läuft. Ist der Leader noch im Modus `local`, wartet der Widerruf, bis er wechselt.
+- Die Bindung von `default` übernimmt ebenfalls erst ein Leader im Modus `oidc`.
+
+### Rückweg auf `local` (Notzugang)
+
+Ist der IdP dauerhaft nicht erreichbar, werden alle Voter auf `AUTH_MODE=local` zurückgestellt und neu gestartet.
+
+- Alle lokalen Nutzer sind abgemeldet. Sie melden sich mit ihrem Passwort neu an, alte Refresh-Cookies gelten nicht mehr.
+- Ein Passwort setzt man mit `reset-password` neu, siehe [recovery.md](recovery.md#admin-passwort-zurücksetzen). Der Befehl setzt `AUTH_MODE=local` voraus.
+- Die Bindung von `default` an eine Organisation (`zitadel_org_id`) bleibt gesetzt. Im Modus `local` stört sie nicht.
+
+### Fall: `default` ist an eine andere Organisation gebunden
+
+Ist `default` schon an eine andere Organisation gebunden als `ZITADEL_PLATFORM_ORG_ID`, schreibt der Leader diesen Fehler ins Log (Level `ERROR`):
+
+`the default tenant is bound to another organization than ZITADEL_PLATFORM_ORG_ID; set ZITADEL_PLATFORM_ORG_ID back to the bound organization (ADR 0032)`
+
+Die Felder `bound_org` (die gebundene Organisation) und `platform_org` (der konfigurierte Wert) zeigen den Unterschied.
+
+- **Abhilfe:** `ZITADEL_PLATFORM_ORG_ID` auf den Wert von `bound_org` setzen und die Voter neu starten.
+- Ein Wechsel der Plattform-Organisation ist nicht vorgesehen. FSM und Admin-API lehnen das Umbinden von `default` ab. Die Option dafür (ADR 0032, Option 4B) ist offen. Sie bräuchte einen eigenen ADR.
+
+### Ende-zu-Ende-Test der Migration (AP-4.5, 2026-11-18)
+
+Ein einzelner Voter (Stand `3296256`) lief nacheinander im Modus `local`, `oidc` und wieder `local` auf demselben Datenverzeichnis. Im Modus `local` wurden ein Admin, ein Monitor, ein Webhook-Kanal, ein API-Token und ein zweiter Mandant `legacy` angelegt.
+
+| Szenario | Geprüft | Ergebnis |
+| --- | --- | --- |
+| Zitadel v4.20.3, `multi` | Log: Sitzungen widerrufen (`users=1`), `default` gebunden, Warnung zu `legacy`, Hinweis auf 1 API-Token. `platform-admin-bot` sieht Monitor und Kanal. API-Token 200, Passwort-Login 409, alter lokaler Access-Token 401. `legacy` mit `PATCH` an `globex` gebunden, `globex-admin-bot` sieht `legacy`. `acme-admin-bot` 403 („not provisioned“). Zurück auf `local`: altes Refresh-Cookie 401, Passwort-Login 200, Monitor vorhanden. | bestanden |
+| Zitadel v4.20.3, `single` | wie oben, Warnung „not reachable“ zu `legacy`, `acme-admin-bot` 403 („not admitted“), Rückweg wie oben | bestanden |
+| Keycloak 26.8.2, `generic` | Log: Sitzungen widerrufen, Hinweis auf API-Token, Warnung zu `legacy`, keine Bindung. `admin@example.test` sieht Monitor und Kanal, API-Token 200, Passwort-Login 409, alter Access-Token 401, `nobody@example.test` 403 | bestanden |
+
+Befunde:
+
+- Der erste Widerruf und die Bindung kamen 42 bis 51 s nach dem Start, also rund 30 s nach der Leader-Wahl. Der erste Takt beim Start fällt auf eine Zeit ohne Leader.
+- Direkt nach dem ersten Setup im Modus `local` antworteten `POST /api-tokens` einmal mit 409 und `POST /admin/tenants` einmal mit 503; drei Sekunden später gelangen beide. Nicht reproduziert, Ursache offen (vermutlich Anheben der Befehlsstufe nach dem Bootstrap).
+
+## 10. Fehlersuche
 
 Die Begründung für `401` steht nicht in der Antwort, sondern im Log. Der Voter schreibt bei jeder abgelehnten Anfrage eine Zeile `oidc: token rejected` mit dem Feld `reason`.
 
@@ -385,7 +460,7 @@ Die Begründung für `401` steht nicht in der Antwort, sondern im Log. Der Voter
 | Browser meldet CORS-Fehler am Token-Endpunkt | Der IdP erlaubt den Ursprung der SPA nicht. | Web Origins bzw. CORS-Einstellungen im IdP ergänzen. |
 | `409 Conflict`, „users are managed by the identity provider“ | Im Modus `oidc` ist lokale Anmeldung abgeschaltet. | Erwartet. Anmeldung über den IdP verwenden. |
 
-## 10. Tests gegen echte Anbieter
+## 11. Tests gegen echte Anbieter
 
 Für die manuelle Ende-zu-Ende-Prüfung gegen lokale Instanzen gibt es Umgebungen unter `deploy/oidc-dev/`: Keycloak 26.8.2 und Zitadel v4.20.3. PocketID wurde gegen eine bestehende Instanz geprüft (Abschnitt 6), weil Passkeys eine echte Domain mit HTTPS brauchen. Anleitung, Testnutzer, Clients und Start der Container stehen in [deploy/oidc-dev/README.md](../../deploy/oidc-dev/README.md).
 
