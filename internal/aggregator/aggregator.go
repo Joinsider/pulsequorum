@@ -97,6 +97,10 @@ type Aggregator struct {
 	// deviations and deviationSeen hold the slots counted for Deviation (ADR 0022).
 	deviations    []deviationEvent
 	deviationSeen map[deviationKey]int64
+	// handover holds, per monitor, the end of the window the gap job
+	// re-evaluated (ADR 0033). The next rebuild of that monitor replays from
+	// there. Dropped when the leadership ends.
+	handover map[monitorKey]int64
 }
 
 // errSuperseded means the status changed meanwhile (conflict, deletion, or no
@@ -121,7 +125,26 @@ func New(opts Options) *Aggregator {
 		opts.Unit = time.Second
 	}
 	return &Aggregator{opts: opts, observed: make(chan []store.Heartbeat, observeQueueSize),
-		watches: map[monitorKey]*watch{}, deviationSeen: map[deviationKey]int64{}}
+		watches: map[monitorKey]*watch{}, deviationSeen: map[deviationKey]int64{},
+		handover: map[monitorKey]int64{}}
+}
+
+// HandOver records toMs as the end of the window the gap job re-evaluated
+// for a monitor (ADR 0033). The next rebuild of that monitor replays the
+// slots from toMs on, even if they lie before the usual lookback, so that no
+// slot between the gap job and the live evaluation stays unevaluated. It is
+// used once and dropped when the leadership ends.
+func (a *Aggregator) HandOver(tenantID, monitorID string, toMs int64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.handover[monitorKey{tenantID, monitorID}] = toMs
+}
+
+// ClearHandOvers drops all recorded handover points (a new gap job run starts).
+func (a *Aggregator) ClearHandOvers() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	clear(a.handover)
 }
 
 // Observe passes heartbeats that were stored (local, replicated or by
@@ -206,6 +229,7 @@ func (a *Aggregator) step(ctx context.Context) {
 		if !a.leaderSince.IsZero() {
 			a.leaderSince = time.Time{}
 			a.dropAll()
+			clear(a.handover)
 			a.opts.Logger.Info("no longer leader, monitor evaluation stopped")
 		}
 		return
@@ -278,10 +302,13 @@ func (a *Aggregator) process(ctx context.Context, w *watch, nowMs int64, registr
 		return
 	}
 	responsible := a.responsible(w.m, registry)
+	rebuilt := false
 	for {
 		// After a long stall, do not walk through every missed round: the
 		// rounds before the lookback are no reports or are covered by the rebuild.
-		if floor := w.slotOf(nowMs) - w.lookback(); w.next < floor {
+		// A rebuild in this call sets w.next itself, possibly before the floor
+		// after a handover (ADR 0033), so the clamp skips it then.
+		if floor := w.slotOf(nowMs) - w.lookback(); !rebuilt && w.ready && w.next < floor {
 			w.next = floor
 		}
 		k := w.next
@@ -305,6 +332,7 @@ func (a *Aggregator) process(ctx context.Context, w *watch, nowMs int64, registr
 				}
 				return
 			}
+			rebuilt = true
 			continue
 		}
 
@@ -335,6 +363,13 @@ func (a *Aggregator) rebuild(ctx context.Context, w *watch, nowMs int64) error {
 		return fmt.Errorf("load monitor state: %w", err)
 	}
 	from := max(cur.State.SinceMs, w.start(w.slotOf(nowMs)-w.lookback()))
+	// A handover from the gap job reaches back to its window end (ADR 0033).
+	// It is used once; rebuild runs under a.mu, which step holds.
+	key := monitorKey{m.TenantID, m.ID}
+	if h, ok := a.handover[key]; ok {
+		from = max(cur.State.SinceMs, min(from, h))
+		delete(a.handover, key)
+	}
 	first := w.slotOf(from)
 	if w.start(first) < from {
 		first++
