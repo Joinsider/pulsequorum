@@ -1,12 +1,12 @@
 # Handoff für die nächste Claude-Code-Session
 
-**Stand:** 2026-11-18. AP-4.3 (ADR 0030, SSRF), die gebündelten Dependabot-Updates und AP-4.4 (ADR 0031: API-Tokens, Audit-Log, Massenaktionen) sind in `master` gemergt (PRs #24, #25, #27, jeweils per Squash). Nächster Schritt ist AP-4.5. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
+**Stand:** 2026-11-18. AP-4.3 (ADR 0030, SSRF), die gebündelten Dependabot-Updates und AP-4.4 (ADR 0031: API-Tokens, Audit-Log, Massenaktionen) sind in `master` gemergt (PRs #24, #25, #27, jeweils per Squash). AP-4.5 (ADR 0032, Migration `local` → `oidc`) ist auf dem Branch `feat/AP4.5` fertig, aber weder gepusht noch gemergt. Nächster Schritt ist AP-4.6. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
 
 ## 1. Zuerst lesen
 
 1. [CLAUDE.md](../CLAUDE.md): Regeln für Delegation, ADRs, Git und Sprache.
 2. [docs/roadmap.md](roadmap.md): „Aktueller Stand“ und P4. Die Einträge zu AP-4.1 bis AP-4.4 listen, was gebaut ist und was offen blieb.
-3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0031 sind alle Accepted. Für P4 zentral: [0027](adr/0027-oidc-anbindung.md) (OIDC, Profile, Mandanten-Bindung), [0028](adr/0028-rollen-aus-userinfo-und-client-id.md) (Rollen aus `/userinfo`, `client_id`) und [0029](adr/0029-mandantenverwaltung-plaene-limits.md) (Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung), [0030](adr/0030-ssrf-durchsetzung.md) (SSRF-Durchsetzung, feste Bereichsliste) und [0031](adr/0031-api-tokens-audit-massenaktionen.md) (API-Tokens, Audit-Log, Massenaktionen).
+3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0032 sind alle Accepted. Für P4 zentral: [0027](adr/0027-oidc-anbindung.md) (OIDC, Profile, Mandanten-Bindung), [0028](adr/0028-rollen-aus-userinfo-und-client-id.md) (Rollen aus `/userinfo`, `client_id`) und [0029](adr/0029-mandantenverwaltung-plaene-limits.md) (Mandantenverwaltung, Pläne, Limits, Auto-Provisionierung), [0030](adr/0030-ssrf-durchsetzung.md) (SSRF-Durchsetzung, feste Bereichsliste) und [0031](adr/0031-api-tokens-audit-massenaktionen.md) (API-Tokens, Audit-Log, Massenaktionen).
 4. [docs/betrieb/oidc.md](betrieb/oidc.md): Betriebsdoku zu OIDC mit den Befunden aus den Tests gegen echte Anbieter.
 5. Pflichtenheft (Version 1.5) für den nächsten Schritt AP-4.5: FA-AUTH-08. Betriebsdoku zu AP-4.3 und AP-4.4: [docs/betrieb/ssrf.md](betrieb/ssrf.md), [docs/betrieb/api-tokens.md](betrieb/api-tokens.md).
 
@@ -16,7 +16,7 @@
 |-------|--------|
 | P0 Fundament | fertig bis auf AP-0.9/0.10 (brauchen GitHub-Läufe) |
 | P1 Kern, P2 Cluster, P3 HA-Logik | abgenommen (`docs/abnahme/p1-kern.md`, `p2-cluster.md`, `p3-ha.md`) |
-| **P4 Mandanten** | **AP-4.1 ✅, AP-4.2 ✅, AP-4.3 ✅, AP-4.4 ✅, nächster Schritt AP-4.5** |
+| **P4 Mandanten** | **AP-4.1 ✅ bis AP-4.5 ✅, nächster Schritt AP-4.6** |
 | P5 Reichweite, P6 Ausbau | offen |
 
 **Was AP-4.1 gebracht hat (Kurzfassung):**
@@ -50,6 +50,11 @@
 - Audit-Log in `state.db`: Das FSM schreibt die Einträge im selben `Apply`, die Richtlinie je Payload-Typ steht in `internal/cluster/audit.go`. **Ein neuer Payload-Typ braucht dort einen Eintrag**, sonst schlägt `TestAuditPolicyCoversEveryPayload` fehl. `h.apply` setzt den Aufrufer als Akteur (`actorOf`).
 - `Batch` mit bis zu 500 Monitor-Operationen, alles oder nichts; API `/monitors/bulk`. Aufbewahrung über `AUDIT_RETENTION`.
 - Regeln der Stufe 9 (Token-Akteure, `audit_action`) greifen erst ab Stufe 9, weil Binaries der Stufe 8 solche Befehle anwenden. Test: `TestLevel9RulesOffBelowLevel9`.
+
+**Was AP-4.5 gebracht hat (Kurzfassung):**
+- ADR 0032 (1B, 2A, 3A, 4A, 5A). Kein neuer FSM-Befehl, `CommandVersion` bleibt 9.
+- Paket `internal/authswitch`: Im Modus `oidc` widerruft der Leader alle 30 s die Refresh-Sitzungen lokaler Nutzer (`RevokeLocalSessions`, Store `ListUnrevokedSessionUsers`). Lokale Konten bleiben als Notzugang. Einmalige Log-Hinweise zu ungebundenen Mandanten und API-Tokens lokaler Nutzer (`RunStartupHints`). `BindPlatformOrg` liegt jetzt hier statt in `cmd/`; ein fremd gebundenes `default` meldet es als Fehler mit Abhilfe.
+- Tests: Unit-Tests im Paket, `TestSwitchLocalToOIDC` in `internal/api` (Hin- und Rückweg), Ende-zu-Ende gegen Zitadel (`multi`, `single`) und Keycloak (`generic`), alle bestanden. Anleitung und Protokoll in [docs/betrieb/oidc.md](betrieb/oidc.md), Abschnitt 9.
 
 **Git:**
 - `master` (= `origin/master`, `d2538c6`) enthält alles bis AP-4.4. Projektinhaber merged per Squash: Die Feature-Branches `feat/AP4.3`, `feat/AP4.4` und `deps/dependabot-ap4.3` sind damit erledigt, ihre Einzel-Commits stehen nicht in `master`. Neue Arbeit immer von einem frischen `master` abzweigen (Vorschlag `feat/AP4.5`), nie von einem alten Feature-Branch.
@@ -89,7 +94,7 @@
 
 ### ADR-Ablauf
 
-- **Nummer:** Nächster ADR ist **0032**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
+- **Nummer:** Nächster ADR ist **0033**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
 - **Accepted:** setzt nur Projektinhaber, oder Claude auf seine ausdrückliche Anweisung im Chat. In der Approval-Tabelle dann z.B. „im Chat angenommen („Ja ADR 28 annehmen“), eingetragen durch Claude“.
 - **Optionen mit Empfehlung:** Projektinhaber entscheidet Richtungsfragen über kurze Auswahlen mit Kennungen (z.B. „1A, 2B“). Bei Zielkonflikten Optionen mit Vor- und Nachteilen und einer Empfehlung vorlegen; bei Sicherheitsfragen die sicherere Option empfehlen und sagen, warum.
 - **Befund aus Tests → neuer ADR:** Zeigt ein Test, dass ein akzeptierter ADR nicht trägt (so entstand ADR 0028 aus dem PocketID-Test), zuerst einen neuen ADR vorschlagen, nicht still abweichen.
@@ -113,10 +118,17 @@
 
 ## 4. Nächste Schritte
 
-1. **AP-4.5 Migration lokal → Zitadel** (FA-AUTH-08): Branch `feat/AP4.5` von `master` mit Projektinhaber abstimmen. Bestand sichten, Pflichtenheft lesen. Wahrscheinlich ist ADR 0032 nötig (Abbildung lokaler Nutzer und Mandanten auf Organisationen, Umgang mit API-Tokens und Audit-Log beim Wechsel).
-2. Danach AP-4.6: Admin-UI (auch Token-Verwaltung, Audit-Ansicht, Massenaktionen in der Monitorliste) und Abnahme AS-06/07. Für AS-07 die Umgebung `deploy/ssrf-dev/` wiederverwenden.
+1. `feat/AP4.5` pushen und PR anlegen, sobald Projektinhaber das sagt.
+2. AP-4.6: Admin-UI (auch Token-Verwaltung, Audit-Ansicht, Massenaktionen in der Monitorliste) und Abnahme AS-06/07. Für AS-07 die Umgebung `deploy/ssrf-dev/` wiederverwenden.
 
 ## 5. Offene Punkte
+
+**Aus AP-4.5:**
+- Die Plattform-Organisation lässt sich nicht wechseln (ADR 0032, Option 4B, eigener ADR bei Bedarf).
+- Die Audit-Identität einer Person bricht am Wechsel (lokale UUID → `sub`).
+- Nach einem Rückwechsel auf `local` gelten lokale Access-Tokens noch bis zu 15 min.
+- Im E2E-Test antworteten direkt nach dem ersten Setup `POST /api-tokens` einmal 409 und `POST /admin/tenants` einmal 503, drei Sekunden später ging es. Ursache offen, vermutlich Anheben der Befehlsstufe nach dem Bootstrap.
+- `PATCH /admin/tenants/{id}` mit `orgId` antwortet auch bei `single` mit 200, obwohl die Bindung dort wirkungslos ist.
 
 **Aus AP-4.4:**
 - Keine Oberfläche für Tokens, Audit und Massenaktionen (AP-4.6).
