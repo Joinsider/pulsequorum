@@ -37,6 +37,9 @@ type testNode struct {
 	keyring *secrets.Keyring
 	host    *Host
 	cancel  context.CancelFunc
+	// lastIssuedAtStart is last_issued_at read before Start, as main.go does
+	// for the gap job (ADR 0033).
+	lastIssuedAtStart int64
 	// replInterval is the anti-entropy period; zero keeps the default.
 	replInterval time.Duration
 	// caps are the node capabilities the node registers with (ADR 0017).
@@ -136,6 +139,9 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		t.Fatal(err)
 	}
 	if n.state, err = sqlite.OpenState(ctx, n.dir); err != nil {
+		t.Fatal(err)
+	}
+	if n.lastIssuedAtStart, err = n.state.LastIssuedAt(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if n.metrics, err = sqlite.OpenMetrics(ctx, n.dir, sqlite.MetricsOptions{}); err != nil {

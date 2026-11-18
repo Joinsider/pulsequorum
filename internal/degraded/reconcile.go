@@ -181,6 +181,9 @@ type JudgeOptions struct {
 	RetentionRaw time.Duration
 	// Interval is the period of the judgement, default 30 s.
 	Interval time.Duration
+	// Unit is the length of one interval second, as aggregator.Options.Unit;
+	// tests shrink it. Zero means 1 s.
+	Unit time.Duration
 	// Now is the clock (default time.Now).
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -213,6 +216,9 @@ type Judge struct {
 func NewJudge(opts JudgeOptions) *Judge {
 	if opts.Interval <= 0 {
 		opts.Interval = judgeInterval
+	}
+	if opts.Unit <= 0 {
+		opts.Unit = time.Second
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -347,7 +353,7 @@ func (j *Judge) decide(ctx context.Context, now time.Time, a store.UnconfirmedAl
 	if err != nil {
 		return decision{}, false, fmt.Errorf("read monitor: %w", err)
 	}
-	intervalMs := int64(m.IntervalSeconds) * 1000
+	intervalMs := int64(m.IntervalSeconds) * j.opts.Unit.Milliseconds()
 	if intervalMs <= 0 {
 		return decision{verdict: store.VerdictUnverifiable}, true, nil
 	}
@@ -414,9 +420,15 @@ func alertKey(monitorID string, sinceMs int64, status store.MonitorStatus) strin
 }
 
 // GapReevaluator replays the slots of a monitor in a time range (see
-// aggregator.Aggregator.ReevaluateGap).
+// aggregator.Aggregator.ReevaluateGap), and hands the live aggregator the end
+// of the re-evaluated window.
 type GapReevaluator interface {
 	ReevaluateGap(ctx context.Context, m store.Monitor, from store.MonitorStatus, fromMs, toMs int64) ([]aggregator.Change, error)
+	// HandOver tells the live aggregator where the gap job's window ends
+	// (ADR 0033). The live rebuild of the monitor replays from toMs on.
+	HandOver(tenantID, monitorID string, toMs int64)
+	// ClearHandOvers drops the handover points of an earlier gap job run.
+	ClearHandOvers()
 }
 
 // GapOptions configures a GapJob. State, Reevaluator, Proposer, IsLeader and
@@ -434,6 +446,15 @@ type GapOptions struct {
 	// MinAge is the age of the last command from which a gap is suspected.
 	// Zero means gapMinAge.
 	MinAge time.Duration
+	// Unit is the length of one interval second, as aggregator.Options.Unit;
+	// tests shrink it. Zero means 1 s.
+	Unit time.Duration
+	// StartLastSeen is the command time of the last applied command, read
+	// before Raft started (store.State.LastIssuedAt, ADR 0033 option 2A). Run
+	// uses it instead of its first sample when it is not zero, so a node that
+	// becomes leader before Run starts still sees the time before the quorum
+	// returned. Zero means Run samples at its start.
+	StartLastSeen int64
 	// Trigger requests an anti-entropy round with a peer (see
 	// replication.Replicator.Trigger). It is called once for every reachable
 	// peer when a gap is suspected. Nil means none.
@@ -489,6 +510,9 @@ func NewGapJob(opts GapOptions) *GapJob {
 	if opts.MinAge <= 0 {
 		opts.MinAge = gapMinAge
 	}
+	if opts.Unit <= 0 {
+		opts.Unit = time.Second
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -513,9 +537,20 @@ func (g *GapJob) setDone(v bool) {
 	g.done = v
 }
 
+// start records the state the first tick works from: the command time of
+// StartLastSeen if it is set, otherwise the one the store holds now.
+func (g *GapJob) start(ctx context.Context) {
+	if g.opts.StartLastSeen == 0 {
+		g.sample(ctx)
+		return
+	}
+	g.recordDegraded()
+	g.lastSeen = g.opts.StartLastSeen
+}
+
 // Run ticks until ctx ends.
 func (g *GapJob) Run(ctx context.Context) {
-	g.sample(ctx)
+	g.start(ctx)
 	ticker := time.NewTicker(g.opts.Tick)
 	defer ticker.Stop()
 	for {
@@ -541,6 +576,8 @@ func (g *GapJob) tick(ctx context.Context) {
 		g.leaderSince = g.opts.Now()
 		g.setDone(false)
 		g.afterDegraded, g.degradedSeen = g.degradedSeen, false
+		// Points of an earlier, aborted run must not survive (ADR 0033).
+		g.opts.Reevaluator.ClearHandOvers()
 	}
 	if g.Done() {
 		return
@@ -551,15 +588,20 @@ func (g *GapJob) tick(ctx context.Context) {
 // sample stores the command time of the last applied command, and whether
 // the node is degraded.
 func (g *GapJob) sample(ctx context.Context) {
-	if g.opts.Degraded != nil && g.opts.Degraded() {
-		g.degradedSeen = true
-	}
+	g.recordDegraded()
 	v, err := g.opts.State.LastIssuedAt(ctx)
 	if err != nil {
 		g.opts.Logger.Warn("degraded: read last command time", "err", err)
 		return
 	}
 	g.lastSeen = v
+}
+
+// recordDegraded remembers that the node was degraded while it had no leader.
+func (g *GapJob) recordDegraded() {
+	if g.opts.Degraded != nil && g.opts.Degraded() {
+		g.degradedSeen = true
+	}
 }
 
 // run performs the job of the current leadership. It returns with Done still
@@ -737,10 +779,12 @@ func (g *GapJob) reevaluate(ctx context.Context, m store.Monitor) error {
 	if m.IntervalSeconds <= 0 {
 		return nil
 	}
-	interval := time.Duration(m.IntervalSeconds) * time.Second
+	interval := time.Duration(m.IntervalSeconds) * g.opts.Unit
 	// The live aggregator rebuilds from this many slots back (aggregator/watch.go).
 	lookback := int64(max(m.Retries+1, m.RecoveryThreshold) + 2)
 	liveStartMs := g.opts.Now().Add(-time.Duration(lookback+1) * interval).UnixMilli()
+	// The live rebuild replays from the end of this window on (ADR 0033).
+	g.opts.Reevaluator.HandOver(m.TenantID, m.ID, liveStartMs)
 
 	gapStartMs := max(g.lastSeen, cur.SinceMs, liveStartMs-gapMaxLength.Milliseconds())
 	if liveStartMs-gapStartMs < interval.Milliseconds() {
