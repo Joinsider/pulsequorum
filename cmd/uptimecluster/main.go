@@ -28,6 +28,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/alert"
 	"github.com/joinsider/uptimecluster/internal/api"
 	"github.com/joinsider/uptimecluster/internal/auth"
+	"github.com/joinsider/uptimecluster/internal/authswitch"
 	"github.com/joinsider/uptimecluster/internal/checker"
 	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
@@ -602,7 +603,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		apiDeps.Authenticator = authn
 		readiness = oidcReadiness(readiness, keys)
 		bg.Go(func() { runOIDCKeys(ctx, keys, log) })
-		bg.Go(func() { bindPlatformOrg(ctx, cfg, log, raftNode, state) })
+		bg.Go(func() { authswitch.BindPlatformOrg(ctx, cfg, log, raftNode, state) })
+		// Local refresh sessions must not survive the switch (ADR 0032).
+		bg.Go(func() { authswitch.RevokeLocalSessions(ctx, log, raftNode, state, authswitch.SessionInterval) })
+		bg.Go(func() {
+			authswitch.RunStartupHints(ctx, cfg, log, raftNode, state, clock, authswitch.StartupHintsInterval)
+		})
 		if cfg.OIDC.AutoProvision {
 			bg.Go(func() { watchProvisionPlan(ctx, log, state, cfg.OIDC.AutoProvisionPlan) })
 		}
