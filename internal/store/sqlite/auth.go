@@ -78,6 +78,22 @@ func (s *StateStore) GetSession(ctx context.Context, tokenHash string) (store.Se
 	return getSession(ctx, s.q, tokenHash)
 }
 
+// ListUnrevokedSessionUsers returns the users with a refresh token that is
+// not revoked (ADR 0032).
+func (s *StateStore) ListUnrevokedSessionUsers(ctx context.Context) ([]store.SessionUser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows, err := s.q.ListUnrevokedSessionUsers(ctx)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]store.SessionUser, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.SessionUser{TenantID: r.TenantID, UserID: r.UserID})
+	}
+	return out, nil
+}
+
 func (t *stateTx) CountUsers(ctx context.Context) (int, error) {
 	return countUsers(ctx, t.q)
 }

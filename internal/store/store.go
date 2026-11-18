@@ -316,6 +316,12 @@ type Session struct {
 	RevokedMs int64
 }
 
+// SessionUser names a user that holds a refresh token (ADR 0032).
+type SessionUser struct {
+	TenantID string
+	UserID   string
+}
+
 // APIToken is a long-lived service token of a tenant (ADR 0031, FA-AUTH-10).
 // Only the SHA-256 of the secret is stored.
 type APIToken struct {
@@ -529,6 +535,9 @@ type State interface {
 	ListSigningKeys(ctx context.Context) ([]SigningKey, error)
 	// GetSession returns the refresh token with the hash or ErrNotFound.
 	GetSession(ctx context.Context, tokenHash string) (Session, error)
+	// ListUnrevokedSessionUsers returns the users that hold a refresh token
+	// that is not revoked, ordered by tenant and user (ADR 0032).
+	ListUnrevokedSessionUsers(ctx context.Context) ([]SessionUser, error)
 
 	// ListOpenUnconfirmedAlerts returns the alerts without verdict ordered by
 	// since time, node and local ID (ADR 0024).
