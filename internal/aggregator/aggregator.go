@@ -99,7 +99,7 @@ type Aggregator struct {
 	deviationSeen map[deviationKey]int64
 	// handover holds, per monitor, the end of the window the gap job
 	// re-evaluated (ADR 0033). The next rebuild of that monitor replays from
-	// there. Dropped when the leadership ends.
+	// there. The gap job clears them when its leadership starts.
 	handover map[monitorKey]int64
 }
 
@@ -133,7 +133,9 @@ func New(opts Options) *Aggregator {
 // for a monitor (ADR 0033). The next rebuild of that monitor replays the
 // slots from toMs on, even if they lie before the usual lookback, so that no
 // slot between the gap job and the live evaluation stays unevaluated. It is
-// used once and dropped when the leadership ends.
+// used once. A loss of leadership keeps it, because the gap job of the next
+// leadership may record it before this aggregator noticed the loss; the gap
+// job drops stale points with ClearHandOvers when its leadership starts.
 func (a *Aggregator) HandOver(tenantID, monitorID string, toMs int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -229,7 +231,9 @@ func (a *Aggregator) step(ctx context.Context) {
 		if !a.leaderSince.IsZero() {
 			a.leaderSince = time.Time{}
 			a.dropAll()
-			clear(a.handover)
+			// The handover points stay: the gap job of the next leadership
+			// may already have recorded them, and it clears stale ones itself
+			// when its leadership starts (ADR 0033).
 			a.opts.Logger.Info("no longer leader, monitor evaluation stopped")
 		}
 		return

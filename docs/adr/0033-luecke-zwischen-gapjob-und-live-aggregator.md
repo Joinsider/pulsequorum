@@ -149,6 +149,10 @@ Angenommen: **1A + 2A + 3A.**
   - Abnahme: `TestDegradedModeAlertsAndCorrects` lokal mit `-count=20` grün.
   - In ADR 0024 Abschnitt 7 auf diesen ADR verweisen (das „Rückschaufenster des Aggregators“ ist jetzt der Übergabepunkt).
 
+## Umsetzungshinweis
+
+Abweichend von 1A verfällt ein Übergabepunkt nicht, wenn der Aggregator seine Leaderschaft verliert. Der GapJob der nächsten Leaderschaft kann seine Punkte setzen, bevor der Aggregator den Verlust bemerkt hat; ein Löschen dort würde sie verwerfen. Veraltete Punkte löscht der GapJob mit `ClearHandOvers`, wenn seine Leaderschaft beginnt. Der Aggregator wertet erst aus, wenn der GapJob derselben Leaderschaft fertig ist, sieht also nur deren Punkte.
+
 ## Approval
 
 | Datum | Status | Durch | Anmerkung |

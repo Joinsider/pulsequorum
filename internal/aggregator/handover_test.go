@@ -104,11 +104,11 @@ func TestHandOverWithoutPointKeepsLookback(t *testing.T) {
 	}
 }
 
-// TestHandOverDroppedWhenLeadershipEnds checks that a handover point does not
-// outlive the leadership. It is recorded while not leader. The first leadership
-// ends before its grace period is over, so it does not rebuild and consume the
-// point. The second leadership then rebuilds with the usual lookback.
-func TestHandOverDroppedWhenLeadershipEnds(t *testing.T) {
+// TestHandOverSurvivesLeadershipLoss checks that a handover point outlives a
+// leadership of the aggregator that ended before its rebuild: the gap job of
+// the next leadership may record its points before the aggregator noticed the
+// loss, so only ClearHandOvers drops them (ADR 0033).
+func TestHandOverSurvivesLeadershipLoss(t *testing.T) {
 	r, _, takeover, liveStart := gapScenario(t)
 	r.a.HandOver(cluster.DefaultTenantID, "m1", liveStart)
 
@@ -119,15 +119,15 @@ func TestHandOverDroppedWhenLeadershipEnds(t *testing.T) {
 	r.leader = false
 	r.tick(takeover + 6_000)
 
-	// Second leadership: grace over, rebuild with the normal lookback.
+	// Second leadership: grace over, the rebuild still replays from the point.
 	r.leader = true
 	r.tick(takeover + 7_000)
 	r.tick(takeover + 7_000 + 10_000 + 100)
 
 	st := r.f.monitor().State
-	if st.Status != store.StatusDown || st.SinceMs != r.slot(7) {
-		t.Errorf("state = %s since slot %d, want DOWN since slot 7 (%d): the handover point must be dropped with the leadership",
-			st.Status, (st.SinceMs-r.slot(0))/intervalMs, r.slot(7))
+	if st.Status != store.StatusDown || st.SinceMs != r.slot(6) {
+		t.Errorf("state = %s since slot %d, want DOWN since slot 6 (%d): the handover point must survive the leadership loss",
+			st.Status, (st.SinceMs-r.slot(0))/intervalMs, r.slot(6))
 	}
 }
 
