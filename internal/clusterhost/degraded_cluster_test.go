@@ -210,11 +210,14 @@ func (d *degCluster) startStack(dn *degNode) {
 	})
 	gap = degraded.NewGapJob(degraded.GapOptions{
 		NodeID: cn.id, State: cn.state, Reevaluator: agg, Proposer: host.Node, IsLeader: host.Node.IsLeader,
-		CommandLevel: host.Node.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews, Trigger: host.Replication.Trigger, Tick: degTick, Logger: discard,
+		CommandLevel: host.Node.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews, Trigger: host.Replication.Trigger,
+		Unit: consensusUnit, StartLastSeen: cn.lastIssuedAtStart,
+		Degraded: func() bool { return detector.State().Degraded },
+		Tick:     degTick, Logger: discard,
 	})
 	judge := degraded.NewJudge(degraded.JudgeOptions{
 		State: cn.state, Proposer: host.Node, IsLeader: host.Node.IsLeader, CommandLevel: host.Node.CommandLevel,
-		GapDone: gap.Done, Interval: degTick, Logger: discard,
+		GapDone: gap.Done, Unit: consensusUnit, Interval: degTick, Logger: discard,
 	})
 	live := alert.NewDispatcher(alert.DispatcherOptions{
 		State: cn.state, Cluster: host.Node, Keyring: cn.keyring, Sender: sender,

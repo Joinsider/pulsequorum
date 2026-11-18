@@ -38,3 +38,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0030](0030-ssrf-durchsetzung.md) | SSRF-Durchsetzung: Bereichslisten, Prüfung beim Speichern, DNS-Antworten | Accepted | 2026-11-18 |
 | [0031](0031-api-tokens-audit-massenaktionen.md) | API-Tokens, Audit-Log und Massenaktionen | Accepted | 2026-11-18 |
 | [0032](0032-migration-lokal-nach-oidc.md) | Migration von `local` nach `oidc` | Accepted | 2026-11-18 |
+| [0033](0033-luecke-zwischen-gapjob-und-live-aggregator.md) | Lückenlose Übergabe vom GapJob an den Live-Aggregator | Accepted | 2026-11-18 |

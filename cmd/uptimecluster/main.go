@@ -131,6 +131,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	defer func() { _ = state.Close() }()
+	// Read before Raft starts so the gap job sees the time before the quorum
+	// returned (ADR 0033).
+	startLastIssued, err := state.LastIssuedAt(ctx)
+	if err != nil {
+		return fmt.Errorf("read last command time: %w", err)
+	}
 	metrics, err := sqlite.OpenMetrics(ctx, cfg.DataDir, sqlite.MetricsOptions{})
 	if err != nil {
 		return err
@@ -404,7 +410,8 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		NodeID: nodeID, State: state, Reevaluator: agg, Proposer: raftNode, IsLeader: raftNode.IsLeader,
 		CommandLevel: raftNode.CommandLevel, Replication: host.Replication.Status, Peers: host.PeerViews,
 		Trigger: host.Replication.Trigger, Degraded: func() bool { return detector.State().Degraded },
-		Now: clock, Logger: log,
+		StartLastSeen: startLastIssued,
+		Now:           clock, Logger: log,
 	})
 	// The sender of a degraded period announces the lost quorum to the system channels (ADR 0025, section 5).
 	quorumNotifier := degraded.NewQuorumNotifier(degraded.QuorumOptions{

@@ -164,7 +164,7 @@
 - Claim-Fixture aus PocketID fehlt (Claims nur aus dem Quelltext belegt; Keycloak und Zitadel liegen in `internal/auth/oidc/testdata/`). PocketID-Version für die Doku bei Projektinhaber erfragen.
 - STRIDE-Ergänzung für OIDC fehlt.
 - Zitadel Login V2 ignoriert `prompt=none` (zeigt die Login-Maske); dokumentiert, keine Code-Änderung.
-- **npm-Audit-Ausnahme:** `web/scripts/audit-exceptions.json` erlaubt `GHSA-fc5q-39xc-vjpf` (`picomatch`, nur Build-Werkzeuge) bis **2026-12-31**. Die CI schlägt wieder an, wenn das Advisory verschwindet (dann Ausnahme löschen) oder das Datum abläuft (neu bewerten). Änderungen an CI-Sicherheitsprüfungen nur mit Projektinhaber' Zustimmung; der Auto-Modus blockiert sie sonst zu Recht.
+- **npm-Audit-Ausnahmen:** `web/scripts/audit-exceptions.json` ist leer. Die Ausnahme für `GHSA-fc5q-39xc-vjpf` (`picomatch`) wurde am 2026-11-18 gelöscht, weil `npm audit` das Advisory nicht mehr meldet. Neue Ausnahmen nennen Advisory, Grund und Ablaufdatum; die CI schlägt an, wenn ein Advisory verschwindet oder das Datum abläuft. Änderungen an CI-Sicherheitsprüfungen nur mit Projektinhaber' Zustimmung.
 
 **Aus P3 (unverändert offen):**
 - `raft_stale`-Schwellen (1000 Einträge / 10 s) sind vorläufig, von Projektinhaber nicht bestätigt.

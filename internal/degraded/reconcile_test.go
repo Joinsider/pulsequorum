@@ -168,11 +168,14 @@ func (m *rjMetrics) PruneDegradedAlerts(_ context.Context, beforeMs int64) (int6
 	return 0, nil
 }
 
-// rjReeval returns the changes per monitor ID and records the gap requests.
+// rjReeval returns the changes per monitor ID and records the gap requests,
+// the handover points and the clears of the live aggregator.
 type rjReeval struct {
-	mu       sync.Mutex
-	changes  map[string][]aggregator.Change
-	requests []rjGapRequest
+	mu        sync.Mutex
+	changes   map[string][]aggregator.Change
+	requests  []rjGapRequest
+	handovers []rjHandover
+	clears    int
 }
 
 type rjGapRequest struct {
@@ -182,11 +185,35 @@ type rjGapRequest struct {
 	toMs    int64
 }
 
+type rjHandover struct {
+	tenantID, monitorID string
+	toMs                int64
+}
+
 func (r *rjReeval) ReevaluateGap(_ context.Context, m store.Monitor, from store.MonitorStatus, fromMs, toMs int64) ([]aggregator.Change, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.requests = append(r.requests, rjGapRequest{monitor: m.ID, from: from, fromMs: fromMs, toMs: toMs})
 	return r.changes[m.ID], nil
+}
+
+func (r *rjReeval) HandOver(tenantID, monitorID string, toMs int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.handovers = append(r.handovers, rjHandover{tenantID: tenantID, monitorID: monitorID, toMs: toMs})
+}
+
+func (r *rjReeval) ClearHandOvers() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clears++
+}
+
+// rjHandovers returns a copy of the handover points recorded so far.
+func (r *rjReeval) rjHandovers() []rjHandover {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.handovers)
 }
 
 func rjCmdLevel(level uint32) func(context.Context) (uint32, error) {
@@ -541,6 +568,43 @@ func TestJudgeUnverifiable(t *testing.T) {
 	}
 }
 
+// TestJudgeUnit checks that the judge measures the window in Unit, not in
+// seconds: with Unit 500 ms the window of a 60 s monitor is 30 s long.
+func TestJudgeUnit(t *testing.T) {
+	since := rjBase.Add(-time.Hour)
+	// The window ends 3 slots after the alert: 180 s with Unit 1 s, 90 s with
+	// Unit 500 ms. The judge settles it 30 s later, so at since+150 s only the
+	// 500 ms window is settled.
+	now := since.Add(150 * time.Second)
+	st := &rjState{
+		monitors: []store.Monitor{rjMonitor("m1", store.StatusUp, rjBase.Add(-2*time.Hour))},
+		history:  map[string][]store.StatusChange{rjKey(testTenant, "m1"): {{SinceMs: rjMs(since), Status: store.StatusDown}}},
+		open:     []store.UnconfirmedAlert{rjAlert("node-a", 1, "m1", "DOWN", since, alert.LocalOutcomeSent)},
+	}
+	prop := &rjProposer{}
+	j := rjJudge(st, prop, now, 0)
+	j.tick(context.Background())
+	if n := len(prop.all()); n != 0 {
+		t.Fatalf("%d commands with the 1 s unit at since+150 s, want none: the window ends at since+180 s", n)
+	}
+
+	j.opts.Unit = 500 * time.Millisecond
+	j.tick(context.Background())
+	cmds := prop.all()
+	if len(cmds) != 1 {
+		t.Fatalf("%d commands with the 500 ms unit, want 1", len(cmds))
+	}
+	if v := resolvedVerdicts(t, cmds[0]); len(v) != 1 || v[0].GetVerdict() != store.VerdictConfirmed {
+		t.Errorf("verdicts %v, want one confirmed", v)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	wantWindow := [2]int64{rjMs(since.Add(-60 * time.Second)), rjMs(since.Add(90 * time.Second))}
+	if len(st.windows) != 1 || st.windows[0] != wantWindow {
+		t.Errorf("history windows %v, want [%v] (2 slots before and 3 after, 30 s each)", st.windows, wantWindow)
+	}
+}
+
 func TestJudgeGates(t *testing.T) {
 	since := rjBase.Add(-time.Hour)
 	st := &rjState{
@@ -793,6 +857,109 @@ func TestGapJobDoneResetsAfterLeadershipLoss(t *testing.T) {
 
 // reachable is a peer view that answered just now.
 func reachable(now time.Time) PeerView { return PeerView{AnsweredAt: now} }
+
+// rjLookbackSlots is the number of slots the live rebuild starts before now for
+// rjMonitor (retries 1, recovery 1): lookback max(retries+1, recovery)+2 = 4,
+// plus one (liveStart = now - (lookback+1) intervals).
+const rjLookbackSlots = 4 + 1
+
+func TestGapJobHandsOverWindowEnd(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.lead(t)
+	if len(rig.reeval.requests) != 1 {
+		t.Fatalf("gap requests %d, want 1", len(rig.reeval.requests))
+	}
+	want := rjMs(rjBase.Add(-rjLookbackSlots * time.Minute))
+	if got := rig.reeval.requests[0].toMs; got != want {
+		t.Fatalf("re-evaluated up to %d, want %d", got, want)
+	}
+	hs := rig.reeval.rjHandovers()
+	if len(hs) != 1 || hs[0] != (rjHandover{tenantID: testTenant, monitorID: "m1", toMs: want}) {
+		t.Errorf("handovers %+v, want one for m1 up to %d", hs, want)
+	}
+}
+
+func TestGapJobNoHandOverWithoutGap(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.st.lastIssued = rjMs(rjBase.Add(-2 * time.Second)) // recent: no gap suspected
+	rig.job.sample(context.Background())
+	rig.lead(t)
+	if hs := rig.reeval.rjHandovers(); len(hs) != 0 {
+		t.Errorf("handovers %+v, want none without a gap", hs)
+	}
+}
+
+func TestGapJobClearsHandOversOnLeadershipStart(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	clears := func() int {
+		rig.reeval.mu.Lock()
+		defer rig.reeval.mu.Unlock()
+		return rig.reeval.clears
+	}
+	rig.lead(t)
+	rig.job.tick(context.Background()) // still leader: no new leadership start
+	if n := clears(); n != 1 {
+		t.Fatalf("clears %d after the first leadership start, want 1", n)
+	}
+	*rig.leader = false
+	rig.job.tick(context.Background())
+	rig.lead(t)
+	if n := clears(); n != 2 {
+		t.Errorf("clears %d after the second leadership start, want 2", n)
+	}
+}
+
+// TestGapJobUsesStartLastSeen checks that start takes the command time read
+// before Raft started over the store value of the time of the start.
+func TestGapJobUsesStartLastSeen(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	// The store shows a recent command, as after the quorum returned.
+	rig.st.lastIssued = rjMs(rjBase.Add(-2 * time.Second))
+	old := rjBase.Add(-2 * time.Hour)
+	rig.job.opts.StartLastSeen = rjMs(old)
+	rig.job.start(context.Background())
+	rig.lead(t)
+	if len(rig.reeval.requests) != 1 {
+		t.Fatalf("gap requests %d, want 1: the start time is 2 h old", len(rig.reeval.requests))
+	}
+	if got := rig.reeval.requests[0].fromMs; got != rjMs(old) {
+		t.Errorf("re-evaluated from %d, want %d (StartLastSeen)", got, rjMs(old))
+	}
+}
+
+// TestGapJobStartSamplesWithoutStartLastSeen checks that start samples the
+// store when StartLastSeen is zero.
+func TestGapJobStartSamplesWithoutStartLastSeen(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.st.lastIssued = rjMs(rjBase.Add(-2 * time.Second))
+	rig.job.opts.StartLastSeen = 0
+	rig.job.start(context.Background())
+	rig.lead(t)
+	if !rig.job.Done() {
+		t.Error("Done() = false, want true: the store shows a recent command")
+	}
+	if len(rig.reeval.requests) != 0 {
+		t.Errorf("re-evaluated %d gaps, want none", len(rig.reeval.requests))
+	}
+}
+
+// TestGapJobUnit checks that the gap job measures its window in Unit: with
+// 500 ms a slot of a 60 s monitor is 30 s long.
+func TestGapJobUnit(t *testing.T) {
+	rig := newRjGapRig(t, rjMonitor("m1", store.StatusUp, rjBase.Add(-10*time.Hour)))
+	rig.job.opts.Unit = 500 * time.Millisecond
+	rig.lead(t)
+	if len(rig.reeval.requests) != 1 {
+		t.Fatalf("gap requests %d, want 1", len(rig.reeval.requests))
+	}
+	want := rjMs(rjBase.Add(-rjLookbackSlots * 60 * 500 * time.Millisecond))
+	if got := rig.reeval.requests[0].toMs; got != want {
+		t.Errorf("re-evaluated up to %d, want %d (5 slots of 30 s)", got, want)
+	}
+	if hs := rig.reeval.rjHandovers(); len(hs) != 1 || hs[0].toMs != want {
+		t.Errorf("handovers %+v, want one up to %d", hs, want)
+	}
+}
 
 func TestGapJobNoGapDoesNotWait(t *testing.T) {
 	// Normal leader changes: the last command is recent, or none is known.
