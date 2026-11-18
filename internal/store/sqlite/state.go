@@ -309,13 +309,18 @@ func (t *stateTx) PutTenant(ctx context.Context, tn store.Tenant) error {
 	if limits == "" {
 		limits = "{}"
 	}
-	err := t.q.UpsertTenant(ctx, statedb.UpsertTenantParams{
+	source, err := normalizeSource(tn.Source)
+	if err != nil {
+		return fmt.Errorf("put tenant %s: %w", tn.ID, err)
+	}
+	err = t.q.UpsertTenant(ctx, statedb.UpsertTenantParams{
 		ID:           tn.ID,
 		Name:         tn.Name,
 		ZitadelOrgID: sql.NullString{String: tn.ZitadelOrgID, Valid: tn.ZitadelOrgID != ""},
 		Plan:         tn.Plan,
 		LimitsJson:   limits,
 		Suspended:    boolToInt(tn.Suspended),
+		Source:       source,
 		CreatedMs:    tn.CreatedMs,
 		UpdatedMs:    tn.UpdatedMs,
 	})
@@ -683,6 +688,7 @@ func tenantFromRow(r statedb.Tenant) store.Tenant {
 		Plan:         r.Plan,
 		Limits:       json.RawMessage(r.LimitsJson),
 		Suspended:    r.Suspended != 0,
+		Source:       r.Source,
 		CreatedMs:    r.CreatedMs,
 		UpdatedMs:    r.UpdatedMs,
 	}

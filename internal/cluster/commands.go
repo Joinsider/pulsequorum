@@ -25,8 +25,9 @@ import (
 // version 4 ClearMonitorFlapping and the flapping and channel-failed alerts (ADR 0023),
 // version 5 the degraded-mode commands and the sender view of alerts (ADR 0024),
 // version 6 the system alerts, incarnation records and checkpoints (ADR 0025),
-// version 7 BindTenantOrg (ADR 0027).
-const CommandVersion = 7
+// version 7 BindTenantOrg (ADR 0027), version 8 the tenant and plan commands and
+// limit enforcement (ADR 0029).
+const CommandVersion = 8
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this
@@ -222,9 +223,16 @@ type PutResult struct {
 	Revision uint64 `json:"revision,omitempty"`
 }
 
-// NewPutTenant builds a platform-level command that creates or updates a tenant.
+// NewPutTenant builds the system command that creates a tenant at bootstrap.
+// From command level 8 the FSM accepts PutEntity for tenants only from the
+// system actor (ADR 0029); the admin API uses CreateTenant and UpdateTenant.
 func NewPutTenant(requestID, tenantID string, doc TenantDocument) (*pb.Command, error) {
-	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_TENANT, tenantID, doc, 0)
+	cmd, err := newPut(requestID, "", pb.EntityKind_ENTITY_KIND_TENANT, tenantID, doc, 0)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Actor = &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
+	return cmd, nil
 }
 
 // MonitorDocumentFrom returns the document that recreates a stored monitor,

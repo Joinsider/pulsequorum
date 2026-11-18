@@ -102,17 +102,21 @@ func (h *Handlers) allowedOrigin(r *http.Request) bool {
 	return slices.Contains(h.cfg.CORSOrigins, strings.ToLower(origin))
 }
 
-// revalidate checks that the user still exists, is enabled and may read.
-// With OIDC there is no local user: the roles come from the token and hold
-// until it expires, when the stream is closed; the tenant can be suspended
-// or deleted at any time, so that is checked (ADR 0027).
+// revalidate checks that the tenant still exists and is not suspended, in
+// every auth mode (ADR 0027, 0029). With local users it also checks that the
+// user still exists, is enabled and may read. With OIDC there is no local
+// user: the roles come from the token and hold until it expires, when the
+// stream is closed.
 func (h *Handlers) revalidate(ctx context.Context, p auth.Principal) bool {
 	if h.deps.State == nil {
 		return true
 	}
+	t, err := h.deps.State.GetTenant(ctx, p.TenantID)
+	if err != nil || t.Suspended || t.ID == store.SystemTenantID {
+		return false
+	}
 	if h.deps.Local == nil {
-		t, err := h.deps.State.GetTenant(ctx, p.TenantID)
-		return err == nil && !t.Suspended && t.ID != store.SystemTenantID
+		return true
 	}
 	u, err := h.deps.State.GetUser(ctx, p.TenantID, p.UserID)
 	if err != nil || u.Disabled {

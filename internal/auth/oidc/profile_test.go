@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/joinsider/uptimecluster/internal/auth"
@@ -169,5 +171,155 @@ func TestZitadelProfileStoreFailureIsUnavailable(t *testing.T) {
 	_, err := z.Map(context.Background(), rawClaims(t, zitadelClaims("org-acme", map[string][]string{"tenant-admin": {"org-acme"}})))
 	if !errors.Is(err, auth.ErrAuthUnavailable) || errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("err = %v, want ErrAuthUnavailable", err)
+	}
+}
+
+// fakeProvisioner records the organizations it was asked to provision.
+type fakeProvisioner struct {
+	calls    []string
+	tenantID string
+	err      error
+}
+
+func (p *fakeProvisioner) Provision(_ context.Context, orgID, orgName string) (string, error) {
+	p.calls = append(p.calls, orgID+"|"+orgName)
+	return p.tenantID, p.err
+}
+
+// TestZitadelProvisioning covers ADR 0029 (4A) at the profile: an unknown
+// organization is provisioned only when a role is granted in that organization.
+func TestZitadelProvisioning(t *testing.T) {
+	tenants := fakeTenants{
+		"default": {ID: "default", ZitadelOrgID: "org-platform"},
+		"acme":    {ID: "acme", ZitadelOrgID: "org-acme"},
+	}
+	withName := func(c map[string]any, name string) map[string]any {
+		c[claimResourceOwnerName] = name
+		return c
+	}
+	tests := []struct {
+		name      string
+		claims    map[string]any
+		prov      *fakeProvisioner // nil: no provisioner
+		single    bool             // single tenancy
+		wantTen   string
+		want      []auth.Role
+		wantErr   error
+		wantMsg   string // substring of the error, if any
+		wantCalls []string
+	}{
+		{
+			name:      "unknown organization with a role in it is provisioned",
+			claims:    zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-new"}}),
+			prov:      &fakeProvisioner{tenantID: "new-tenant"},
+			wantTen:   "new-tenant",
+			want:      []auth.Role{auth.RoleTenantAdmin},
+			wantCalls: []string{"org-new|"},
+		},
+		{
+			name:      "organization name claim is passed to the provisioner",
+			claims:    withName(zitadelClaims("org-new", map[string][]string{"tenant-viewer": {"org-new"}}), "Acme GmbH"),
+			prov:      &fakeProvisioner{tenantID: "new-tenant"},
+			wantTen:   "new-tenant",
+			want:      []auth.Role{auth.RoleTenantViewer},
+			wantCalls: []string{"org-new|Acme GmbH"},
+		},
+		{
+			name:    "unknown organization with roles only in another organization is not provisioned",
+			claims:  zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-acme"}}),
+			prov:    &fakeProvisioner{tenantID: "new-tenant"},
+			wantErr: auth.ErrForbidden,
+			wantMsg: "not provisioned",
+		},
+		{
+			name:    "unknown organization without any role is not provisioned",
+			claims:  zitadelClaims("org-new", map[string][]string{}),
+			prov:    &fakeProvisioner{tenantID: "new-tenant"},
+			wantErr: auth.ErrForbidden,
+			wantMsg: "not provisioned",
+		},
+		{
+			name:    "unknown organization without provisioner is rejected",
+			claims:  zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-new"}}),
+			prov:    nil,
+			wantErr: auth.ErrForbidden,
+			wantMsg: "not provisioned",
+		},
+		{
+			name:      "provisioner error is passed through",
+			claims:    zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-new"}}),
+			prov:      &fakeProvisioner{err: fmt.Errorf("%w: limit reached", auth.ErrForbidden)},
+			wantErr:   auth.ErrForbidden,
+			wantMsg:   "limit reached",
+			wantCalls: []string{"org-new|"},
+		},
+		{
+			name:      "provisioner unavailability is passed through",
+			claims:    zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-new"}}),
+			prov:      &fakeProvisioner{err: fmt.Errorf("%w: raft", auth.ErrAuthUnavailable)},
+			wantErr:   auth.ErrAuthUnavailable,
+			wantCalls: []string{"org-new|"},
+		},
+		{
+			name:    "platform admin of a customer organization is dropped and does not provision alone",
+			claims:  zitadelClaims("org-new", map[string][]string{"platform-admin": {"org-new"}}),
+			prov:    &fakeProvisioner{tenantID: "new-tenant"},
+			wantErr: auth.ErrForbidden,
+		},
+		{
+			name:      "platform admin is dropped, other roles of the organization provision",
+			claims:    zitadelClaims("org-new", map[string][]string{"platform-admin": {"org-new"}, "tenant-viewer": {"org-new"}}),
+			prov:      &fakeProvisioner{tenantID: "new-tenant"},
+			wantTen:   "new-tenant",
+			want:      []auth.Role{auth.RoleTenantViewer},
+			wantCalls: []string{"org-new|"},
+		},
+		{
+			name:    "single tenancy never provisions",
+			claims:  zitadelClaims("org-new", map[string][]string{"tenant-admin": {"org-new"}}),
+			prov:    &fakeProvisioner{tenantID: "new-tenant"},
+			single:  true,
+			wantErr: auth.ErrForbidden,
+		},
+		{
+			name:    "bound organization never provisions",
+			claims:  zitadelClaims("org-acme", map[string][]string{"tenant-admin": {"org-acme"}}),
+			prov:    &fakeProvisioner{tenantID: "new-tenant"},
+			wantTen: "acme",
+			want:    []auth.Role{auth.RoleTenantAdmin},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			z := Zitadel{ProjectID: "proj-1", PlatformOrgID: "org-platform", Multi: !tt.single,
+				DefaultTenantID: "default", Tenants: tenants}
+			if tt.single {
+				z.DefaultTenantID = "default"
+			} else {
+				z.DefaultTenantID = ""
+			}
+			if tt.prov != nil {
+				z.Provisioner = tt.prov
+			}
+			id, err := z.Map(context.Background(), rawClaims(t, tt.claims))
+			if tt.prov != nil && !slices.Equal(tt.prov.calls, tt.wantCalls) {
+				t.Errorf("provisioner calls = %v, want %v", tt.prov.calls, tt.wantCalls)
+			}
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				if tt.wantMsg != "" && !strings.Contains(err.Error(), tt.wantMsg) {
+					t.Errorf("err = %q, want it to contain %q", err, tt.wantMsg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id.TenantID != tt.wantTen || !slices.Equal(id.Roles, tt.want) {
+				t.Fatalf("identity = %+v, want %s %v", id, tt.wantTen, tt.want)
+			}
+		})
 	}
 }

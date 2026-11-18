@@ -56,6 +56,50 @@ func (q *Queries) CountPendingAlerts(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countTenantChannels = `-- name: CountTenantChannels :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM notification_channels WHERE tenant_id = ?
+`
+
+func (q *Queries) CountTenantChannels(ctx context.Context, tenantID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTenantChannels, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countTenantMonitors = `-- name: CountTenantMonitors :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM monitors WHERE tenant_id = ?
+`
+
+func (q *Queries) CountTenantMonitors(ctx context.Context, tenantID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTenantMonitors, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countTenantsBySource = `-- name: CountTenantsBySource :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM tenants WHERE source = ?
+`
+
+func (q *Queries) CountTenantsBySource(ctx context.Context, source string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTenantsBySource, source)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countTenantsWithPlan = `-- name: CountTenantsWithPlan :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM tenants WHERE plan = ?
+`
+
+func (q *Queries) CountTenantsWithPlan(ctx context.Context, plan string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTenantsWithPlan, plan)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT CAST(COUNT(*) AS INTEGER) FROM users
 `
@@ -170,6 +214,18 @@ func (q *Queries) DeleteNode(ctx context.Context, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
+const deletePlan = `-- name: DeletePlan :execrows
+DELETE FROM plans WHERE id = ?
+`
+
+func (q *Queries) DeletePlan(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePlan, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteStatusHistoryBetween = `-- name: DeleteStatusHistoryBetween :exec
 DELETE FROM monitor_status_history
 WHERE tenant_id = ?1 AND monitor_id = ?2
@@ -191,6 +247,139 @@ func (q *Queries) DeleteStatusHistoryBetween(ctx context.Context, arg DeleteStat
 		arg.FromMs,
 		arg.ToMs,
 	)
+	return err
+}
+
+const deleteTenantAlerts = `-- name: DeleteTenantAlerts :exec
+
+DELETE FROM alert_outbox WHERE tenant_id = ?
+`
+
+// The deletes below remove every row of one tenant from one table of state.db
+// (ADR 0029). DeleteTenant runs them in this order; the tenants row goes last.
+func (q *Queries) DeleteTenantAlerts(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantAlerts, tenantID)
+	return err
+}
+
+const deleteTenantChannels = `-- name: DeleteTenantChannels :exec
+DELETE FROM notification_channels WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantChannels(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantChannels, tenantID)
+	return err
+}
+
+const deleteTenantIncidents = `-- name: DeleteTenantIncidents :exec
+DELETE FROM incidents WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantIncidents(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantIncidents, tenantID)
+	return err
+}
+
+const deleteTenantJoinTokens = `-- name: DeleteTenantJoinTokens :exec
+DELETE FROM join_tokens WHERE tenant_id = ?
+`
+
+// Only probe tokens of a private tenant carry the tenant ID (no foreign key).
+func (q *Queries) DeleteTenantJoinTokens(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantJoinTokens, tenantID)
+	return err
+}
+
+const deleteTenantMaintenanceWindows = `-- name: DeleteTenantMaintenanceWindows :exec
+DELETE FROM maintenance_windows WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantMaintenanceWindows(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantMaintenanceWindows, tenantID)
+	return err
+}
+
+const deleteTenantMonitorChannels = `-- name: DeleteTenantMonitorChannels :exec
+DELETE FROM monitor_channels WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantMonitorChannels(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantMonitorChannels, tenantID)
+	return err
+}
+
+const deleteTenantMonitorStates = `-- name: DeleteTenantMonitorStates :exec
+DELETE FROM monitor_states WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantMonitorStates(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantMonitorStates, tenantID)
+	return err
+}
+
+const deleteTenantMonitorTags = `-- name: DeleteTenantMonitorTags :exec
+DELETE FROM monitor_tags WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantMonitorTags(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantMonitorTags, tenantID)
+	return err
+}
+
+const deleteTenantMonitors = `-- name: DeleteTenantMonitors :exec
+DELETE FROM monitors WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantMonitors(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantMonitors, tenantID)
+	return err
+}
+
+const deleteTenantRow = `-- name: DeleteTenantRow :execrows
+DELETE FROM tenants WHERE id = ?
+`
+
+func (q *Queries) DeleteTenantRow(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteTenantRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteTenantSessions = `-- name: DeleteTenantSessions :exec
+DELETE FROM refresh_sessions WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantSessions(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantSessions, tenantID)
+	return err
+}
+
+const deleteTenantStatusHistory = `-- name: DeleteTenantStatusHistory :exec
+DELETE FROM monitor_status_history WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantStatusHistory(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantStatusHistory, tenantID)
+	return err
+}
+
+const deleteTenantUnconfirmedAlerts = `-- name: DeleteTenantUnconfirmedAlerts :exec
+DELETE FROM unconfirmed_alerts WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantUnconfirmedAlerts(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantUnconfirmedAlerts, tenantID)
+	return err
+}
+
+const deleteTenantUsers = `-- name: DeleteTenantUsers :exec
+DELETE FROM users WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantUsers(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantUsers, tenantID)
 	return err
 }
 
@@ -553,6 +742,23 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 	return i, err
 }
 
+const getPlan = `-- name: GetPlan :one
+SELECT id, name, limits_json, created_ms, updated_ms FROM plans WHERE id = ?
+`
+
+func (q *Queries) GetPlan(ctx context.Context, id string) (Plan, error) {
+	row := q.db.QueryRowContext(ctx, getPlan, id)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.LimitsJson,
+		&i.CreatedMs,
+		&i.UpdatedMs,
+	)
+	return i, err
+}
+
 const getRevokedNode = `-- name: GetRevokedNode :one
 SELECT node_id, revoked_ms FROM revoked_nodes WHERE node_id = ?
 `
@@ -616,7 +822,7 @@ const getTenant = `-- name: GetTenant :one
  * Queries for state.db. Run ` + "`" + `make generate` + "`" + ` after changes.
  */
 
-SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants WHERE id = ?
+SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms, source FROM tenants WHERE id = ?
 `
 
 func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
@@ -631,12 +837,13 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (Tenant, error) {
 		&i.Suspended,
 		&i.CreatedMs,
 		&i.UpdatedMs,
+		&i.Source,
 	)
 	return i, err
 }
 
 const getTenantByOrg = `-- name: GetTenantByOrg :one
-SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants WHERE zitadel_org_id = ?
+SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms, source FROM tenants WHERE zitadel_org_id = ?
 `
 
 func (q *Queries) GetTenantByOrg(ctx context.Context, zitadelOrgID sql.NullString) (Tenant, error) {
@@ -651,6 +858,7 @@ func (q *Queries) GetTenantByOrg(ctx context.Context, zitadelOrgID sql.NullStrin
 		&i.Suspended,
 		&i.CreatedMs,
 		&i.UpdatedMs,
+		&i.Source,
 	)
 	return i, err
 }
@@ -860,6 +1068,20 @@ func (q *Queries) InsertDedup(ctx context.Context, arg InsertDedupParams) error 
 		arg.ErrorCode,
 		arg.ErrorMessage,
 	)
+	return err
+}
+
+const insertDeletedTenant = `-- name: InsertDeletedTenant :exec
+INSERT INTO deleted_tenants (id, deleted_ms) VALUES (?, ?)
+`
+
+type InsertDeletedTenantParams struct {
+	ID        string
+	DeletedMs int64
+}
+
+func (q *Queries) InsertDeletedTenant(ctx context.Context, arg InsertDeletedTenantParams) error {
+	_, err := q.db.ExecContext(ctx, insertDeletedTenant, arg.ID, arg.DeletedMs)
 	return err
 }
 
@@ -1152,6 +1374,17 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
 	return err
 }
 
+const isTenantDeleted = `-- name: IsTenantDeleted :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM deleted_tenants WHERE id = ?
+`
+
+func (q *Queries) IsTenantDeleted(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, isTenantDeleted, id)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listActiveSystemAlerts = `-- name: ListActiveSystemAlerts :many
 SELECT kind, subject, active, level, since_ms, updated_ms, details_json FROM system_alerts WHERE active = 1 ORDER BY kind, subject
 `
@@ -1288,6 +1521,33 @@ func (q *Queries) ListClusterCAs(ctx context.Context) ([]ClusterCa, error) {
 			&i.KeyEnc,
 			&i.CreatedMs,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeletedTenants = `-- name: ListDeletedTenants :many
+SELECT id, deleted_ms FROM deleted_tenants ORDER BY id
+`
+
+func (q *Queries) ListDeletedTenants(ctx context.Context) ([]DeletedTenant, error) {
+	rows, err := q.db.QueryContext(ctx, listDeletedTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeletedTenant{}
+	for rows.Next() {
+		var i DeletedTenant
+		if err := rows.Scan(&i.ID, &i.DeletedMs); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1736,6 +1996,39 @@ func (q *Queries) ListOpenUnconfirmedAlerts(ctx context.Context, rowLimit int64)
 	return items, nil
 }
 
+const listPlans = `-- name: ListPlans :many
+SELECT id, name, limits_json, created_ms, updated_ms FROM plans ORDER BY id
+`
+
+func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, listPlans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.LimitsJson,
+			&i.CreatedMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRevokedCerts = `-- name: ListRevokedCerts :many
 SELECT serial, node_id, revoked_ms, not_after_ms FROM revoked_certs ORDER BY serial
 `
@@ -1898,7 +2191,7 @@ func (q *Queries) ListSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
 }
 
 const listTenants = `-- name: ListTenants :many
-SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms FROM tenants ORDER BY id
+SELECT id, name, zitadel_org_id, "plan", limits_json, suspended, created_ms, updated_ms, source FROM tenants ORDER BY id
 `
 
 func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
@@ -1919,6 +2212,7 @@ func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
 			&i.Suspended,
 			&i.CreatedMs,
 			&i.UpdatedMs,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -2023,6 +2317,18 @@ func (q *Queries) MarkSessionUsed(ctx context.Context, arg MarkSessionUsedParams
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const minTenantMonitorInterval = `-- name: MinTenantMonitorInterval :one
+SELECT CAST(COALESCE(MIN(interval_s), 0) AS INTEGER) FROM monitors WHERE tenant_id = ?
+`
+
+// The shortest monitor interval of the tenant, 0 without monitors.
+func (q *Queries) MinTenantMonitorInterval(ctx context.Context, tenantID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, minTenantMonitorInterval, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const monitorRevision = `-- name: MonitorRevision :one
@@ -2270,6 +2576,20 @@ type RevokeSessionFamilyParams struct {
 
 func (q *Queries) RevokeSessionFamily(ctx context.Context, arg RevokeSessionFamilyParams) error {
 	_, err := q.db.ExecContext(ctx, revokeSessionFamily, arg.RevokedMs, arg.FamilyID)
+	return err
+}
+
+const revokeTenantSessions = `-- name: RevokeTenantSessions :exec
+UPDATE refresh_sessions SET revoked_ms = ? WHERE tenant_id = ? AND revoked_ms = 0
+`
+
+type RevokeTenantSessionsParams struct {
+	RevokedMs int64
+	TenantID  string
+}
+
+func (q *Queries) RevokeTenantSessions(ctx context.Context, arg RevokeTenantSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeTenantSessions, arg.RevokedMs, arg.TenantID)
 	return err
 }
 
@@ -2842,6 +3162,35 @@ func (q *Queries) UpsertNodeIncarnation(ctx context.Context, arg UpsertNodeIncar
 	return err
 }
 
+const upsertPlan = `-- name: UpsertPlan :exec
+INSERT INTO plans (id, name, limits_json, created_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    name        = excluded.name,
+    limits_json = excluded.limits_json,
+    updated_ms  = excluded.updated_ms
+`
+
+type UpsertPlanParams struct {
+	ID         string
+	Name       string
+	LimitsJson string
+	CreatedMs  int64
+	UpdatedMs  int64
+}
+
+// created_ms is kept on update (ADR 0029).
+func (q *Queries) UpsertPlan(ctx context.Context, arg UpsertPlanParams) error {
+	_, err := q.db.ExecContext(ctx, upsertPlan,
+		arg.ID,
+		arg.Name,
+		arg.LimitsJson,
+		arg.CreatedMs,
+		arg.UpdatedMs,
+	)
+	return err
+}
+
 const upsertSecretKey = `-- name: UpsertSecretKey :exec
 INSERT INTO secret_keys (key_id, wrapped_dek, kek_fingerprint, created_ms, retired_ms)
 VALUES (?, ?, ?, ?, ?)
@@ -2961,8 +3310,8 @@ func (q *Queries) UpsertSystemAlert(ctx context.Context, arg UpsertSystemAlertPa
 }
 
 const upsertTenant = `-- name: UpsertTenant :exec
-INSERT INTO tenants (id, name, zitadel_org_id, plan, limits_json, suspended, created_ms, updated_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tenants (id, name, zitadel_org_id, plan, limits_json, suspended, source, created_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name           = excluded.name,
     zitadel_org_id = excluded.zitadel_org_id,
@@ -2979,10 +3328,12 @@ type UpsertTenantParams struct {
 	Plan         string
 	LimitsJson   string
 	Suspended    int64
+	Source       string
 	CreatedMs    int64
 	UpdatedMs    int64
 }
 
+// created_ms and source are kept on conflict: they are set once by the creation (ADR 0029).
 func (q *Queries) UpsertTenant(ctx context.Context, arg UpsertTenantParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTenant,
 		arg.ID,
@@ -2991,6 +3342,7 @@ func (q *Queries) UpsertTenant(ctx context.Context, arg UpsertTenantParams) erro
 		arg.Plan,
 		arg.LimitsJson,
 		arg.Suspended,
+		arg.Source,
 		arg.CreatedMs,
 		arg.UpdatedMs,
 	)

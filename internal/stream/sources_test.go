@@ -366,6 +366,21 @@ func TestStateBridgeStoreErrorDoesNotStopRun(t *testing.T) {
 	if ev := recv(t, sub); ev.Type != gen.StreamEventTypeState {
 		t.Fatalf("type = %q, want state", ev.Type)
 	}
+	// The state event is published before the incident lookup, so wait until
+	// the failing lookup has run before the store is healed.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		inc.mu.Lock()
+		calls := inc.getCalls
+		inc.mu.Unlock()
+		if calls > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("incident lookup was not attempted")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	inc.mu.Lock()
 	inc.getErr = nil

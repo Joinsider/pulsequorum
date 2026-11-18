@@ -661,3 +661,100 @@ func TestLoginReloadsMissingSigningKey(t *testing.T) {
 		t.Error("empty access token")
 	}
 }
+
+// createUserIn stores a user of the tenant through Raft with the test password.
+func (f *localFixture) createUserIn(tenantID, username, role string) {
+	f.t.Helper()
+	hash, err := HashPassword(testPassword)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	cmd, err := cluster.NewPutUser(uuid.NewString(), tenantID, uuid.NewString(), cluster.UserDocument{
+		Username: username, PasswordHash: hash, Role: role,
+	}, 0)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.apply(cmd)
+}
+
+// tenantFixture returns a fixture at command level 8 with the tenant acme on the
+// default plan and the user bob of acme, logged in.
+func tenantFixture(t *testing.T) (*localFixture, Tokens) {
+	t.Helper()
+	f := newLocalFixture(t)
+	f.apply(cluster.NewSetFeatureLevel("level-8", cluster.TenantAdminCommandLevel))
+	f.apply(&pb.Command{RequestId: "create-acme", Actor: &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_CreateTenant{CreateTenant: &pb.CreateTenant{
+			TenantId: "acme", Name: "Acme", PlanId: "default", Source: "admin"}}})
+	f.createUserIn("acme", "bob", string(RoleTenantViewer))
+	return f, f.mustLogin("bob")
+}
+
+// setSuspended suspends or resumes the tenant acme through the tenant command.
+func (f *localFixture) setSuspended(requestID string, suspended bool) {
+	f.t.Helper()
+	f.apply(&pb.Command{RequestId: requestID, Actor: &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_SetTenantSuspended{SetTenantSuspended: &pb.SetTenantSuspended{TenantId: "acme", Suspended: suspended}}})
+}
+
+// bearer returns a request with the access token.
+func bearer(token string) *http.Request { return bearerRequest("Bearer " + token) }
+
+// TestSuspendedTenantUsers covers ADR 0029 at the local authentication: users
+// of a suspended tenant cannot sign in or use their tokens, and users of a
+// deleted tenant are gone.
+func TestSuspendedTenantUsers(t *testing.T) {
+	t.Run("suspension through the tenant command revokes the refresh token", func(t *testing.T) {
+		f, tok := tenantFixture(t)
+		f.setSuspended("suspend-acme", true)
+
+		if _, err := f.login("bob", testPassword); !errors.Is(err, ErrTenantSuspended) || !errors.Is(err, ErrForbidden) {
+			t.Errorf("Login err = %v, want ErrTenantSuspended wrapping ErrForbidden", err)
+		}
+		if _, err := f.local.Refresh(f.ctx, tok.RefreshToken); !errors.Is(err, ErrInvalidSession) {
+			t.Errorf("Refresh err = %v, want ErrInvalidSession (sessions revoked by the suspension)", err)
+		}
+		if _, err := f.local.Authenticate(bearer(tok.AccessToken)); !errors.Is(err, ErrTenantSuspended) || !errors.Is(err, ErrForbidden) {
+			t.Errorf("Authenticate err = %v, want ErrTenantSuspended wrapping ErrForbidden", err)
+		}
+
+		f.setSuspended("resume-acme", false)
+		if _, err := f.login("bob", testPassword); err != nil {
+			t.Errorf("Login after resume: %v", err)
+		}
+	})
+
+	t.Run("a suspended tenant with a live session refuses refresh and authentication", func(t *testing.T) {
+		f, tok := tenantFixture(t)
+		// Marking the tenant suspended without revoking its sessions keeps the
+		// refresh session alive, so the check of the tenant is what refuses it.
+		put, err := cluster.NewPutTenant("suspend-acme-doc", "acme", cluster.TenantDocument{Name: "Acme", Plan: "default", Suspended: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		put.Actor = &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
+		f.apply(put)
+
+		if _, err := f.local.Refresh(f.ctx, tok.RefreshToken); !errors.Is(err, ErrTenantSuspended) || !errors.Is(err, ErrForbidden) {
+			t.Errorf("Refresh err = %v, want ErrTenantSuspended wrapping ErrForbidden", err)
+		}
+		if _, err := f.local.Authenticate(bearer(tok.AccessToken)); !errors.Is(err, ErrForbidden) {
+			t.Errorf("Authenticate err = %v, want ErrForbidden", err)
+		}
+	})
+
+	t.Run("deleted tenant: its users are gone", func(t *testing.T) {
+		f, tok := tenantFixture(t)
+		f.setSuspended("suspend-acme", true)
+		f.apply(&pb.Command{RequestId: "delete-acme", Actor: &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+			Payload: &pb.Command_DeleteTenant{DeleteTenant: &pb.DeleteTenant{TenantId: "acme"}}})
+
+		if _, err := f.local.Authenticate(bearer(tok.AccessToken)); !errors.Is(err, ErrUnauthenticated) {
+			t.Errorf("Authenticate err = %v, want ErrUnauthenticated", err)
+		}
+		if _, err := f.local.Refresh(f.ctx, tok.RefreshToken); !errors.Is(err, ErrInvalidSession) {
+			t.Errorf("Refresh err = %v, want ErrInvalidSession", err)
+		}
+	})
+}

@@ -54,6 +54,12 @@ message Command {
     RecordIncarnation record_incarnation = 32;
     Checkpoint checkpoint = 33;
     BindTenantOrg bind_tenant_org = 34;
+    CreateTenant create_tenant = 35;
+    UpdateTenant update_tenant = 36;
+    SetTenantSuspended set_tenant_suspended = 37;
+    DeleteTenant delete_tenant = 38;
+    PutPlan put_plan = 39;
+    DeletePlan delete_plan = 40;
   }
 }
 
@@ -380,4 +386,57 @@ message Checkpoint {}
 message BindTenantOrg {
   string tenant_id = 1;
   string org_id = 2;
+}
+
+// CreateTenant creates a tenant (ADR 0029). The issuing node generates the
+// tenant ID. With source "auto" the FSM returns the tenant already bound to
+// org_id instead of an error, so that parallel first logins of one
+// organization end at the same tenant.
+message CreateTenant {
+  string tenant_id = 1;
+  string name = 2;
+  string plan_id = 3;
+  // Empty: not bound to an organization.
+  string org_id = 4;
+  // Per-tenant overrides of the plan limits as JSON; empty means none.
+  string limits_json = 5;
+  // admin | auto
+  string source = 6;
+  // Highest number of tenants with source "auto"; only read for that source.
+  uint32 max_auto_tenants = 7;
+}
+
+// UpdateTenant changes the set fields of a tenant (ADR 0029).
+message UpdateTenant {
+  string tenant_id = 1;
+  optional string name = 2;
+  optional string plan_id = 3;
+  // Replaces all overrides; "{}" removes them.
+  optional string limits_json = 4;
+  // Rebinds the tenant; "" unbinds it.
+  optional string org_id = 5;
+}
+
+// SetTenantSuspended suspends or resumes a tenant (ADR 0029).
+message SetTenantSuspended {
+  string tenant_id = 1;
+  bool suspended = 2;
+}
+
+// DeleteTenant deletes a suspended tenant with all its replicated data and
+// records a tombstone (ADR 0029). Each node purges its metrics afterwards.
+message DeleteTenant {
+  string tenant_id = 1;
+}
+
+// PutPlan creates or replaces a plan (ADR 0029).
+message PutPlan {
+  string plan_id = 1;
+  string name = 2;
+  string limits_json = 3;
+}
+
+// DeletePlan deletes a plan that no tenant uses (ADR 0029).
+message DeletePlan {
+  string plan_id = 1;
 }

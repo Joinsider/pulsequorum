@@ -308,7 +308,9 @@ export class MonitorEditorPage {
       return;
     }
     const status = err instanceof HttpErrorResponse ? err.status : 0;
-    this.summary.set({ key: statusKey(status), messages: [] });
+    // The problem detail says why the server refused, e.g. a reached plan limit (ADR 0029).
+    const detail = problem?.detail;
+    this.summary.set({ key: statusKey(status), messages: detail ? [detail] : [] });
   }
 }
 

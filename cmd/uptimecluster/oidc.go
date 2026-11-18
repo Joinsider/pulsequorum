@@ -14,6 +14,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/auth/oidc"
 	"github.com/joinsider/uptimecluster/internal/cluster"
 	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/uptimecluster/internal/provision"
 	"github.com/joinsider/uptimecluster/internal/store"
 )
 
@@ -22,6 +23,10 @@ const oidcKeyCacheFile = "oidc-jwks.json"
 
 // recommendedTokenTTL is the access token lifetime the setup docs recommend.
 const recommendedTokenTTL = 15 * time.Minute
+
+// provisionPlanInterval is how often the plan check of the automatic
+// provisioning retries while the plan does not exist.
+const provisionPlanInterval = 10 * time.Second
 
 // oidcTenants is the tenant read access of the verifier.
 type oidcTenants interface {
@@ -37,7 +42,8 @@ type oidcMetrics interface {
 	UserInfoFailed()
 }
 
-func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func() time.Time, m oidcMetrics) (*oidc.KeySet, *oidc.Authenticator, error) {
+// applier proposes the tenant commands of the automatic provisioning.
+func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func() time.Time, m oidcMetrics, applier provision.Applier) (*oidc.KeySet, *oidc.Authenticator, error) {
 	c := cfg.OIDC
 	keys, err := oidc.NewKeySet(oidc.KeySetOptions{
 		Issuer: c.Issuer, Algorithms: c.Algorithms, AllowHTTP: c.InsecureHTTP,
@@ -50,10 +56,21 @@ func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func(
 	var profile oidc.Profile
 	switch c.Profile {
 	case config.ProfileZitadel:
-		profile = oidc.Zitadel{
+		zitadel := oidc.Zitadel{
 			ProjectID: c.Audience, PlatformOrgID: c.PlatformOrgID, Multi: c.Tenancy == config.TenancyMulti,
 			DefaultTenantID: cluster.DefaultTenantID, Tenants: tenants,
 		}
+		if c.AutoProvision {
+			p, err := provision.NewProvisioner(provision.ProvisionerOptions{
+				Cluster: applier, PlanID: c.AutoProvisionPlan, Max: c.AutoProvisionMax, Log: log,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			zitadel.Provisioner = p
+			log.Info("automatic provisioning of tenants is on (ADR 0029)", "plan", c.AutoProvisionPlan, "max", c.AutoProvisionMax)
+		}
+		profile = zitadel
 	default:
 		roleMap := make(map[string]auth.Role, len(c.RoleMap))
 		for k, v := range c.RoleMap {
@@ -92,6 +109,37 @@ func newOIDC(cfg config.Config, log *slog.Logger, tenants oidcTenants, now func(
 			"Set the access token lifetime of the identity provider to 15 minutes", "max_token_ttl", c.MaxTokenTTL)
 	}
 	return keys, authn, nil
+}
+
+// watchProvisionPlan checks that the plan of the automatic provisioning exists.
+// The state may still be replaying the log at start, so a missing plan is
+// logged as an error and checked again, instead of stopping the node. It
+// returns once the plan exists or ctx ends.
+func watchProvisionPlan(ctx context.Context, log *slog.Logger, state store.State, planID string) {
+	ticker := time.NewTicker(provisionPlanInterval)
+	defer ticker.Stop()
+	reported := false
+	for {
+		_, err := state.GetPlan(ctx, planID)
+		switch {
+		case err == nil:
+			log.Info("plan of automatic provisioning exists", "plan", planID)
+			return
+		case errors.Is(err, store.ErrNotFound):
+			if !reported {
+				log.Error("plan of automatic provisioning does not exist; first logins of new organizations are refused until it does",
+					"plan", planID, "setting", "OIDC_AUTO_PROVISION_PLAN")
+				reported = true
+			}
+		case ctx.Err() == nil:
+			log.Warn("could not read the plan of automatic provisioning", "plan", planID, "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // runOIDCKeys loads the keys and refreshes them until ctx ends.

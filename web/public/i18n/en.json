@@ -7,7 +7,9 @@
     "users": "Users",
     "cluster": "Cluster",
     "account": "Account",
-    "systemChannels": "System channels"
+    "systemChannels": "System channels",
+    "tenants": "Tenants",
+    "plans": "Plans"
   },
   "shell": {
     "theme": "Theme: {{ mode }}",

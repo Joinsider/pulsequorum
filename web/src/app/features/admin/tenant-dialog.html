@@ -1,0 +1,127 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <h2 mat-dialog-title>
+    {{ create ? t('admin.tenants.dialog.createTitle') : t('admin.tenants.dialog.editTitle') }}
+  </h2>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-dialog-content class="content">
+      @if (error(); as key) {
+        <p class="error" role="alert">
+          {{ t(key) }}
+          @if (errorDetail(); as detail) {
+            <span class="detail">{{ detail }}</span>
+          }
+        </p>
+      }
+
+      @if (create) {
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('admin.tenants.dialog.id') }}</mat-label>
+          <input matInput formControlName="id" autocomplete="off" autocapitalize="none" />
+          <mat-hint>{{ t('admin.tenants.dialog.idHint') }}</mat-hint>
+          @if (form.controls.id.hasError('server')) {
+            <mat-error>{{ form.controls.id.getError('server') }}</mat-error>
+          } @else if (form.controls.id.hasError('pattern')) {
+            <mat-error>{{ t('admin.tenants.dialog.errors.id') }}</mat-error>
+          }
+        </mat-form-field>
+      } @else {
+        <p class="readonly">
+          <span class="readonly__label">{{ t('admin.tenants.dialog.id') }}</span>
+          <code>{{ tenant?.id }}</code>
+        </p>
+      }
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('admin.tenants.dialog.name') }}</mat-label>
+        <input matInput formControlName="name" autocomplete="off" required />
+        @if (form.controls.name.hasError('server')) {
+          <mat-error>{{ form.controls.name.getError('server') }}</mat-error>
+        } @else if (form.controls.name.hasError('required')) {
+          <mat-error>{{ t('admin.tenants.dialog.errors.name') }}</mat-error>
+        } @else if (form.controls.name.hasError('maxlength')) {
+          <mat-error>{{ t('admin.tenants.dialog.errors.nameLength', { max: maxName }) }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('admin.tenants.dialog.plan') }}</mat-label>
+        <mat-select formControlName="plan" required>
+          @for (plan of plans; track plan.id) {
+            <mat-option [value]="plan.id">{{ plan.name }}</mat-option>
+          }
+        </mat-select>
+        @if (form.controls.plan.hasError('server')) {
+          <mat-error>{{ form.controls.plan.getError('server') }}</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('admin.tenants.dialog.orgId') }}</mat-label>
+        <input matInput formControlName="orgId" autocomplete="off" autocapitalize="none" />
+        <mat-hint>
+          {{
+            orgEditable
+              ? t('admin.tenants.dialog.orgIdHint')
+              : t('admin.tenants.dialog.orgIdLocked')
+          }}
+        </mat-hint>
+        @if (form.controls.orgId.hasError('server')) {
+          <mat-error>{{ form.controls.orgId.getError('server') }}</mat-error>
+        } @else if (form.controls.orgId.hasError('maxlength')) {
+          <mat-error>{{
+            t('admin.tenants.dialog.errors.orgIdLength', { max: maxOrgId })
+          }}</mat-error>
+        }
+      </mat-form-field>
+
+      <h3 class="section">{{ t('admin.tenants.dialog.limitsTitle') }}</h3>
+      <p class="hint">{{ t('admin.tenants.dialog.limitsHint') }}</p>
+
+      <div formGroupName="limits" class="limits">
+        @for (key of limitKeys; track key) {
+          <div class="limit">
+            <mat-form-field appearance="outline">
+              <mat-label>{{ t(labelKey(key)) }}</mat-label>
+              <input matInput type="text" inputmode="numeric" [formControlName]="key" />
+              <mat-hint>
+                {{
+                  notEnforced.includes(key)
+                    ? t('admin.limits.planValueNotEnforced', {
+                        value: planLimit(key) ?? t('admin.limits.unlimited'),
+                      })
+                    : t('admin.limits.planValue', {
+                        value: planLimit(key) ?? t('admin.limits.unlimited'),
+                      })
+                }}
+              </mat-hint>
+              @if (limitControl(key).hasError('server')) {
+                <mat-error>{{ limitControl(key).getError('server') }}</mat-error>
+              } @else if (
+                limitControl(key).hasError('integer') || limitControl(key).hasError('range')
+              ) {
+                <mat-error>
+                  {{ t('admin.limits.rule', { min: bounds[key].min, max: bounds[key].max }) }}
+                </mat-error>
+              }
+            </mat-form-field>
+            <mat-checkbox
+              [checked]="unlimited()[key] === true"
+              (change)="setUnlimited(key, $event.checked)"
+            >
+              {{ t('admin.limits.unlimitedCheckbox') }}
+            </mat-checkbox>
+          </div>
+        }
+      </div>
+    </mat-dialog-content>
+
+    <mat-dialog-actions align="end">
+      <button mat-button type="button" [mat-dialog-close]="false">{{ t('common.cancel') }}</button>
+      <button mat-flat-button type="submit" [disabled]="busy()">
+        {{ create ? t('common.create') : t('common.save') }}
+      </button>
+    </mat-dialog-actions>
+  </form>
+</ng-container>

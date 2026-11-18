@@ -24,33 +24,46 @@ const (
 	metaCommandLevel = "command_level"
 )
 
+// tenantAdminLevel is the command level of ADR 0029 (cluster.TenantAdminCommandLevel).
+// Below it the plans and tombstones and the column tenants.source are left out
+// of the fingerprint: voters of the previous version do not have them, and
+// before that level they hold only the migration defaults on every voter. So
+// a rolling update does not raise fingerprint_mismatch (ADR 0018, 0025).
+const tenantAdminLevel = 8
+
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
 // is excluded: the applied index legitimately differs between replicas that
-// are at different log positions.
-var fingerprintTables = []struct{ name, orderBy string }{
-	{"tenants", "id"},
-	{"monitors", "tenant_id, id"},
-	{"monitor_tags", "tenant_id, monitor_id, tag"},
-	{"request_dedup", "request_id"},
-	{"secret_keys", "key_id"},
-	{"monitor_states", "tenant_id, monitor_id"},
-	{"incidents", "tenant_id, id"},
-	{"monitor_status_history", "tenant_id, monitor_id, since_ms"},
-	{"notification_channels", "tenant_id, id"},
-	{"monitor_channels", "tenant_id, monitor_id, channel_id"},
-	{"alert_outbox", "alert_key, channel_id"},
-	{"maintenance_windows", "tenant_id, id"},
-	{"users", "tenant_id, id"},
-	{"signing_keys", "kid"},
-	{"refresh_sessions", "token_hash"},
-	{"cluster_ca", "fingerprint"},
-	{"join_tokens", "id"},
-	{"revoked_certs", "serial"},
-	{"revoked_nodes", "node_id"},
-	{"nodes", "id"},
-	{"unconfirmed_alerts", "node_id, local_id"},
-	{"system_alerts", "kind, subject"},
-	{"node_incarnations", "node_id"},
+// are at different log positions. minLevel > 0 hashes a table only from that
+// command level on.
+var fingerprintTables = []struct {
+	name, orderBy string
+	minLevel      uint32
+}{
+	{"tenants", "id", 0},
+	{"plans", "id", tenantAdminLevel},
+	{"deleted_tenants", "id", tenantAdminLevel},
+	{"monitors", "tenant_id, id", 0},
+	{"monitor_tags", "tenant_id, monitor_id, tag", 0},
+	{"request_dedup", "request_id", 0},
+	{"secret_keys", "key_id", 0},
+	{"monitor_states", "tenant_id, monitor_id", 0},
+	{"incidents", "tenant_id, id", 0},
+	{"monitor_status_history", "tenant_id, monitor_id, since_ms", 0},
+	{"notification_channels", "tenant_id, id", 0},
+	{"monitor_channels", "tenant_id, monitor_id, channel_id", 0},
+	{"alert_outbox", "alert_key, channel_id", 0},
+	{"maintenance_windows", "tenant_id, id", 0},
+	{"users", "tenant_id, id", 0},
+	{"signing_keys", "kid", 0},
+	{"refresh_sessions", "token_hash", 0},
+	{"cluster_ca", "fingerprint", 0},
+	{"join_tokens", "id", 0},
+	{"revoked_certs", "serial", 0},
+	{"revoked_nodes", "node_id", 0},
+	{"nodes", "id", 0},
+	{"unconfirmed_alerts", "node_id, local_id", 0},
+	{"system_alerts", "kind, subject", 0},
+	{"node_incarnations", "node_id", 0},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.
@@ -219,16 +232,23 @@ func (s *StateStore) Fingerprint(ctx context.Context) (string, error) {
 // it on a read transaction, StateTx on the write transaction of a command, so
 // both compute the same value for the same state (ADR 0025).
 func fingerprint(ctx context.Context, tx *sql.Tx) (string, error) {
-	h := sha256.New()
-	for _, t := range fingerprintTables {
-		if err := hashTable(ctx, tx, h, t.name, t.orderBy); err != nil {
-			return "", fmt.Errorf("fingerprint %s: %w", t.name, err)
-		}
-	}
 	// The command level is replicated state in fsm_meta (ADR 0018).
 	level, err := commandLevel(ctx, statedb.New(tx))
 	if err != nil {
 		return "", fmt.Errorf("fingerprint: %w", err)
+	}
+	h := sha256.New()
+	for _, t := range fingerprintTables {
+		if level < t.minLevel {
+			continue
+		}
+		var skip map[string]bool
+		if t.name == "tenants" && level < tenantAdminLevel {
+			skip = map[string]bool{"source": true}
+		}
+		if err := hashTable(ctx, tx, h, t.name, t.orderBy, skip); err != nil {
+			return "", fmt.Errorf("fingerprint %s: %w", t.name, err)
+		}
 	}
 	_, _ = fmt.Fprintf(h, "command_level:%d\x1e", level)
 	// The command time is part of the state from the first command on (ADR 0024).
@@ -243,7 +263,8 @@ func fingerprint(ctx context.Context, tx *sql.Tx) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func hashTable(ctx context.Context, tx *sql.Tx, w io.Writer, table, orderBy string) error {
+// hashTable writes the rows of table to w; columns in skip are left out.
+func hashTable(ctx context.Context, tx *sql.Tx, w io.Writer, table, orderBy string, skip map[string]bool) error {
 	rows, err := tx.QueryContext(ctx, "SELECT * FROM "+table+" ORDER BY "+orderBy) //nolint:gosec // G202: table and order come from the fixed list above
 	if err != nil {
 		return err
@@ -253,7 +274,13 @@ func hashTable(ctx context.Context, tx *sql.Tx, w io.Writer, table, orderBy stri
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(w, "table %s %v\n", table, cols)
+	hashed := make([]string, 0, len(cols))
+	for _, c := range cols {
+		if !skip[c] {
+			hashed = append(hashed, c)
+		}
+	}
+	_, _ = fmt.Fprintf(w, "table %s %v\n", table, hashed)
 	values := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range values {
@@ -263,7 +290,10 @@ func hashTable(ctx context.Context, tx *sql.Tx, w io.Writer, table, orderBy stri
 		if err := rows.Scan(ptrs...); err != nil {
 			return err
 		}
-		for _, v := range values {
+		for i, v := range values {
+			if skip[cols[i]] {
+				continue
+			}
 			if b, ok := v.([]byte); ok {
 				v = string(b)
 			}

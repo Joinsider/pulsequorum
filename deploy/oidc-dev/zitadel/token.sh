@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # Gibt ein Access-Token eines Maschinenbenutzers (Client Credentials) auf stdout aus.
-# Verwendung: ./token.sh platform-bot | ./token.sh acme-bot
+# Verwendung: ./token.sh <bot>, bot = platform-bot|acme-bot|platform-admin-bot|acme-admin-bot|globex-admin-bot|initech-bot
 # Geheimnisse werden nie ausgegeben. Fehler gehen nach stderr ohne Antwortkörper mit Geheimnissen.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-usage() { echo "Verwendung: $0 platform-bot|acme-bot" >&2; exit 2; }
+usage() {
+  echo "Verwendung: $0 platform-bot|acme-bot|platform-admin-bot|acme-admin-bot|globex-admin-bot|initech-bot" >&2
+  exit 2
+}
 [[ $# -eq 1 ]] || usage
 case "$1" in
   platform-bot) prefix="PLATFORM_BOT" ;;
   acme-bot) prefix="ACME_BOT" ;;
+  platform-admin-bot) prefix="PLATFORM_ADMIN_BOT" ;;
+  acme-admin-bot) prefix="ACME_ADMIN_BOT" ;;
+  globex-admin-bot) prefix="GLOBEX_ADMIN_BOT" ;;
+  initech-bot) prefix="INITECH_BOT" ;;
   *) usage ;;
 esac
 

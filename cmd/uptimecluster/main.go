@@ -51,6 +51,7 @@ import (
 	"github.com/joinsider/uptimecluster/internal/store/sqlite"
 	"github.com/joinsider/uptimecluster/internal/stream"
 	"github.com/joinsider/uptimecluster/internal/sysalert"
+	"github.com/joinsider/uptimecluster/internal/tenantpurge"
 	"github.com/joinsider/uptimecluster/internal/uptime"
 	"github.com/joinsider/uptimecluster/internal/version"
 	"github.com/joinsider/uptimecluster/internal/webui"
@@ -135,6 +136,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer func() { _ = metrics.Close() }()
 	log.Info("storage ready", "data_dir", cfg.DataDir, "incarnation", metrics.Incarnation())
+	// Heartbeats of deleted tenants are dropped on ingest; the purge job keeps the tombstones current (ADR 0029).
+	tombstones := tenantpurge.NewTombstones()
+	ingest := tenantpurge.NewIngestFilter(metrics, tombstones, log)
 
 	// ICMP self-test (FA-CHK-31, FA-NODE-06).
 	icmpMode, icmpErr := icmpcheck.DetectMode(ctx, cfg.ICMPMode)
@@ -217,7 +221,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		},
 		WALBytes: func() (int64, int64) { return walSize(state.DB()), walSize(metrics.DB()) },
 		NodeID:   nodeID, ListenAddr: cfg.ClusterAddr, Advertise: cfg.ClusterAdvertise, DataDir: cfg.DataDir,
-		Timeout: cfg.RaftTimeout, State: state, Metrics: metrics, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
+		Timeout: cfg.RaftTimeout, State: state, Metrics: ingest, KEK: kek, Keyring: keyring, Prepared: prepared, Log: log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: capabilities,
 		Clock:     clock,
@@ -279,7 +283,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
 	bg.Go(func() { bridge.Run(ctx) })
 
-	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, metrics, nodeID, log)
+	heartbeats, err := scheduler.NewHeartbeatWriter(ctx, ingest, nodeID, log)
 	if err != nil {
 		return err
 	}
@@ -367,6 +371,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	overlay := degraded.NewOverlay(state)
 	localDispatcher := alert.NewLocalDispatcher(alert.LocalDispatcherOptions{
 		Sender: sender, BundleWindow: cfg.AlertBundleWindow, Now: clock, Logger: log, OnOutcome: outcomes,
+		// Degraded deliveries of suspended tenants are dropped (ADR 0029).
+		Suspended: func(tenantID string) bool {
+			t, err := state.GetTenant(ctx, tenantID)
+			return err == nil && t.Suspended && t.ID != store.SystemTenantID
+		},
 	})
 	degradedApplier := degraded.NewApplier(degraded.ApplierOptions{
 		NodeID: nodeID, State: state, Overlay: overlay, Metrics: metrics, Detector: detector.State,
@@ -529,6 +538,12 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { maintenance.Run(ctx, time.Minute) })
 	bg.Go(func() { sched.Run(ctx) })
+	// Metrics of deleted tenants are purged on every node; the first cycle also requests a snapshot (ADR 0029).
+	purge := tenantpurge.New(tenantpurge.Options{
+		State: state, Metrics: metrics, Tombstones: tombstones, Snapshot: raftNode.Snapshot,
+		Interval: tenantpurge.DefaultInterval, Now: clock, Logger: log,
+	})
+	bg.Go(func() { purge.Run(ctx) })
 	if cfg.MetricsAddr != "" {
 		// The endpoint is optional; if it cannot listen, the node keeps running without it.
 		bg.Go(func() {
@@ -544,8 +559,13 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Target: sched, NodeID: nodeID, Assigner: assigner,
 		Registry: func() ([]store.Node, error) { return state.ListNodes(ctx) }, Log: log,
 	}
+	// Suspended tenants rest their checks and their aggregation; their monitors are not evaluated (ADR 0029).
+	tenantsOf := func() ([]store.Tenant, error) { return state.ListTenants(ctx) }
 	bg.Go(func() {
-		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log, assigned, agg, degradedAgg)
+		scheduler.Reconcile(ctx, state, raftNode.FSM().Changes(), reconcileInterval, log,
+			scheduler.TenantGate{Target: assigned, Tenants: tenantsOf, Log: log},
+			scheduler.TenantGate{Target: agg, Tenants: tenantsOf, Log: log},
+			scheduler.TenantGate{Target: degradedAgg, Tenants: tenantsOf, Log: log})
 	})
 
 	if !webui.Built() {
@@ -569,7 +589,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	case local != nil:
 		apiDeps.Local, apiDeps.Authenticator = local, local
 	case cfg.AuthMode == config.AuthOIDC:
-		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics)
+		keys, authn, err := newOIDC(cfg, log, state, clock, nodeMetrics, raftNode)
 		if err != nil {
 			return fmt.Errorf("oidc: %w", err)
 		}
@@ -577,6 +597,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		readiness = oidcReadiness(readiness, keys)
 		bg.Go(func() { runOIDCKeys(ctx, keys, log) })
 		bg.Go(func() { bindPlatformOrg(ctx, cfg, log, raftNode, state) })
+		if cfg.OIDC.AutoProvision {
+			bg.Go(func() { watchProvisionPlan(ctx, log, state, cfg.OIDC.AutoProvisionPlan) })
+		}
 	}
 	err = server.New(cfg, log, webui.Handler()).WithAPI(apiDeps).WithReadiness(readiness).Run(ctx)
 	// A cause other than plain cancellation (signal, normal shutdown) is fatal.

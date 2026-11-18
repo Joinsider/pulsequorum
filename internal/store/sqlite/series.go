@@ -35,6 +35,17 @@ func (c *seriesCache) get(k seriesKey) (int64, bool) {
 	return id, ok
 }
 
+// forget drops the cached series of a tenant.
+func (c *seriesCache) forget(tenantID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.ids {
+		if k.tenant == tenantID {
+			delete(c.ids, k)
+		}
+	}
+}
+
 func (c *seriesCache) add(created map[seriesKey]int64) {
 	if len(created) == 0 {
 		return

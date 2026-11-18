@@ -30,6 +30,26 @@ func (Unimplemented) RemoveClusterNode(context.Context, gen.RemoveClusterNodeReq
 	return nil, ErrNotImplemented
 }
 
+// ListPlans is not implemented yet.
+func (Unimplemented) ListPlans(context.Context, gen.ListPlansRequestObject) (gen.ListPlansResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeletePlan is not implemented yet.
+func (Unimplemented) DeletePlan(context.Context, gen.DeletePlanRequestObject) (gen.DeletePlanResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetPlan is not implemented yet.
+func (Unimplemented) GetPlan(context.Context, gen.GetPlanRequestObject) (gen.GetPlanResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// PutPlan is not implemented yet.
+func (Unimplemented) PutPlan(context.Context, gen.PutPlanRequestObject) (gen.PutPlanResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListSystemAlerts is not implemented yet.
 func (Unimplemented) ListSystemAlerts(context.Context, gen.ListSystemAlertsRequestObject) (gen.ListSystemAlertsResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -62,6 +82,41 @@ func (Unimplemented) UpdateSystemChannel(context.Context, gen.UpdateSystemChanne
 
 // TestSystemChannel is not implemented yet.
 func (Unimplemented) TestSystemChannel(context.Context, gen.TestSystemChannelRequestObject) (gen.TestSystemChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTenants is not implemented yet.
+func (Unimplemented) ListTenants(context.Context, gen.ListTenantsRequestObject) (gen.ListTenantsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateTenant is not implemented yet.
+func (Unimplemented) CreateTenant(context.Context, gen.CreateTenantRequestObject) (gen.CreateTenantResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteTenant is not implemented yet.
+func (Unimplemented) DeleteTenant(context.Context, gen.DeleteTenantRequestObject) (gen.DeleteTenantResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetTenant is not implemented yet.
+func (Unimplemented) GetTenant(context.Context, gen.GetTenantRequestObject) (gen.GetTenantResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateTenant is not implemented yet.
+func (Unimplemented) UpdateTenant(context.Context, gen.UpdateTenantRequestObject) (gen.UpdateTenantResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ResumeTenant is not implemented yet.
+func (Unimplemented) ResumeTenant(context.Context, gen.ResumeTenantRequestObject) (gen.ResumeTenantResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// SuspendTenant is not implemented yet.
+func (Unimplemented) SuspendTenant(context.Context, gen.SuspendTenantRequestObject) (gen.SuspendTenantResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 
@@ -227,6 +282,11 @@ func (Unimplemented) TestNotificationChannel(context.Context, gen.TestNotificati
 
 // CreateStreamTicket is not implemented yet.
 func (Unimplemented) CreateStreamTicket(context.Context, gen.CreateStreamTicketRequestObject) (gen.CreateStreamTicketResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetOwnTenant is not implemented yet.
+func (Unimplemented) GetOwnTenant(context.Context, gen.GetOwnTenantRequestObject) (gen.GetOwnTenantResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

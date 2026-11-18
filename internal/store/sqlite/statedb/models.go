@@ -30,6 +30,11 @@ type ClusterCa struct {
 	CreatedMs   int64
 }
 
+type DeletedTenant struct {
+	ID        string
+	DeletedMs int64
+}
+
 type FsmMetum struct {
 	Key   string
 	Value int64
@@ -164,6 +169,14 @@ type NotificationChannel struct {
 	UpdatedMs          int64
 }
 
+type Plan struct {
+	ID         string
+	Name       string
+	LimitsJson string
+	CreatedMs  int64
+	UpdatedMs  int64
+}
+
 type RefreshSession struct {
 	TokenHash string
 	FamilyID  string
@@ -232,6 +245,7 @@ type Tenant struct {
 	Suspended    int64
 	CreatedMs    int64
 	UpdatedMs    int64
+	Source       string
 }
 
 type UnconfirmedAlert struct {

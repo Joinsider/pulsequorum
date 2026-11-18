@@ -127,5 +127,137 @@
       "quorum": "Quorum",
       "test": "Testalarm"
     }
+  },
+  "failure": {
+    "offline": "Der Server ist nicht erreichbar. Bitte erneut versuchen.",
+    "forbidden": "Dafür fehlt die Berechtigung.",
+    "notFound": "Dieser Eintrag existiert nicht mehr.",
+    "conflict": "Die Änderung widerspricht dem aktuellen Stand.",
+    "invalid": "Der Server hat einige Werte abgelehnt.",
+    "unavailable": "Der Cluster ist gerade nicht verfügbar. Bitte erneut versuchen.",
+    "generic": "Die Anfrage ist fehlgeschlagen."
+  },
+  "limits": {
+    "unlimited": "unbegrenzt",
+    "unlimitedCheckbox": "Unbegrenzt",
+    "emptyUnlimited": "Leer bedeutet unbegrenzt",
+    "planValue": "Plan: {{ value }}",
+    "planValueNotEnforced": "Plan: {{ value }}. Wird jetzt gespeichert und greift, sobald das Feature existiert.",
+    "rule": "Bitte eine ganze Zahl von {{ min }} bis {{ max }} eingeben.",
+    "fields": {
+      "maxMonitors": "Monitore",
+      "minIntervalSeconds": "Kürzestes Intervall (Sekunden)",
+      "maxChannels": "Kanäle",
+      "maxStatusPages": "Statusseiten",
+      "maxPrivateProbes": "Private Probes"
+    }
+  },
+  "tenants": {
+    "title": "Mandanten",
+    "new": "Neuer Mandant",
+    "listLabel": "Mandanten",
+    "empty": "Noch keine Mandanten.",
+    "orgLabel": "Organisation",
+    "planLabel": "Plan",
+    "sourceLabel": "Quelle",
+    "usageLabel": "Nutzung gegenüber den Limits",
+    "sources": {
+      "admin": "Vom Admin angelegt",
+      "auto": "Automatisch angelegt",
+      "bootstrap": "Bootstrap"
+    },
+    "status": {
+      "active": "Aktiv",
+      "suspended": "Gesperrt"
+    },
+    "usage": {
+      "monitors": "{{ used }} / {{ limit }} Monitore",
+      "channels": "{{ used }} / {{ limit }} Kanäle",
+      "interval": "Kürzestes Intervall {{ used }} (mindestens {{ limit }})"
+    },
+    "exceededTitle": "Limits überschritten: Bestehendes läuft weiter, Neues wird abgelehnt.",
+    "exceeded": {
+      "maxMonitors": "{{ actual }} Monitore, erlaubt sind {{ allowed }}",
+      "maxChannels": "{{ actual }} Kanäle, erlaubt sind {{ allowed }}",
+      "minIntervalSeconds": "Kürzestes Intervall {{ actual }} s, mindestens {{ allowed }} s"
+    },
+    "suspend": "Sperren",
+    "suspendDialog": {
+      "title": "Mandant sperren?",
+      "text": "Seine Benutzer werden abgemeldet und abgewiesen, Checks und Alarme ruhen. Die Daten bleiben erhalten, entsperren ist jederzeit möglich.",
+      "confirm": "Sperren"
+    },
+    "resume": "Entsperren",
+    "created": "Mandant angelegt.",
+    "updated": "Mandant gespeichert.",
+    "suspended": "Mandant gesperrt.",
+    "resumed": "Mandant entsperrt.",
+    "deleted": "Mandant gelöscht.",
+    "lock": {
+      "suspendFirst": "Zuerst sperren. Nur gesperrte Mandanten können gelöscht werden."
+    },
+    "dialog": {
+      "createTitle": "Neuer Mandant",
+      "editTitle": "Mandant bearbeiten",
+      "id": "ID",
+      "idHint": "Optional: Kleinbuchstaben, Ziffern und Bindestriche. Leer erzeugt eine ID.",
+      "name": "Name",
+      "plan": "Plan",
+      "orgId": "Organisations-ID",
+      "orgIdHint": "Optional. Bindet den Mandanten an eine Organisation des Identity Providers.",
+      "orgIdLocked": "Kommt aus der Serverkonfiguration und ist hier nicht änderbar.",
+      "limitsTitle": "Limits",
+      "limitsHint": "Leer übernimmt den Wert des Plans. „Unbegrenzt“ hebt das Limit für diesen Mandanten auf.",
+      "errors": {
+        "id": "Nur Kleinbuchstaben, Ziffern und Bindestriche, höchstens 64 Zeichen, am Anfang ein Buchstabe oder eine Ziffer.",
+        "name": "Bitte einen Namen eingeben.",
+        "nameLength": "Höchstens {{ max }} Zeichen.",
+        "orgIdLength": "Höchstens {{ max }} Zeichen."
+      }
+    },
+    "delete": {
+      "title": "Mandant „{{ name }}“ löschen?",
+      "text": "Alle Daten dieses Mandanten werden gelöscht: Monitore, Messergebnisse, Vorfälle, Kanäle, Wartungsfenster und Benutzer. Das lässt sich nicht rückgängig machen.",
+      "copies": "Kopien bleiben im Raft-Log und in Backups, bis sie überschrieben werden.",
+      "typeLabel": "„{{ name }}“ zur Bestätigung eingeben",
+      "confirm": "Endgültig löschen"
+    }
+  },
+  "plans": {
+    "title": "Pläne",
+    "new": "Neuer Plan",
+    "listLabel": "Pläne",
+    "empty": "Noch keine Pläne.",
+    "limitsLabel": "Limits",
+    "tenantCount": "Mandanten: {{ count }}",
+    "created": "Plan angelegt.",
+    "updated": "Plan gespeichert.",
+    "deleted": "Plan gelöscht.",
+    "lock": {
+      "default": "Der Plan „default“ kann nicht gelöscht werden.",
+      "inUse": "Ein Plan, den Mandanten nutzen, kann nicht gelöscht werden."
+    },
+    "delete": {
+      "title": "Plan löschen?",
+      "text": "Der Plan wird entfernt. Mandanten können ihm danach nicht mehr zugewiesen werden.",
+      "confirm": "Löschen"
+    },
+    "dialog": {
+      "createTitle": "Neuer Plan",
+      "editTitle": "Plan bearbeiten",
+      "id": "ID",
+      "idHint": "Kleinbuchstaben, Ziffern und Bindestriche. Die ID lässt sich später nicht ändern.",
+      "name": "Name",
+      "limitsTitle": "Limits",
+      "limitsHint": "Ein gesenktes Limit lässt den Bestand der Mandanten bestehen. Abgelehnt werden nur neue Objekte und kürzere Intervalle.",
+      "errors": {
+        "required": "Bitte eine ID eingeben.",
+        "pattern": "Nur Kleinbuchstaben, Ziffern und Bindestriche, höchstens 64 Zeichen.",
+        "reserved": "Diese ID ist reserviert.",
+        "taken": "Ein Plan mit dieser ID existiert bereits.",
+        "name": "Bitte einen Namen eingeben.",
+        "nameLength": "Höchstens {{ max }} Zeichen."
+      }
+    }
   }
 }

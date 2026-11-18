@@ -201,6 +201,12 @@ func (t *stateTx) RevokeUserSessions(ctx context.Context, tenantID, userID strin
 	return mapErr(t.q.RevokeUserSessions(ctx, statedb.RevokeUserSessionsParams{RevokedMs: ms, TenantID: tenantID, UserID: userID}))
 }
 
+// RevokeTenantSessions revokes the refresh sessions of all users of the tenant
+// that are not revoked yet. Sessions of other tenants are not touched.
+func (t *stateTx) RevokeTenantSessions(ctx context.Context, tenantID string, ms int64) error {
+	return mapErr(t.q.RevokeTenantSessions(ctx, statedb.RevokeTenantSessionsParams{RevokedMs: ms, TenantID: tenantID}))
+}
+
 func (t *stateTx) PruneSessions(ctx context.Context, beforeMs int64) error {
 	return mapErr(t.q.PruneSessions(ctx, beforeMs))
 }

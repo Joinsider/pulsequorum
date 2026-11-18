@@ -239,6 +239,12 @@ type Command struct {
 	//	*Command_RecordIncarnation
 	//	*Command_Checkpoint
 	//	*Command_BindTenantOrg
+	//	*Command_CreateTenant
+	//	*Command_UpdateTenant
+	//	*Command_SetTenantSuspended
+	//	*Command_DeleteTenant
+	//	*Command_PutPlan
+	//	*Command_DeletePlan
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -523,6 +529,60 @@ func (x *Command) GetBindTenantOrg() *BindTenantOrg {
 	return nil
 }
 
+func (x *Command) GetCreateTenant() *CreateTenant {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_CreateTenant); ok {
+			return x.CreateTenant
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetUpdateTenant() *UpdateTenant {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_UpdateTenant); ok {
+			return x.UpdateTenant
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetSetTenantSuspended() *SetTenantSuspended {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_SetTenantSuspended); ok {
+			return x.SetTenantSuspended
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetDeleteTenant() *DeleteTenant {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_DeleteTenant); ok {
+			return x.DeleteTenant
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetPutPlan() *PutPlan {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_PutPlan); ok {
+			return x.PutPlan
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetDeletePlan() *DeletePlan {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_DeletePlan); ok {
+			return x.DeletePlan
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -619,6 +679,30 @@ type Command_BindTenantOrg struct {
 	BindTenantOrg *BindTenantOrg `protobuf:"bytes,34,opt,name=bind_tenant_org,json=bindTenantOrg,proto3,oneof"`
 }
 
+type Command_CreateTenant struct {
+	CreateTenant *CreateTenant `protobuf:"bytes,35,opt,name=create_tenant,json=createTenant,proto3,oneof"`
+}
+
+type Command_UpdateTenant struct {
+	UpdateTenant *UpdateTenant `protobuf:"bytes,36,opt,name=update_tenant,json=updateTenant,proto3,oneof"`
+}
+
+type Command_SetTenantSuspended struct {
+	SetTenantSuspended *SetTenantSuspended `protobuf:"bytes,37,opt,name=set_tenant_suspended,json=setTenantSuspended,proto3,oneof"`
+}
+
+type Command_DeleteTenant struct {
+	DeleteTenant *DeleteTenant `protobuf:"bytes,38,opt,name=delete_tenant,json=deleteTenant,proto3,oneof"`
+}
+
+type Command_PutPlan struct {
+	PutPlan *PutPlan `protobuf:"bytes,39,opt,name=put_plan,json=putPlan,proto3,oneof"`
+}
+
+type Command_DeletePlan struct {
+	DeletePlan *DeletePlan `protobuf:"bytes,40,opt,name=delete_plan,json=deletePlan,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -664,6 +748,18 @@ func (*Command_RecordIncarnation) isCommand_Payload() {}
 func (*Command_Checkpoint) isCommand_Payload() {}
 
 func (*Command_BindTenantOrg) isCommand_Payload() {}
+
+func (*Command_CreateTenant) isCommand_Payload() {}
+
+func (*Command_UpdateTenant) isCommand_Payload() {}
+
+func (*Command_SetTenantSuspended) isCommand_Payload() {}
+
+func (*Command_DeleteTenant) isCommand_Payload() {}
+
+func (*Command_PutPlan) isCommand_Payload() {}
+
+func (*Command_DeletePlan) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -2648,11 +2744,395 @@ func (x *BindTenantOrg) GetOrgId() string {
 	return ""
 }
 
+// CreateTenant creates a tenant (ADR 0029). The issuing node generates the
+// tenant ID. With source "auto" the FSM returns the tenant already bound to
+// org_id instead of an error, so that parallel first logins of one
+// organization end at the same tenant.
+type CreateTenant struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	PlanId   string                 `protobuf:"bytes,3,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	// Empty: not bound to an organization.
+	OrgId string `protobuf:"bytes,4,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Per-tenant overrides of the plan limits as JSON; empty means none.
+	LimitsJson string `protobuf:"bytes,5,opt,name=limits_json,json=limitsJson,proto3" json:"limits_json,omitempty"`
+	// admin | auto
+	Source string `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
+	// Highest number of tenants with source "auto"; only read for that source.
+	MaxAutoTenants uint32 `protobuf:"varint,7,opt,name=max_auto_tenants,json=maxAutoTenants,proto3" json:"max_auto_tenants,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CreateTenant) Reset() {
+	*x = CreateTenant{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTenant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTenant) ProtoMessage() {}
+
+func (x *CreateTenant) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTenant.ProtoReflect.Descriptor instead.
+func (*CreateTenant) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *CreateTenant) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetLimitsJson() string {
+	if x != nil {
+		return x.LimitsJson
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *CreateTenant) GetMaxAutoTenants() uint32 {
+	if x != nil {
+		return x.MaxAutoTenants
+	}
+	return 0
+}
+
+// UpdateTenant changes the set fields of a tenant (ADR 0029).
+type UpdateTenant struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name     *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	PlanId   *string                `protobuf:"bytes,3,opt,name=plan_id,json=planId,proto3,oneof" json:"plan_id,omitempty"`
+	// Replaces all overrides; "{}" removes them.
+	LimitsJson *string `protobuf:"bytes,4,opt,name=limits_json,json=limitsJson,proto3,oneof" json:"limits_json,omitempty"`
+	// Rebinds the tenant; "" unbinds it.
+	OrgId         *string `protobuf:"bytes,5,opt,name=org_id,json=orgId,proto3,oneof" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateTenant) Reset() {
+	*x = UpdateTenant{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTenant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTenant) ProtoMessage() {}
+
+func (x *UpdateTenant) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTenant.ProtoReflect.Descriptor instead.
+func (*UpdateTenant) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *UpdateTenant) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *UpdateTenant) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateTenant) GetPlanId() string {
+	if x != nil && x.PlanId != nil {
+		return *x.PlanId
+	}
+	return ""
+}
+
+func (x *UpdateTenant) GetLimitsJson() string {
+	if x != nil && x.LimitsJson != nil {
+		return *x.LimitsJson
+	}
+	return ""
+}
+
+func (x *UpdateTenant) GetOrgId() string {
+	if x != nil && x.OrgId != nil {
+		return *x.OrgId
+	}
+	return ""
+}
+
+// SetTenantSuspended suspends or resumes a tenant (ADR 0029).
+type SetTenantSuspended struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Suspended     bool                   `protobuf:"varint,2,opt,name=suspended,proto3" json:"suspended,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTenantSuspended) Reset() {
+	*x = SetTenantSuspended{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTenantSuspended) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTenantSuspended) ProtoMessage() {}
+
+func (x *SetTenantSuspended) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTenantSuspended.ProtoReflect.Descriptor instead.
+func (*SetTenantSuspended) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SetTenantSuspended) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *SetTenantSuspended) GetSuspended() bool {
+	if x != nil {
+		return x.Suspended
+	}
+	return false
+}
+
+// DeleteTenant deletes a suspended tenant with all its replicated data and
+// records a tombstone (ADR 0029). Each node purges its metrics afterwards.
+type DeleteTenant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteTenant) Reset() {
+	*x = DeleteTenant{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteTenant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteTenant) ProtoMessage() {}
+
+func (x *DeleteTenant) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteTenant.ProtoReflect.Descriptor instead.
+func (*DeleteTenant) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *DeleteTenant) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+// PutPlan creates or replaces a plan (ADR 0029).
+type PutPlan struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlanId        string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	LimitsJson    string                 `protobuf:"bytes,3,opt,name=limits_json,json=limitsJson,proto3" json:"limits_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutPlan) Reset() {
+	*x = PutPlan{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutPlan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutPlan) ProtoMessage() {}
+
+func (x *PutPlan) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutPlan.ProtoReflect.Descriptor instead.
+func (*PutPlan) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *PutPlan) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *PutPlan) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PutPlan) GetLimitsJson() string {
+	if x != nil {
+		return x.LimitsJson
+	}
+	return ""
+}
+
+// DeletePlan deletes a plan that no tenant uses (ADR 0029).
+type DeletePlan struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlanId        string                 `protobuf:"bytes,1,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletePlan) Reset() {
+	*x = DeletePlan{}
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletePlan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletePlan) ProtoMessage() {}
+
+func (x *DeletePlan) ProtoReflect() protoreflect.Message {
+	mi := &file_uptimecluster_v1_command_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletePlan.ProtoReflect.Descriptor instead.
+func (*DeletePlan) Descriptor() ([]byte, []int) {
+	return file_uptimecluster_v1_command_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *DeletePlan) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
 var File_uptimecluster_v1_command_proto protoreflect.FileDescriptor
 
 const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xfc\x0f\n" +
+	"\x1euptimecluster/v1/command.proto\x12\x10uptimecluster.v1\x1a uptimecluster/v1/heartbeat.proto\"\xa4\x13\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -2688,7 +3168,14 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"\n" +
 	"checkpoint\x18! \x01(\v2\x1c.uptimecluster.v1.CheckpointH\x00R\n" +
 	"checkpoint\x12I\n" +
-	"\x0fbind_tenant_org\x18\" \x01(\v2\x1f.uptimecluster.v1.BindTenantOrgH\x00R\rbindTenantOrgB\t\n" +
+	"\x0fbind_tenant_org\x18\" \x01(\v2\x1f.uptimecluster.v1.BindTenantOrgH\x00R\rbindTenantOrg\x12E\n" +
+	"\rcreate_tenant\x18# \x01(\v2\x1e.uptimecluster.v1.CreateTenantH\x00R\fcreateTenant\x12E\n" +
+	"\rupdate_tenant\x18$ \x01(\v2\x1e.uptimecluster.v1.UpdateTenantH\x00R\fupdateTenant\x12X\n" +
+	"\x14set_tenant_suspended\x18% \x01(\v2$.uptimecluster.v1.SetTenantSuspendedH\x00R\x12setTenantSuspended\x12E\n" +
+	"\rdelete_tenant\x18& \x01(\v2\x1e.uptimecluster.v1.DeleteTenantH\x00R\fdeleteTenant\x126\n" +
+	"\bput_plan\x18' \x01(\v2\x19.uptimecluster.v1.PutPlanH\x00R\aputPlan\x12?\n" +
+	"\vdelete_plan\x18( \x01(\v2\x1c.uptimecluster.v1.DeletePlanH\x00R\n" +
+	"deletePlanB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\x9b\x01\n" +
 	"\x05Actor\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.uptimecluster.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -2856,7 +3343,41 @@ const file_uptimecluster_v1_command_proto_rawDesc = "" +
 	"Checkpoint\"C\n" +
 	"\rBindTenantOrg\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x15\n" +
-	"\x06org_id\x18\x02 \x01(\tR\x05orgId*\xab\x02\n" +
+	"\x06org_id\x18\x02 \x01(\tR\x05orgId\"\xd2\x01\n" +
+	"\fCreateTenant\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n" +
+	"\aplan_id\x18\x03 \x01(\tR\x06planId\x12\x15\n" +
+	"\x06org_id\x18\x04 \x01(\tR\x05orgId\x12\x1f\n" +
+	"\vlimits_json\x18\x05 \x01(\tR\n" +
+	"limitsJson\x12\x16\n" +
+	"\x06source\x18\x06 \x01(\tR\x06source\x12(\n" +
+	"\x10max_auto_tenants\x18\a \x01(\rR\x0emaxAutoTenants\"\xd4\x01\n" +
+	"\fUpdateTenant\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
+	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1c\n" +
+	"\aplan_id\x18\x03 \x01(\tH\x01R\x06planId\x88\x01\x01\x12$\n" +
+	"\vlimits_json\x18\x04 \x01(\tH\x02R\n" +
+	"limitsJson\x88\x01\x01\x12\x1a\n" +
+	"\x06org_id\x18\x05 \x01(\tH\x03R\x05orgId\x88\x01\x01B\a\n" +
+	"\x05_nameB\n" +
+	"\n" +
+	"\b_plan_idB\x0e\n" +
+	"\f_limits_jsonB\t\n" +
+	"\a_org_id\"O\n" +
+	"\x12SetTenantSuspended\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1c\n" +
+	"\tsuspended\x18\x02 \x01(\bR\tsuspended\"+\n" +
+	"\fDeleteTenant\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"W\n" +
+	"\aPutPlan\x12\x17\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
+	"\vlimits_json\x18\x03 \x01(\tR\n" +
+	"limitsJson\"%\n" +
+	"\n" +
+	"DeletePlan\x12\x17\n" +
+	"\aplan_id\x18\x01 \x01(\tR\x06planId*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -2883,7 +3404,7 @@ func file_uptimecluster_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_uptimecluster_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_uptimecluster_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),                  // 0: uptimecluster.v1.EntityKind
 	(Actor_Kind)(0),                  // 1: uptimecluster.v1.Actor.Kind
@@ -2918,8 +3439,14 @@ var file_uptimecluster_v1_command_proto_goTypes = []any{
 	(*RecordIncarnation)(nil),        // 30: uptimecluster.v1.RecordIncarnation
 	(*Checkpoint)(nil),               // 31: uptimecluster.v1.Checkpoint
 	(*BindTenantOrg)(nil),            // 32: uptimecluster.v1.BindTenantOrg
-	nil,                              // 33: uptimecluster.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),                  // 34: uptimecluster.v1.ErrorClass
+	(*CreateTenant)(nil),             // 33: uptimecluster.v1.CreateTenant
+	(*UpdateTenant)(nil),             // 34: uptimecluster.v1.UpdateTenant
+	(*SetTenantSuspended)(nil),       // 35: uptimecluster.v1.SetTenantSuspended
+	(*DeleteTenant)(nil),             // 36: uptimecluster.v1.DeleteTenant
+	(*PutPlan)(nil),                  // 37: uptimecluster.v1.PutPlan
+	(*DeletePlan)(nil),               // 38: uptimecluster.v1.DeletePlan
+	nil,                              // 39: uptimecluster.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 40: uptimecluster.v1.ErrorClass
 }
 var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	4,  // 0: uptimecluster.v1.Command.actor:type_name -> uptimecluster.v1.Actor
@@ -2946,22 +3473,28 @@ var file_uptimecluster_v1_command_proto_depIdxs = []int32{
 	30, // 21: uptimecluster.v1.Command.record_incarnation:type_name -> uptimecluster.v1.RecordIncarnation
 	31, // 22: uptimecluster.v1.Command.checkpoint:type_name -> uptimecluster.v1.Checkpoint
 	32, // 23: uptimecluster.v1.Command.bind_tenant_org:type_name -> uptimecluster.v1.BindTenantOrg
-	1,  // 24: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
-	0,  // 25: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	0,  // 26: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
-	8,  // 27: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
-	34, // 28: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
-	19, // 29: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
-	2,  // 30: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
-	33, // 31: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
-	24, // 32: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
-	26, // 33: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
-	28, // 34: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	33, // 24: uptimecluster.v1.Command.create_tenant:type_name -> uptimecluster.v1.CreateTenant
+	34, // 25: uptimecluster.v1.Command.update_tenant:type_name -> uptimecluster.v1.UpdateTenant
+	35, // 26: uptimecluster.v1.Command.set_tenant_suspended:type_name -> uptimecluster.v1.SetTenantSuspended
+	36, // 27: uptimecluster.v1.Command.delete_tenant:type_name -> uptimecluster.v1.DeleteTenant
+	37, // 28: uptimecluster.v1.Command.put_plan:type_name -> uptimecluster.v1.PutPlan
+	38, // 29: uptimecluster.v1.Command.delete_plan:type_name -> uptimecluster.v1.DeletePlan
+	1,  // 30: uptimecluster.v1.Actor.kind:type_name -> uptimecluster.v1.Actor.Kind
+	0,  // 31: uptimecluster.v1.PutEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	0,  // 32: uptimecluster.v1.DeleteEntity.kind:type_name -> uptimecluster.v1.EntityKind
+	8,  // 33: uptimecluster.v1.SetMonitorState.incident:type_name -> uptimecluster.v1.IncidentStart
+	40, // 34: uptimecluster.v1.IncidentStart.error_class:type_name -> uptimecluster.v1.ErrorClass
+	19, // 35: uptimecluster.v1.RegisterNode.node:type_name -> uptimecluster.v1.NodeInfo
+	2,  // 36: uptimecluster.v1.NodeInfo.role:type_name -> uptimecluster.v1.NodeInfo.Role
+	39, // 37: uptimecluster.v1.NodeInfo.labels:type_name -> uptimecluster.v1.NodeInfo.LabelsEntry
+	24, // 38: uptimecluster.v1.ReportDegradedAlerts.entries:type_name -> uptimecluster.v1.DegradedAlertEntry
+	26, // 39: uptimecluster.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> uptimecluster.v1.UnconfirmedVerdict
+	28, // 40: uptimecluster.v1.RecordMonitorHistory.entries:type_name -> uptimecluster.v1.HistoryEntry
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_uptimecluster_v1_command_proto_init() }
@@ -2994,14 +3527,21 @@ func file_uptimecluster_v1_command_proto_init() {
 		(*Command_RecordIncarnation)(nil),
 		(*Command_Checkpoint)(nil),
 		(*Command_BindTenantOrg)(nil),
+		(*Command_CreateTenant)(nil),
+		(*Command_UpdateTenant)(nil),
+		(*Command_SetTenantSuspended)(nil),
+		(*Command_DeleteTenant)(nil),
+		(*Command_PutPlan)(nil),
+		(*Command_DeletePlan)(nil),
 	}
+	file_uptimecluster_v1_command_proto_msgTypes[31].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_uptimecluster_v1_command_proto_rawDesc), len(file_uptimecluster_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   31,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

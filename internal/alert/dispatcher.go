@@ -28,6 +28,9 @@ const (
 	retryBase               = 30 * time.Second
 	retryMax                = time.Hour
 	ackTimeout              = 5 * time.Second
+	// maxSkipExtra bounds how many extra outbox entries a round reads to make
+	// room for the entries of suspended tenants (see DeliverDue).
+	maxSkipExtra = 10_000
 )
 
 // Rate limit per channel (ADR 0023, FA-ALR-04): a token bucket that holds
@@ -108,6 +111,10 @@ type Dispatcher struct {
 	// chMu guards channels, the in-memory rate and bundle state per channel.
 	chMu     sync.Mutex
 	channels map[channelKey]*channelState
+
+	// skipped is the number of due entries the last round left out because
+	// their tenant is suspended. Only DeliverDue reads and writes it.
+	skipped int
 }
 
 // reminderProposal remembers the last reminder proposed for a monitor, so the
@@ -235,17 +242,51 @@ func (d *Dispatcher) Run(ctx context.Context) {
 // DeliverDue sends the outbox entries that are due and records each attempt.
 // It returns after all of them are finished. Entries that the rate limit or a
 // bundling window holds back stay due for a later round.
+//
+// Entries of suspended tenants are not sent (ADR 0029). They stay pending, so
+// the outbox keeps them, and they are read again in the next round. Because
+// they take up slots of the batch, the next round reads as many more entries
+// as this round skipped; otherwise a suspended tenant with many pending entries
+// would starve the other tenants.
 func (d *Dispatcher) DeliverDue(ctx context.Context) error {
 	if !d.isLeader() {
 		return nil
 	}
 	now := d.opts.Now()
-	due, err := d.opts.State.DueAlerts(ctx, now.UnixMilli(), d.opts.BatchSize)
+	limit := d.opts.BatchSize + min(d.skipped, maxSkipExtra)
+	due, err := d.opts.State.DueAlerts(ctx, now.UnixMilli(), limit)
 	if err != nil {
 		return fmt.Errorf("load due alerts: %w", err)
 	}
-	d.run(ctx, d.plan(ctx, now, due))
+	var suspended map[string]bool
+	if len(due) > 0 {
+		if suspended, err = suspendedTenants(ctx, d.opts.State); err != nil {
+			return fmt.Errorf("load tenants: %w", err)
+		}
+	}
+	jobs, skipped := d.plan(ctx, now, due, suspended)
+	d.skipped = skipped
+	if skipped > 0 {
+		d.opts.Logger.Debug("alerts of suspended tenants not sent", "count", skipped)
+	}
+	d.run(ctx, jobs)
 	return nil
+}
+
+// suspendedTenants returns the IDs of the suspended tenants. The system tenant
+// is never suspended.
+func suspendedTenants(ctx context.Context, state store.State) (map[string]bool, error) {
+	tenants, err := state.ListTenants(ctx)
+	if err != nil {
+		return nil, err
+	}
+	suspended := make(map[string]bool)
+	for _, t := range tenants {
+		if t.Suspended && t.ID != store.SystemTenantID {
+			suspended[t.ID] = true
+		}
+	}
+	return suspended, nil
 }
 
 // isLeader reports whether this node leads. A change of leadership drops the
@@ -262,11 +303,17 @@ func (d *Dispatcher) isLeader() bool {
 	return leader
 }
 
-// plan decides which due entries go out in this round, per channel.
-func (d *Dispatcher) plan(ctx context.Context, now time.Time, due []store.AlertDelivery) []job {
+// plan decides which due entries go out in this round, per channel. It also
+// returns how many entries it left out because their tenant is suspended.
+func (d *Dispatcher) plan(ctx context.Context, now time.Time, due []store.AlertDelivery, suspended map[string]bool) ([]job, int) {
 	var keys []channelKey
 	groups := make(map[channelKey][]store.AlertDelivery)
+	skipped := 0
 	for _, a := range due {
+		if suspended[a.TenantID] {
+			skipped++
+			continue
+		}
 		k := channelKey{tenant: a.TenantID, channel: a.ChannelID}
 		if _, ok := groups[k]; !ok {
 			keys = append(keys, k)
@@ -293,7 +340,7 @@ func (d *Dispatcher) plan(ctx context.Context, now time.Time, due []store.AlertD
 		jobs = append(jobs, d.planChannel(now, k, ch, groups[k])...)
 		d.chMu.Unlock()
 	}
-	return jobs
+	return jobs, skipped
 }
 
 // planChannel decides the messages of one channel. The Retry-After block, the
@@ -579,6 +626,11 @@ func (d *Dispatcher) EnqueueReminders(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list monitors: %w", err)
 	}
+	// No reminders for suspended tenants (ADR 0029); they would only wait in the outbox.
+	suspended, err := suspendedTenants(ctx, d.opts.State)
+	if err != nil {
+		return fmt.Errorf("list tenants: %w", err)
+	}
 	nowMs := d.opts.Now().UnixMilli()
 	periodUnit := time.Minute.Milliseconds()
 
@@ -587,7 +639,7 @@ func (d *Dispatcher) EnqueueReminders(ctx context.Context) error {
 	next := make(map[string]reminderProposal)
 	var errs []error
 	for _, m := range monitors {
-		if m.ResendIntervalMinutes <= 0 || m.State.Status != store.StatusDown || len(m.ChannelIDs) == 0 {
+		if m.ResendIntervalMinutes <= 0 || m.State.Status != store.StatusDown || len(m.ChannelIDs) == 0 || suspended[m.TenantID] {
 			continue
 		}
 		n := (nowMs - m.State.SinceMs) / (int64(m.ResendIntervalMinutes) * periodUnit)

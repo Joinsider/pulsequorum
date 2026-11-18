@@ -16,6 +16,14 @@ export const routes: Routes = [
     loadComponent: () => import('./cluster-page').then((m) => m.ClusterPage),
   },
   {
+    path: 'tenants',
+    loadComponent: () => import('./tenants-page').then((m) => m.TenantsPage),
+  },
+  {
+    path: 'plans',
+    loadComponent: () => import('./plans-page').then((m) => m.PlansPage),
+  },
+  {
     path: 'system-channels',
     providers: [provideTranslocoScope('channels')],
     children: [

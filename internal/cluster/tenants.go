@@ -11,15 +11,13 @@ import (
 
 	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
 	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/uptimecluster/internal/tenant"
 )
 
 // OIDCCommandLevel is the command level of BindTenantOrg (ADR 0027). Below that
 // level the command is rejected and nothing is written, so that a cluster with
 // voters of different versions does not diverge (ADR 0018).
 const OIDCCommandLevel = 7
-
-// maxOrgIDLength is the longest accepted identity-provider organization ID, in bytes.
-const maxOrgIDLength = 128
 
 // BindTenantOrgResult is the result of BindTenantOrg (ADR 0027).
 type BindTenantOrgResult struct {
@@ -40,27 +38,9 @@ func NewBindTenantOrg(tenantID, orgID string) *pb.Command {
 	})
 }
 
-// validOrgID reports whether id is a usable organization ID: 1 to 128 bytes of
-// ASCII letters, digits, '.', '_', '@' and '-'.
-func validOrgID(id string) bool {
-	if id == "" || len(id) > maxOrgIDLength {
-		return false
-	}
-	for i := range len(id) {
-		c := id[i]
-		switch {
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
-		case c == '.', c == '_', c == '@', c == '-':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
 // applyBindTenantOrg sets tenants.zitadel_org_id (ADR 0027). Rules, in order:
 //   - the tenant ID is set and is not the system tenant;
-//   - the organization ID is valid (see validOrgID);
+//   - the organization ID is valid (see tenant.ValidOrgID);
 //   - the tenant exists;
 //   - no other tenant holds the organization;
 //   - a tenant already bound to the same organization is left unchanged (no write);
@@ -78,8 +58,8 @@ func applyBindTenantOrg(ctx context.Context, tx store.StateTx, cmd *pb.Command, 
 		return nil, invalid("bind tenant org without tenant")
 	case tenantID == store.SystemTenantID:
 		return nil, invalid("the system tenant cannot be bound to an organization")
-	case !validOrgID(orgID):
-		return nil, invalid("organization ID must be 1 to %d characters of A-Z, a-z, 0-9, '.', '_', '@' or '-'", maxOrgIDLength)
+	case !tenant.ValidOrgID(orgID):
+		return nil, invalid("%s", tenant.OrgIDRule)
 	}
 	result := BindTenantOrgResult{TenantID: tenantID, OrgID: orgID}
 

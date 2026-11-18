@@ -54,6 +54,13 @@ func minVersion(cmd *pb.Command) uint32 {
 		return SystemAlertCommandLevel
 	case *pb.Command_BindTenantOrg:
 		return OIDCCommandLevel
+	case *pb.Command_CreateTenant,
+		*pb.Command_UpdateTenant,
+		*pb.Command_SetTenantSuspended,
+		*pb.Command_DeleteTenant,
+		*pb.Command_PutPlan,
+		*pb.Command_DeletePlan:
+		return TenantAdminCommandLevel
 	}
 	return 0
 }

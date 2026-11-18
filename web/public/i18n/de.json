@@ -7,7 +7,9 @@
     "users": "Benutzer",
     "cluster": "Cluster",
     "account": "Konto",
-    "systemChannels": "Systemkanäle"
+    "systemChannels": "Systemkanäle",
+    "tenants": "Mandanten",
+    "plans": "Pläne"
   },
   "shell": {
     "theme": "Design: {{ mode }}",

@@ -94,11 +94,18 @@ func (h *Handlers) apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyRes
 	case errors.As(err, &ce):
 		switch ce.Code {
 		case cluster.CodeConflict:
+			if tenantAdminCommand(cmd) {
+				// The FSM messages of the tenant commands name the cause
+				// (organization bound, ID of a deleted tenant, not suspended).
+				return res, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: ce.Message}
+			}
 			return res, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "the object was changed concurrently or already exists; reload and retry"}
 		case cluster.CodeNotFound:
 			return res, notFound("object")
 		case cluster.CodeNotEnabled:
 			return res, notEnabled(ce)
+		case cluster.CodeLimitExceeded:
+			return res, limitProblem(ce)
 		default:
 			return res, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity", Detail: ce.Message}
 		}
@@ -180,6 +187,9 @@ func (h *Handlers) CreateMonitor(ctx context.Context, req gen.CreateMonitorReque
 	if err != nil {
 		return nil, err
 	}
+	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_MONITOR, true, doc.IntervalSeconds, 0); err != nil {
+		return nil, err
+	}
 	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
 		return h.sealSecrets(doc, id, nil)
 	})
@@ -233,6 +243,9 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	}
 	doc, err := h.monitorDocument(ctx, p.TenantID, req.Body, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_MONITOR, false, doc.IntervalSeconds, current.IntervalSeconds); err != nil {
 		return nil, err
 	}
 	var previous configsecret.Secrets
@@ -336,6 +349,9 @@ func (h *Handlers) CloneMonitor(ctx context.Context, req gen.CloneMonitorRequest
 	doc := cluster.MonitorDocumentFrom(src)
 	doc.Name = truncateRunes(src.Name, maxNameLength-len(" (copy)")) + " (copy)"
 	doc.Paused = true
+	if err := h.checkLimits(ctx, p.TenantID, pb.EntityKind_ENTITY_KIND_MONITOR, true, doc.IntervalSeconds, 0); err != nil {
+		return nil, err
+	}
 	m, err := h.create(ctx, p, requestID(p.TenantID, req.Params.IdempotencyKey), func(id string) (cluster.MonitorDocument, error) {
 		var err error
 		doc.Secrets, err = configsecret.Reencrypt(ctx, h.keyring(), src.ID, id, src.Secrets)

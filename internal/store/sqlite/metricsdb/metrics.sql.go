@@ -452,6 +452,33 @@ func (q *Queries) ListHeartbeats(ctx context.Context, arg ListHeartbeatsParams) 
 	return items, nil
 }
 
+const listPurgedTenants = `-- name: ListPurgedTenants :many
+SELECT tenant_id FROM purged_tenants ORDER BY tenant_id
+`
+
+func (q *Queries) ListPurgedTenants(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPurgedTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var tenant_id string
+		if err := rows.Scan(&tenant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tenant_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRollups = `-- name: ListRollups :many
 SELECT s.tenant_id, s.monitor_id, s.node_id, r.bucket_ms, r.start_ms,
        r.up_ms, r.down_ms, r.maint_ms, r.unknown_ms,
@@ -640,6 +667,43 @@ type ListSeriesIDsAfterParams struct {
 // Pages through the series in ID order for the per-series retention batches.
 func (q *Queries) ListSeriesIDsAfter(ctx context.Context, arg ListSeriesIDsAfterParams) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listSeriesIDsAfter, arg.AfterID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSeriesIDsOfTenantAfter = `-- name: ListSeriesIDsOfTenantAfter :many
+SELECT id FROM series
+WHERE tenant_id = ?1 AND id > ?2
+ORDER BY id
+LIMIT ?3
+`
+
+type ListSeriesIDsOfTenantAfterParams struct {
+	TenantID string
+	AfterID  int64
+	RowLimit int64
+}
+
+// Pages through the series of one tenant in ID order.
+func (q *Queries) ListSeriesIDsOfTenantAfter(ctx context.Context, arg ListSeriesIDsOfTenantAfterParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listSeriesIDsOfTenantAfter, arg.TenantID, arg.AfterID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -851,6 +915,112 @@ func (q *Queries) PruneDegradedAlerts(ctx context.Context, sentMs int64) (int64,
 	return result.RowsAffected()
 }
 
+const purgeDegradedAlertsOfTenant = `-- name: PurgeDegradedAlertsOfTenant :execrows
+DELETE FROM degraded_alerts
+WHERE rowid IN (SELECT d.rowid FROM degraded_alerts AS d WHERE d.tenant_id = ?1 LIMIT ?2)
+`
+
+type PurgeDegradedAlertsOfTenantParams struct {
+	TenantID string
+	RowLimit int64
+}
+
+func (q *Queries) PurgeDegradedAlertsOfTenant(ctx context.Context, arg PurgeDegradedAlertsOfTenantParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeDegradedAlertsOfTenant, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeHeartbeatsOfTenant = `-- name: PurgeHeartbeatsOfTenant :execrows
+DELETE FROM heartbeats
+WHERE rowid IN (SELECT h.rowid FROM heartbeats AS h WHERE h.tenant_id = ?1 LIMIT ?2)
+`
+
+type PurgeHeartbeatsOfTenantParams struct {
+	TenantID string
+	RowLimit int64
+}
+
+// One purge batch of a tenant (ADR 0029); the tenant has no index here, so each
+// batch scans heartbeats until it has found row_limit rows of the tenant.
+func (q *Queries) PurgeHeartbeatsOfTenant(ctx context.Context, arg PurgeHeartbeatsOfTenantParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeHeartbeatsOfTenant, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeMinutesOfSeries = `-- name: PurgeMinutesOfSeries :execrows
+DELETE FROM minutes
+WHERE minutes.series_id = ?1
+  AND minutes.minute_ms IN (SELECT m.minute_ms FROM minutes AS m
+                    WHERE m.series_id = ?1
+                    LIMIT ?2)
+`
+
+type PurgeMinutesOfSeriesParams struct {
+	SeriesID int64
+	RowLimit int64
+}
+
+// One series: the primary key prefix series_id drives the subquery and the delete.
+func (q *Queries) PurgeMinutesOfSeries(ctx context.Context, arg PurgeMinutesOfSeriesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeMinutesOfSeries, arg.SeriesID, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeRollupsOfSeries = `-- name: PurgeRollupsOfSeries :execrows
+DELETE FROM rollups
+WHERE (rollups.series_id, rollups.bucket_ms, rollups.start_ms) IN (
+    SELECT r.series_id, r.bucket_ms, r.start_ms FROM rollups AS r
+    WHERE r.series_id = ?1
+    LIMIT ?2)
+`
+
+type PurgeRollupsOfSeriesParams struct {
+	SeriesID int64
+	RowLimit int64
+}
+
+// One series: the primary key prefix series_id drives the subquery and the delete.
+func (q *Queries) PurgeRollupsOfSeries(ctx context.Context, arg PurgeRollupsOfSeriesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeRollupsOfSeries, arg.SeriesID, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeSeriesOfTenant = `-- name: PurgeSeriesOfTenant :execrows
+DELETE FROM series
+WHERE series.id IN (
+    SELECT s.id FROM series AS s
+    WHERE s.tenant_id = ?1
+      AND NOT EXISTS (SELECT 1 FROM rollups AS r WHERE r.series_id = s.id)
+      AND NOT EXISTS (SELECT 1 FROM minutes AS m WHERE m.series_id = s.id)
+    LIMIT ?2)
+`
+
+type PurgeSeriesOfTenantParams struct {
+	TenantID string
+	RowLimit int64
+}
+
+// Removes series only once no rollup or latency minute references them.
+func (q *Queries) PurgeSeriesOfTenant(ctx context.Context, arg PurgeSeriesOfTenantParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeSeriesOfTenant, arg.TenantID, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertMeta = `-- name: UpsertMeta :exec
 INSERT INTO meta (key, value) VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET value = excluded.value
@@ -863,6 +1033,21 @@ type UpsertMetaParams struct {
 
 func (q *Queries) UpsertMeta(ctx context.Context, arg UpsertMetaParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMeta, arg.Key, arg.Value)
+	return err
+}
+
+const upsertPurgedTenant = `-- name: UpsertPurgedTenant :exec
+INSERT INTO purged_tenants (tenant_id, purged_ms) VALUES (?, ?)
+ON CONFLICT (tenant_id) DO UPDATE SET purged_ms = excluded.purged_ms
+`
+
+type UpsertPurgedTenantParams struct {
+	TenantID string
+	PurgedMs int64
+}
+
+func (q *Queries) UpsertPurgedTenant(ctx context.Context, arg UpsertPurgedTenantParams) error {
+	_, err := q.db.ExecContext(ctx, upsertPurgedTenant, arg.TenantID, arg.PurgedMs)
 	return err
 }
 

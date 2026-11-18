@@ -280,6 +280,36 @@ describe('MonitorEditorPage', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
+  it('shows the problem detail of a refused create, e.g. a reached plan limit', async () => {
+    const refused = throwError(
+      () =>
+        new HttpErrorResponse({
+          status: 403,
+          error: {
+            type: 'about:blank',
+            title: 'Forbidden',
+            status: 403,
+            detail: "monitor limit reached: plan 'starter' allows 10 monitors",
+          },
+        }),
+    );
+    const { fixture, router } = setup({
+      mode: 'create',
+      create: () => refused as Observable<Monitor>,
+    });
+    const p = page(fixture);
+    p['form'].controls['name'].setValue('Shop');
+    p['form'].get('config').get('url').setValue('https://shop.example');
+
+    await p['submit']();
+
+    expect(p['summary']()).toEqual({
+      key: 'monitorEditor.errors.forbidden',
+      messages: ["monitor limit reached: plan 'starter' allows 10 monitors"],
+    });
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
   it('does not send an invalid form and marks the missing fields', async () => {
     const { fixture, monitors } = setup({ mode: 'create' });
     const p = page(fixture);

@@ -840,3 +840,43 @@ func TestOIDCIgnoredInLocalMode(t *testing.T) {
 func TestLoadRejectsUnknownAuthMode(t *testing.T) {
 	expectErr(t, map[string]string{"NODE_NAME": "n1", "AUTH_MODE": "ldap"}, "AUTH_MODE")
 }
+
+func TestOIDCAutoProvision(t *testing.T) {
+	multi := func(extra ...string) map[string]string {
+		return with(zitadelOIDC(), append([]string{"OIDC_TENANCY", "multi"}, extra...)...)
+	}
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantErr  string
+		wantOn   bool
+		wantPlan string
+		wantMax  int
+	}{
+		{name: "off by default", env: zitadelOIDC(), wantOn: false, wantPlan: "default", wantMax: 100},
+		{name: "on with zitadel and multi", env: multi("OIDC_AUTO_PROVISION", "true"), wantOn: true, wantPlan: "default", wantMax: 100},
+		{name: "plan and max", env: multi("OIDC_AUTO_PROVISION", "true", "OIDC_AUTO_PROVISION_PLAN", "starter", "OIDC_AUTO_PROVISION_MAX", "5"),
+			wantOn: true, wantPlan: "starter", wantMax: 5},
+		{name: "on with single tenancy", env: with(zitadelOIDC(), "OIDC_AUTO_PROVISION", "true"), wantErr: "OIDC_AUTO_PROVISION"},
+		{name: "on with generic profile", env: with(genericOIDC(), "OIDC_AUTO_PROVISION", "true"), wantErr: "OIDC_AUTO_PROVISION"},
+		{name: "invalid bool", env: multi("OIDC_AUTO_PROVISION", "yes"), wantErr: "OIDC_AUTO_PROVISION"},
+		{name: "max zero", env: multi("OIDC_AUTO_PROVISION", "true", "OIDC_AUTO_PROVISION_MAX", "0"), wantErr: "OIDC_AUTO_PROVISION_MAX"},
+		{name: "max not a number", env: multi("OIDC_AUTO_PROVISION", "true", "OIDC_AUTO_PROVISION_MAX", "many"), wantErr: "OIDC_AUTO_PROVISION_MAX"},
+		{name: "invalid plan", env: multi("OIDC_AUTO_PROVISION", "true", "OIDC_AUTO_PROVISION_PLAN", "Not Valid"), wantErr: "OIDC_AUTO_PROVISION_PLAN"},
+		{name: "system plan reserved", env: multi("OIDC_AUTO_PROVISION", "true", "OIDC_AUTO_PROVISION_PLAN", "system"), wantErr: "OIDC_AUTO_PROVISION_PLAN"},
+		{name: "plan without enabling", env: multi("OIDC_AUTO_PROVISION_PLAN", "starter"), wantErr: "OIDC_AUTO_PROVISION_PLAN"},
+		{name: "max without enabling", env: multi("OIDC_AUTO_PROVISION_MAX", "5"), wantErr: "OIDC_AUTO_PROVISION_MAX"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := expectErr(t, tt.env, tt.wantErr)
+			if tt.wantErr != "" {
+				return
+			}
+			if cfg.OIDC.AutoProvision != tt.wantOn || cfg.OIDC.AutoProvisionPlan != tt.wantPlan || cfg.OIDC.AutoProvisionMax != tt.wantMax {
+				t.Errorf("auto provision = %t %q %d, want %t %q %d", cfg.OIDC.AutoProvision, cfg.OIDC.AutoProvisionPlan,
+					cfg.OIDC.AutoProvisionMax, tt.wantOn, tt.wantPlan, tt.wantMax)
+			}
+		})
+	}
+}

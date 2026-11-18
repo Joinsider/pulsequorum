@@ -41,6 +41,10 @@ tags:
     description: Cluster administration (platform admins only, FA-CLU-08)
   - name: system-admin
     description: System channels and system alerts (platform admins only, ADR 0025)
+  - name: tenant-admin
+    description: Tenants and plans (platform admins only, ADR 0029)
+  - name: tenant
+    description: The caller's own tenant, its limits and usage (ADR 0029)
 
 paths:
   /health:
@@ -883,6 +887,241 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /tenant:
+    get:
+      tags: [tenant]
+      operationId: getOwnTenant
+      summary: Get the caller's tenant with its effective limits and usage
+      description: |
+        Every role. The tenant comes from the token (FA-TEN-02). The
+        organization binding and other tenants' plans are not shown.
+      responses:
+        "200":
+          description: Own tenant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnTenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/plans:
+    get:
+      tags: [tenant-admin]
+      operationId: listPlans
+      summary: List the plans
+      description: Platform admins only. Ordered by ID. The plan `system` is not listed.
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Plan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /admin/plans/{planId}:
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+    get:
+      tags: [tenant-admin]
+      operationId: getPlan
+      summary: Get a plan
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [tenant-admin]
+      operationId: putPlan
+      summary: Create or replace a plan
+      description: |
+        Platform admins only. The plan `system` cannot be changed. A lowered
+        limit keeps the existing stock of the tenants on the plan; only new
+        objects and shorter intervals are rejected (ADR 0029).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanInput" }
+      responses:
+        "200":
+          description: Created or replaced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [tenant-admin]
+      operationId: deletePlan
+      summary: Delete a plan that no tenant uses
+      description: The plans `default` and `system` cannot be deleted.
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/tenants:
+    get:
+      tags: [tenant-admin]
+      operationId: listTenants
+      summary: List the tenants with plan, limits and usage
+      description: Platform admins only. Ordered by ID. The tenant `_system` is not listed.
+      responses:
+        "200":
+          description: Tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [tenant-admin]
+      operationId: createTenant
+      summary: Create a tenant
+      description: |
+        Platform admins only. Without `id` the server generates a UUID. IDs of
+        deleted tenants are never reused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/tenants/{tenantId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [tenant-admin]
+      operationId: getTenant
+      summary: Get a tenant with plan, limits and usage
+      responses:
+        "200":
+          description: Tenant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [tenant-admin]
+      operationId: updateTenant
+      summary: Change name, plan, limit overrides or organization of a tenant
+      description: |
+        Platform admins only. Omitted fields stay unchanged. `limits` replaces
+        all overrides; `{}` removes them. `orgId` rebinds the tenant, an empty
+        string unbinds it. The organization of `default` is set by the server
+        configuration and cannot be changed here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [tenant-admin]
+      operationId: deleteTenant
+      summary: Delete a suspended tenant with all its data
+      description: |
+        Platform admins only. The tenant must be suspended first, and
+        `confirmName` must equal its name. Deletes all replicated data at once;
+        every node then purges the tenant's metrics in the background. Copies
+        in the Raft log and in backups remain until they are overwritten
+        (ADR 0029). `default` and `_system` cannot be deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantDelete" }
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/tenants/{tenantId}/suspend:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      tags: [tenant-admin]
+      operationId: suspendTenant
+      summary: Suspend a tenant
+      description: |
+        Platform admins only. Its users are rejected with 403, its sessions
+        revoked, its checks and alerts stop; data is kept. `default` and
+        `_system` cannot be suspended.
+      responses:
+        "200":
+          description: Suspended
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /admin/tenants/{tenantId}/resume:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      tags: [tenant-admin]
+      operationId: resumeTenant
+      summary: Resume a suspended tenant
+      responses:
+        "200":
+          description: Resumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -916,6 +1155,16 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
     Cursor:
       name: cursor
       in: query
@@ -1595,3 +1844,117 @@ components:
       properties:
         votersLeft: { type: integer, minimum: 0 }
         warning: { type: string }
+
+    # --- Tenants and plans (ADR 0029) ---------------------------------------
+    Limits:
+      type: object
+      description: |
+        Tenant limits (FA-TEN-04). A missing or null field is unlimited.
+        `maxStatusPages` and `maxPrivateProbes` are stored now and enforced
+        once the features exist.
+      additionalProperties: false
+      properties:
+        maxMonitors: { type: integer, nullable: true, minimum: 0, maximum: 1000000 }
+        minIntervalSeconds: { type: integer, nullable: true, minimum: 1, maximum: 1000000 }
+        maxChannels: { type: integer, nullable: true, minimum: 0, maximum: 1000000 }
+        maxStatusPages: { type: integer, nullable: true, minimum: 0, maximum: 1000000 }
+        maxPrivateProbes: { type: integer, nullable: true, minimum: 0, maximum: 1000000 }
+    Plan:
+      type: object
+      required: [id, name, limits, tenantCount, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        limits: { $ref: "#/components/schemas/Limits" }
+        tenantCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PlanInput:
+      type: object
+      required: [name, limits]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        limits:
+          description: |
+            Same fields as `Limits`. Unknown fields are rejected with 422, so a
+            typo never means "unlimited" (ADR 0029).
+          type: object
+          additionalProperties: { type: integer, nullable: true }
+    TenantUsage:
+      type: object
+      required: [monitors, channels]
+      properties:
+        monitors: { type: integer, minimum: 0 }
+        channels: { type: integer, minimum: 0 }
+        minIntervalSeconds:
+          type: integer
+          minimum: 1
+          description: Shortest monitor interval; absent without monitors
+    LimitExcess:
+      type: object
+      description: A limit the current stock exceeds, e.g. after a smaller plan (ADR 0029).
+      required: [limit, allowed, actual]
+      properties:
+        limit: { type: string, enum: [maxMonitors, minIntervalSeconds, maxChannels] }
+        allowed: { type: integer }
+        actual: { type: integer }
+    Tenant:
+      type: object
+      required: [id, name, plan, limits, effectiveLimits, suspended, source, usage, exceeded, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        plan: { type: string }
+        orgId:
+          type: string
+          description: Bound identity-provider organization; absent if unbound
+        limits:
+          description: Per-tenant overrides; a null field lifts the plan limit
+          type: object
+          additionalProperties: { type: integer, nullable: true }
+        effectiveLimits: { $ref: "#/components/schemas/Limits" }
+        suspended: { type: boolean }
+        source: { type: string, enum: [admin, auto, bootstrap] }
+        usage: { $ref: "#/components/schemas/TenantUsage" }
+        exceeded:
+          type: array
+          items: { $ref: "#/components/schemas/LimitExcess" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TenantCreate:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        plan: { type: string, default: default }
+        orgId: { type: string, minLength: 1, maxLength: 128 }
+        limits:
+          type: object
+          additionalProperties: { type: integer, nullable: true }
+    TenantUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        plan: { type: string }
+        orgId: { type: string, maxLength: 128 }
+        limits:
+          type: object
+          additionalProperties: { type: integer, nullable: true }
+    TenantDelete:
+      type: object
+      required: [confirmName]
+      properties:
+        confirmName: { type: string }
+    OwnTenant:
+      type: object
+      required: [id, name, plan, effectiveLimits, usage, exceeded]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        plan: { type: string }
+        effectiveLimits: { $ref: "#/components/schemas/Limits" }
+        usage: { $ref: "#/components/schemas/TenantUsage" }
+        exceeded:
+          type: array
+          items: { $ref: "#/components/schemas/LimitExcess" }

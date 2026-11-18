@@ -21,7 +21,7 @@ readonly SPA_REDIRECT="http://localhost:8080/auth/callback"
 readonly SPA_POST_LOGOUT="http://localhost:8080/login"
 readonly SPA_ORIGIN="http://localhost:8080"
 readonly ROLES=(platform-admin tenant-admin tenant-editor tenant-viewer)
-readonly ACME_ROLES_JSON='["tenant-admin","tenant-editor","tenant-viewer"]'
+readonly GRANT_ROLES_JSON='["tenant-admin","tenant-editor","tenant-viewer"]'
 
 COMPOSE=(podman-compose -f compose.yaml --env-file "$COMPOSE_ENV")
 
@@ -113,6 +113,10 @@ ensure_org() { # NAME -> ORG_ID
 }
 ensure_org acme
 ACME_ORG_ID="$ORG_ID"
+ensure_org globex
+GLOBEX_ORG_ID="$ORG_ID"
+ensure_org initech
+INITECH_ORG_ID="$ORG_ID"
 
 # --- Projekt, Rollen, Assert Roles on Authentication ---
 must POST /zitadel.project.v2.ProjectService/ListProjects "$(jq -nc --arg n "$PROJECT_NAME" \
@@ -172,17 +176,24 @@ must_upd PUT /admin/v1/settings/oidc "$(jq -nc --argjson c "$CUR_OIDC" '{
   refreshTokenExpiration:$c.settings.refreshTokenExpiration }')"
 log "Instanz: accessTokenLifetime = 900s"
 
-# --- Projekt-Grant an acme (ohne platform-admin) ---
-GRANT_BODY="$(jq -nc --arg p "$PROJECT_ID" --arg o "$ACME_ORG_ID" --argjson r "$ACME_ROLES_JSON" \
-  '{projectId:$p,grantedOrganizationId:$o,roleKeys:$r}')"
-if api_call POST /zitadel.project.v2.ProjectService/CreateProjectGrant "$GRANT_BODY"; then
-  log "Projekt-Grant an acme angelegt"
-elif [[ "$HTTP_CODE" == "409" ]]; then
-  must_upd POST /zitadel.project.v2.ProjectService/UpdateProjectGrant "$GRANT_BODY"
-  log "Projekt-Grant an acme aktualisiert"
-else
-  die "CreateProjectGrant -> HTTP $HTTP_CODE: $RESP"
-fi
+# --- Projekt-Grants an Organisationen (ohne platform-admin) ---
+# ensure_project_grant ORG_ID: legt den Grant an oder aktualisiert ihn (409 = bereits vorhanden)
+ensure_project_grant() {
+  local org="$1" body
+  body="$(jq -nc --arg p "$PROJECT_ID" --arg o "$org" --argjson r "$GRANT_ROLES_JSON" \
+    '{projectId:$p,grantedOrganizationId:$o,roleKeys:$r}')"
+  if api_call POST /zitadel.project.v2.ProjectService/CreateProjectGrant "$body"; then
+    log "Projekt-Grant an $org angelegt"
+  elif [[ "$HTTP_CODE" == "409" ]]; then
+    must_upd POST /zitadel.project.v2.ProjectService/UpdateProjectGrant "$body"
+    log "Projekt-Grant an $org aktualisiert"
+  else
+    die "CreateProjectGrant -> HTTP $HTTP_CODE: $RESP"
+  fi
+}
+ensure_project_grant "$ACME_ORG_ID"
+ensure_project_grant "$GLOBEX_ORG_ID"
+# initech bekommt bewusst KEINEN Grant (Negativtest: Token ohne Projektrolle)
 
 # --- Menschen: ensure_human BENUTZERNAME ORG_ID VORNAME NACHNAME E-MAIL -> USER_ID, USER_PASSWORD ---
 ensure_human() {
@@ -238,19 +249,39 @@ ensure_machine platform-bot "$PLATFORM_ORG_ID"
 PLATFORM_BOT_ID="$MACHINE_ID"
 ensure_machine acme-bot "$ACME_ORG_ID"
 ACME_BOT_ID="$MACHINE_ID"
+ensure_machine platform-admin-bot "$PLATFORM_ORG_ID"
+PLATFORM_ADMIN_BOT_ID="$MACHINE_ID"
+ensure_machine acme-admin-bot "$ACME_ORG_ID"
+ACME_ADMIN_BOT_ID="$MACHINE_ID"
+ensure_machine globex-admin-bot "$GLOBEX_ORG_ID"
+GLOBEX_ADMIN_BOT_ID="$MACHINE_ID"
+ensure_machine initech-bot "$INITECH_ORG_ID"
+INITECH_BOT_ID="$MACHINE_ID"
 
-# Client-ID und Client-Secret je Maschinenbenutzer (Client Credentials, neu bei jedem Lauf).
+# bot_secret MASCHINEN_ID [ORG_ID] -> BOT_CLIENT_ID, BOT_SECRET (Client Credentials, neu bei jedem Lauf).
 # Die v2-API liefert keine Client-ID; v1 PUT /management/v1/users/{id}/secret liefert clientId
 # (bei Maschinenbenutzern der Benutzername, nicht die Benutzer-ID) und clientSecret.
-must PUT "/management/v1/users/$PLATFORM_BOT_ID/secret" '{}'
-PLATFORM_BOT_CLIENT_ID="$(jqr '.clientId')"
-PLATFORM_BOT_SECRET="$(jqr '.clientSecret')"
-ORG_HDR=(-H "x-zitadel-orgid: $ACME_ORG_ID")
-must PUT "/management/v1/users/$ACME_BOT_ID/secret" '{}'
-ORG_HDR=()
-ACME_BOT_CLIENT_ID="$(jqr '.clientId')"
-ACME_BOT_SECRET="$(jqr '.clientSecret')"
-[[ -n "$PLATFORM_BOT_CLIENT_ID" && -n "$ACME_BOT_CLIENT_ID" ]] || die "Client-ID der Bots fehlt"
+# Liegt der Maschinenbenutzer nicht in der Standard-Organisation, wird x-zitadel-orgid gesetzt.
+bot_secret() {
+  if [[ -n "${2:-}" ]]; then ORG_HDR=(-H "x-zitadel-orgid: $2"); fi
+  must PUT "/management/v1/users/$1/secret" '{}'
+  ORG_HDR=()
+  BOT_CLIENT_ID="$(jqr '.clientId')"
+  BOT_SECRET="$(jqr '.clientSecret')"
+  [[ -n "$BOT_CLIENT_ID" ]] || die "Client-ID des Bots fehlt"
+}
+bot_secret "$PLATFORM_BOT_ID"
+PLATFORM_BOT_CLIENT_ID="$BOT_CLIENT_ID"; PLATFORM_BOT_SECRET="$BOT_SECRET"
+bot_secret "$ACME_BOT_ID" "$ACME_ORG_ID"
+ACME_BOT_CLIENT_ID="$BOT_CLIENT_ID"; ACME_BOT_SECRET="$BOT_SECRET"
+bot_secret "$PLATFORM_ADMIN_BOT_ID"
+PLATFORM_ADMIN_BOT_CLIENT_ID="$BOT_CLIENT_ID"; PLATFORM_ADMIN_BOT_SECRET="$BOT_SECRET"
+bot_secret "$ACME_ADMIN_BOT_ID" "$ACME_ORG_ID"
+ACME_ADMIN_BOT_CLIENT_ID="$BOT_CLIENT_ID"; ACME_ADMIN_BOT_SECRET="$BOT_SECRET"
+bot_secret "$GLOBEX_ADMIN_BOT_ID" "$GLOBEX_ORG_ID"
+GLOBEX_ADMIN_BOT_CLIENT_ID="$BOT_CLIENT_ID"; GLOBEX_ADMIN_BOT_SECRET="$BOT_SECRET"
+bot_secret "$INITECH_BOT_ID" "$INITECH_ORG_ID"
+INITECH_BOT_CLIENT_ID="$BOT_CLIENT_ID"; INITECH_BOT_SECRET="$BOT_SECRET"
 
 # --- Berechtigungen (Authorizations) ---
 # grant NUTZER_ID ORG_ID ROLLEN_JSON
@@ -270,6 +301,10 @@ grant "$ADMIN_ID" "$PLATFORM_ORG_ID" '["platform-admin"]'
 grant "$EDITOR_ID" "$ACME_ORG_ID" '["tenant-editor"]'
 grant "$PLATFORM_BOT_ID" "$PLATFORM_ORG_ID" '["tenant-admin"]'
 grant "$ACME_BOT_ID" "$ACME_ORG_ID" '["tenant-viewer"]'
+grant "$PLATFORM_ADMIN_BOT_ID" "$PLATFORM_ORG_ID" '["platform-admin"]'
+grant "$ACME_ADMIN_BOT_ID" "$ACME_ORG_ID" '["tenant-admin"]'
+grant "$GLOBEX_ADMIN_BOT_ID" "$GLOBEX_ORG_ID" '["tenant-admin"]'
+# initech-bot: bewusst ohne Berechtigung (Negativtest)
 
 # --- Ausgabe-Dateien (Geheimnisse nur hier, chmod 600) ---
 # write_env DATEI: liest KEY=VALUE-Zeilen von stdin
@@ -286,6 +321,8 @@ ISSUER="$(curl -fsS -m 10 "$BASE/.well-known/openid-configuration" | jq -r '.iss
 
 write_env "$GEN/ids.env" <<IDS
 ACME_ORG_ID=$ACME_ORG_ID
+GLOBEX_ORG_ID=$GLOBEX_ORG_ID
+INITECH_ORG_ID=$INITECH_ORG_ID
 PLATFORM_ORG_ID=$PLATFORM_ORG_ID
 PROJECT_ID=$PROJECT_ID
 SPA_CLIENT_ID=$SPA_CLIENT_ID
@@ -296,6 +333,14 @@ PLATFORM_BOT_CLIENT_ID=$PLATFORM_BOT_CLIENT_ID
 PLATFORM_BOT_CLIENT_SECRET=$PLATFORM_BOT_SECRET
 ACME_BOT_CLIENT_ID=$ACME_BOT_CLIENT_ID
 ACME_BOT_CLIENT_SECRET=$ACME_BOT_SECRET
+PLATFORM_ADMIN_BOT_CLIENT_ID=$PLATFORM_ADMIN_BOT_CLIENT_ID
+PLATFORM_ADMIN_BOT_CLIENT_SECRET=$PLATFORM_ADMIN_BOT_SECRET
+ACME_ADMIN_BOT_CLIENT_ID=$ACME_ADMIN_BOT_CLIENT_ID
+ACME_ADMIN_BOT_CLIENT_SECRET=$ACME_ADMIN_BOT_SECRET
+GLOBEX_ADMIN_BOT_CLIENT_ID=$GLOBEX_ADMIN_BOT_CLIENT_ID
+GLOBEX_ADMIN_BOT_CLIENT_SECRET=$GLOBEX_ADMIN_BOT_SECRET
+INITECH_BOT_CLIENT_ID=$INITECH_BOT_CLIENT_ID
+INITECH_BOT_CLIENT_SECRET=$INITECH_BOT_SECRET
 BOTS
 
 write_env "$GEN/users.env" <<USERS
@@ -311,7 +356,7 @@ OIDC_PROFILE=zitadel
 OIDC_TENANCY=multi
 OIDC_ISSUER=$ISSUER
 OIDC_AUDIENCE=$PROJECT_ID
-OIDC_CLIENT_IDS=$SPA_CLIENT_ID,$PLATFORM_BOT_CLIENT_ID,$ACME_BOT_CLIENT_ID
+OIDC_CLIENT_IDS=$SPA_CLIENT_ID,$PLATFORM_BOT_CLIENT_ID,$ACME_BOT_CLIENT_ID,$PLATFORM_ADMIN_BOT_CLIENT_ID,$ACME_ADMIN_BOT_CLIENT_ID,$GLOBEX_ADMIN_BOT_CLIENT_ID,$INITECH_BOT_CLIENT_ID
 ZITADEL_PLATFORM_ORG_ID=$PLATFORM_ORG_ID
 OIDC_INSECURE_HTTP=true
 OIDC_MAX_TOKEN_TTL=1h
@@ -320,4 +365,4 @@ APP
 log "fertig. Issuer: $ISSUER"
 log "Konsole: $BASE/ui/console (Benutzer zitadel-admin, Passwort: DEV_ADMIN_PASSWORD in $COMPOSE_ENV)"
 log "Umgebung für UptimeCluster: $GEN/uptimecluster.env"
-log "Bot-Tokens: ./token.sh platform-bot | ./token.sh acme-bot"
+log "Bot-Tokens: ./token.sh platform-bot|acme-bot|platform-admin-bot|acme-admin-bot|globex-admin-bot|initech-bot"

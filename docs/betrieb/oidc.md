@@ -62,6 +62,9 @@ Alle Variablen werden beim Start gelesen. Ungültige oder widersprüchliche Wert
 | `OIDC_DEFAULT_ROLE` | leer | Rolle für ein gültiges Token, wenn die gewählte Rollenquelle keine gültige Rolle liefert. Leer, `tenant-admin`, `tenant-editor` oder `tenant-viewer`. `platform-admin` ist nicht erlaubt. Nur bei `generic`, siehe Abschnitt 4. |
 | `OIDC_TENANCY` | `single` | `single` oder `multi`. Nur bei `zitadel`; bei `generic` nicht erlaubt. |
 | `ZITADEL_PLATFORM_ORG_ID` | – (Pflicht bei `zitadel`) | ID der Zitadel-Organisation der Plattform. Nur bei `zitadel`. |
+| `OIDC_AUTO_PROVISION` | `false` | Legt bei der ersten Anmeldung einer Organisation automatisch einen Mandanten an. Nur mit `zitadel` und `OIDC_TENANCY=multi`, siehe unten. |
+| `OIDC_AUTO_PROVISION_PLAN` | `default` | Plan der automatisch angelegten Mandanten. Muss existieren. Nur zusammen mit `OIDC_AUTO_PROVISION=true`. |
+| `OIDC_AUTO_PROVISION_MAX` | `100` | Höchstzahl automatisch angelegter Mandanten, clusterweit gezählt. Mindestens `1`. Nur zusammen mit `OIDC_AUTO_PROVISION=true`. |
 
 **Standard von `OIDC_SCOPES`:**
 
@@ -164,7 +167,24 @@ ZITADEL_PLATFORM_ORG_ID=<ID der Plattform-Organisation>
 
 - **Projekt-Grants an Kundenorganisationen.** Der Eigentümer des Projekts gibt das Projekt an jede Kundenorganisation frei und wählt die Rollen aus, die sie vergeben darf. Laut Zitadel-Dokumentation können Administratoren einer Kundenorganisation nur diese freigegebenen Rollen vergeben. Dieses Verhalten ist nicht selbst geprüft.
 - **Standard-Mandant.** Ist der Mandant `default` noch nicht an eine Organisation gebunden, bindet ihn der Leader beim Start an `ZITADEL_PLATFORM_ORG_ID`. So kann sich der erste Plattform-Administrator anmelden. Ein Wechsel von `single` zu `multi` lässt die Daten in `default` unverändert. Sie gehören dann der Plattform-Organisation.
-- **Neue Organisationen.** Eine Organisation ohne Mandanten wird mit `403` (`organization is not provisioned`) abgelehnt. Die automatische Anlage beim ersten Login und die Admin-API zur Bindung einer Organisation an einen Mandanten kommen mit AP-4.2.
+- **Neue Organisationen.** Eine Organisation ohne Mandanten wird mit `403` (`organization is not provisioned`) abgelehnt, solange die automatische Anlage aus ist. Siehe den nächsten Abschnitt.
+
+### Automatische Anlage von Mandanten (ADR 0029)
+
+Mit `OIDC_AUTO_PROVISION=true` legt der Cluster bei der ersten Anmeldung einer Organisation ohne Mandanten einen Mandanten an. Der Name kommt aus der Organisation, der Plan aus `OIDC_AUTO_PROVISION_PLAN`. Die Anlage ist standardmäßig aus.
+
+- **Voraussetzung im IdP:** Das Token muss mindestens eine Projektrolle in dieser Organisation tragen. Dafür muss der Betreiber von Zitadel dem Projekt in der Organisation einen Project Grant mit Rollen geben. Eine reine Selbstregistrierung legt damit noch keinen Mandanten an. `platform-admin` aus einer Kundenorganisation wird weiterhin abgelehnt.
+- **Begrenzung:** `OIDC_AUTO_PROVISION_MAX` (Standard `100`) begrenzt die Zahl der automatisch angelegten Mandanten über den ganzen Cluster. Die Zählung läuft über den Raft-Zustand, nicht je Node.
+- **Missbrauchsschutz je Node:** höchstens 10 Anlagen je Minute. Lehnt der Cluster eine Organisation ab, wird sie 60 s lang nicht erneut versucht. Die Antwort bleibt `403` (`organization is not provisioned`). Der Grund steht im Log des Nodes.
+- **Plan prüfen:** Beim Start protokolliert der Node einen Fehler, solange der Plan fehlt, und prüft weiter. Fehlt der Plan, schlagen alle Anlagen fehl, bis er existiert.
+- **Gleichzeitige Erstanmeldungen** über mehrere Nodes enden beim selben Mandanten.
+- **Rate-Limit zählt Versuche:** Auch gleichzeitige Erstanmeldungen derselben Organisation verbrauchen je einen der 10 Versuche pro Minute, obwohl nur ein Mandant entsteht.
+
+### Mandanten sperren und löschen (ADR 0029)
+
+- **Sperren:** Nutzer des Mandanten erhalten `403` (`tenant is suspended`), auch im lokalen Modus. Offene Live-Verbindungen schließt der Server spätestens nach einer Minute (`4003`). Checks und Auswertung ruhen, die Daten bleiben. Alerts, die beim Sperren schon ausstanden, werden nach dem Entsperren noch gesendet.
+- **Löschen** geht nur bei einem gesperrten Mandanten und verlangt dessen Namen als Bestätigung. `default` und `_system` sind nicht löschbar. Alle replizierten Daten verschwinden in einem Schritt; jeder Node löscht die Messdaten des Mandanten danach selbst (Takt 30 s). Die Organisation wird frei: Meldet sie sich wieder an, entsteht bei eingeschalteter automatischer Anlage ein neuer, leerer Mandant mit neuer ID.
+- **Grenze:** Raft-Log, ältere Snapshots und Backups enthalten die Konfiguration des gelöschten Mandanten noch, bis sie überschrieben sind. Der Node stößt nach dem Löschen einen Snapshot an; danach bleiben bis zu `TrailingLogs` (20000) Einträge im Log. Wer eine nachweisbare Löschung braucht, muss auch die Backups entsprechend behandeln.
 
 ### Befunde aus dem Test mit Zitadel v4.20.3
 
@@ -174,6 +194,24 @@ Gemessen mit Zitadel v4.20.3 und Login V2 (Umgebung unter `deploy/oidc-dev/zitad
 - **Login V2 ist Pflicht** in Zitadel v4 und läuft als eigener Container. Die Anmeldeseite wird nicht von Zitadel selbst ausgeliefert.
 - **Reload ohne Zitadel-Sitzung:** Mit Login V2 zeigt `prompt=none` ohne bestehende Sitzung das Anmeldeformular von Zitadel an, statt `login_required` zu liefern. Nach einem Neuladen der SPA landen Nutzer ohne Zitadel-Sitzung deshalb direkt auf der Anmeldeseite von Zitadel. Das hat keine Auswirkung auf die Sicherheit.
 - **Maschinenbenutzer:** Zitadel verwendet als Client-ID den Benutzernamen, nicht die Benutzer-ID. Der Token-Typ der Anwendung muss JWT sein.
+
+### Ende-zu-Ende-Test der Mandantenverwaltung (AP-4.2, 2026-11-17)
+
+Ein Voter mit `OIDC_TENANCY=multi` und `OIDC_AUTO_PROVISION=true` gegen Zitadel v4.20.3 (`deploy/oidc-dev/zitadel`, Bots über Client Credentials, Plattform-Admin im Browser):
+
+| Prüfung | Ergebnis |
+| --- | --- |
+| Organisation `initech` ohne Project Grant | `403 organization is not provisioned`, kein Mandant |
+| Erstanmeldung `acme` und `globex` | je ein Mandant, Name aus `urn:zitadel:iam:user:resourceowner:name`; weitere Anmeldungen landen beim selben Mandanten |
+| Sechs gleichzeitige Erstanmeldungen | ein Mandant, fünfmal „provisioned concurrently“ im Log |
+| `globex` greift auf Monitor von `acme` zu (Lesen, Ändern, Löschen, Pause, Klonen, Test, Heartbeats, Uptime) | jeweils `404`; Listen und Incidents nur eigene Daten |
+| Live-Verbindungen beider Mandanten | `acme` erhält seine Ereignisse, `globex` keine |
+| Plan mit `maxMonitors` 2 und `minIntervalSeconds` 60 | dritter Monitor `403` mit Meldung; bestehendes 20-s-Intervall bleibt änderbar, Verkürzung `403`; Override `null` hebt das Limit auf; Plan in Benutzung nicht löschbar |
+| Sperren und Entsperren | `403` für alle Nutzer, Stream nach ~60 s geschlossen, keine Heartbeats; danach läuft alles wieder |
+| Löschen | nicht gesperrt `409`, falscher Name `422`, `default` `422`, `_system` `404`, `tenant-admin` `403`; danach keine Zeile mit der Mandanten-ID in `state.db`, Grabstein vorhanden, `metrics.db` nach ~13 s leer, Snapshot angestoßen |
+| SPA als Plattform-Admin | Seiten „Tenants“ und „Plans“, Löschen nur bei gesperrten Mandanten; nach Login und Reloads kein Token in `localStorage`, `sessionStorage` oder IndexedDB |
+
+Befund: Die Einheit „s“ stand auch hinter „–“ und „unlimited“; behoben. Übersetzungsdateien werden eine Stunde ohne Inhalts-Hash zwischengespeichert, nach einem Update kann die SPA deshalb bis zu einer Stunde alte Texte zeigen (offen, nicht Teil von AP-4.2).
 
 ## 6. PocketID
 
