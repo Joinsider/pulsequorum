@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-18 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-AUTH-08, FA-AUTH-10, FA-DAT-01, ADR 0019, ADR 0027, ADR 0029, ADR 0031 |
@@ -117,3 +117,4 @@ Begründung: FA-AUTH-08 ist im Kern gebaut und braucht vor allem Tests und eine 
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-18 | Proposed | Claude | |
+| 2026-11-18 | Accepted | Projektinhaber | im Chat angenommen („Ja, so annehmen“: 1B, 2A, 3A, 4A, 5A), eingetragen durch Claude |
