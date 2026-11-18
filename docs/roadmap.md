@@ -13,7 +13,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P4 – Mandanten (P1, P2 und P3 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | – |
+| **Wartet auf Projektinhaber** | Review ADR 0033 (Übergabelücke GapJob → Live-Aggregator, Ursache des flackernden `TestDegradedModeAlertsAndCorrects`); der Fix ist bis Accepted blockiert |
 | **Nächster Schritt (Claude)** | AP-4.6 Admin-UI Mandanten, Abnahme AS-06/07 |
 
 ---
