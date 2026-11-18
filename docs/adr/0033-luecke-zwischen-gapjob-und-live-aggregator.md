@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Datum** | 2026-11-18 |
 | **Entscheider** | Projektinhaber |
 | **Bezug** | FA-UPT-07, FA-ALR-10, NFA-REL-03; ADR 0018 (Befehlsstufen), ADR 0021 (Bewertung auf dem Leader, Rebuild), ADR 0024 Abschnitt 7 (Neubewertung von Lücken), ADR 0025 Abschnitt 5 (Quorum-Alert) |
@@ -128,7 +128,7 @@ Ein Risikofenster gibt es nur, wenn ein Node Leader wird, bevor `GapJob.Run` sei
 
 ## Entscheidung
 
-Vorgeschlagen: **1A + 2A + 3A.**
+Angenommen: **1A + 2A + 3A.**
 
 - 1A behebt die belegte Ursache an der Stelle, an der sie entsteht, ohne Vertrag und ohne FSM-Änderung.
 - 2A schließt das theoretische Fenster des ursprünglichen Verdachts mit derselben Eigenschaft.
@@ -154,3 +154,4 @@ Vorgeschlagen: **1A + 2A + 3A.**
 | Datum | Status | Durch | Anmerkung |
 |-------|--------|-------|-----------|
 | 2026-11-18 | Proposed | Claude | |
+| 2026-11-18 | Accepted | Projektinhaber | 1A, 2A und 3A angenommen (im Chat) |
