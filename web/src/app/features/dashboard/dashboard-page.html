@@ -147,9 +147,9 @@
             <p class="bulk__error" role="alert">{{ t(errorKey) }}</p>
           }
           @if (tooMany()) {
-            <p class="bulk__hint" role="status">
+            <output class="bulk__hint">
               {{ t('dashboard.bulk.tooMany', { max: maxIds }) }}
-            </p>
+            </output>
           }
         }
       </div>

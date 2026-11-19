@@ -38,7 +38,7 @@
           {{ t('apiTokens.dialog.copy') }}
         </button>
         @if (copied()) {
-          <span class="copied" role="status">{{ t('apiTokens.dialog.copied') }}</span>
+          <output class="copied">{{ t('apiTokens.dialog.copied') }}</output>
         }
       </div>
       @if (expiresAt(); as exp) {

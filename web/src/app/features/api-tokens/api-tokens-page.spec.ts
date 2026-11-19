@@ -121,6 +121,8 @@ describe('ApiTokensPage', () => {
     button('apiTokens.revoke: ci')?.click();
     await fixture.whenStable();
 
+    expect(dialog.open).toHaveBeenCalled();
+    expect(snack.open).not.toHaveBeenCalled();
     http.expectNone({ method: 'DELETE', url: '/api/v1/api-tokens/tok_bbbbbbbbbbbbbbbb' });
   });
 

@@ -111,9 +111,20 @@ code {
   margin-top: 0.25rem;
 }
 
+// Reset button styles so the request ID looks like the code text it replaces.
 .request {
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-family: monospace;
+  font-size: 0.8125rem;
+  text-align: left;
   white-space: nowrap;
-  cursor: help;
+  cursor: default;
 }
 
 .more {

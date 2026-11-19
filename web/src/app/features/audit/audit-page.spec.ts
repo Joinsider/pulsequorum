@@ -74,10 +74,10 @@ describe('AuditPage', () => {
     await settle();
 
     const rows = root().querySelectorAll('tbody tr');
-    expect(rows.length).toBe(2);
+    expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('.actor')?.textContent?.trim()).toBe('Alice');
     expect(rows[1].querySelector('.kind')?.textContent?.trim()).toBe('audit.actorKind.apiToken');
-    expect(root().querySelectorAll('th').length).toBe(5);
+    expect(root().querySelectorAll('th')).toHaveLength(5);
     expect(buttonWith('audit.loadMore')).toBeUndefined();
   });
 
@@ -141,7 +141,7 @@ describe('AuditPage', () => {
     http.expectOne((r) => r.url === '/api/v1/audit').flush({ items: [entry()], nextCursor: null });
     await settle();
 
-    expect(root().querySelectorAll('tbody tr').length).toBe(1);
+    expect(root().querySelectorAll('tbody tr')).toHaveLength(1);
     expect(root().querySelector('[role="alert"]')).toBeNull();
   });
 });

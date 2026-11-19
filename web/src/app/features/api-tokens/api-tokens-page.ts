@@ -2,7 +2,14 @@
 // Copyright (C) 2026 The UptimeCluster Authors
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -25,7 +32,7 @@ import { apiTokenErrorKey, sortTokens } from './api-token-rules';
   styleUrl: './api-tokens-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ApiTokensPage {
+export class ApiTokensPage implements OnInit {
   private readonly api = inject(ApiTokensService);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
@@ -36,7 +43,7 @@ export class ApiTokensPage {
   protected readonly loadError = signal<string | null>(null);
   protected readonly rows = computed(() => sortTokens(this.tokens()));
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 

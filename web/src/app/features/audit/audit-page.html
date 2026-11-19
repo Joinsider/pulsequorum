@@ -55,7 +55,7 @@
   </form>
 
   @if (loading()) {
-    <p class="state" role="status">{{ t('common.loading') }}</p>
+    <output class="state">{{ t('common.loading') }}</output>
   } @else if (loadError(); as key) {
     <p class="state state--error" role="alert">
       {{ t(key) }}
@@ -107,14 +107,14 @@
                 </td>
               }
               <td>
-                <code
+                <button
+                  type="button"
                   class="request"
-                  tabindex="0"
                   [matTooltip]="e.requestId"
                   [attr.aria-label]="e.requestId"
                 >
                   {{ shortRequestId(e.requestId) }}
-                </code>
+                </button>
               </td>
             </tr>
           }
