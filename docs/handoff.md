@@ -1,6 +1,6 @@
 # Handoff für die nächste Claude-Code-Session
 
-**Stand:** 2026-11-18. AP-4.3 (ADR 0030, SSRF), die gebündelten Dependabot-Updates und AP-4.4 (ADR 0031: API-Tokens, Audit-Log, Massenaktionen) sind in `master` gemergt (PRs #24, #25, #27, jeweils per Squash). AP-4.5 (ADR 0032, Migration `local` → `oidc`) ist auf dem Branch `feat/AP4.5` fertig, aber weder gepusht noch gemergt. Nächster Schritt ist AP-4.6. Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
+**Stand:** 2026-11-19. AP-4.5 (PR #28) und ADR 0033 (PR #29) sind in `master` gemergt. AP-4.6 (Admin-UI, Abnahme AS-06/07) ist auf dem Branch `feat/AP4.6` fertig, aber weder gepusht noch gemergt; damit ist P4 abgenommen ([docs/abnahme/p4-mandanten.md](abnahme/p4-mandanten.md)). Nächster Schritt ist P5 (AP-5.1). Diese Datei ist der Einstieg für eine neue Session. Sie ergänzt [CLAUDE.md](../CLAUDE.md), ersetzt es aber nicht. Bei Widerspruch gelten CLAUDE.md, das Pflichtenheft und die akzeptierten ADRs.
 
 ## 1. Zuerst lesen
 
@@ -16,7 +16,7 @@
 |-------|--------|
 | P0 Fundament | fertig bis auf AP-0.9/0.10 (brauchen GitHub-Läufe) |
 | P1 Kern, P2 Cluster, P3 HA-Logik | abgenommen (`docs/abnahme/p1-kern.md`, `p2-cluster.md`, `p3-ha.md`) |
-| **P4 Mandanten** | **AP-4.1 ✅ bis AP-4.5 ✅, nächster Schritt AP-4.6** |
+| P4 Mandanten | abgenommen (`docs/abnahme/p4-mandanten.md`), Branch `feat/AP4.6` noch nicht gemergt |
 | P5 Reichweite, P6 Ausbau | offen |
 
 **Was AP-4.1 gebracht hat (Kurzfassung):**
@@ -95,7 +95,7 @@
 
 ### ADR-Ablauf
 
-- **Nummer:** Nächster ADR ist **0033**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
+- **Nummer:** Nächster ADR ist **0034**. Vorlage `docs/adr/0000-template.md`, Eintrag in `docs/adr/README.md`.
 - **Accepted:** setzt nur Projektinhaber, oder Claude auf seine ausdrückliche Anweisung im Chat. In der Approval-Tabelle dann z.B. „im Chat angenommen („Ja ADR 28 annehmen“), eingetragen durch Claude“.
 - **Optionen mit Empfehlung:** Projektinhaber entscheidet Richtungsfragen über kurze Auswahlen mit Kennungen (z.B. „1A, 2B“). Bei Zielkonflikten Optionen mit Vor- und Nachteilen und einer Empfehlung vorlegen; bei Sicherheitsfragen die sicherere Option empfehlen und sagen, warum.
 - **Befund aus Tests → neuer ADR:** Zeigt ein Test, dass ein akzeptierter ADR nicht trägt (so entstand ADR 0028 aus dem PocketID-Test), zuerst einen neuen ADR vorschlagen, nicht still abweichen.
@@ -119,8 +119,9 @@
 
 ## 4. Nächste Schritte
 
-1. `feat/AP4.5` pushen und PR anlegen, sobald Projektinhaber das sagt.
-2. AP-4.6: Admin-UI (auch Token-Verwaltung, Audit-Ansicht, Massenaktionen in der Monitorliste) und Abnahme AS-06/07. Für AS-07 die Umgebung `deploy/ssrf-dev/` wiederverwenden.
+1. `feat/AP4.6` pushen und PR anlegen, sobald Projektinhaber das sagt.
+2. P5, AP-5.1 Probe-Rolle: zuerst prüfen, ob ADR 0006 (Inter-Node-Kommunikation) die Probe-Schnittstelle schon festlegt oder ein neuer ADR nötig ist.
+3. AS-06 lässt sich jederzeit wiederholen: `test/acceptance/as06/README.md`.
 
 ## 5. Offene Punkte
 
