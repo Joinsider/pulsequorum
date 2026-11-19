@@ -69,6 +69,92 @@
   } @else if (rows().length === 0) {
     <p class="state">{{ t('dashboard.emptyFiltered') }}</p>
   } @else {
+    @if (canEdit()) {
+      <div class="bulk" [class.bulk--active]="selectedCount() > 0">
+        <label class="bulk__all">
+          <input
+            type="checkbox"
+            class="check"
+            [checked]="visibleSelection() === 'all'"
+            [indeterminate]="visibleSelection() === 'some'"
+            (change)="toggleAllVisible()"
+          />
+          {{ t('dashboard.bulk.selectAll') }}
+        </label>
+
+        @if (selectedCount() > 0) {
+          <span class="bulk__count" aria-live="polite">
+            {{ t('dashboard.bulk.selectedCount', { count: selectedCount() }) }}
+          </span>
+
+          <div class="bulk__actions" role="toolbar" [attr.aria-label]="t('dashboard.bulk.toolbar')">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="bulkDisabled()"
+              (click)="pauseSelected()"
+            >
+              {{ t('dashboard.bulk.pause') }}
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="bulkDisabled()"
+              (click)="resumeSelected()"
+            >
+              {{ t('dashboard.bulk.resume') }}
+            </button>
+            <button
+              mat-stroked-button
+              color="warn"
+              type="button"
+              [disabled]="bulkDisabled()"
+              (click)="deleteSelected()"
+            >
+              {{ t('dashboard.bulk.delete') }}
+            </button>
+            <input
+              class="search bulk__tags"
+              type="text"
+              [attr.aria-label]="t('dashboard.bulk.tagsLabel')"
+              [placeholder]="t('dashboard.bulk.tagsPlaceholder')"
+              [attr.aria-invalid]="tagError() !== null"
+              [value]="tagInput()"
+              (input)="onTagInput($event)"
+            />
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="bulkDisabled()"
+              (click)="addTags()"
+            >
+              {{ t('dashboard.bulk.addTags') }}
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="bulkDisabled()"
+              (click)="removeTags()"
+            >
+              {{ t('dashboard.bulk.removeTags') }}
+            </button>
+            <button mat-button type="button" (click)="clearSelection()">
+              {{ t('dashboard.bulk.clear') }}
+            </button>
+          </div>
+
+          @if (tagError(); as errorKey) {
+            <p class="bulk__error" role="alert">{{ t(errorKey) }}</p>
+          }
+          @if (tooMany()) {
+            <p class="bulk__hint" role="status">
+              {{ t('dashboard.bulk.tooMany', { max: maxIds }) }}
+            </p>
+          }
+        }
+      </div>
+    }
+
     <table class="monitors">
       <caption class="sr-only">
         {{
@@ -77,6 +163,11 @@
       </caption>
       <thead>
         <tr>
+          @if (canEdit()) {
+            <th scope="col" class="cell--select">
+              <span class="sr-only">{{ t('dashboard.bulk.column') }}</span>
+            </th>
+          }
           <th scope="col">{{ t('dashboard.columns.status') }}</th>
           <th scope="col">{{ t('dashboard.columns.name') }}</th>
           <th scope="col">{{ t('dashboard.columns.type') }}</th>
@@ -94,6 +185,17 @@
       <tbody>
         @for (row of rows(); track row.monitor.id) {
           <tr>
+            @if (canEdit()) {
+              <td class="cell cell--select">
+                <input
+                  type="checkbox"
+                  class="check"
+                  [checked]="isSelected(row.monitor.id)"
+                  [attr.aria-label]="t('dashboard.bulk.selectMonitor', { name: row.monitor.name })"
+                  (change)="toggleOne(row.monitor.id)"
+                />
+              </td>
+            }
             <td class="cell cell--status" [attr.data-label]="t('dashboard.columns.status')">
               <app-status-badge [status]="row.monitor.status" />
               @if (row.monitor.flapping) {

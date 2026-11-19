@@ -91,6 +91,72 @@
   color: var(--muted);
 }
 
+.check {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+
+  &--active {
+    border-color: var(--text);
+  }
+}
+
+.bulk__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.bulk__count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulk__actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bulk__tags {
+  flex: 1 1 12rem;
+  max-width: 20rem;
+}
+
+.bulk__error,
+.bulk__hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.bulk__error {
+  color: var(--danger);
+}
+
+.bulk__hint {
+  color: var(--muted);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -162,6 +228,11 @@
   color: var(--muted);
 }
 
+.cell--select {
+  width: 2.5rem;
+  padding-right: 0;
+}
+
 // Narrow screens: each row becomes a card, every cell shows its label.
 @media (max-width: 719px) {
   .monitors {
@@ -216,11 +287,13 @@
 
     .cell--name::before,
     .cell--status::before,
+    .cell--select::before,
     .actions::before {
       content: none;
     }
 
-    .cell--status {
+    .cell--status,
+    .cell--select {
       justify-content: flex-start;
     }
 
