@@ -1,0 +1,42 @@
+{
+  "title": "Audit log",
+  "platformTitle": "Platform audit log",
+  "intro": "Entries record who changed what and when. They never contain field values or secrets. Platform actions on this tenant appear in the platform audit log.",
+  "introPlatform": "Entries record who changed what and when. They never contain field values or secrets. Platform actions of the tenant _system and the actions of all tenants are listed here.",
+  "listLabel": "Audit entries",
+  "empty": "No audit entries match the filter.",
+  "loadMore": "Load more",
+  "filter": {
+    "label": "Filter the audit log",
+    "tenant": "Tenant",
+    "tenantHint": "_system for platform actions",
+    "action": "Action",
+    "objectKind": "Object kind",
+    "objectId": "Object ID",
+    "actor": "Actor ID",
+    "from": "From",
+    "to": "To",
+    "apply": "Apply filter",
+    "reset": "Reset"
+  },
+  "columns": {
+    "time": "Time",
+    "actor": "Actor",
+    "action": "Action",
+    "object": "Object",
+    "tenant": "Tenant",
+    "request": "Request ID"
+  },
+  "actorKind": {
+    "user": "User",
+    "apiToken": "API token",
+    "system": "System",
+    "unknown": "Unknown"
+  },
+  "error": {
+    "invalid": "The filter is invalid. Please check your input.",
+    "forbidden": "You do not have permission to view the audit log.",
+    "unavailable": "The audit log is not reachable right now. Please try again later.",
+    "generic": "The audit log could not be loaded."
+  }
+}

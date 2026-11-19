@@ -146,6 +146,45 @@ func TestNeedsAuth(t *testing.T) {
 	}
 }
 
+func TestDoRawReturnsBodyOfEveryAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok-x" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/v1/missing" {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"title":"Not Found","detail":"monitor not found","id":"m-1"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"name":"ok"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", "")
+	c.Token = "tok-x"
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	status, raw, err := c.DoRaw(context.Background(), http.MethodGet, "/ok", nil, nil, &out)
+	if err != nil || status != http.StatusOK || out.Name != "ok" || string(raw) != `{"name":"ok"}` {
+		t.Errorf("success: status %d, raw %q, out %+v, err %v", status, raw, out, err)
+	}
+
+	status, raw, err = c.DoRaw(context.Background(), http.MethodGet, "/missing", nil, nil, nil)
+	if StatusCode(err) != http.StatusNotFound || status != http.StatusNotFound {
+		t.Errorf("error answer: status %d, err %v", status, err)
+	}
+	if !strings.Contains(string(raw), `"id":"m-1"`) {
+		t.Errorf("error answer body not returned: %q", raw)
+	}
+	if !strings.Contains(err.Error(), "monitor not found") {
+		t.Errorf("error lacks detail: %v", err)
+	}
+}
+
 func TestSystemAndHealthFields(t *testing.T) {
 	mux := http.NewServeMux()
 	var gotBody map[string]any

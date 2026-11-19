@@ -1,0 +1,42 @@
+{
+  "title": "Audit-Log",
+  "platformTitle": "Plattform-Audit-Log",
+  "intro": "Einträge zeigen, wer wann was geändert hat. Feldwerte und Geheimnisse stehen nie darin. Plattformaktionen an diesem Mandanten erscheinen im Plattform-Audit-Log.",
+  "introPlatform": "Einträge zeigen, wer wann was geändert hat. Feldwerte und Geheimnisse stehen nie darin. Hier stehen die Plattformaktionen des Mandanten _system und die Aktionen aller Mandanten.",
+  "listLabel": "Audit-Einträge",
+  "empty": "Kein Audit-Eintrag passt zum Filter.",
+  "loadMore": "Mehr laden",
+  "filter": {
+    "label": "Audit-Log filtern",
+    "tenant": "Mandant",
+    "tenantHint": "_system für Plattformaktionen",
+    "action": "Aktion",
+    "objectKind": "Objektart",
+    "objectId": "Objekt-ID",
+    "actor": "Akteur-ID",
+    "from": "Von",
+    "to": "Bis",
+    "apply": "Filter anwenden",
+    "reset": "Zurücksetzen"
+  },
+  "columns": {
+    "time": "Zeit",
+    "actor": "Akteur",
+    "action": "Aktion",
+    "object": "Objekt",
+    "tenant": "Mandant",
+    "request": "Request-ID"
+  },
+  "actorKind": {
+    "user": "Benutzer",
+    "apiToken": "API-Token",
+    "system": "System",
+    "unknown": "Unbekannt"
+  },
+  "error": {
+    "invalid": "Der Filter ist ungültig. Bitte prüfe deine Eingaben.",
+    "forbidden": "Du hast keine Berechtigung, das Audit-Log einzusehen.",
+    "unavailable": "Das Audit-Log ist gerade nicht erreichbar. Bitte versuche es später erneut.",
+    "generic": "Das Audit-Log konnte nicht geladen werden."
+  }
+}

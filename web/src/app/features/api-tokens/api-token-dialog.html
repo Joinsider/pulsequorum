@@ -1,0 +1,91 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <h2 mat-dialog-title>{{ t('apiTokens.dialog.title') }}</h2>
+
+  <mat-dialog-content class="content">
+    @if (errorKey(); as key) {
+      <p class="error" role="alert">
+        {{ t(key) }}
+        @if (errorDetail(); as detail) {
+          <span class="detail">{{ detail }}</span>
+        }
+      </p>
+    }
+
+    @if (secret(); as tok) {
+      <p class="warning" role="alert">{{ t('apiTokens.dialog.onceOnly') }}</p>
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('apiTokens.dialog.secret') }}</mat-label>
+        <textarea
+          matInput
+          class="token"
+          readonly
+          rows="2"
+          autocomplete="off"
+          spellcheck="false"
+          data-testid="api-token-secret"
+          [value]="tok"
+        ></textarea>
+      </mat-form-field>
+      <div class="copy-row">
+        <button
+          mat-stroked-button
+          type="button"
+          [cdkCopyToClipboard]="tok"
+          (cdkCopyToClipboardCopied)="onCopied($event)"
+        >
+          <app-icon name="contentCopy" />
+          {{ t('apiTokens.dialog.copy') }}
+        </button>
+        @if (copied()) {
+          <output class="copied">{{ t('apiTokens.dialog.copied') }}</output>
+        }
+      </div>
+      @if (expiresAt(); as exp) {
+        <p class="hint">{{ t('apiTokens.dialog.expires', { when: (exp | date: 'medium') }) }}</p>
+      }
+      <p class="hint">{{ t('apiTokens.dialog.howTo') }}</p>
+      <pre class="env">Authorization: Bearer uct_…</pre>
+    } @else {
+      <p class="hint">{{ t('apiTokens.dialog.intro') }}</p>
+      <form [formGroup]="form" (ngSubmit)="create()" novalidate>
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('apiTokens.field.name') }}</mat-label>
+          <input matInput formControlName="name" maxlength="64" autocomplete="off" required />
+          @if (form.controls.name.invalid) {
+            <mat-error>{{ t('apiTokens.dialog.nameHint') }}</mat-error>
+          }
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('apiTokens.field.role') }}</mat-label>
+          <mat-select formControlName="role">
+            @for (r of roles; track r) {
+              <mat-option [value]="r">{{ t('apiTokens.role.' + r) }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('apiTokens.field.lifetime') }}</mat-label>
+          <mat-select formControlName="lifetimeDays">
+            @for (d of lifetimes; track d) {
+              <mat-option [value]="d">{{ t('apiTokens.dialog.days', { days: d }) }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </form>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    @if (secret()) {
+      <button mat-flat-button type="button" (click)="close()">
+        {{ t('apiTokens.dialog.done') }}
+      </button>
+    } @else {
+      <button mat-button type="button" (click)="close()">{{ t('common.cancel') }}</button>
+      <button mat-flat-button type="button" [disabled]="busy() || form.invalid" (click)="create()">
+        {{ t('apiTokens.dialog.create') }}
+      </button>
+    }
+  </mat-dialog-actions>
+</ng-container>

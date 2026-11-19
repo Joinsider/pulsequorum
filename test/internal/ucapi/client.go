@@ -26,6 +26,9 @@ const APIBasePath = "/api/v1"
 // maxResponseBody bounds how much of one response is read.
 const maxResponseBody = 4 << 20
 
+// pathAuthLogin is the login endpoint; it is exempt from the re-login on 401.
+const pathAuthLogin = "/auth/login"
+
 // Client talks to one node. Token is the access token; when it is empty and a
 // password is known, the client logs in before the first authenticated call
 // and again after a 401 (the access token is short-lived).
@@ -273,32 +276,45 @@ type NodeRemoval struct {
 // Do sends one request. method and path are relative to APIBasePath. On 401
 // it logs in again once when a password is known and retries. out may be nil.
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
+	status, _, err := c.DoRaw(ctx, method, path, query, body, out)
+	return status, err
+}
+
+// DoRaw is Do that also returns the raw body of the answer, error answers
+// included. The body is nil when it could not be read. It can hold secrets
+// (for example a token creation answer), so callers may inspect it but must
+// never print or log it.
+func (c *Client) DoRaw(ctx context.Context, method, path string, query url.Values, body, out any) (int, []byte, error) {
 	if c.Token == "" && c.Password != "" && needsAuth(path) {
 		if err := c.Login(ctx); err != nil {
-			return 0, fmt.Errorf("login before %s %s: %w", method, path, err)
+			return 0, nil, fmt.Errorf("login before %s %s: %w", method, path, err)
 		}
 	}
-	status, err := c.send(ctx, method, path, query, body, out)
+	var raw []byte
+	status, err := c.send(ctx, method, path, query, body, out, &raw)
 	var ae *APIError
-	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.Password != "" && path != "/auth/login" {
+	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.Password != "" && path != pathAuthLogin {
 		if lerr := c.Login(ctx); lerr != nil {
-			return status, fmt.Errorf("re-login after 401 failed: %w", lerr)
+			return status, raw, fmt.Errorf("re-login after 401 failed: %w", lerr)
 		}
-		return c.send(ctx, method, path, query, body, out)
+		raw = nil
+		status, err = c.send(ctx, method, path, query, body, out, &raw)
 	}
-	return status, err
+	return status, raw, err
 }
 
 // needsAuth reports whether a path requires a logged-in user.
 func needsAuth(path string) bool {
 	switch path {
-	case "/health", "/auth/setup", "/auth/login":
+	case "/health", "/auth/setup", pathAuthLogin:
 		return false
 	}
 	return true
 }
 
-func (c *Client) send(ctx context.Context, method, path string, query url.Values, body, out any) (int, error) {
+// send performs one HTTP exchange. When rawOut is not nil it receives the
+// response body as read, error answers included.
+func (c *Client) send(ctx context.Context, method, path string, query url.Values, body, out any, rawOut *[]byte) (int, error) {
 	u := c.Base + APIBasePath + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -330,6 +346,9 @@ func (c *Client) send(ctx context.Context, method, path string, query url.Values
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return resp.StatusCode, fmt.Errorf("read response: %w", err)
+	}
+	if rawOut != nil {
+		*rawOut = raw
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return resp.StatusCode, &APIError{Status: resp.StatusCode, Detail: problemDetail(raw)}
@@ -379,7 +398,7 @@ func (c *Client) Setup(ctx context.Context, setupToken, displayName string) erro
 		"displayName": displayName,
 		"password":    c.Password,
 	}
-	if _, err := c.send(ctx, http.MethodPost, "/auth/setup", nil, body, &tr); err != nil {
+	if _, err := c.send(ctx, http.MethodPost, "/auth/setup", nil, body, &tr, nil); err != nil {
 		return err
 	}
 	c.Token = tr.AccessToken
@@ -390,7 +409,7 @@ func (c *Client) Setup(ctx context.Context, setupToken, displayName string) erro
 func (c *Client) Login(ctx context.Context) error {
 	var tr TokenResponse
 	body := map[string]string{"username": c.User, "password": c.Password}
-	if _, err := c.send(ctx, http.MethodPost, "/auth/login", nil, body, &tr); err != nil {
+	if _, err := c.send(ctx, http.MethodPost, pathAuthLogin, nil, body, &tr, nil); err != nil {
 		return err
 	}
 	c.Token = tr.AccessToken

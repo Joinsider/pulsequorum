@@ -96,6 +96,19 @@ export const routes: Routes = [
         loadChildren: () => import('./features/users/users.routes').then((m) => m.routes),
       },
       {
+        // Interactive logins only; the server answers 403 for API tokens (ADR 0031).
+        path: 'api-tokens',
+        canActivate: [adminGuard],
+        providers: [provideTranslocoScope('apiTokens')],
+        loadChildren: () => import('./features/api-tokens/api-tokens.routes').then((m) => m.routes),
+      },
+      {
+        path: 'audit',
+        canActivate: [adminGuard],
+        providers: [provideTranslocoScope('audit')],
+        loadChildren: () => import('./features/audit/audit.routes').then((m) => m.routes),
+      },
+      {
         path: 'admin',
         canActivate: [platformAdminGuard],
         providers: [provideTranslocoScope('admin')],

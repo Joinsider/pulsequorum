@@ -9,7 +9,10 @@
     "account": "Account",
     "systemChannels": "System channels",
     "tenants": "Tenants",
-    "plans": "Plans"
+    "plans": "Plans",
+    "apiTokens": "API tokens",
+    "audit": "Audit log",
+    "adminAudit": "Platform audit log"
   },
   "shell": {
     "theme": "Theme: {{ mode }}",

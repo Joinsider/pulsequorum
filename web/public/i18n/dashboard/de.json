@@ -26,6 +26,43 @@
   "emptyFiltered": "Kein Monitor entspricht dem aktuellen Filter.",
   "loadFailed": "Die Monitore konnten nicht geladen werden.",
   "actionFailed": "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
+  "bulk": {
+    "column": "Auswählen",
+    "toolbar": "Massenaktionen",
+    "selectAll": "Alle sichtbaren auswählen",
+    "selectMonitor": "{{ name }} auswählen",
+    "selectedCount": "{{ count }} ausgewählt",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "delete": "Löschen",
+    "addTags": "Tags hinzufügen",
+    "removeTags": "Tags entfernen",
+    "clear": "Auswahl aufheben",
+    "tagsLabel": "Tags, durch Kommas getrennt",
+    "tagsPlaceholder": "z. B. prod, eu-west",
+    "tooMany": "Es können höchstens {{ max }} Monitore auf einmal geändert werden. Schränke die Auswahl ein, um fortzufahren.",
+    "deleteTitle": "Monitore löschen",
+    "deleteText": "{{ count }} ausgewählte Monitor(e) löschen? Dies kann nicht rückgängig gemacht werden.",
+    "done": {
+      "pause": "{{ count }} Monitor(e) pausiert.",
+      "resume": "{{ count }} Monitor(e) fortgesetzt.",
+      "delete": "{{ count }} Monitor(e) gelöscht.",
+      "addTags": "Tags zu {{ count }} Monitor(en) hinzugefügt.",
+      "removeTags": "Tags von {{ count }} Monitor(en) entfernt."
+    },
+    "tags": {
+      "empty": "Gib mindestens einen Tag ein.",
+      "tooLong": "Jeder Tag darf höchstens 64 Zeichen lang sein.",
+      "tooMany": "Es können höchstens 20 Tags auf einmal angewendet werden."
+    },
+    "errors": {
+      "forbidden": "Du darfst diese Monitore nicht ändern.",
+      "conflict": "Ein Monitor wurde inzwischen geändert. Lade die Liste neu und versuche es erneut.",
+      "invalid": "Die Auswahl ist ungültig. Lade die Liste neu und versuche es erneut.",
+      "unavailable": "Der Dienst ist vorübergehend nicht verfügbar. Bitte versuche es erneut.",
+      "generic": "Die Massenaktion konnte nicht abgeschlossen werden. Bitte versuche es erneut."
+    }
+  },
   "usage": {
     "title": "Plan und Limits",
     "plan": "Plan: {{ plan }}",

@@ -1,0 +1,48 @@
+{
+  "title": "API tokens",
+  "intro": "API tokens let scripts and CI jobs use this tenant without a personal login. A token can only manage monitors, notification channels and maintenance windows. Reading the audit log needs the role tenant-admin. Tokens cannot manage tokens or users. The secret is shown only once, when the token is created.",
+  "listLabel": "API tokens of this tenant",
+  "create": "Create token",
+  "empty": "No API tokens yet.",
+  "revoke": "Revoke",
+  "revokeTitle": "Revoke token?",
+  "revokeText": "Every script or job that uses this token loses access immediately. This cannot be undone.",
+  "revoked": "Token revoked.",
+  "expiredBadge": "Expired",
+  "createdBy": "Created {{ when }} by {{ who }}",
+  "expiresOn": "Expires {{ when }}",
+  "field": {
+    "name": "Name",
+    "role": "Role",
+    "lifetime": "Lifetime",
+    "created": "Created",
+    "expires": "Expires"
+  },
+  "role": {
+    "tenant-viewer": "Viewer",
+    "tenant-editor": "Editor",
+    "tenant-admin": "Tenant admin"
+  },
+  "dialog": {
+    "title": "New API token",
+    "intro": "Choose a name, a role and a lifetime. The token acts for this tenant only.",
+    "create": "Create token",
+    "done": "Done",
+    "onceOnly": "This token is shown only now. Copy it and store it safely.",
+    "secret": "Token",
+    "copy": "Copy token",
+    "copied": "Copied.",
+    "expires": "Expires {{ when }}.",
+    "howTo": "Send it as a bearer token in the Authorization header:",
+    "nameHint": "1 to 64 characters.",
+    "days": "{{ days }} days"
+  },
+  "error": {
+    "forbidden": "Your role does not allow this action.",
+    "notFound": "This token no longer exists.",
+    "conflict": "All voters must run a version with API tokens before tokens can be created. Check the cluster status and try again.",
+    "invalid": "Please check the highlighted fields.",
+    "unavailable": "The cluster has no quorum right now. Try again later.",
+    "generic": "Something went wrong. Please try again."
+  }
+}
