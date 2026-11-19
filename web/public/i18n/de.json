@@ -9,7 +9,10 @@
     "account": "Konto",
     "systemChannels": "Systemkanäle",
     "tenants": "Mandanten",
-    "plans": "Pläne"
+    "plans": "Pläne",
+    "apiTokens": "API-Tokens",
+    "audit": "Audit-Log",
+    "adminAudit": "Plattform-Audit-Log"
   },
   "shell": {
     "theme": "Design: {{ mode }}",

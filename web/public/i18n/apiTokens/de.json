@@ -1,0 +1,48 @@
+{
+  "title": "API-Tokens",
+  "intro": "API-Tokens erlauben Skripten und CI-Jobs den Zugriff auf diesen Mandanten ohne persönliche Anmeldung. Ein Token kann nur Monitore, Benachrichtigungskanäle und Wartungsfenster verwalten. Zum Lesen des Audit-Logs braucht ein Token die Rolle Mandanten-Admin. Tokens können weder Tokens noch Benutzer verwalten. Das Geheimnis wird nur einmal angezeigt, beim Anlegen.",
+  "listLabel": "API-Tokens dieses Mandanten",
+  "create": "Token anlegen",
+  "empty": "Noch keine API-Tokens.",
+  "revoke": "Widerrufen",
+  "revokeTitle": "Token widerrufen?",
+  "revokeText": "Jedes Skript und jeder Job, der dieses Token nutzt, verliert sofort den Zugriff. Das lässt sich nicht rückgängig machen.",
+  "revoked": "Token widerrufen.",
+  "expiredBadge": "Abgelaufen",
+  "createdBy": "Angelegt {{ when }} von {{ who }}",
+  "expiresOn": "Läuft ab {{ when }}",
+  "field": {
+    "name": "Name",
+    "role": "Rolle",
+    "lifetime": "Gültigkeit",
+    "created": "Angelegt",
+    "expires": "Läuft ab"
+  },
+  "role": {
+    "tenant-viewer": "Betrachter",
+    "tenant-editor": "Bearbeiter",
+    "tenant-admin": "Mandanten-Admin"
+  },
+  "dialog": {
+    "title": "Neues API-Token",
+    "intro": "Wähle einen Namen, eine Rolle und eine Gültigkeitsdauer. Das Token handelt nur für diesen Mandanten.",
+    "create": "Token anlegen",
+    "done": "Fertig",
+    "onceOnly": "Dieses Token wird nur jetzt angezeigt. Kopiere es und bewahre es sicher auf.",
+    "secret": "Token",
+    "copy": "Token kopieren",
+    "copied": "Kopiert.",
+    "expires": "Läuft ab {{ when }}.",
+    "howTo": "Sende es als Bearer-Token im Authorization-Header:",
+    "nameHint": "1 bis 64 Zeichen.",
+    "days": "{{ days }} Tage"
+  },
+  "error": {
+    "forbidden": "Deine Rolle erlaubt diese Aktion nicht.",
+    "notFound": "Dieses Token existiert nicht mehr.",
+    "conflict": "Alle Voter müssen eine Version mit API-Tokens betreiben, bevor Tokens angelegt werden können. Prüfe den Cluster-Status und versuche es erneut.",
+    "invalid": "Bitte prüfe die markierten Felder.",
+    "unavailable": "Der Cluster hat gerade kein Quorum. Versuche es später erneut.",
+    "generic": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+  }
+}

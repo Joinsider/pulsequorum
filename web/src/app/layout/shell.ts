@@ -44,6 +44,8 @@ const NAV_ITEMS: readonly NavItem[] = [
   { path: '/channels', labelKey: 'nav.channels', icon: 'notifications' },
   { path: '/maintenance', labelKey: 'nav.maintenance', icon: 'build' },
   { path: '/users', labelKey: 'nav.users', icon: 'group', adminOnly: true, localOnly: true },
+  { path: '/api-tokens', labelKey: 'nav.apiTokens', icon: 'code', adminOnly: true },
+  { path: '/audit', labelKey: 'nav.audit', icon: 'schedule', adminOnly: true },
   { path: '/admin/cluster', labelKey: 'nav.cluster', icon: 'hub', platformOnly: true },
   { path: '/admin/tenants', labelKey: 'nav.tenants', icon: 'domain', platformOnly: true },
   { path: '/admin/plans', labelKey: 'nav.plans', icon: 'layers', platformOnly: true },
@@ -53,6 +55,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: 'notifications',
     platformOnly: true,
   },
+  { path: '/admin/audit', labelKey: 'nav.adminAudit', icon: 'schedule', platformOnly: true },
   { path: '/account', labelKey: 'nav.account', icon: 'person' },
 ];
 

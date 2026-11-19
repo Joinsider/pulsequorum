@@ -1,0 +1,138 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="scope() === 'platform' ? t('audit.platformTitle') : t('audit.title')" />
+
+  <p class="intro">{{ scope() === 'platform' ? t('audit.introPlatform') : t('audit.intro') }}</p>
+
+  <form
+    class="filters"
+    role="search"
+    [formGroup]="form"
+    (ngSubmit)="apply()"
+    [attr.aria-label]="t('audit.filter.label')"
+  >
+    @if (scope() === 'platform') {
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('audit.filter.tenant') }}</mat-label>
+        <input matInput formControlName="tenant" maxlength="64" autocomplete="off" />
+        <mat-hint>{{ t('audit.filter.tenantHint') }}</mat-hint>
+      </mat-form-field>
+    }
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('audit.filter.action') }}</mat-label>
+      <input matInput formControlName="action" maxlength="64" autocomplete="off" />
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('audit.filter.objectKind') }}</mat-label>
+      <input matInput formControlName="objectKind" maxlength="64" autocomplete="off" />
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('audit.filter.objectId') }}</mat-label>
+      <input matInput formControlName="objectId" maxlength="64" autocomplete="off" />
+    </mat-form-field>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ t('audit.filter.actor') }}</mat-label>
+      <input matInput formControlName="actor" maxlength="64" autocomplete="off" />
+    </mat-form-field>
+    <mat-form-field appearance="outline" floatLabel="always">
+      <mat-label>{{ t('audit.filter.from') }}</mat-label>
+      <input matInput type="date" formControlName="from" />
+    </mat-form-field>
+    <mat-form-field appearance="outline" floatLabel="always">
+      <mat-label>{{ t('audit.filter.to') }}</mat-label>
+      <input matInput type="date" formControlName="to" />
+    </mat-form-field>
+
+    <div class="filters__actions">
+      <button mat-flat-button type="submit">
+        <app-icon name="search" size="1.125rem" />
+        {{ t('audit.filter.apply') }}
+      </button>
+      <button mat-stroked-button type="button" (click)="reset()">
+        {{ t('audit.filter.reset') }}
+      </button>
+    </div>
+  </form>
+
+  @if (loading()) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError(); as key) {
+    <p class="state state--error" role="alert">
+      {{ t(key) }}
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </p>
+  } @else if (entries().length === 0) {
+    <p class="state">{{ t('audit.empty') }}</p>
+  } @else {
+    <div class="table-wrap">
+      <table class="table">
+        <caption class="visually-hidden">
+          {{
+            t('audit.listLabel')
+          }}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ t('audit.columns.time') }}</th>
+            <th scope="col">{{ t('audit.columns.actor') }}</th>
+            <th scope="col">{{ t('audit.columns.action') }}</th>
+            <th scope="col">{{ t('audit.columns.object') }}</th>
+            @if (scope() === 'platform') {
+              <th scope="col">{{ t('audit.columns.tenant') }}</th>
+            }
+            <th scope="col">{{ t('audit.columns.request') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of entries(); track $index) {
+            <tr>
+              <td class="time">
+                <time [attr.datetime]="e.at">{{ formatTime(e.at) }}</time>
+                <span class="muted">{{ e.at | relativeTime }}</span>
+              </td>
+              <td>
+                <span class="actor">{{ e.actor.name }}</span>
+                <span class="kind">{{ t(actorKindKey(e.actor.kind)) }}</span>
+              </td>
+              <td>
+                <code>{{ e.action }}</code>
+              </td>
+              <td class="object">
+                <code>{{ e.objectKind }}</code>
+                <code class="object__id">{{ e.objectId }}</code>
+              </td>
+              @if (scope() === 'platform') {
+                <td>
+                  <code>{{ e.tenantId }}</code>
+                </td>
+              }
+              <td>
+                <code
+                  class="request"
+                  tabindex="0"
+                  [matTooltip]="e.requestId"
+                  [attr.aria-label]="e.requestId"
+                >
+                  {{ shortRequestId(e.requestId) }}
+                </code>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (moreError(); as key) {
+      <p class="state state--error" role="alert">
+        {{ t(key) }}
+        <button mat-button type="button" (click)="loadMore()">{{ t('common.retry') }}</button>
+      </p>
+    } @else if (nextCursor()) {
+      <div class="more">
+        <button mat-stroked-button type="button" [disabled]="loadingMore()" (click)="loadMore()">
+          {{ loadingMore() ? t('common.loading') : t('audit.loadMore') }}
+        </button>
+      </div>
+    }
+  }
+</div>

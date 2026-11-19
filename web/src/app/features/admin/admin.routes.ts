@@ -24,6 +24,12 @@ export const routes: Routes = [
     loadComponent: () => import('./plans-page').then((m) => m.PlansPage),
   },
   {
+    path: 'audit',
+    providers: [provideTranslocoScope('audit')],
+    loadComponent: () => import('../audit/audit-page').then((m) => m.AuditPage),
+    data: { scope: 'platform' },
+  },
+  {
     path: 'system-channels',
     providers: [provideTranslocoScope('channels')],
     children: [

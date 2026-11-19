@@ -1,0 +1,61 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('apiTokens.title')">
+    <button mat-flat-button type="button" (click)="create()">
+      <app-icon name="add" size="1.125rem" />
+      {{ t('apiTokens.create') }}
+    </button>
+  </app-page-header>
+
+  <p class="intro">{{ t('apiTokens.intro') }}</p>
+
+  @if (loading()) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError(); as key) {
+    <p class="state state--error" role="alert">
+      {{ t(key) }}
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </p>
+  } @else if (rows().length === 0) {
+    <p class="state">{{ t('apiTokens.empty') }}</p>
+  } @else {
+    <ul class="list" [attr.aria-label]="t('apiTokens.listLabel')">
+      @for (token of rows(); track token.id) {
+        <li class="row">
+          <div class="row__who">
+            <span class="row__name">{{ token.name }}</span>
+            <time class="muted" [attr.datetime]="token.createdAt">
+              {{
+                t('apiTokens.createdBy', {
+                  when: (token.createdAt | relativeTime),
+                  who: token.createdBy.name,
+                })
+              }}
+            </time>
+          </div>
+
+          <div class="row__actions">
+            <button
+              mat-icon-button
+              type="button"
+              [attr.aria-label]="t('apiTokens.revoke') + ': ' + token.name"
+              (click)="revoke(token)"
+            >
+              <app-icon name="block" size="1.25rem" />
+            </button>
+          </div>
+
+          <div class="row__facts">
+            <span class="chip">{{ t('apiTokens.role.' + token.role) }}</span>
+            <span class="muted">
+              {{ t('apiTokens.expiresOn', { when: (token.expiresAt | date: 'medium') }) }}
+            </span>
+            @if (token.expired) {
+              <span class="badge badge--off">{{ t('apiTokens.expiredBadge') }}</span>
+            }
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>
