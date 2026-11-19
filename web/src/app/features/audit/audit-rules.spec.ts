@@ -126,6 +126,7 @@ describe('shortRequestId', () => {
   it.each([
     { id: '0123456789abcdef', short: '01234567' },
     { id: 'abc', short: 'abc' },
+    { id: 'api:default:fd8d2ed1-d54c-46a2-b365-82a801dd51f5', short: 'fd8d2ed1' },
     { id: '', short: '' },
   ])('shortens $id to $short', ({ id, short }) => {
     expect(shortRequestId(id)).toBe(short);

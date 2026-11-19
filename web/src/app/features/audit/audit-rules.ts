@@ -93,9 +93,13 @@ export function actorKindKey(kind: string): string {
   }
 }
 
-/** Short form of a request ID for the table; the full value goes into a tooltip. */
+/**
+ * Short form of a request ID for the table; the full value goes into a tooltip.
+ * Bulk requests carry a prefix such as `api:default:<uuid>`, so the part after the
+ * last colon is shortened; otherwise all bulk entries would read `api:defa`.
+ */
 export function shortRequestId(requestId: string): string {
-  return requestId.slice(0, 8);
+  return requestId.slice(requestId.lastIndexOf(':') + 1).slice(0, 8);
 }
 
 /** Absolute timestamp in the given language, local time zone. Unparseable input is returned as is. */
