@@ -78,14 +78,21 @@ func TestParseOptions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			o, err := parseOptions(tt.args, io.Discard)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.check != nil && err == nil {
-				tt.check(t, o)
-			}
+			runParseCase(t, tt.args, tt.wantErr, tt.check)
 		})
+	}
+}
+
+// runParseCase parses args and checks the error outcome. On success the parsed
+// options are passed to check, if it is set.
+func runParseCase(t *testing.T, args []string, wantErr bool, check func(t *testing.T, o options)) {
+	t.Helper()
+	o, err := parseOptions(args, io.Discard)
+	if (err != nil) != wantErr {
+		t.Fatalf("err = %v, wantErr %v", err, wantErr)
+	}
+	if check != nil && err == nil {
+		check(t, o)
 	}
 }
 
@@ -118,21 +125,24 @@ func newTestScenario(t *testing.T) (*scenario, *report) {
 	return s, rep
 }
 
+// judgeCase is one row of TestJudgeProbe.
+type judgeCase struct {
+	name     string
+	p        probe
+	status   int
+	raw      string
+	err      error
+	wantPass bool
+	wantText string
+}
+
 func TestJudgeProbe(t *testing.T) {
 	notFound := probe{name: "read", denied: []int{404}}
 	bulk := probe{name: "bulk", denied: []int{404, 422}}
 	incidents := probe{name: "incidents", denied: []int{404}, emptyOK: true}
 	const cleanBody = `{"title":"Not Found","detail":"monitor not found"}`
 
-	tests := []struct {
-		name     string
-		p        probe
-		status   int
-		raw      string
-		err      error
-		wantPass bool
-		wantText string
-	}{
+	tests := []judgeCase{
 		{name: "404 without A data passes", p: notFound, status: 404, raw: cleanBody, wantPass: true},
 		{name: "422 accepted for bulk", p: bulk, status: 422, raw: cleanBody, wantPass: true},
 		{name: "404 leaking the monitor name fails", p: notFound, status: 404,
@@ -151,19 +161,24 @@ func TestJudgeProbe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, rep := newTestScenario(t)
-			s.judgeProbe(tt.p, tt.status, []byte(tt.raw), tt.err, s.aNeedles(false))
-			if len(rep.steps) != 1 {
-				t.Fatalf("steps = %d, want 1", len(rep.steps))
-			}
-			got := rep.steps[0]
-			if pass := got.Outcome == outcomePass; pass != tt.wantPass {
-				t.Errorf("outcome = %s (measured %q), wantPass %v", got.Outcome, got.Measured, tt.wantPass)
-			}
-			if tt.wantText != "" && !strings.Contains(got.Measured, tt.wantText) {
-				t.Errorf("measured = %q, want it to contain %q", got.Measured, tt.wantText)
-			}
+			checkJudgeCase(t, tt)
 		})
+	}
+}
+
+// checkJudgeCase runs judgeProbe for one case and checks the single row it adds.
+func checkJudgeCase(t *testing.T, tt judgeCase) {
+	s, rep := newTestScenario(t)
+	s.judgeProbe(tt.p, tt.status, []byte(tt.raw), tt.err, s.aNeedles(false))
+	if len(rep.steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(rep.steps))
+	}
+	got := rep.steps[0]
+	if (got.Outcome == outcomePass) != tt.wantPass {
+		t.Errorf("outcome = %s (measured %q), wantPass %v", got.Outcome, got.Measured, tt.wantPass)
+	}
+	if tt.wantText != "" && !strings.Contains(got.Measured, tt.wantText) {
+		t.Errorf("measured = %q, want it to contain %q", got.Measured, tt.wantText)
 	}
 }
 

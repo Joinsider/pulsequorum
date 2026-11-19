@@ -26,6 +26,9 @@ const APIBasePath = "/api/v1"
 // maxResponseBody bounds how much of one response is read.
 const maxResponseBody = 4 << 20
 
+// pathAuthLogin is the login endpoint; it is exempt from the re-login on 401.
+const pathAuthLogin = "/auth/login"
+
 // Client talks to one node. Token is the access token; when it is empty and a
 // password is known, the client logs in before the first authenticated call
 // and again after a 401 (the access token is short-lived).
@@ -290,7 +293,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, query url.Value
 	var raw []byte
 	status, err := c.send(ctx, method, path, query, body, out, &raw)
 	var ae *APIError
-	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.Password != "" && path != "/auth/login" {
+	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && c.Password != "" && path != pathAuthLogin {
 		if lerr := c.Login(ctx); lerr != nil {
 			return status, raw, fmt.Errorf("re-login after 401 failed: %w", lerr)
 		}
@@ -303,7 +306,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, query url.Value
 // needsAuth reports whether a path requires a logged-in user.
 func needsAuth(path string) bool {
 	switch path {
-	case "/health", "/auth/setup", "/auth/login":
+	case "/health", "/auth/setup", pathAuthLogin:
 		return false
 	}
 	return true
@@ -406,7 +409,7 @@ func (c *Client) Setup(ctx context.Context, setupToken, displayName string) erro
 func (c *Client) Login(ctx context.Context) error {
 	var tr TokenResponse
 	body := map[string]string{"username": c.User, "password": c.Password}
-	if _, err := c.send(ctx, http.MethodPost, "/auth/login", nil, body, &tr, nil); err != nil {
+	if _, err := c.send(ctx, http.MethodPost, pathAuthLogin, nil, body, &tr, nil); err != nil {
 		return err
 	}
 	c.Token = tr.AccessToken

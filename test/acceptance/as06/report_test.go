@@ -42,24 +42,30 @@ func TestReportMarkdown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var r report
-			for i, pass := range tt.steps {
-				n := strconv.Itoa(i + 1)
-				r.Add("step "+n, "exp "+n, "got "+n, pass)
-			}
-			out := r.Markdown()
-			for _, want := range tt.contains {
-				if !strings.Contains(out, want) {
-					t.Errorf("table lacks %q:\n%s", want, out)
-				}
-			}
-			if !strings.Contains(out, tt.verdict) {
-				t.Errorf("verdict %q missing:\n%s", tt.verdict, out)
-			}
-			if r.Failed() != strings.Contains(tt.verdict, "FAIL") {
-				t.Errorf("Failed() = %v disagrees with verdict %q", r.Failed(), tt.verdict)
-			}
+			checkReportCase(t, tt.steps, tt.contains, tt.verdict)
 		})
+	}
+}
+
+// checkReportCase adds one row per step to a report and checks the Markdown
+// output and the failure state against the expectations.
+func checkReportCase(t *testing.T, steps []bool, contains []string, verdict string) {
+	var r report
+	for i, pass := range steps {
+		n := strconv.Itoa(i + 1)
+		r.Add("step "+n, "exp "+n, "got "+n, pass)
+	}
+	out := r.Markdown()
+	for _, want := range contains {
+		if !strings.Contains(out, want) {
+			t.Errorf("table lacks %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, verdict) {
+		t.Errorf("verdict %q missing:\n%s", verdict, out)
+	}
+	if r.Failed() != strings.Contains(verdict, "FAIL") {
+		t.Errorf("Failed() = %v disagrees with verdict %q", r.Failed(), verdict)
 	}
 }
 

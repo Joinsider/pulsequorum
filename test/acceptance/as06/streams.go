@@ -60,7 +60,9 @@ func startStream(ctx context.Context, c *ucapi.Client, base string) (*streamClie
 		msg := scrub(err.Error(), tk.Ticket, url.QueryEscape(tk.Ticket))
 		return nil, fmt.Errorf("dial stream: %s", msg)
 	}
-	readCtx, cancel := context.WithCancel(context.Background())
+	// The reader lives until close() cancels it; it keeps its own lifetime and
+	// does not end with the cancellation of ctx, which only bounds the dial.
+	readCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	sc := &streamClient{conn: conn, cancel: cancel, done: make(chan struct{})}
 	go sc.read(readCtx)
 	return sc, nil

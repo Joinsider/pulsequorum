@@ -61,6 +61,23 @@ const (
 	cleanupTimeout = 2 * time.Minute
 )
 
+// Paths and step names that several checks share. Keeping them in one place
+// keeps the rows of the report and the requests of the probes consistent.
+const (
+	pathAPITokens     = "/api-tokens"
+	pathMonitors      = "/monitors/"
+	pathNotifications = "/notifications/"
+	pathMaintenance   = "/maintenance/"
+
+	stepTenants            = "Tenants of A and B"
+	stepAPIAccessIssued    = "API token of A created"
+	stepMonitorUnchanged   = "A's monitor unchanged"
+	stepBMonitorCreated    = "B's own monitor created"
+	expectWebSocket        = "ticket 201, WebSocket upgrade"
+	expectMonitorCreated   = "201, interval 60, retries 0"
+	expectMonitorUnchanged = "200, same name, not paused, same updatedAt"
+)
+
 // options holds the parsed command line. The tokens are read from the files.
 type options struct {
 	base      string
@@ -220,7 +237,9 @@ func (s *scenario) fail(name, expected, measured string, err error) error {
 // always run, even when a step stops the scenario early.
 func (s *scenario) run(ctx context.Context) error {
 	err := s.steps(ctx)
-	cctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	// Cleanup must run even when ctx was cancelled (e.g. by Ctrl-C), so it
+	// detaches from the cancellation and keeps only its own timeout.
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	s.cleanup(cctx)
 	s.closeStreams()
@@ -256,16 +275,16 @@ func (s *scenario) checkTenants(ctx context.Context) error {
 	_, _, errA := s.a.DoRaw(ctx, http.MethodGet, "/tenant", nil, nil, &ta)
 	_, _, errB := s.b.DoRaw(ctx, http.MethodGet, "/tenant", nil, nil, &tb)
 	if errA != nil || errB != nil {
-		return s.fail("Tenants of A and B", "GET /tenant answers 200 for both",
+		return s.fail(stepTenants, "GET /tenant answers 200 for both",
 			fmt.Sprintf("A: %s, B: %s", errText(errA), errText(errB)), errors.New("tenant lookup failed"))
 	}
 	if ta.ID == "" || tb.ID == "" || ta.ID == tb.ID {
-		return s.fail("Tenants of A and B", "two different tenants",
+		return s.fail(stepTenants, "two different tenants",
 			"the tokens belong to the same tenant or the tenant ID is empty",
 			errors.New("setup wrong: the tokens do not belong to two tenants"))
 	}
 	s.tenantA = ta.ID
-	s.row("Tenants of A and B", "GET /tenant answers 200 for both, IDs differ", "200 and 200, IDs differ", true)
+	s.row(stepTenants, "GET /tenant answers 200 for both, IDs differ", "200 and 200, IDs differ", true)
 	return nil
 }
 
@@ -274,13 +293,13 @@ func (s *scenario) checkTenants(ctx context.Context) error {
 func (s *scenario) openStreams(ctx context.Context) error {
 	var err error
 	if s.streamB, err = startStream(ctx, s.b, s.opts.base); err != nil {
-		return s.fail("Stream of B opened", "ticket 201, WebSocket upgrade", errText(err), err)
+		return s.fail("Stream of B opened", expectWebSocket, errText(err), err)
 	}
-	s.row("Stream of B opened", "ticket 201, WebSocket upgrade", "connected", true)
+	s.row("Stream of B opened", expectWebSocket, "connected", true)
 	if s.streamA, err = startStream(ctx, s.a, s.opts.base); err != nil {
-		return s.fail("Stream of A opened", "ticket 201, WebSocket upgrade", errText(err), err)
+		return s.fail("Stream of A opened", expectWebSocket, errText(err), err)
 	}
-	s.row("Stream of A opened", "ticket 201, WebSocket upgrade", "connected", true)
+	s.row("Stream of A opened", expectWebSocket, "connected", true)
 	return nil
 }
 
@@ -318,11 +337,11 @@ func (s *scenario) createObjects(ctx context.Context) error {
 		NotificationChannelIDs: []string{s.channelID},
 	})
 	if err != nil {
-		return s.fail("Monitor of A created", "201, interval 60, retries 0", errText(err), err)
+		return s.fail("Monitor of A created", expectMonitorCreated, errText(err), err)
 	}
 	s.monitorID = mon.ID
 	s.monitorUpdatedAt = mon.UpdatedAt
-	s.row("Monitor of A created", "201, interval 60, retries 0", "monitor created", true)
+	s.row("Monitor of A created", expectMonitorCreated, "monitor created", true)
 
 	s.maintName = "as06-maint-" + suffix
 	mw, err := s.a.CreateMaintenance(ctx, ucapi.MaintenanceWindowInput{
@@ -348,14 +367,14 @@ func (s *scenario) createObjects(ctx context.Context) error {
 		"role":      "tenant-viewer",
 		"expiresAt": now.Add(2 * time.Hour).Format(time.RFC3339),
 	}
-	if _, err := s.a.Do(ctx, http.MethodPost, "/api-tokens", nil, tokIn, &tok); err != nil {
-		return s.fail("API token of A created", "201", errText(err), err)
+	if _, err := s.a.Do(ctx, http.MethodPost, pathAPITokens, nil, tokIn, &tok); err != nil {
+		return s.fail(stepAPIAccessIssued, "201", errText(err), err)
 	}
 	if tok.ID == "" {
-		return s.fail("API token of A created", "201 with an ID", "answer without ID", errors.New("no token ID"))
+		return s.fail(stepAPIAccessIssued, "201 with an ID", "answer without ID", errors.New("no token ID"))
 	}
 	s.tokenID = tok.ID
-	s.row("API token of A created", "201, secret not kept", "token created, ID kept", true)
+	s.row(stepAPIAccessIssued, "201, secret not kept", "token created, ID kept", true)
 	s.log.Info("objects of tenant A created", "monitor", s.monitorID, "channel", s.channelID,
 		"maintenance", s.maintID, "token", s.tokenID)
 	return nil
@@ -385,9 +404,9 @@ type probe struct {
 
 // probes returns the requests of tenant B on the objects of tenant A.
 func (s *scenario) probes() []probe {
-	mon := "/monitors/" + url.PathEscape(s.monitorID)
-	ch := "/notifications/" + url.PathEscape(s.channelID)
-	mw := "/maintenance/" + url.PathEscape(s.maintID)
+	mon := pathMonitors + url.PathEscape(s.monitorID)
+	ch := pathNotifications + url.PathEscape(s.channelID)
+	mw := pathMaintenance + url.PathEscape(s.maintID)
 	tok := "/api-tokens/" + url.PathEscape(s.tokenID)
 	hijack := "as06-hijack-" + s.suffix
 	later := time.Now().UTC().Add(48 * time.Hour)
@@ -504,7 +523,7 @@ func (s *scenario) listsFromB(ctx context.Context) {
 		{"List of B: channels", "/notifications", nil},
 		{"List of B: maintenance windows", "/maintenance", nil},
 		{"List of B: incidents", "/incidents", url.Values{"limit": {"500"}}},
-		{"List of B: API tokens", "/api-tokens", nil},
+		{"List of B: API tokens", pathAPITokens, nil},
 		{"List of B: audit log", "/audit", nil},
 	}
 	needles := s.aNeedles(true)
@@ -553,18 +572,18 @@ func (s *scenario) checkUnchangedForA(ctx context.Context) {
 	m, err := s.a.GetMonitor(ctx, s.monitorID)
 	switch {
 	case err != nil:
-		s.row("A's monitor unchanged", "200, same name, not paused, same updatedAt", errText(err), false)
+		s.row(stepMonitorUnchanged, expectMonitorUnchanged, errText(err), false)
 	case m.Name != s.monitorName || m.Paused || !m.UpdatedAt.Equal(s.monitorUpdatedAt):
-		s.row("A's monitor unchanged", "200, same name, not paused, same updatedAt",
+		s.row(stepMonitorUnchanged, expectMonitorUnchanged,
 			fmt.Sprintf("name same %t, paused %t, updatedAt same %t",
 				m.Name == s.monitorName, m.Paused, m.UpdatedAt.Equal(s.monitorUpdatedAt)), false)
 	default:
-		s.row("A's monitor unchanged", "200, same name, not paused, same updatedAt",
-			"200, same name, not paused, same updatedAt", true)
+		s.row(stepMonitorUnchanged, expectMonitorUnchanged,
+			expectMonitorUnchanged, true)
 	}
 
 	var ch ucapi.NotificationChannel
-	if _, err := s.a.Do(ctx, http.MethodGet, "/notifications/"+url.PathEscape(s.channelID), nil, nil, &ch); err != nil {
+	if _, err := s.a.Do(ctx, http.MethodGet, pathNotifications+url.PathEscape(s.channelID), nil, nil, &ch); err != nil {
 		s.row("A's channel unchanged", "200, same name", errText(err), false)
 	} else {
 		s.row("A's channel unchanged", "200, same name", fmt.Sprintf("200, name same %t", ch.Name == s.channelName),
@@ -572,7 +591,7 @@ func (s *scenario) checkUnchangedForA(ctx context.Context) {
 	}
 
 	var mw ucapi.MaintenanceWindow
-	if _, err := s.a.Do(ctx, http.MethodGet, "/maintenance/"+url.PathEscape(s.maintID), nil, nil, &mw); err != nil {
+	if _, err := s.a.Do(ctx, http.MethodGet, pathMaintenance+url.PathEscape(s.maintID), nil, nil, &mw); err != nil {
 		s.row("A's maintenance window unchanged", "200, same name, active", errText(err), false)
 	} else {
 		ok := mw.Name == s.maintName && mw.Active
@@ -589,7 +608,7 @@ func (s *scenario) checkTokenListed(ctx context.Context) {
 		ID      string `json:"id"`
 		Expired bool   `json:"expired"`
 	}
-	if _, err := s.a.Do(ctx, http.MethodGet, "/api-tokens", nil, nil, &tokens); err != nil {
+	if _, err := s.a.Do(ctx, http.MethodGet, pathAPITokens, nil, nil, &tokens); err != nil {
 		s.row("A's API token not revoked", "listed, not expired", errText(err), false)
 		return
 	}
@@ -607,7 +626,7 @@ func (s *scenario) checkTokenListed(ctx context.Context) {
 // checkEvents pauses and resumes A's monitor. A's stream must show an event of
 // the monitor, and B's stream must show nothing of A.
 func (s *scenario) checkEvents(ctx context.Context) {
-	monPath := "/monitors/" + url.PathEscape(s.monitorID)
+	monPath := pathMonitors + url.PathEscape(s.monitorID)
 	from := s.streamA.count()
 	for _, action := range []string{"pause", "resume"} {
 		var m ucapi.Monitor
@@ -664,7 +683,7 @@ func (s *scenario) checkEvents(ctx context.Context) {
 func (s *scenario) checkBControl(ctx context.Context) {
 	suffix, err := randomHex(4)
 	if err != nil {
-		s.row("B's own monitor created", "201, interval 60, retries 0", errText(err), false)
+		s.row(stepBMonitorCreated, expectMonitorCreated, errText(err), false)
 		return
 	}
 	s.bMonitorName = "as06-bmon-" + suffix
@@ -677,13 +696,13 @@ func (s *scenario) checkBControl(ctx context.Context) {
 		NotificationChannelIDs: []string{},
 	})
 	if err != nil {
-		s.row("B's own monitor created", "201, interval 60, retries 0", errText(err), false)
+		s.row(stepBMonitorCreated, expectMonitorCreated, errText(err), false)
 		return
 	}
 	s.bMonitorID = mon.ID
-	s.row("B's own monitor created", "201, interval 60, retries 0", "monitor created", true)
+	s.row(stepBMonitorCreated, expectMonitorCreated, "monitor created", true)
 
-	bPath := "/monitors/" + url.PathEscape(s.bMonitorID)
+	bPath := pathMonitors + url.PathEscape(s.bMonitorID)
 	from := s.streamB.count()
 	for _, action := range []string{"pause", "resume"} {
 		var m ucapi.Monitor
@@ -712,7 +731,7 @@ func (s *scenario) checkBControl(ctx context.Context) {
 // too, and do not stop the cleanup of the other objects.
 func (s *scenario) cleanup(ctx context.Context) {
 	if s.bMonitorID != "" {
-		_, err := s.b.Do(ctx, http.MethodDelete, "/monitors/"+url.PathEscape(s.bMonitorID), nil, nil, nil)
+		_, err := s.b.Do(ctx, http.MethodDelete, pathMonitors+url.PathEscape(s.bMonitorID), nil, nil, nil)
 		if err != nil {
 			s.row("Cleanup: monitor of B deleted", "204", errText(err), false)
 		} else {
@@ -730,9 +749,9 @@ func (s *scenario) cleanup(ctx context.Context) {
 		}
 		s.row("Cleanup: "+name+" deleted", "204", "204", true)
 	}
-	del("maintenance window", "/maintenance/"+url.PathEscape(s.maintID), s.maintID != "")
-	del("monitor", "/monitors/"+url.PathEscape(s.monitorID), s.monitorID != "")
-	del("channel", "/notifications/"+url.PathEscape(s.channelID), s.channelID != "")
+	del("maintenance window", pathMaintenance+url.PathEscape(s.maintID), s.maintID != "")
+	del("monitor", pathMonitors+url.PathEscape(s.monitorID), s.monitorID != "")
+	del("channel", pathNotifications+url.PathEscape(s.channelID), s.channelID != "")
 	del("API token", "/api-tokens/"+url.PathEscape(s.tokenID), s.tokenID != "")
 }
 
