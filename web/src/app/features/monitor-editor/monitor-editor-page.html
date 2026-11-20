@@ -31,7 +31,7 @@
 
         <section class="card">
           <h2>{{ t('monitorEditor.sections.general') }}</h2>
-          <div class="grid">
+          <div class="form-row">
             <mat-form-field appearance="outline" class="span-all">
               <mat-label>{{ t('monitorEditor.fields.name') }}</mat-label>
               <input matInput formControlName="name" required autocomplete="off" />
@@ -76,6 +76,7 @@
               [schema]="schema"
               [control]="form.controls['config']"
               [required]="true"
+              [i18nPrefix]="schemaPrefix()"
             />
           } @else {
             <p class="error-text" role="alert">{{ t('monitorEditor.errors.unknownType') }}</p>
@@ -84,7 +85,7 @@
 
         <section class="card">
           <h2>{{ t('monitorEditor.sections.schedule') }}</h2>
-          <div class="grid">
+          <div class="form-row">
             <mat-form-field appearance="outline">
               <mat-label>{{ t('monitorEditor.fields.interval') }}</mat-label>
               <input
@@ -149,7 +150,7 @@
           <mat-expansion-panel-header>
             <mat-panel-title>{{ t('monitorEditor.sections.advanced') }}</mat-panel-title>
           </mat-expansion-panel-header>
-          <div class="grid">
+          <div class="form-row">
             <mat-form-field appearance="outline">
               <mat-label>{{ t('monitorEditor.fields.recovery') }}</mat-label>
               <input

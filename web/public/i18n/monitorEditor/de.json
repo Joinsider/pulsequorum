@@ -90,5 +90,154 @@
     "tagLength": "Jeder Tag darf höchstens {{ max }} Zeichen lang sein.",
     "countRequired": "Gib die Anzahl der Nodes ein.",
     "nodesRequired": "Gib mindestens eine Node-ID ein."
+  },
+  "schema": {
+    "http": {
+      "url": {
+        "label": "URL",
+        "hint": "Vollständige Adresse mit https://, z. B. https://example.com/health"
+      },
+      "method": { "label": "HTTP-Methode" },
+      "headers": {
+        "label": "Header",
+        "hint": "Werte werden verschlüsselt gespeichert und maskiert angezeigt",
+        "*": { "label": "Wert" }
+      },
+      "body": {
+        "label": "Request-Body",
+        "hint": "Optional. Höchstens 65536 Zeichen."
+      },
+      "auth": {
+        "label": "Authentifizierung",
+        "hint": "Basic- oder Bearer-Zugangsdaten für die Anfrage",
+        "type": {
+          "label": "Verfahren",
+          "options": { "basic": "Basic", "bearer": "Bearer-Token" }
+        },
+        "username": { "label": "Benutzername" },
+        "password": { "label": "Passwort" },
+        "token": { "label": "Token" }
+      },
+      "expectedStatus": {
+        "label": "Erwartete Statuscodes",
+        "hint": "Codes und Bereiche, z. B. 200-299,301"
+      },
+      "keyword": {
+        "label": "Schlüsselwort im Inhalt",
+        "hint": "Prüft, ob ein Text im Antwortinhalt vorkommt oder fehlt",
+        "value": { "label": "Text" },
+        "mode": {
+          "label": "Prüfung",
+          "options": { "contains": "enthält", "notContains": "enthält nicht" }
+        },
+        "caseSensitive": { "label": "Groß-/Kleinschreibung beachten" }
+      },
+      "jsonPath": {
+        "label": "JSON-Pfad",
+        "hint": "Vergleicht den Wert an einem Pfad der JSON-Antwort mit einem erwarteten Wert",
+        "path": {
+          "label": "Pfad",
+          "hint": "z. B. $.status oder $.items[0].state"
+        },
+        "expected": { "label": "Erwarteter Wert" }
+      },
+      "maxResponseMs": {
+        "label": "Maximale Antwortzeit (ms)",
+        "hint": "Eine längere Antwort gilt als Ausfall"
+      },
+      "followRedirects": { "label": "Weiterleitungen folgen" },
+      "maxRedirects": { "label": "Maximale Weiterleitungen" },
+      "ignoreTlsErrors": {
+        "label": "TLS-Fehler ignorieren",
+        "hint": "Akzeptiert ungültige Zertifikate. Nur verwenden, wenn du das Risiko kennst."
+      },
+      "tlsExpiryWarningDays": {
+        "label": "Warnung vor Zertifikatsablauf (Tage)",
+        "hint": "Unterschreitet das Zertifikat diese Restlaufzeit, wird der Status „degradiert“ gesetzt. 0 deaktiviert die Warnung."
+      },
+      "ipFamily": {
+        "label": "IP-Version",
+        "options": { "auto": "Automatisch", "ipv4": "IPv4", "ipv6": "IPv6" }
+      },
+      "maxBodyBytes": {
+        "label": "Maximale Antwortgröße (Bytes)",
+        "hint": "Größere Antworten werden nach so vielen Bytes abgeschnitten"
+      },
+      "connectTimeoutMs": { "label": "Verbindungs-Timeout (ms)" },
+      "tlsTimeoutMs": { "label": "TLS-Handshake-Timeout (ms)" },
+      "responseHeaderTimeoutMs": { "label": "Timeout bis zu den Antwort-Headern (ms)" },
+      "userAgent": {
+        "label": "User-Agent",
+        "hint": "Höchstens 256 Zeichen"
+      }
+    },
+    "tcp": {
+      "host": {
+        "label": "Host",
+        "hint": "Hostname oder IP-Adresse"
+      },
+      "port": {
+        "label": "Port",
+        "hint": "1 bis 65535"
+      },
+      "tls": {
+        "label": "TLS verwenden",
+        "hint": "Prüft zusätzlich den TLS-Handshake"
+      },
+      "tlsServerName": {
+        "label": "TLS-Servername (SNI)",
+        "hint": "Leer nutzt den Host"
+      },
+      "ignoreTlsErrors": {
+        "label": "TLS-Fehler ignorieren",
+        "hint": "Akzeptiert ungültige Zertifikate. Nur verwenden, wenn du das Risiko kennst."
+      },
+      "ipFamily": {
+        "label": "IP-Version",
+        "options": { "auto": "Automatisch", "ipv4": "IPv4", "ipv6": "IPv6" }
+      }
+    },
+    "dns": {
+      "hostname": {
+        "label": "Hostname",
+        "hint": "Der abzufragende Name"
+      },
+      "recordType": { "label": "Record-Typ" },
+      "resolver": {
+        "label": "Resolver",
+        "hint": "IP oder IP:Port. Leer nutzt den Systemresolver."
+      },
+      "expected": {
+        "label": "Erwartete Werte",
+        "hint": "Werte, die je nach Vergleichsmodus in der Antwort vorkommen müssen"
+      },
+      "matchMode": {
+        "label": "Vergleich",
+        "options": { "contains": "enthält", "equals": "ist gleich" }
+      },
+      "transport": { "label": "Transport" }
+    },
+    "icmp": {
+      "host": {
+        "label": "Host",
+        "hint": "Hostname oder IP-Adresse"
+      },
+      "count": {
+        "label": "Anzahl Pakete",
+        "hint": "1 bis 20"
+      },
+      "intervalMs": {
+        "label": "Abstand zwischen Paketen (ms)",
+        "hint": "100 bis 5000 ms"
+      },
+      "maxPacketLossPercent": {
+        "label": "Maximaler Paketverlust (%)",
+        "hint": "0 bis 100. Darüber gilt die Prüfung als Ausfall."
+      },
+      "ipFamily": {
+        "label": "IP-Version",
+        "options": { "auto": "Automatisch", "ipv4": "IPv4", "ipv6": "IPv6" }
+      }
+    }
   }
 }

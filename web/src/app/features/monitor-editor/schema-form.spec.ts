@@ -12,11 +12,13 @@ import {
   buildControl,
   controlToValue,
   fieldKind,
+  humanizeKey,
   isLockedKey,
   isSecretSchema,
   isStoredSecret,
   newArrayItem,
   newMapEntry,
+  orderedProperties,
   parseList,
   validationMessage,
 } from './schema-form';
@@ -484,5 +486,110 @@ describe('parseList', () => {
     [' a , b ,, c ', ['a', 'b', 'c']],
   ])('splits %j into %j', (text, expected) => {
     expect(parseList(text)).toEqual(expected);
+  });
+});
+
+describe('orderedProperties', () => {
+  const keys = (schema: JsonSchema) => orderedProperties(schema).map((p) => p.key);
+
+  it('follows x-order and puts unknown names after the listed ones in their original order', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: {
+        a: { type: 'string' },
+        b: { type: 'string' },
+        c: { type: 'string' },
+        d: { type: 'string' },
+      },
+      'x-order': ['c', 'a'],
+    };
+    expect(keys(schema)).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('ignores x-order names that are not properties', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: { a: { type: 'string' }, b: { type: 'string' } },
+      'x-order': ['missing', 'b'],
+    };
+    expect(keys(schema)).toEqual(['b', 'a']);
+  });
+
+  it('falls back to required first, then the original order', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['host', 'port'],
+      properties: {
+        tls: { type: 'boolean' },
+        host: { type: 'string' },
+        tlsServerName: { type: 'string' },
+        port: { type: 'integer' },
+      },
+    };
+    expect(keys(schema)).toEqual(['host', 'port', 'tls', 'tlsServerName']);
+  });
+
+  it('moves optional object, map and array properties after the simple fields', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['url'],
+      properties: {
+        auth: { type: 'object', properties: { type: { type: 'string' } } },
+        headers: { type: 'object', additionalProperties: { type: 'string' } },
+        url: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } },
+        method: { type: 'string', enum: ['GET', 'POST'] },
+      },
+    };
+    expect(keys(schema)).toEqual(['url', 'method', 'auth', 'headers', 'tags']);
+  });
+
+  it('keeps required object properties in place', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['jsonPath'],
+      properties: {
+        method: { type: 'string' },
+        jsonPath: { type: 'object', properties: { path: { type: 'string' } } },
+      },
+    };
+    expect(keys(schema)).toEqual(['jsonPath', 'method']);
+  });
+
+  it('moves optional composites after the simple fields even with x-order', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['url'],
+      properties: {
+        url: { type: 'string' },
+        keyword: { type: 'object', properties: { value: { type: 'string' } } },
+        method: { type: 'string' },
+      },
+      'x-order': ['keyword', 'url', 'method'],
+    };
+    expect(keys(schema)).toEqual(['url', 'method', 'keyword']);
+  });
+
+  it('returns the child schemas and the required flag', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['url'],
+      properties: { url: { type: 'string', title: 'URL' } },
+    };
+    expect(orderedProperties(schema)).toEqual([
+      { key: 'url', schema: { type: 'string', title: 'URL' }, required: true },
+    ]);
+  });
+});
+
+describe('humanizeKey', () => {
+  it.each([
+    ['maxBodyBytes', 'Max body bytes'],
+    ['userAgent', 'User agent'],
+    ['tlsExpiryWarningDays', 'Tls expiry warning days'],
+    ['url', 'Url'],
+    ['max_redirects', 'Max redirects'],
+  ])('turns %j into %j', (key, expected) => {
+    expect(humanizeKey(key)).toBe(expected);
   });
 });
