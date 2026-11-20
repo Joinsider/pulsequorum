@@ -34,7 +34,7 @@ veränderten Quellcode umstellen.
 
 ## Kommerzielle Lizenz anfragen
 
-Kontakt für kommerzielle Lizenzen: **kontakt@<domain-folgt>**
+Kontakt für kommerzielle Lizenzen: **public@joinside.de**
 
 ## Hinweis
 
