@@ -1,6 +1,7 @@
-# GoReleaser v2 configuration (ADR 0009, AP-0.10).
-# Validate locally: go run github.com/goreleaser/goreleaser/v2@latest check
-# Release: .github/workflows/release.yml on tags v*, runs `goreleaser release --clean`.
+# GoReleaser v2 configuration (ADR 0009, ADR 0040).
+# Validate locally: go run github.com/goreleaser/goreleaser/v2@v2.20.2 check
+# Release: .github/workflows/release.yml on a signed tag v* (make release); the
+# release notes come from the signed tag message (--release-notes).
 version: 2
 
 project_name: pulsequorum
@@ -64,7 +65,8 @@ dockers_v2:
     tags:
       - "{{ .Version }}"
       - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
-      - '{{ if not .Prerelease }}latest{{ end }}'
+      # latest only from 1.0.0 on: 0.x may contain breaking changes (ADR 0040).
+      - '{{ if and (not .Prerelease) (ge .Major 1) }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -82,8 +84,33 @@ dockers_v2:
 # Explicit, so the config also validates without a git remote.
 release:
   github:
-    owner: joinsider
+    owner: Joinsider
     name: pulsequorum
+  # The project owner reviews and publishes the draft; immutable releases lock
+  # tag and assets on publish (ADR 0040).
+  draft: true
+  replace_existing_draft: true
+  prerelease: auto
+  name_template: "Pulsequorum {{ .Tag }}"
+
+# cosign keyless (Sigstore): checksums.txt as a bundle, images by digest.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: all
+    args:
+      - sign
+      - "${artifact}@${digest}"
+      - "--yes"
 
 changelog:
   sort: asc

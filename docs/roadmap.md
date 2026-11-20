@@ -12,7 +12,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 | | |
 |---|---|
-| **Aktive Phase** | P5 – Reichweite (P1 bis P4 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
+| **Aktive Phase** | P5 – Reichweite (P1 bis P4 abgenommen; AP-0.9/0.10 in AP-5.0 aufgegangen) |
 | **Wartet auf Projektinhaber** | Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6) |
 | **Nächster Schritt (Claude)** | AP-5.0 CI/CD und erster Release `v0.0.1` |
 
@@ -44,8 +44,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | AP-0.6 | Backend-Grundgerüst: Go-Modul, `main`, Konfiguration (Env), `slog`, HTTP-Server, `/healthz`, `/readyz`, `/api/v1/health`, Graceful Shutdown, Version per ldflags | FA-NODE-01/02/05/07 | ADR 0001, 0002 (Annahme: Vorschlag) | ✅ |
 | AP-0.7 | Frontend-Grundgerüst: Angular 22 (standalone, zoneless, Vitest), Laufzeit-`config.json`, Health-Ansicht, Dev-Proxy | FA-UI-01/02 | ADR 0001, 0007 (Annahme: Vorschlag) | ✅ |
 | AP-0.8 | Build: Makefile, SPA-Einbettung per `go:embed` mit Platzhalter, Cache-Header, SPA-Fallback, Dockerfile (distroless, nonroot), Compose Single | FA-UI-01, NFA-PERF-07, PF-38, PF-39 | ADR 0001 | ✅ Image mit Podman gebaut (31,4 MB) und per Compose betrieben (AP-1.15) |
-| AP-0.9 | CI-Grundpipeline: Build, Tests, `go vet`, `gofmt`, `govulncheck`, Frontend-Build/-Test | NFA-MNT-02, NFA-SEC-06 | ADR 0009 (Basis) | 🔄 Workflow angelegt, noch nicht auf GitHub gelaufen (kein Remote) |
-| AP-0.10 | CI-Ausbau: `golangci-lint`, Lizenzprüfung, Multi-Arch-Image nach GHCR, Release-Workflow | NFA-PORT-01, RB-LIC-03 | ADR 0009 | 🔄 Lokal umgesetzt (`make lint`, `make licenses`, `make notices`, `make generate-check`, `goreleaser check` grün); CI- und Release-Lauf auf GitHub noch ausstehend (kein Remote) |
+| AP-0.9 | CI-Grundpipeline: Build, Tests, `go vet`, `gofmt`, `govulncheck`, Frontend-Build/-Test | NFA-MNT-02, NFA-SEC-06 | ADR 0009 (Basis) | ✅ abgelöst durch AP-5.0 (ADR 0040) |
+| AP-0.10 | CI-Ausbau: `golangci-lint`, Lizenzprüfung, Multi-Arch-Image nach GHCR, Release-Workflow | NFA-PORT-01, RB-LIC-03 | ADR 0009 | ✅ abgelöst durch AP-5.0 (ADR 0040) |
 | AP-0.11 | Lizenz: `LICENSE` (AGPLv3), SPDX-Header, `LICENSING.md`, `CONTRIBUTING.md` | RB-LIC-01/02 | ADR 0010 | ✅ CLA-Assistant-Einrichtung erst mit GitHub-Remote + anwaltlich geprüftem CLA-Text; `THIRD_PARTY_NOTICES` → AP-0.10; Quellcode-Link in der UI (RB-LIC-04) → AP-1.14 |
 | AP-0.12 | OpenAPI-Entwurf für alle P1-Endpunkte + Codegenerierung (Server/Client) | FA-API-01..07 | ADR 0003 | ✅ `make generate`, `make api-lint`; alle Operationen außer Health antworten 501 bis zur Umsetzung in P1 |
 | AP-0.13 | Protobuf-Entwurf: Cluster-, Replikations-, Probe-Service | Kap. 9.3 | ADR 0006 | ✅ `proto/pulsequorum/v1`, `buf lint` (STANDARD), Codegen nach `internal/pb`; FSM-Payloads werden in AP-1.2 verfeinert |
@@ -122,7 +122,7 @@ ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptie
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
-| AP-5.0 | CI/CD-Härtung, Release per `workflow_dispatch` mit signiertem Tag und Release, erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | ⬜ (vorgezogen) |
+| AP-5.0 | Rename nach Pulsequorum (ADR 0041), CI/CD-Härtung, Release über lokal signierten Tag (`make release`), erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | 🔄 |
 | AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ⬜ |
 | AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ⛔ wartet auf AP-5.1 |
 | AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⬜ |

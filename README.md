@@ -40,6 +40,8 @@ make web-dev     # Angular-Dev-Server auf :4200 (API-Proxy auf :8080)
 
 Container: `docker compose -f deploy/compose.single.yaml up --build`
 
+Release-Ablauf (signierter Tag, Draft, Prüfung der Artefakte): [docs/betrieb/release.md](docs/betrieb/release.md).
+
 ## Lizenz
 
 [AGPL-3.0-only](LICENSE) + kommerzielle Lizenz, siehe [LICENSING.md](LICENSING.md). Beiträge nur mit CLA, siehe [CONTRIBUTING.md](CONTRIBUTING.md).

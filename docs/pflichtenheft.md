@@ -847,7 +847,7 @@ Die folgenden Punkte werden über ADRs entschieden (siehe [docs/adr/](adr/)):
 | O-05 | Verteilung des Master-Keys (KEK) an alle Voter | ADR Geheimnisse (P1) |
 | O-06 | SPDX-Variante `AGPL-3.0-only` vs. `-or-later` | ADR Lizenz |
 | O-07 | SQLite-Treiber: `modernc.org/sqlite` vs. `ncruces/go-sqlite3` (beide CGO-frei); eigener Benchmark | ADR Storage |
-| O-08 | Finaler Projektname | vor erstem öffentlichen Release |
+| O-08 | Finaler Projektname | entschieden 2026-11-20: Pulsequorum (ADR 0041) |
 
 ---
 
