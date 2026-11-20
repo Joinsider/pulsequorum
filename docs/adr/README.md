@@ -39,3 +39,11 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0031](0031-api-tokens-audit-massenaktionen.md) | API-Tokens, Audit-Log und Massenaktionen | Accepted | 2026-11-18 |
 | [0032](0032-migration-lokal-nach-oidc.md) | Migration von `local` nach `oidc` | Accepted | 2026-11-18 |
 | [0033](0033-luecke-zwischen-gapjob-und-live-aggregator.md) | Lückenlose Übergabe vom GapJob an den Live-Aggregator | Accepted | 2026-11-18 |
+| [0034](0034-probe-protokoll-und-puffer.md) | Probe-Protokoll, Keepalive, Failover und lokaler Puffer | Accepted | 2026-11-20 |
+| [0035](0035-private-probes-und-mandantenbindung.md) | Private Probes, Mandantenbindung und Probe-Alerts | Accepted | 2026-11-20 |
+| [0036](0036-externes-frontend-und-client-failover.md) | Externes Frontend und Client-Failover | Accepted | 2026-11-20 |
+| [0037](0037-postgresql-backend-und-lease-leader.md) | PostgreSQL-Backend und Lease-basierte Leaderwahl | Accepted | 2026-11-20 |
+| [0038](0038-backup-export-und-restore.md) | Backup, Export und Restore | Accepted | 2026-11-20 |
+| [0039](0039-ca-rotation.md) | CA-Rotation mit überlappendem Trust-Bundle | Accepted | 2026-11-20 |
+| [0040](0040-ci-cd-haertung-und-manuelle-releases.md) | CI/CD-Härtung und manuell ausgelöste, signierte Releases | Accepted | 2026-11-20 |
+| [0041](0041-projektname-und-veroeffentlichung.md) | Projektname Pulsequorum und Veröffentlichung als öffentliches Repository | Accepted | 2026-11-20 |
