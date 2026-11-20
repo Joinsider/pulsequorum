@@ -2,7 +2,7 @@
 
 |                 |                                                                       |
 |-----------------|-----------------------------------------------------------------------|
-| **Status**      | Proposed                                                              |
+| **Status**      | Accepted                                                              |
 | **Datum**       | 2026-11-20                                                            |
 | **Entscheider** | Projektinhaber                                                              |
 | **Bezug**       | O-08 (finaler Projektname), RB-LIC-01..05, ADR 0009, ADR 0010, ADR 0040 |
@@ -98,3 +98,4 @@ sichtbaren Kollisionen; Vigil, Vigilo, Tribune, Quorra, Kvorum sind belegt.
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-20 | Proposed | Claude |           |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat |
