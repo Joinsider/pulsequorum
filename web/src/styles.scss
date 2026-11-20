@@ -147,13 +147,25 @@ body {
 }
 
 /*
- * Icon buttons: MDC centres only the mat-icon glyph, so centre the content
- * box as a whole. This keeps <app-icon> (an inline SVG) centred as well.
+ * Icon buttons: MDC centres only the mat-icon glyph and lays the button out as
+ * inline-block with a 24px font, so an <app-icon> (inline SVG) sits on the text
+ * baseline, a few pixels too low. Centre the content box as a whole. The doubled
+ * class beats Material's own rule, which is loaded after the global styles.
  */
-.mat-mdc-icon-button {
+.mat-mdc-icon-button.mat-mdc-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/*
+ * Text buttons with an icon: the label is a block, so an inline-flex child gets
+ * an extra line box below it and sits too high. Centre icon and text instead.
+ */
+.mat-mdc-button .mdc-button__label:has(> app-icon, > * > app-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
 }
 
 /* Row actions in tables: 36px targets with a 20px icon, centred. */
