@@ -13,7 +13,7 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P5 – Reichweite (P1 bis P4 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | ADR 0034 (Frage 1A/1B beantwortet, Accept offen); Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6) |
+| **Wartet auf Projektinhaber** | Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6) |
 | **Nächster Schritt (Claude)** | AP-5.0 CI/CD und erster Release `v0.0.1` |
 
 ---
@@ -118,12 +118,12 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 ## P5 – Reichweite
 
-ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptiert (0036 mit nginx-Image, 0037 mit testcontainers-go). 0034 ist noch `Proposed`.
+ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptiert (0036 mit nginx-Image, 0037 mit testcontainers-go). 0034 am 2026-11-20 mit 1A akzeptiert.
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
 | AP-5.0 | CI/CD-Härtung, Release per `workflow_dispatch` mit signiertem Tag und Release, erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | ⬜ (vorgezogen) |
-| AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ⛔ blockiert (ADR 0034) |
+| AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ⬜ |
 | AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ⛔ wartet auf AP-5.1 |
 | AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⬜ |
 | AP-5.4 | PostgreSQL-Backend; Vorschlag: in P5 nur Vorarbeiten (Koordinations-Schnittstelle, geteilter Apply-Kern), Rest in eigener Phase nach 1.0 | Z-S-01, NFA-PORT-03 | 0037 | ⬜ (nur Vorarbeiten in P5) |
