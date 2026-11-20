@@ -115,11 +115,11 @@ docker: ## Build the container image
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t pulsequorum:dev .
 
 BUMP ?= patch
-release: ## Cut a release: signed tag on master, editable changelog (BUMP=patch|minor|major, optional VERSION=x.y.z)
-	go run ./build/release -bump=$(BUMP) $(if $(VERSION),-version=$(VERSION))
+release: ## Cut a release: signed tag on master, editable changelog (BUMP=patch|minor|major, optional RELEASE_VERSION=x.y.z)
+	go run ./build/release -bump=$(BUMP) $(if $(RELEASE_VERSION),-version=$(RELEASE_VERSION))
 
 release-dry-run: ## Show the next version and changelog without creating anything
-	go run ./build/release -bump=$(BUMP) $(if $(VERSION),-version=$(VERSION)) -dry-run
+	go run ./build/release -bump=$(BUMP) $(if $(RELEASE_VERSION),-version=$(RELEASE_VERSION)) -dry-run
 
 clean: ## Remove build output
 	rm -rf bin web/dist THIRD_PARTY_NOTICES.md
