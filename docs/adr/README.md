@@ -46,3 +46,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0038](0038-backup-export-und-restore.md) | Backup, Export und Restore | Accepted | 2026-11-20 |
 | [0039](0039-ca-rotation.md) | CA-Rotation mit überlappendem Trust-Bundle | Accepted | 2026-11-20 |
 | [0040](0040-ci-cd-haertung-und-manuelle-releases.md) | CI/CD-Härtung und manuell ausgelöste, signierte Releases | Accepted | 2026-11-20 |
+| [0041](0041-projektname-und-veroeffentlichung.md) | Projektname Pulsequorum und Veröffentlichung als öffentliches Repository | Proposed | 2026-11-20 |
