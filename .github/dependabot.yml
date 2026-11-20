@@ -1,20 +1,38 @@
-# Weekly dependency updates (ADR 0009). Go modules of the main module and of tools/,
-# npm packages of the web UI, and the pinned GitHub Actions.
+# Weekly dependency updates (ADR 0009, ADR 0040). Go modules of the main module and
+# of tools/, npm packages of the web UI, the pinned GitHub Actions and the Docker base
+# images. A cooldown keeps freshly published versions out for a week.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: gomod
     directory: /tools
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

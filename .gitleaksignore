@@ -1,0 +1,5 @@
+# Reviewed false positives (ADR 0040). Format: commit:file:rule:line.
+# Embedded, base64-encoded OpenAPI document in generated code, not a key.
+50bd5b248c4867cac4adb32f3ddbabc5dd88d838:internal/api/gen/api.gen.go:generic-api-key:9743
+# Fixed password of the throwaway AS-01 acceptance-test cluster.
+2afd9f9daf9cd640817884846d4204fa6b6fe01f:test/acceptance/as01/main_test.go:generic-api-key:34
