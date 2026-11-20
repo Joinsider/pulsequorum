@@ -36,7 +36,7 @@ Ein Binary/Image für alle Rollen (`NODE_ROLE=voter|probe`).
 
 ## Regel 2: ADR vor jeder großen Änderung
 
-Vor jeder **großen Änderung** wird ein ADR angelegt. Umgesetzt wird erst, wenn der Status **Accepted** ist. **Nur der Projektinhaber (Projektinhaber) setzt einen ADR auf `Accepted`** – Claude setzt niemals selbst Accepted.
+Vor jeder **großen Änderung** wird ein ADR angelegt. Umgesetzt wird erst, wenn der Status **Accepted** ist. **Nur der Projektinhaber setzt einen ADR auf `Accepted`** – Claude setzt niemals selbst Accepted.
 
 **Große Änderung** ist insbesondere:
 - neue oder ausgetauschte Abhängigkeit mit Architektur-Einfluss (Framework, DB, Raft-Bibliothek, Auth-Bibliothek, Codegen-Tool)
