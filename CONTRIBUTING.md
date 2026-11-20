@@ -5,7 +5,7 @@ Vielen Dank für dein Interesse an UptimeCluster.
 ## Wichtig: Externe Beiträge werden derzeit noch nicht angenommen
 
 Externe Pull Requests werden **noch nicht akzeptiert**. Die Contributor License
-Agreement (CLA) muss zuerst von einer Anwältin bzw. einem Anwalt geprüft werden.
+Agreement (CLA) muss zuerst noch geprüft werden.
 Erst danach werden externe Beiträge angenommen. Bis dahin bitte keine PRs von
 außerhalb des Projektteams einreichen.
 
