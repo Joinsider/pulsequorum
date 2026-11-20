@@ -122,7 +122,7 @@ ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptie
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
-| AP-5.0 | CI/CD-Härtung, Release per `workflow_dispatch` mit signiertem Tag und Release, erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | ⬜ (vorgezogen) |
+| AP-5.0 | Rename nach Pulsequorum (ADR 0041), CI/CD-Härtung, Release über lokal signierten Tag (`make release`), erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | 🔄 |
 | AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ⬜ |
 | AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ⛔ wartet auf AP-5.1 |
 | AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⬜ |

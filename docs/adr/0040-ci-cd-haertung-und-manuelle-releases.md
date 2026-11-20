@@ -368,9 +368,80 @@ Muss, vorbehaltlich F1). Nach Accept erhält ADR 0009 den Status-Zusatz „teilw
 - **F6:** Wann soll das Repository öffentlich werden? AGPL §13 und RB-LIC-04 verlangen spätestens bei Weitergabe des
   Images an Dritte einen erreichbaren Quellcode. Damit hängt Abschnitt 7 zusammen.
 
+## Änderung vom 2026-11-20: lokal signierter Tag und öffentliches Repository
+
+Im Chat entschieden (Projektinhaber), nach ADR 0041 (Name Pulsequorum, neues öffentliches Repository). Diese Änderung
+**ersetzt** die Abschnitte 2 und 5, macht Abschnitt 7 zum Bestandteil der Umsetzung und ersetzt die Liste der manuellen
+Einstellungen. Alles andere gilt unverändert.
+
+**Signierter Tag: lokal durch den Projektinhaber (statt T2)**
+
+- Wie bei Linux, Node.js, etcd oder Prometheus signiert ein Mensch den Tag auf seinem Rechner; in GitHub liegt kein
+  Signaturschlüssel. Bot-Konto, Deploy-Key und die Secrets `RELEASE_TAG_*` entfallen.
+- `make release BUMP=patch|minor|major` (optional `VERSION=0.3.0-rc.1`) startet `go run ./build/release`:
+  1. prüft: Branch `master`, sauberer Arbeitsbaum, lokaler `master` gleich `origin/master` nach `git fetch`, alle
+     Pflicht-Checks auf diesem SHA grün (per `gh api`), Tag existiert noch nicht;
+  2. berechnet die Version nach Abschnitt 1 (V1);
+  3. erzeugt den Changelog seit dem letzten `v*`-Tag nach Abschnitt 4 und öffnet ihn in `$EDITOR` zum Überarbeiten;
+  4. legt einen **annotierten, signierten** Tag an (`git tag -s`, lokale Git-Konfiguration), prüft ihn mit
+     `git verify-tag` gegen `.github/allowed_signers` und pusht ihn nach Rückfrage.
+- **Changelog überschreiben:** Die Tag-Nachricht *ist* der Changelog. Sie ist damit mitsigniert und wird zum Text des
+  Releases. Zusätzlich bleibt der Draft vor dem Veröffentlichen editierbar, Titel und Notes auch danach. Die Datei
+  `.github/release-notes/vX.Y.Z.md` entfällt.
+- `.github/allowed_signers` enthält den öffentlichen SSH-Signing-Key des Projektinhabers mit der Noreply-Adresse als
+  Prinzipal. Schlüsselwechsel nur per signiertem PR.
+
+**Release-Workflow (ersetzt Abschnitt 5)**
+
+Trigger: `push: tags: ['v*']` für echte Releases, `workflow_dispatch` nur als Probelauf (Snapshot, nichts wird
+veröffentlicht). `permissions: {}` auf Workflow-Ebene, `concurrency: release`, `cancel-in-progress: false`.
+
+| Job          | Rechte                                                                         | Aufgabe |
+|--------------|--------------------------------------------------------------------------------|---------|
+| `verify-tag` | `contents: read`, `checks: read`                                               | Tag-Name ist SemVer, Tag ist annotiert und gegen `.github/allowed_signers` von `origin/master` gültig signiert, getaggter Commit ist Vorfahre von `origin/master`, alle Pflicht-Checks auf dem SHA grün. Gibt `version`, `sha` und die Release-Notes (Tag-Nachricht) aus. |
+| `gates`      | `contents: read`                                                               | `govulncheck` (gepinnt über `tools/go.mod`) und `npm audit` mit Ausnahmeliste (NFA-SEC-06). |
+| `goreleaser` | `contents: write`, `packages: write`, `id-token: write`, `attestations: write` | `goreleaser release --clean --release-notes` als **Draft**, Images nach GHCR, cosign keyless für `checksums.txt` und Images, `actions/attest-build-provenance` für Archive und Images. Probelauf: `--snapshot --skip=publish,sign`, Artefakte als Workflow-Artefakt. |
+| `verify`     | `contents: read`, `packages: read`                                             | `sha256sum -c`, `cosign verify-blob` und `cosign verify` mit fester Identität `https://github.com/Joinsider/pulsequorum/.github/workflows/release.yml@refs/tags/vX.Y.Z`, `gh attestation verify`. Link auf den Draft ins Step Summary. |
+
+- Das Tag-Ruleset erlaubt das Anlegen von `v*`-Tags nur dem Projektinhaber (Repository-Admin); Ändern und Löschen sind
+  für alle gesperrt. Ein fremder Tag würde außerdem an `verify-tag` scheitern.
+- Das Environment `release` bindet den Job `goreleaser` an Tags `v*` (Deployment-Regel „Selected tags“). Es enthält
+  keine Secrets; es dient der Nachvollziehbarkeit der Deployments.
+
+**Öffentliches Repository (Abschnitt 7 wird umgesetzt)**
+
+- CodeQL (Go, JavaScript/TypeScript, Actions), Dependency Review als Pflicht-Check in PRs, OpenSSF Scorecard mit
+  `publish_results`, Secret Scanning mit Push Protection, Build-Attestations. Harden-Runner bleibt vorgemerkt.
+- Die Workflows werden schon im privaten Repository angelegt; CodeQL und Attestations laufen erst nach dem Umschalten
+  auf öffentlich erfolgreich.
+
+**Antworten auf die offenen Fragen**
+
+- F1: cosign keyless mit öffentlichem Rekor ist in Ordnung, das Repository wird öffentlich.
+- F2: entfällt (öffentliches Repository: Environments ohne Pro).
+- F3: lokal signierter Tag (siehe oben).
+- F4: `0.x`-Releases werden **nicht** generell als Pre-Release markiert; nur Versionen mit Suffix (`prerelease: auto`).
+- F5: gelöst durch ADR 0041 (Modul `github.com/joinsider/pulsequorum`, Repository `Joinsider/pulsequorum`).
+- F6: nach Prüfung des neuen Repositorys durch den Projektinhaber, vor `v0.0.1`.
+
+**Manuelle Einstellungen im neuen Repository (ersetzt die Liste oben)**
+
+1. Ruleset „Protect master“: PR-Pflicht, signierte Commits, keine Force-Pushes und Löschungen, Pflicht-Checks `go`,
+   `golangci`, `web`, `licenses`, `generate`, `build`, `workflow-lint`, `secrets`, `dependency-review`. Kein
+   Deploy-Key-Bypass.
+2. Ruleset „Protect release tags“ für `refs/tags/v*`: Restrict creations/updates/deletions, Block force pushes; Bypass
+   nur Repository-Admin für das Anlegen.
+3. Immutable Releases aktivieren.
+4. Actions: SHA-Pinning erzwingen, erlaubte Actions als Liste, Default-Rechte `read`, Actions dürfen keine PRs
+   anlegen/genehmigen; Workflows aus Fork-PRs erst nach Freigabe.
+5. Environment `release` mit Deployment-Regel „Selected tags: `v*`“.
+6. Nach dem Umschalten auf öffentlich: Secret Scanning und Push Protection, private Schwachstellenmeldung, Dependabot
+   Alerts und Security Updates aktivieren; GHCR-Pakete `pulsequorum` auf öffentlich stellen.
+
 ## Approval
 
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-19 | Proposed | Claude |           |
 | 2026-11-20 | Accepted | Projektinhaber | im Chat; vorgezogen vor AP-5.1; F1–F6 werden bei der Umsetzung geklärt |
+| 2026-11-20 | Accepted | Projektinhaber | Änderung im Chat: lokal signierter Tag, öffentliches Repository (Abschnitt „Änderung vom 2026-11-20“) |
