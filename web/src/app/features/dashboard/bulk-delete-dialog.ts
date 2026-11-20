@@ -20,7 +20,7 @@ export interface BulkDeleteData {
   imports: [MatDialogModule, MatButtonModule, TranslocoPipe],
   template: `
     <h2 mat-dialog-title>{{ 'dashboard.bulk.deleteTitle' | transloco }}</h2>
-    <mat-dialog-content>
+    <mat-dialog-content class="form-stack">
       <p>{{ 'dashboard.bulk.deleteText' | transloco: { count: data.count } }}</p>
     </mat-dialog-content>
     <mat-dialog-actions align="end">

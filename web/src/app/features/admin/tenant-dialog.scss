@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-.content {
-  display: flex;
-  flex-direction: column;
-}
-
 mat-form-field {
   width: 100%;
 }
 
+.section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .hint {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 0.875rem;
   color: var(--muted);
 }
 
 .section {
-  margin: 0.5rem 0 0.25rem;
+  margin: 0;
   font-size: 1rem;
   font-weight: 600;
 }
@@ -25,7 +26,6 @@ mat-form-field {
 .readonly {
   display: flex;
   flex-direction: column;
-  margin: 0 0 1rem;
 
   &__label {
     font-size: 0.75rem;
@@ -33,23 +33,15 @@ mat-form-field {
   }
 }
 
-.limits {
+/* Each limit: its field, then its "unlimited" checkbox directly below. */
+.limit {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.limit {
-  display: flex;
-  flex-direction: column;
-}
-
-.limit mat-checkbox {
-  margin: -0.5rem 0 0.75rem;
-}
-
 .error {
-  margin: 0 0 0.75rem;
+  margin: 0;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: var(--danger);

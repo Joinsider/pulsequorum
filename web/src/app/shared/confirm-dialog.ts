@@ -32,7 +32,7 @@ export interface ConfirmData extends Required<Omit<ConfirmOptions, 'danger'>> {
   imports: [MatDialogModule, MatButtonModule, TranslocoPipe],
   template: `
     <h2 mat-dialog-title>{{ data.titleKey | transloco }}</h2>
-    <mat-dialog-content>
+    <mat-dialog-content class="form-stack">
       <p>{{ data.messageKey | transloco }}</p>
     </mat-dialog-content>
     <mat-dialog-actions align="end">

@@ -2,7 +2,7 @@
 <ng-container *transloco="let t">
   <h2 mat-dialog-title>{{ t('apiTokens.dialog.title') }}</h2>
 
-  <mat-dialog-content class="content">
+  <mat-dialog-content class="form-stack">
     @if (errorKey(); as key) {
       <p class="error" role="alert">
         {{ t(key) }}
@@ -34,7 +34,7 @@
           [cdkCopyToClipboard]="tok"
           (cdkCopyToClipboardCopied)="onCopied($event)"
         >
-          <app-icon name="contentCopy" />
+          <app-icon name="contentCopy" size="1.125rem" />
           {{ t('apiTokens.dialog.copy') }}
         </button>
         @if (copied()) {

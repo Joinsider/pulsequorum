@@ -24,7 +24,7 @@
       [matTooltip]="'shell.liveDisconnected' | transloco"
       [attr.aria-label]="'shell.liveDisconnected' | transloco"
     >
-      <app-icon name="wifiOff" size="1.25rem" />
+      <app-icon name="wifiOff" />
     </span>
   }
 
@@ -36,7 +36,7 @@
     [attr.aria-label]="themeLabel()"
     (click)="cycleTheme()"
   >
-    <app-icon [name]="themeIcon()" size="1.25rem" />
+    <app-icon [name]="themeIcon()" />
   </button>
 
   <button
@@ -46,7 +46,7 @@
     [matTooltip]="'shell.language' | transloco"
     [attr.aria-label]="'shell.language' | transloco"
   >
-    <app-icon name="translate" size="1.25rem" />
+    <app-icon name="translate" />
   </button>
   <mat-menu #langMenu="matMenu">
     @for (code of languages; track code) {
@@ -62,8 +62,10 @@
   </mat-menu>
 
   <button mat-button type="button" class="user-button" [matMenuTriggerFor]="userMenu">
-    <app-icon name="person" size="1.25rem" />
-    <span class="user-name">{{ auth.displayName() }}</span>
+    <span class="user-content">
+      <app-icon name="person" />
+      <span class="user-name">{{ auth.displayName() }}</span>
+    </span>
   </button>
   <mat-menu #userMenu="matMenu">
     <div class="user-info" role="presentation">
@@ -109,7 +111,7 @@
       <a class="source-link" [href]="sourceUrl" target="_blank" rel="noopener">
         <app-icon name="code" size="1.125rem" />
         <span>{{ 'shell.sourceCode' | transloco }}</span>
-        <app-icon name="openInNew" size="1rem" />
+        <app-icon name="openInNew" size="1.125rem" />
       </a>
       <span class="license">{{ 'shell.license' | transloco }}</span>
       @if (version(); as v) {

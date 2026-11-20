@@ -2,7 +2,7 @@
 <ng-container *transloco="let t">
   <p class="back">
     <a mat-button [routerLink]="['/incidents']" [queryParamsHandling]="'preserve'">
-      <app-icon name="arrowBack" size="1.125em" />
+      <app-icon name="arrowBack" size="1.125rem" />
       {{ t('incidents.detail.back') }}
     </a>
   </p>
@@ -38,7 +38,7 @@
                   class="chip chip--unconfirmed"
                   [attr.title]="t('incidents.chip.unconfirmedHint')"
                 >
-                  <app-icon name="warning" size="1em" />
+                  <app-icon name="warning" size="1.125rem" />
                   {{ t('incidents.chip.unconfirmed') }}
                 </span>
               }

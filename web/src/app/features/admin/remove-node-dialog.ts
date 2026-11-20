@@ -31,7 +31,7 @@ export interface RemoveNodeDialogData {
   template: `
     <ng-container *transloco="let t">
       <h2 mat-dialog-title>{{ t('admin.cluster.' + data.mode + '.title') }}</h2>
-      <mat-dialog-content>
+      <mat-dialog-content class="form-stack">
         <p>{{ t('admin.cluster.' + data.mode + '.text', { name: data.nodeName }) }}</p>
         @if (data.mode === 'replace') {
           <p>{{ t('admin.cluster.replace.warnReserve') }}</p>
@@ -63,11 +63,11 @@ export interface RemoveNodeDialogData {
   `,
   styles: `
     p {
-      margin: 0 0 0.75rem;
+      margin: 0;
       overflow-wrap: anywhere;
     }
     .impact {
-      margin: 0 0 0.75rem;
+      margin: 0;
       padding-left: 1.25rem;
     }
     .risk {

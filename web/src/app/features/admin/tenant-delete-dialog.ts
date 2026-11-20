@@ -29,7 +29,7 @@ export interface TenantDeleteData {
   template: `
     <ng-container *transloco="let t">
       <h2 mat-dialog-title>{{ t('admin.tenants.delete.title', { name: data.name }) }}</h2>
-      <mat-dialog-content class="content">
+      <mat-dialog-content class="form-stack">
         <p class="warn" role="note">{{ t('admin.tenants.delete.text') }}</p>
         <p class="hint">{{ t('admin.tenants.delete.copies') }}</p>
         <mat-form-field appearance="outline">
@@ -60,19 +60,15 @@ export interface TenantDeleteData {
     </ng-container>
   `,
   styles: `
-    .content {
-      display: flex;
-      flex-direction: column;
-    }
     mat-form-field {
       width: 100%;
     }
     .warn {
-      margin: 0 0 0.5rem;
+      margin: 0;
       color: var(--danger);
     }
     .hint {
-      margin: 0 0 0.75rem;
+      margin: 0;
       font-size: 0.875rem;
       color: var(--muted);
     }

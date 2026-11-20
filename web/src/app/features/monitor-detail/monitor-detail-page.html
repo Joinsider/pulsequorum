@@ -4,19 +4,19 @@
     <app-page-header [title]="m.name">
       @if (auth.canEdit()) {
         <a mat-stroked-button [routerLink]="['/monitors', m.id, 'edit']">
-          <app-icon name="edit" size="1.1em" />
+          <app-icon name="edit" size="1.125rem" />
           {{ t('monitorDetail.actions.edit') }}
         </a>
         <button mat-stroked-button type="button" [disabled]="busy()" (click)="clone()">
-          <app-icon name="contentCopy" size="1.1em" />
+          <app-icon name="contentCopy" size="1.125rem" />
           {{ t('monitorDetail.actions.clone') }}
         </button>
         <button mat-stroked-button type="button" [disabled]="busy()" (click)="togglePause()">
-          <app-icon [name]="isPaused() ? 'playArrow' : 'pause'" size="1.1em" />
+          <app-icon [name]="isPaused() ? 'playArrow' : 'pause'" size="1.125rem" />
           {{ isPaused() ? t('monitorDetail.actions.resume') : t('monitorDetail.actions.pause') }}
         </button>
         <button mat-stroked-button type="button" [disabled]="testBusy()" (click)="runTest()">
-          <app-icon name="refresh" size="1.1em" />
+          <app-icon name="refresh" size="1.125rem" />
           {{ t('monitorDetail.actions.test') }}
         </button>
         <button
@@ -26,7 +26,7 @@
           [disabled]="busy()"
           (click)="remove()"
         >
-          <app-icon name="delete" size="1.1em" />
+          <app-icon name="delete" size="1.125rem" />
           {{ t('monitorDetail.actions.delete') }}
         </button>
       }

@@ -95,7 +95,7 @@ const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
         "
       >
         <a mat-button routerLink="/maintenance">
-          <app-icon name="arrowBack" />
+          <app-icon name="arrowBack" size="1.125rem" />
           {{ t('common.back') }}
         </a>
       </app-page-header>
@@ -335,20 +335,20 @@ const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
     .form {
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
+      gap: 1rem;
       max-width: 48rem;
     }
     .section {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 1rem;
       padding: 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
     }
     .section__title {
-      margin: 0 0 0.25rem;
+      margin: 0;
       font-size: 1rem;
     }
     mat-form-field {

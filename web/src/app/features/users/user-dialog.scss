@@ -1,29 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-.content {
-  display: flex;
-  flex-direction: column;
-}
-
 mat-form-field {
   width: 100%;
 }
 
 .hint {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 0.875rem;
   color: var(--muted);
-}
-
-.toggle {
-  margin: 0.25rem 0 0.25rem;
 }
 
 .readonly {
   display: flex;
   flex-direction: column;
-  margin: 0 0 1rem;
 
   &__label {
     font-size: 0.75rem;
@@ -32,7 +22,7 @@ mat-form-field {
 }
 
 .error {
-  margin: 0 0 0.75rem;
+  margin: 0;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   color: var(--danger);
@@ -41,7 +31,7 @@ mat-form-field {
 }
 
 .field-error {
-  margin: -0.5rem 0 0.75rem;
+  margin: 0;
   font-size: 0.75rem;
   color: var(--danger);
 }
