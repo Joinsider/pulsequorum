@@ -117,7 +117,7 @@ require (
 	github.com/muesli/termenv v0.15.1 // indirect
 	github.com/ncruces/go-sqlite3 v0.32.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
-	github.com/nwaples/rardecode/v2 v2.1.0 // indirect
+	github.com/nwaples/rardecode/v2 v2.2.0 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
