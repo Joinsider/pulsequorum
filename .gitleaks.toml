@@ -1,0 +1,15 @@
+# gitleaks configuration (ADR 0040): the default rules plus reviewed exceptions.
+# Single findings are listed in .gitleaksignore; an exception here must cover a
+# whole class of false positives and stays as narrow as possible.
+
+[extend]
+useDefault = true
+
+# oapi-codegen embeds the OpenAPI document as a gzip+base64 blob in the generated
+# server code. The blob changes with every API change and matches generic-api-key.
+# The source document api/openapi.yaml is still scanned, and the generated file is
+# checked by `make generate-check`, so it cannot carry anything the source lacks.
+[[allowlists]]
+description = "Embedded OpenAPI document in generated server code"
+targetRules = ["generic-api-key"]
+paths = ['''^internal/api/gen/api\.gen\.go$''']
