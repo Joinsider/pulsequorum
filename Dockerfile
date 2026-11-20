@@ -4,9 +4,9 @@
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY web/ ./
-RUN npx ng build
+RUN npm run build
 
 # --- Backend ----------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
