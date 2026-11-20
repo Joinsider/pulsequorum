@@ -24,11 +24,13 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -X github.com/joinsider/pulsequorum/internal/version.Version=${VERSION} \
       -X github.com/joinsider/pulsequorum/internal/version.Commit=${COMMIT} \
       -X github.com/joinsider/pulsequorum/internal/version.Date=${DATE}" \
-    -o /out/pulsequorum ./cmd/pulsequorum
+    -o /out/pulsequorum ./cmd/pulsequorum && mkdir -p /out/data
 
 # --- Runtime ----------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/pulsequorum /pulsequorum
+# Empty data dir owned by nonroot, so a fresh named volume is writable.
+COPY --from=build --chown=65532:65532 /out/data /data
 ENV DATA_DIR=/data
 EXPOSE 8080 9443
 USER nonroot:nonroot

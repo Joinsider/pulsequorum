@@ -8,6 +8,9 @@ FROM gcr.io/distroless/static-debian12:nonroot
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/pulsequorum /pulsequorum
 COPY LICENSE THIRD_PARTY_NOTICES.md /licenses/
+# Empty data dir owned by nonroot, so a fresh named volume is writable. Distroless
+# has no shell; its empty /home/nonroot serves as the source directory.
+COPY --from=gcr.io/distroless/static-debian12:nonroot --chown=65532:65532 /home/nonroot /data
 ENV DATA_DIR=/data
 EXPOSE 8080 9443
 USER nonroot:nonroot

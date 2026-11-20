@@ -6,7 +6,7 @@
 # use the defaults documented there; the commented ones are optional.
 services:
   uptime:
-    image: ghcr.io/joinsider/pulsequorum:latest
+    image: ghcr.io/joinsider/pulsequorum:0.0
     build:
       context: ..
     restart: unless-stopped

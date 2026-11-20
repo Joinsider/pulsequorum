@@ -11,7 +11,7 @@ Dieses Dokument beschreibt die Inbetriebnahme eines einzelnen Voters mit lokalen
 
 ## Schnellstart
 
-1. Repository holen und das Image starten (Build aus dem Quellcode; ein fertiges Image gibt es unter `ghcr.io/joinsider/pulsequorum:latest`):
+1. Repository holen und das Image starten (Build aus dem Quellcode; ein fertiges Image gibt es unter `ghcr.io/joinsider/pulsequorum:<version>`, z. B. `:0.0`; den Tag `latest` gibt es erst ab Version 1.0.0):
 
    ```bash
    docker compose -f deploy/compose.single.yaml up -d --build
