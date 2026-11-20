@@ -182,6 +182,21 @@ Schlagen die Prüfungen 3 bis 5 fehl, den Release nicht weitergeben. Ursache kl�
 **Fehler nach dem Publish.**
 - Tag und Assets sind dauerhaft fest. Den Fehler heilt nur eine neue Patch-Version. Notizen lassen sich trotzdem korrigieren.
 
+**Fehlerhafte Version zurückziehen.**
+
+Ein veröffentlichter Release wird nicht gelöscht, sondern ersetzt und sichtbar markiert. Wer die Version schon gezogen hat, behält sie ohnehin, und Mirrors sowie der Go-Modul-Proxy halten eine Kopie. Ein gelöschter Immutable Release sperrt außerdem den Tag-Namen dauerhaft.
+
+1. **Nachfolger veröffentlichen:** Fehler über PR auf `master` beheben und mit `make release` die nächste Patch-Version erzeugen.
+2. **Fehlerhafte Version markieren:** Am alten Release über **Edit** ganz oben einfügen: `> ⚠️ Nicht verwenden: <kurzer Grund>. Bitte vX.Y.Z+1 verwenden.` Titel und Notizen bleiben auch nach dem Veröffentlichen editierbar.
+3. **Image entfernen, falls nötig:** Im GHCR-Paket `pulsequorum` die Version `X.Y.Z` löschen, damit sie niemand neu zieht. Bei schweren Fehlern auch die Tags `X.Y` prüfen, die nach dem Nachfolger wieder auf eine gute Version zeigen. `latest` gibt es in `0.x` nicht.
+4. **Go-Modul zurückziehen:** In `go.mod` des Nachfolgers eine `retract`-Direktive aufnehmen, dann warnt `go get` vor der Version:
+
+   ```
+   retract v0.0.3 // Kurzer Grund, siehe Release-Notizen
+   ```
+
+5. **Sicherheitslücke:** Zusätzlich ein GitHub Security Advisory anlegen (**Security → Advisories**) und die betroffenen sowie die behobene Version nennen.
+
 **Draft wird verworfen.**
 - Die Images liegen bereits in GHCR, sind aber nicht freigegeben. Sie bleiben stehen und müssen von Hand gelöscht werden: GHCR-Paket `pulsequorum` öffnen und die Version entfernen.
 - Der Tag bleibt bestehen. Der saubere Weg ist eine neue Patch-Version. `latest` ist davon in `0.x` nicht betroffen.
