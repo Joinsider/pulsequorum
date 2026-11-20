@@ -53,7 +53,7 @@
               [attr.aria-label]="t('common.edit') + ': ' + row.tenant.name"
               (click)="edit(row)"
             >
-              <app-icon name="edit" size="1.125rem" />
+              <app-icon name="edit" />
               {{ t('common.edit') }}
             </button>
             @if (row.rights.canSuspendToggle) {
@@ -68,7 +68,7 @@
                 "
                 (click)="toggleSuspended(row)"
               >
-                <app-icon [name]="row.tenant.suspended ? 'playArrow' : 'block'" size="1.125rem" />
+                <app-icon [name]="row.tenant.suspended ? 'playArrow' : 'block'" />
                 {{ row.tenant.suspended ? t('admin.tenants.resume') : t('admin.tenants.suspend') }}
               </button>
             }
@@ -82,7 +82,7 @@
                   [attr.aria-label]="t('common.delete') + ': ' + row.tenant.name"
                   (click)="remove(row)"
                 >
-                  <app-icon name="delete" size="1.125rem" />
+                  <app-icon name="delete" />
                   {{ t('common.delete') }}
                 </button>
               </span>

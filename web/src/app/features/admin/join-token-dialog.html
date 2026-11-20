@@ -2,7 +2,7 @@
 <ng-container *transloco="let t">
   <h2 mat-dialog-title>{{ t('admin.joinToken.title') }}</h2>
 
-  <mat-dialog-content class="content">
+  <mat-dialog-content class="form-stack">
     @if (data.hintKey) {
       <p class="notice" role="note">{{ t(data.hintKey) }}</p>
     }
@@ -37,7 +37,7 @@
           [cdkCopyToClipboard]="tok"
           (cdkCopyToClipboardCopied)="onCopied($event)"
         >
-          <app-icon name="contentCopy" />
+          <app-icon name="contentCopy" size="1.125rem" />
           {{ t('admin.joinToken.copy') }}
         </button>
         @if (copied()) {

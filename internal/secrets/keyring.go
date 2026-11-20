@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joinsider/pulsequorum/internal/store"
 )
@@ -81,6 +82,36 @@ func (r *Keyring) Reload(ctx context.Context) error {
 	r.keys, r.active = keys, active
 	r.mu.Unlock()
 	return nil
+}
+
+// Refresh reloads the data keys every interval until ctx ends. Encrypt never
+// reloads on its own, so without this a voter that loaded its keys before it
+// caught up after a join has no active key, and every node keeps encrypting
+// with the previous key after a rotation. It returns ErrKEKMismatch (the node
+// must stop); other load errors are logged and retried on the next tick.
+func (r *Keyring) Refresh(ctx context.Context, interval time.Duration, log *slog.Logger) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		before := r.ActiveKeyID()
+		if err := r.Reload(ctx); err != nil {
+			if errors.Is(err, ErrKEKMismatch) {
+				return err
+			}
+			if ctx.Err() == nil {
+				log.Warn("could not reload data keys", "err", err)
+			}
+			continue
+		}
+		if after := r.ActiveKeyID(); after != before {
+			log.Info("active data key changed", "previous_key", before, "active_key", after)
+		}
+	}
 }
 
 // ActiveKeyID returns the key new values are encrypted with ("" if none).

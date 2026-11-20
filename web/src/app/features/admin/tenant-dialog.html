@@ -5,7 +5,7 @@
   </h2>
 
   <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-    <mat-dialog-content class="content">
+    <mat-dialog-content class="form-stack">
       @if (error(); as key) {
         <p class="error" role="alert">
           {{ t(key) }}
@@ -76,10 +76,12 @@
         }
       </mat-form-field>
 
-      <h3 class="section">{{ t('admin.tenants.dialog.limitsTitle') }}</h3>
-      <p class="hint">{{ t('admin.tenants.dialog.limitsHint') }}</p>
+      <div class="section-head">
+        <h3 class="section">{{ t('admin.tenants.dialog.limitsTitle') }}</h3>
+        <p class="hint">{{ t('admin.tenants.dialog.limitsHint') }}</p>
+      </div>
 
-      <div formGroupName="limits" class="limits">
+      <div formGroupName="limits" class="form-stack">
         @for (key of limitKeys; track key) {
           <div class="limit">
             <mat-form-field appearance="outline">

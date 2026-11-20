@@ -90,5 +90,154 @@
     "tagLength": "Each tag can be at most {{ max }} characters long.",
     "countRequired": "Enter the number of nodes.",
     "nodesRequired": "Enter at least one node ID."
+  },
+  "schema": {
+    "http": {
+      "url": {
+        "label": "URL",
+        "hint": "Full address including https://, e.g. https://example.com/health"
+      },
+      "method": { "label": "HTTP method" },
+      "headers": {
+        "label": "Headers",
+        "hint": "Values are stored encrypted and shown masked",
+        "*": { "label": "Value" }
+      },
+      "body": {
+        "label": "Request body",
+        "hint": "Optional. At most 65536 characters."
+      },
+      "auth": {
+        "label": "Authentication",
+        "hint": "Basic or bearer credentials for the request",
+        "type": {
+          "label": "Scheme",
+          "options": { "basic": "Basic", "bearer": "Bearer token" }
+        },
+        "username": { "label": "Username" },
+        "password": { "label": "Password" },
+        "token": { "label": "Token" }
+      },
+      "expectedStatus": {
+        "label": "Expected status codes",
+        "hint": "Codes and ranges, e.g. 200-299,301"
+      },
+      "keyword": {
+        "label": "Keyword in content",
+        "hint": "Checks whether a text is present in or absent from the response body",
+        "value": { "label": "Text" },
+        "mode": {
+          "label": "Check",
+          "options": { "contains": "Contains", "notContains": "Does not contain" }
+        },
+        "caseSensitive": { "label": "Case-sensitive" }
+      },
+      "jsonPath": {
+        "label": "JSON path",
+        "hint": "Compares the value at a path of the JSON response with an expected value",
+        "path": {
+          "label": "Path",
+          "hint": "e.g. $.status or $.items[0].state"
+        },
+        "expected": { "label": "Expected value" }
+      },
+      "maxResponseMs": {
+        "label": "Maximum response time (ms)",
+        "hint": "A longer response counts as down"
+      },
+      "followRedirects": { "label": "Follow redirects" },
+      "maxRedirects": { "label": "Maximum redirects" },
+      "ignoreTlsErrors": {
+        "label": "Ignore TLS errors",
+        "hint": "Accepts invalid certificates. Only use this if you know the risk."
+      },
+      "tlsExpiryWarningDays": {
+        "label": "Warn before certificate expiry (days)",
+        "hint": "Below this many days the status is set to degraded. 0 disables the warning."
+      },
+      "ipFamily": {
+        "label": "IP version",
+        "options": { "auto": "Automatic", "ipv4": "IPv4", "ipv6": "IPv6" }
+      },
+      "maxBodyBytes": {
+        "label": "Maximum response size (bytes)",
+        "hint": "Larger responses are cut off after this many bytes"
+      },
+      "connectTimeoutMs": { "label": "Connect timeout (ms)" },
+      "tlsTimeoutMs": { "label": "TLS handshake timeout (ms)" },
+      "responseHeaderTimeoutMs": { "label": "Timeout until response headers (ms)" },
+      "userAgent": {
+        "label": "User agent",
+        "hint": "At most 256 characters"
+      }
+    },
+    "tcp": {
+      "host": {
+        "label": "Host",
+        "hint": "Host name or IP address"
+      },
+      "port": {
+        "label": "Port",
+        "hint": "1 to 65535"
+      },
+      "tls": {
+        "label": "Use TLS",
+        "hint": "Also checks the TLS handshake"
+      },
+      "tlsServerName": {
+        "label": "TLS server name (SNI)",
+        "hint": "Empty uses the host"
+      },
+      "ignoreTlsErrors": {
+        "label": "Ignore TLS errors",
+        "hint": "Accepts invalid certificates. Only use this if you know the risk."
+      },
+      "ipFamily": {
+        "label": "IP version",
+        "options": { "auto": "Automatic", "ipv4": "IPv4", "ipv6": "IPv6" }
+      }
+    },
+    "dns": {
+      "hostname": {
+        "label": "Host name",
+        "hint": "The name to query"
+      },
+      "recordType": { "label": "Record type" },
+      "resolver": {
+        "label": "Resolver",
+        "hint": "IP or IP:port. Empty uses the system resolver."
+      },
+      "expected": {
+        "label": "Expected values",
+        "hint": "Values that must appear in the answer, depending on the match mode"
+      },
+      "matchMode": {
+        "label": "Match mode",
+        "options": { "contains": "Contains", "equals": "Equals" }
+      },
+      "transport": { "label": "Transport" }
+    },
+    "icmp": {
+      "host": {
+        "label": "Host",
+        "hint": "Host name or IP address"
+      },
+      "count": {
+        "label": "Number of packets",
+        "hint": "1 to 20"
+      },
+      "intervalMs": {
+        "label": "Interval between packets (ms)",
+        "hint": "100 to 5000 ms"
+      },
+      "maxPacketLossPercent": {
+        "label": "Maximum packet loss (%)",
+        "hint": "0 to 100. Above this value the check counts as down."
+      },
+      "ipFamily": {
+        "label": "IP version",
+        "options": { "auto": "Automatic", "ipv4": "IPv4", "ipv6": "IPv6" }
+      }
+    }
   }
 }

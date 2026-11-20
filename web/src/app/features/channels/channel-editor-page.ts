@@ -156,7 +156,7 @@ type HeaderGroup = FormGroup<{
                     <mat-hint>{{ t('channels.editor.shoutrrr.expertHint') }}</mat-hint>
                   </mat-form-field>
                 } @else {
-                  <div class="grid">
+                  <div class="form-row">
                     @for (f of currentFields(); track f.name) {
                       @if (f.kind === 'select') {
                         <mat-form-field appearance="outline">
@@ -195,7 +195,7 @@ type HeaderGroup = FormGroup<{
             <section class="section" [attr.aria-label]="t('channels.editor.webhook.title')">
               <h2 class="section__title">{{ t('channels.editor.webhook.title') }}</h2>
               <div formGroupName="webhook" class="webhook">
-                <div class="grid">
+                <div class="form-row">
                   <mat-form-field appearance="outline">
                     <mat-label>{{ t('channels.editor.webhook.url') }}</mat-label>
                     <input
@@ -328,7 +328,7 @@ type HeaderGroup = FormGroup<{
       margin: 0;
     }
     .notice {
-      margin: 0 0 1rem;
+      margin: 0;
       padding: 0.625rem 0.875rem;
       border-radius: 6px;
       background: var(--background);
@@ -337,7 +337,7 @@ type HeaderGroup = FormGroup<{
     .editor {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 1rem;
       max-width: 44rem;
     }
     .editor mat-form-field {
@@ -346,9 +346,8 @@ type HeaderGroup = FormGroup<{
     .section {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-      padding-top: 0.75rem;
+      gap: 1rem;
+      padding-top: 1rem;
       border-top: 1px solid var(--border);
     }
     .section__title {
@@ -357,18 +356,13 @@ type HeaderGroup = FormGroup<{
       font-weight: 650;
     }
     .subtitle {
-      margin: 0.5rem 0 0;
+      margin: 0;
       font-size: 0.9375rem;
       font-weight: 600;
     }
-    .grid {
-      display: grid;
-      gap: 0 0.75rem;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
     .header-row {
       display: grid;
-      gap: 0 0.5rem;
+      gap: 1rem 0.5rem;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto;
       align-items: start;
     }
@@ -398,7 +392,6 @@ type HeaderGroup = FormGroup<{
       flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem;
-      margin-top: 0.5rem;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

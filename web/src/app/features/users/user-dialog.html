@@ -3,7 +3,7 @@
   <h2 mat-dialog-title>{{ create ? t('users.createTitle') : t('users.editTitle') }}</h2>
 
   <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-    <mat-dialog-content class="content">
+    <mat-dialog-content class="form-stack">
       @if (error(); as key) {
         <p class="error" role="alert">{{ t(key) }}</p>
       }

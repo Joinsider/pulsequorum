@@ -35,7 +35,7 @@ import {
   newRequestKey,
   replaceConfig,
 } from './monitor-form';
-import { JsonSchema, asSchema, validationMessage } from './schema-form';
+import { JsonSchema, asSchema, schemaI18nPrefix, validationMessage } from './schema-form';
 
 /** Summary shown above the form after a failed save. */
 interface Summary {
@@ -75,23 +75,21 @@ interface Summary {
       color: var(--danger);
       margin: 0;
     }
+    /* Every section: same padding and the same 1rem rhythm as the forms (styles.scss). */
     .card {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 0.75rem;
-      padding: 1rem 1.25rem 0.5rem;
+      padding: 1.25rem;
       margin-bottom: 1rem;
       min-width: 0;
     }
     .card h2 {
-      margin: 0 0 0.75rem;
+      margin: 0;
       font-size: 1.0625rem;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-      gap: 0 1rem;
-      min-width: 0;
     }
     .span-all {
       grid-column: 1 / -1;
@@ -100,10 +98,10 @@ interface Summary {
       width: 100%;
     }
     .toggle {
-      margin: 0.25rem 0 1rem;
+      margin: 0;
     }
     .hint {
-      margin: -0.5rem 0 1rem;
+      margin: 0;
       color: var(--muted);
       font-size: 0.8125rem;
     }
@@ -139,7 +137,7 @@ interface Summary {
     }
     @media (max-width: 480px) {
       .card {
-        padding: 0.875rem 0.875rem 0.25rem;
+        padding: 1rem;
       }
     }
   `,
@@ -166,6 +164,8 @@ export class MonitorEditorPage {
   protected readonly channels = signal<NotificationChannel[]>([]);
   /** Schema of the selected monitor type; null if the type is unknown. */
   protected readonly typeSchema = signal<JsonSchema | null>(null);
+  /** Translation prefix of the selected type's configuration fields. */
+  protected readonly schemaPrefix = signal('');
   protected readonly capability = signal<string | null>(null);
   protected readonly busy = signal(false);
   /** Opened automatically when a collapsed advanced field is invalid on submit. */
@@ -286,6 +286,7 @@ export class MonitorEditorPage {
     const schema = selected ? asSchema(selected.configSchema) : null;
     this.capability.set(selected?.requiresCapability ?? null);
     this.typeSchema.set(schema);
+    this.schemaPrefix.set(schemaI18nPrefix(type));
     this.form.controls['type'].setValue(type);
     if (schema) {
       replaceConfig(this.form, schema, config);

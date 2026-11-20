@@ -16,7 +16,7 @@ Das Image läuft als `nonroot` (UID/GID 65532). Deshalb ist **`unprivileged` der
 ```yaml
 services:
   uptime:
-    image: ghcr.io/joinsider/pulsequorum:latest
+    image: ghcr.io/joinsider/pulsequorum:0.0
     sysctls:
       net.ipv4.ping_group_range: "65532 65532"
 ```
@@ -26,7 +26,7 @@ services:
 ## Podman (auch rootless)
 
 ```bash
-podman run --sysctl net.ipv4.ping_group_range="65532 65532" ghcr.io/joinsider/pulsequorum:latest
+podman run --sysctl net.ipv4.ping_group_range="65532 65532" ghcr.io/joinsider/pulsequorum:0.0
 ```
 
 Podman setzt standardmäßig `net.ipv4.ping_group_range=0 0` (nur Gruppe 0); ohne die Option funktioniert `unprivileged` mit dem `nonroot`-Image daher nicht. Dauerhaft lässt sich der Wert in `containers.conf` unter `default_sysctls` hinterlegen.

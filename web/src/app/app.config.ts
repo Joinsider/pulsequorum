@@ -18,6 +18,7 @@ import {
   provideAuth,
 } from 'angular-auth-oidc-client';
 import { from, map, shareReplay } from 'rxjs';
+import { MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { routes } from './app.routes';
 import { apiBaseUrlInterceptor } from './core/api/api-base-url.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
@@ -30,6 +31,11 @@ import { LANGUAGES, initialLanguage } from './core/i18n/language';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    // Outline fields everywhere, and dynamic subscripts so hints never overlap the next row.
+    {
+      provide: MAT_FORM_FIELD_DEFAULT_OPTIONS,
+      useValue: { appearance: 'outline', subscriptSizing: 'dynamic' },
+    },
     // Order matters: the auth interceptor only trusts relative /api/ URLs,
     // before the base-URL interceptor turns them into absolute ones.
     provideHttpClient(withFetch(), withInterceptors([authInterceptor, apiBaseUrlInterceptor])),

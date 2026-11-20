@@ -12,6 +12,6 @@
  */
 
 /**
- * JSON Schema (draft 2020-12) of `MonitorInput.config`
+ * JSON Schema (draft 2020-12) of `MonitorInput.config`. Every object schema with `properties` carries an `x-order` array with the property names in display order.
  */
 export type MonitorTypeConfigSchema = { [key: string]: unknown };

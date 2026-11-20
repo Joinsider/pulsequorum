@@ -44,7 +44,7 @@
               [attr.aria-label]="t('common.edit') + ': ' + row.plan.name"
               (click)="edit(row)"
             >
-              <app-icon name="edit" size="1.125rem" />
+              <app-icon name="edit" />
               {{ t('common.edit') }}
             </button>
             <span [matTooltip]="row.rights.deleteLockKey ? t(row.rights.deleteLockKey) : ''">

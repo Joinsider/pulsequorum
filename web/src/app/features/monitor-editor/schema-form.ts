@@ -35,6 +35,69 @@ export interface JsonSchema {
   required?: string[];
   additionalProperties?: boolean | JsonSchema;
   writeOnly?: boolean;
+  /** Display order of the properties (server extension); the values are not affected. */
+  'x-order'?: string[];
+}
+
+/** A property of an object schema, in display order (see {@link orderedProperties}). */
+export interface SchemaProperty {
+  key: string;
+  schema: JsonSchema;
+  required: boolean;
+}
+
+/**
+ * The properties of an object schema in display order.
+ *
+ * - With `x-order`, the listed names come in that order; unknown names follow in
+ *   their original order.
+ * - Without it, required properties come first, the rest keep their order.
+ * - Optional object, map and array properties move after the simple fields of the
+ *   same level, so the important fields (e.g. the URL) are shown first.
+ */
+export function orderedProperties(schema: JsonSchema): SchemaProperty[] {
+  const required = new Set(schema.required ?? []);
+  const entries: SchemaProperty[] = Object.entries(schema.properties ?? {}).map(([key, child]) => ({
+    key,
+    schema: asSchema(child),
+    required: required.has(key),
+  }));
+
+  const order = schema['x-order'];
+  // Array.prototype.sort is stable, so ties keep the original order.
+  const sorted = Array.isArray(order)
+    ? entries.sort((a, b) => rankOf(a.key, order) - rankOf(b.key, order))
+    : entries.sort((a, b) => Number(!a.required) - Number(!b.required));
+
+  const isComposite = (p: SchemaProperty) =>
+    !p.required && ['object', 'map', 'array'].includes(fieldKind(p.schema));
+  return [...sorted.filter((p) => !isComposite(p)), ...sorted.filter(isComposite)];
+}
+
+function rankOf(key: string, order: string[]): number {
+  const index = order.indexOf(key);
+  return index === -1 ? order.length : index;
+}
+
+/**
+ * Fallback label of a property key: `maxBodyBytes` becomes "Max body bytes".
+ * Used when neither a translation nor a schema title exists.
+ */
+export function humanizeKey(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Translation key prefix of a monitor type's configuration schema, e.g.
+ * `monitorEditor.schema.http`. Labels and hints are looked up below it.
+ */
+export function schemaI18nPrefix(monitorType: string): string {
+  return `monitorEditor.schema.${monitorType}`;
 }
 
 /**

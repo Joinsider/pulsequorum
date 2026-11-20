@@ -111,3 +111,66 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/*
+ * Forms: one vertical rhythm for every form. Fields use the dynamic subscript
+ * (app.config.ts), so hints take only the space they need and the gap alone
+ * separates consecutive fields, hints and checkboxes.
+ */
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/*
+ * Material styles .mat-mdc-dialog-content as a block after the global styles and
+ * removes its top padding below the title, which clips the floating label of an
+ * outlined first field. The higher specificity keeps the stack and the room.
+ */
+.mat-mdc-dialog-container .mat-mdc-dialog-content.form-stack {
+  display: flex;
+  padding-top: 0.5rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+  min-width: 0;
+
+  > .span-all {
+    grid-column: 1 / -1;
+  }
+}
+
+/*
+ * Icon buttons: MDC centres only the mat-icon glyph and lays the button out as
+ * inline-block with a 24px font, so an <app-icon> (inline SVG) sits on the text
+ * baseline, a few pixels too low. Centre the content box as a whole. The doubled
+ * class beats Material's own rule, which is loaded after the global styles.
+ */
+.mat-mdc-icon-button.mat-mdc-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * Text buttons with an icon: the label is a block, so an inline-flex child gets
+ * an extra line box below it and sits too high. Centre icon and text instead.
+ */
+.mat-mdc-button .mdc-button__label:has(> app-icon, > * > app-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Row actions in tables: 36px targets with a 20px icon, centred. */
+td .mat-mdc-icon-button,
+th .mat-mdc-icon-button {
+  --mat-icon-button-state-layer-size: 36px;
+  --mat-icon-button-icon-size: 20px;
+}

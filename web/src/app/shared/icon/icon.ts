@@ -9,7 +9,7 @@ import { ICONS, IconName } from './icons';
  * current text colour. It is decorative: pair it with a visible label or an
  * aria-label on the enclosing control.
  *
- * @example <app-icon name="dashboard" size="1.25rem" />
+ * @example <app-icon name="dashboard" />
  */
 @Component({
   selector: 'app-icon',
@@ -41,8 +41,11 @@ import { ICONS, IconName } from './icons';
 export class Icon {
   /** Name of an entry in ICONS, e.g. `monitorHeart` for the Material icon monitor_heart. */
   readonly name = input.required<IconName>();
-  /** Any CSS length. */
-  readonly size = input<string>('1.5em');
+  /**
+   * Any CSS length. The default (20px) suits icon buttons and mini FABs; use
+   * 1.125rem (18px) for icons in menus and next to inline text.
+   */
+  readonly size = input<string>('1.25rem');
 
   protected readonly path = computed(() => ICONS[this.name()]);
 }
