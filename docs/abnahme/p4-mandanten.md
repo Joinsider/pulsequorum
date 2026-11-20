@@ -4,7 +4,7 @@
 
 **Messumgebung:**
 - Apple M4 Pro (Notebook), Podman 6.2 rootless in einer VM mit 4 CPUs und 7,5 GB, Go 1.27.4.
-- **AS-06:** ein Voter (`bin/uptimecluster`, Modus `oidc`, Profil `zitadel`, `OIDC_TENANCY=multi`, `OIDC_AUTO_PROVISION=true`) direkt auf dem Host gegen Zitadel v4.20.3 aus `deploy/oidc-dev/zitadel`. Mandant A ist die Organisation `acme`, Mandant B `globex`; beide melden sich über ihre Maschinenbenutzer `acme-admin-bot` und `globex-admin-bot` (Rolle `tenant-admin`, Client Credentials) an.
+- **AS-06:** ein Voter (`bin/pulsequorum`, Modus `oidc`, Profil `zitadel`, `OIDC_TENANCY=multi`, `OIDC_AUTO_PROVISION=true`) direkt auf dem Host gegen Zitadel v4.20.3 aus `deploy/oidc-dev/zitadel`. Mandant A ist die Organisation `acme`, Mandant B `globex`; beide melden sich über ihre Maschinenbenutzer `acme-admin-bot` und `globex-admin-bot` (Rolle `tenant-admin`, Client Credentials) an.
 - **AS-07:** die Umgebung `deploy/ssrf-dev` (ein Voter im Podman-Netz, eigener DNS-Server, interner Canary, Netz `203.0.113.0/24` als „Internet“), siehe [docs/betrieb/ssrf.md](../betrieb/ssrf.md).
 
 **Aufruf:**
@@ -12,8 +12,8 @@
 ```bash
 # AS-06 (Anleitung: test/acceptance/as06/README.md)
 deploy/oidc-dev/zitadel/setup.sh
-set -a; source deploy/oidc-dev/zitadel/.generated/uptimecluster.env; set +a
-OIDC_AUTO_PROVISION=true DATA_DIR=… bin/uptimecluster &
+set -a; source deploy/oidc-dev/zitadel/.generated/pulsequorum.env; set +a
+OIDC_AUTO_PROVISION=true DATA_DIR=… bin/pulsequorum &
 deploy/oidc-dev/zitadel/token.sh acme-admin-bot   > "$dir/a.tok"
 deploy/oidc-dev/zitadel/token.sh globex-admin-bot > "$dir/b.tok"
 go run ./test/acceptance/as06 -base http://127.0.0.1:8080 -token-a-file "$dir/a.tok" -token-b-file "$dir/b.tok"

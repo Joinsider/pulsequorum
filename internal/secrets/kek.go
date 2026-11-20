@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package secrets implements envelope encryption for secrets stored in the
 // replicated state (ADR 0011, FA-SEC-SEC): a master key (KEK) wraps data
@@ -61,7 +61,7 @@ func (k *KEK) Transferable() ([]byte, bool) {
 
 // KeyFingerprint returns the fingerprint a key would have as KEK.
 func KeyFingerprint(key []byte) string {
-	sum := sha256.Sum256(append([]byte("uptimecluster-kek-v1:"), key...))
+	sum := sha256.Sum256(append([]byte("pulsequorum-kek-v1:"), key...))
 	return hex.EncodeToString(sum[:16])
 }
 
@@ -232,4 +232,4 @@ func (k *KEK) Unwrap(keyID string, wrapped []byte) ([]byte, error) {
 	return dek, nil
 }
 
-func wrapAAD(keyID string) []byte { return []byte("uptimecluster-dek-v1/" + keyID) }
+func wrapAAD(keyID string) []byte { return []byte("pulsequorum-dek-v1/" + keyID) }

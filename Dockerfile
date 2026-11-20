@@ -15,22 +15,22 @@ COPY go.* ./
 RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
-COPY --from=web /src/web/dist/uptimecluster-web/browser/ internal/webui/dist/
+COPY --from=web /src/web/dist/pulsequorum-web/browser/ internal/webui/dist/
 
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev COMMIT=unknown DATE=unknown
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags "-s -w \
-      -X github.com/joinsider/uptimecluster/internal/version.Version=${VERSION} \
-      -X github.com/joinsider/uptimecluster/internal/version.Commit=${COMMIT} \
-      -X github.com/joinsider/uptimecluster/internal/version.Date=${DATE}" \
-    -o /out/uptimecluster ./cmd/uptimecluster
+      -X github.com/joinsider/pulsequorum/internal/version.Version=${VERSION} \
+      -X github.com/joinsider/pulsequorum/internal/version.Commit=${COMMIT} \
+      -X github.com/joinsider/pulsequorum/internal/version.Date=${DATE}" \
+    -o /out/pulsequorum ./cmd/pulsequorum
 
 # --- Runtime ----------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/uptimecluster /uptimecluster
+COPY --from=build /out/pulsequorum /pulsequorum
 ENV DATA_DIR=/data
 EXPOSE 8080 9443
 USER nonroot:nonroot
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/uptimecluster", "healthcheck"]
-ENTRYPOINT ["/uptimecluster"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/pulsequorum", "healthcheck"]
+ENTRYPOINT ["/pulsequorum"]

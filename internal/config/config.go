@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package config loads and validates the node configuration from environment variables.
 package config
@@ -18,8 +18,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/joinsider/uptimecluster/internal/selfcheck"
-	"github.com/joinsider/uptimecluster/internal/tenant"
+	"github.com/joinsider/pulsequorum/internal/selfcheck"
+	"github.com/joinsider/pulsequorum/internal/tenant"
 )
 
 // Role is the role a node runs in.

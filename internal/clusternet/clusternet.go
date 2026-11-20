@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package clusternet serves the cluster port (ADR 0006): one TLS 1.3 listener
 // with mutual authentication against the cluster CA, multiplexed by ALPN into
@@ -18,7 +18,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/pki"
 )
 
 // ALPN protocols of the cluster port.

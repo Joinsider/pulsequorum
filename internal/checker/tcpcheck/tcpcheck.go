@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package tcpcheck implements the TCP monitor type (FA-CHK-20).
 package tcpcheck
@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // Type is the monitor type key.

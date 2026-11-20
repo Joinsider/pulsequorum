@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 /** `system` follows the OS setting; `light` and `dark` force a theme (FA-UI-08). */
 export type ThemeChoice = 'system' | 'light' | 'dark';

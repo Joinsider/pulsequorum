@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package fake provides in-process stand-ins for external services that the
 // acceptance and chaos drivers need: an ntfy server that records messages and

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { MatMenuModule } from '@angular/material/menu';
@@ -22,7 +22,7 @@ import { IconName } from '../shared/icon/icons';
 import { ThemeChoice, applyTheme, nextTheme, readStoredTheme, storeTheme } from './theme';
 
 /** Public source code of the AGPL-licensed project (RB-LIC-04). */
-export const SOURCE_URL = 'https://github.com/Joinsider/uptime-cluster';
+export const SOURCE_URL = 'https://github.com/Joinsider/pulsequorum';
 
 /** Below this width the navigation is an overlay instead of a side panel. */
 const WIDE_QUERY = '(min-width: 960px)';

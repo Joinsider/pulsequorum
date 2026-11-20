@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- state.db: data class A, written only by the Raft FSM (ADR 0004, 0012 A1).
 -- Times are UTC milliseconds, booleans 0/1 (portable to PostgreSQL).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package checker defines the monitor type plugins (Konzept 11.2, FA-CHK-01).
 // Voters and probes run the same plugins. All network access goes through the
@@ -81,7 +81,7 @@ func truncate(s string) string {
 type Env struct {
 	// Dialer is the only way a checker may open network connections.
 	Dialer *Dialer
-	// UserAgent identifies the monitor, e.g. "UptimeCluster/1.2.0" (FA-CHK-13).
+	// UserAgent identifies the monitor, e.g. "Pulsequorum/1.2.0" (FA-CHK-13).
 	UserAgent string
 	// ICMPMode is the ICMP socket mode detected at startup: "privileged",
 	// "unprivileged" or "off" (FA-CHK-31).

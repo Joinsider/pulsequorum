@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package cluster contains the Raft consensus layer: the FSM that materializes
 // data class A into state.db and the node that runs Raft (ADR 0005, 0012).
@@ -15,8 +15,8 @@ import (
 
 	"github.com/google/uuid"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/store"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // CommandVersion is the highest Command.version this binary can apply.

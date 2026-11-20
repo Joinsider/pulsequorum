@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/chaos/harness"
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/chaos/harness"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // recFreshWait bounds how long the write probes wait for the 503 of a cluster
@@ -414,7 +414,7 @@ func runRecovery(ctx context.Context, env *Env) error {
 	if err != nil {
 		return err
 	}
-	out, err := cl.ExecStdin(ctx, best.slot, pw+"\n", "/uptimecluster", "admin", "reset-password", "--username", "admin")
+	out, err := cl.ExecStdin(ctx, best.slot, pw+"\n", "/pulsequorum", "admin", "reset-password", "--username", "admin")
 	rep.Check("admin reset-password in the running voter (password on stdin)", "password reset, sessions ended",
 		fmt.Sprintf("%s%s", firstLine(out), as09ErrSuffix(err)), err == nil && strings.Contains(out, "Password of"))
 	if err != nil {

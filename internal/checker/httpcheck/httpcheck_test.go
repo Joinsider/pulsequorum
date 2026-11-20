@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package httpcheck
 
@@ -24,13 +24,13 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // TestMain fails if any check leaves goroutines behind (FA-CHK-02, PF-16).
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
-var env = &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "UptimeCluster/test"}
+var env = &checker.Env{Dialer: &checker.Dialer{}, UserAgent: "Pulsequorum/test"}
 
 func run(t *testing.T, c *Checker, timeout time.Duration, cfg map[string]any) checker.Result {
 	t.Helper()
@@ -164,7 +164,7 @@ func TestRequestShape(t *testing.T) {
 	if u, p, ok := got.BasicAuth(); !ok || u != "u" || p != "p" {
 		t.Error("basic auth missing")
 	}
-	if ua := got.Header.Get("User-Agent"); ua != "UptimeCluster/test" {
+	if ua := got.Header.Get("User-Agent"); ua != "Pulsequorum/test" {
 		t.Errorf("User-Agent = %q", ua)
 	}
 

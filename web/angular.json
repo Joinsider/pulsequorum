@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "uptimecluster-web": {
+    "pulsequorum-web": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -69,10 +69,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "uptimecluster-web:build:production"
+              "buildTarget": "pulsequorum-web:build:production"
             },
             "development": {
-              "buildTarget": "uptimecluster-web:build:development"
+              "buildTarget": "pulsequorum-web:build:development"
             }
           },
           "defaultConfiguration": "development",

@@ -127,7 +127,7 @@ des Mandanten zugewiesen sind**
     - Ein vorhandener Eintrag ändert seinen Owner nie (`CodeConflict`).
     - Die Rolle ist `probe`.
 - **Gateway bei jedem Stream-Start:** Er lehnt ab (`PermissionDenied`, Warn-Log mit Node-ID und Mandant, Metrik
-  `uptimecluster_probe_rejected_total{reason}`), wenn:
+  `pulsequorum_probe_rejected_total{reason}`), wenn:
     - die Rolle ≠ `probe` ist,
     - die Node-ID widerrufen ist,
     - der Registereintrag fehlt (Level ≥ 10),

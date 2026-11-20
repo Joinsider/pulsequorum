@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package metrics exposes the Prometheus metrics of a node (FA-OBS-02, ADR 0025
 // section 7). Every node has its own registry; no collector is global. The
@@ -42,14 +42,14 @@ type Sources struct {
 	SystemAlertsActive func(ctx context.Context) (map[string]int, error)
 	// ClockOffsets maps peer to its clock offset (ADR 0020).
 	ClockOffsets func() map[string]time.Duration
-	// Version is the build version exported in uptimecluster_build_info.
+	// Version is the build version exported in pulsequorum_build_info.
 	Version string
 }
 
 // scrapeTimeout bounds each context-aware source during one scrape.
 const scrapeTimeout = 5 * time.Second
 
-// Buckets for uptimecluster_check_duration_seconds, from 10 ms to 30 s.
+// Buckets for pulsequorum_check_duration_seconds, from 10 ms to 30 s.
 var checkBuckets = []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
 
 // Metrics holds the push-side instruments and the scrape-time collector.
@@ -80,32 +80,32 @@ func New(src Sources) *Metrics {
 	m := &Metrics{
 		reg: prometheus.NewRegistry(),
 		checks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "uptimecluster_checks_total",
+			Name: "pulsequorum_checks_total",
 			Help: "Finished checks by monitor type and result.",
 		}, []string{"type", "result"}),
 		checkDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "uptimecluster_check_duration_seconds",
+			Name:    "pulsequorum_check_duration_seconds",
 			Help:    "Duration of checks by monitor type.",
 			Buckets: checkBuckets,
 		}, []string{"type"}),
 		checksRunning: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "uptimecluster_checks_running",
+			Name: "pulsequorum_checks_running",
 			Help: "Checks currently running on this node.",
 		}),
 		alertDeliveries: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "uptimecluster_alert_deliveries_total",
+			Name: "pulsequorum_alert_deliveries_total",
 			Help: "Alert deliveries by kind and outcome.",
 		}, []string{"kind", "outcome"}),
 		jwksFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "uptimecluster_auth_jwks_fetch_failures_total",
+			Name: "pulsequorum_auth_jwks_fetch_failures_total",
 			Help: "Failed fetches of the identity provider's signing keys (ADR 0027).",
 		}),
 		userInfoCalls: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "uptimecluster_auth_userinfo_requests_total",
+			Name: "pulsequorum_auth_userinfo_requests_total",
 			Help: "Userinfo lookups at the identity provider, one per new access token (ADR 0028).",
 		}),
 		userInfoFails: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "uptimecluster_auth_userinfo_failures_total",
+			Name: "pulsequorum_auth_userinfo_failures_total",
 			Help: "Failed userinfo lookups at the identity provider (ADR 0028).",
 		}),
 	}

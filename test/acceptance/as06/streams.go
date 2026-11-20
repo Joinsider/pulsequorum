@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -16,7 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // streamPollInterval is how often waitFor looks at the collected messages.

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 The UptimeCluster Authors
+# Copyright (C) 2026 The Pulsequorum Authors
 #
 # REST contract between backend and frontend (ADR 0003). Spec-first: change this
 # file, then run `make generate`. Scope: all phase-1 endpoints (single voter).
 openapi: 3.0.3
 info:
-  title: UptimeCluster API
+  title: Pulsequorum API
   version: 0.1.0
   description: |
-    REST API of an UptimeCluster voter. Every voter answers every request;
+    REST API of an Pulsequorum voter. Every voter answers every request;
     writes are forwarded to the Raft leader internally.
 
     The tenant is always derived from the access token, never from URL or body.
@@ -113,7 +113,7 @@ paths:
       tags: [auth]
       operationId: refresh
       summary: Rotate the refresh cookie and issue a new access token
-      description: "Requires the refresh cookie and the header `X-Requested-With: uptimecluster`."
+      description: "Requires the refresh cookie and the header `X-Requested-With: pulsequorum`."
       security: []
       parameters:
         - $ref: "#/components/parameters/XRequestedWith"
@@ -1391,7 +1391,7 @@ components:
       name: X-Requested-With
       in: header
       required: true
-      schema: { type: string, enum: [uptimecluster] }
+      schema: { type: string, enum: [pulsequorum] }
 
   responses:
     BadRequest:

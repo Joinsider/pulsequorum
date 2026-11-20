@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/chaos/harness"
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/chaos/harness"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // Images and versions of the rolling update (AS-09). The old image is built
 // from a git ref in a temporary worktree, the new one from the working tree.
 const (
-	as09ImageOld   = "uptimecluster:chaos-n"
-	as09ImageNew   = "uptimecluster:chaos-n1"
+	as09ImageOld   = "pulsequorum:chaos-n"
+	as09ImageNew   = "pulsequorum:chaos-n1"
 	as09VersionOld = "0.0.0-chaos-n"
 	as09VersionNew = "0.0.1-chaos-n1"
 	// as09Monitors is the number of HTTP monitors that run during the update.

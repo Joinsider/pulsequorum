@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 syntax = "proto3";
 
-package uptimecluster.v1;
+package pulsequorum.v1;
 
-import "uptimecluster/v1/heartbeat.proto";
+import "pulsequorum/v1/heartbeat.proto";
 
-option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+option go_package = "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1;pulsequorumv1";
 
 // Command is the envelope of every Raft log entry (ADR 0005). The leader fills
 // issued_at_ms and all new IDs before proposing, so FSM.Apply never reads the

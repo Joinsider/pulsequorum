@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/chaos/harness"
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/chaos/harness"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // failoverLimit is the time from the loss of the leader to a leader that all

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package api implements the REST API defined in api/openapi.yaml on top of the
 // generated strict server (ADR 0003).
@@ -17,20 +17,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/config"
-	"github.com/joinsider/uptimecluster/internal/configsecret"
-	"github.com/joinsider/uptimecluster/internal/degraded"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/replication"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/stream"
-	"github.com/joinsider/uptimecluster/internal/uptime"
-	"github.com/joinsider/uptimecluster/internal/version"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/configsecret"
+	"github.com/joinsider/pulsequorum/internal/degraded"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/replication"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/stream"
+	"github.com/joinsider/pulsequorum/internal/uptime"
+	"github.com/joinsider/pulsequorum/internal/version"
 )
 
 // BaseURL is the path prefix of all REST endpoints.

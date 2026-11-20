@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Command as06 automates acceptance scenario AS-06 (docs/pflichtenheft.md,
-// section 13.2) against a running UptimeCluster node that has two tenants
+// section 13.2) against a running Pulsequorum node that has two tenants
 // signed in through OIDC.
 //
 // Tenant A creates a notification channel, an HTTP monitor, a maintenance
@@ -42,7 +42,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // Fixed parameters of the scenario. The interval is the minimum that keeps

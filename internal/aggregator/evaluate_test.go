@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package aggregator
 
@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // TestNext covers the retry and recovery rules of FA-CON-03 and FA-CON-05 on

@@ -37,7 +37,7 @@ können `.go`-Dateien enthalten).
 **Option A.**
 
 - Struktur gemäß Konzept 18.2 (`cmd/`, `internal/`, `proto/`, `api/`, `web/`, `deploy/`, `docs/`, zusätzlich `spikes/`).
-- Go-Modulpfad vorläufig `github.com/joinsider/uptimecluster` (Änderung bei finalem Namen, O-08).
+- Go-Modulpfad vorläufig `github.com/joinsider/pulsequorum` (Änderung bei finalem Namen, O-08).
 - `internal/webui` bettet `all:dist` ein. `dist/.gitkeep` ist eingecheckt, damit der Go-Build ohne Frontend-Build
   funktioniert; fehlt `index.html`, liefert der Server eine Hinweisseite „UI nicht gebaut“.
 - `make build` baut zuerst die SPA (`web/dist/…/browser`), synchronisiert sie nach `internal/webui/dist` und baut dann

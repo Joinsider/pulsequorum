@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Flapping state of a monitor (FA-ALR-06, ADR 0023). The FSM sets it from
 -- command level 4 on; flapping_since_ms is the time the period started.

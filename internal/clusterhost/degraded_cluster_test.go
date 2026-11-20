@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -19,15 +19,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/aggregator"
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/degraded"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/aggregator"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/degraded"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/store"
 	_ "modernc.org/sqlite" // driver "sqlite" for the read-only check of unconfirmed_alerts
 )
 
@@ -37,7 +37,7 @@ import (
 // to the leader, judged against the confirmed history, and the FSM of all
 // voters is identical again.
 //
-// Every voter runs the same components as cmd/uptimecluster: the live
+// Every voter runs the same components as cmd/pulsequorum: the live
 // aggregator (gated by the gap job), the degraded detector, overlay, local
 // dispatcher, applier, degraded aggregator, reporter, judge, gap job and the
 // alert dispatcher of the leader. The heartbeats are synthetic (one per slot of
@@ -149,7 +149,7 @@ func (d *degCluster) setup(webhookURL string) {
 }
 
 // startStack runs the aggregators, the degraded components and the feed of
-// one voter, wired as cmd/uptimecluster does. The monitor must exist.
+// one voter, wired as cmd/pulsequorum does. The monitor must exist.
 func (d *degCluster) startStack(dn *degNode) {
 	d.t.Helper()
 	cn := dn.cn

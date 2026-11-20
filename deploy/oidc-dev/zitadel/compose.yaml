@@ -15,7 +15,7 @@
 #
 # Bootstrap-Dateien (PAT des IAM-Admins, Login-Client-PAT) landen per Bind-Mount in .generated/bootstrap.
 
-name: uptimecluster-zitadel
+name: pulsequorum-zitadel
 
 services:
   postgres:
@@ -53,7 +53,7 @@ services:
       ZITADEL_DATABASE_POSTGRES_DSN: "postgres://zitadel:${PG_PASSWORD}@postgres:5432/zitadel?sslmode=disable"
 
       # Erster Start: Organisation der Plattform, Maschinenbenutzer für die Verwaltung per PAT.
-      ZITADEL_FIRSTINSTANCE_INSTANCENAME: uptimecluster-dev
+      ZITADEL_FIRSTINSTANCE_INSTANCENAME: pulsequorum-dev
       ZITADEL_FIRSTINSTANCE_ORG_NAME: platform
       ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/iam-admin.pat
       ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat

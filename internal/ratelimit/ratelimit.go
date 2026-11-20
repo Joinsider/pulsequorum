@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package ratelimit provides a per-key token-bucket rate limiter. It is used
 // to throttle login and public HTTP endpoints (FA-API-07).

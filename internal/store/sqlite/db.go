@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package sqlite implements the store interfaces on SQLite with the CGO-free
 // modernc.org/sqlite driver (ADR 0004, 0013).

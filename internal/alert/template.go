@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package alert delivers notifications: Shoutrrr and webhook senders, the
 // JSON-safe webhook templates, secret masking and the leader's outbox
@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/sysalert"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/sysalert"
 )
 
 // placeholder matches {{name}} with optional spaces.

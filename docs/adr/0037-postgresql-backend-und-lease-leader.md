@@ -236,7 +236,7 @@ Release 1.0 offen (siehe offene Frage 1).
 **1. Betriebsmodell (1C).**
 
 - `STORAGE_BACKEND=postgres` ersetzt Raft vollständig. Klasse A und Klasse B liegen in **einer** PostgreSQL-Datenbank je
-  Cluster, in einem eigenen Schema (`DATABASE_SCHEMA`, Standard `uptimecluster`). Die Datenbank *ist* der Cluster.
+  Cluster, in einem eigenen Schema (`DATABASE_SCHEMA`, Standard `pulsequorum`). Die Datenbank *ist* der Cluster.
 - **Mischbetrieb ist verboten.**
     - Ein Node mit `postgres` startet nicht, wenn sein Datenverzeichnis Raft-Zustand enthält (`raft/`, `state.db`), und
       umgekehrt.

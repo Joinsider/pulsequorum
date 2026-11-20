@@ -1,6 +1,6 @@
 # Recovery: Quorumverlust und Admin-Passwort
 
-Dieses Runbook beschreibt die Befehle unter `uptimecluster admin` (ADR 0019, FA-OBS-04, FA-CLU-08). Sie laufen im selben Image wie der Server und lesen dieselbe Konfiguration (`DATA_DIR`, `CLUSTER_ADVERTISE`, …), z.B. mit `docker compose run --rm <dienst> admin …` bei gestopptem Node oder `docker compose exec <dienst> /uptimecluster admin …` bei laufendem. In den Beispielen unten steht verkürzt `uptimecluster admin …`.
+Dieses Runbook beschreibt die Befehle unter `pulsequorum admin` (ADR 0019, FA-OBS-04, FA-CLU-08). Sie laufen im selben Image wie der Server und lesen dieselbe Konfiguration (`DATA_DIR`, `CLUSTER_ADVERTISE`, …), z.B. mit `docker compose run --rm <dienst> admin …` bei gestopptem Node oder `docker compose exec <dienst> /pulsequorum admin …` bei laufendem. In den Beispielen unten steht verkürzt `pulsequorum admin …`.
 
 | Befehl | Node | Zweck |
 |--------|------|-------|
@@ -25,7 +25,7 @@ Jeder überlebende Voter wird gestoppt. Solange ein Node läuft, verweigern `raf
 Auf jedem Überlebenden:
 
 ```bash
-uptimecluster admin raft-info
+pulsequorum admin raft-info
 ```
 
 Gewählt wird der Node mit dem **höchsten letzten Term**, bei Gleichstand dem **höchsten letzten Index**. Er verliert am wenigsten.
@@ -35,13 +35,13 @@ Gewählt wird der Node mit dem **höchsten letzten Term**, bei Gleichstand dem *
 Erst ohne `--yes`, um den Plan zu sehen (alte und neue Konfiguration, Nodes, die gesperrt werden):
 
 ```bash
-uptimecluster admin recover
+pulsequorum admin recover
 ```
 
 Dann ausführen:
 
 ```bash
-uptimecluster admin recover --yes
+pulsequorum admin recover --yes
 ```
 
 Der Befehl:
@@ -77,7 +77,7 @@ Läuft der Cluster wieder mit voller Ausfallreserve, können die Sicherung `reco
 Wenn sich kein `platform-admin` mehr anmelden kann. Voraussetzungen: Der Node läuft, der Cluster hat einen Leader, `AUTH_MODE=local`. Nach dem Rückwechsel auf `local` müssen sich alle lokalen Nutzer mit ihrem Passwort neu anmelden; der Ablauf steht in [oidc.md](oidc.md#9-wechsel-von-local-zu-oidc).
 
 ```bash
-docker compose exec -it <dienst> /uptimecluster admin reset-password --username admin
+docker compose exec -it <dienst> /pulsequorum admin reset-password --username admin
 ```
 
 Das Passwort wird zweimal ohne Anzeige abgefragt. Für Skripte: `--password-file <datei>` oder über stdin (`printf '%s\n' "$PW" | … reset-password --username admin`). Das Passwort steht nie in den Argumenten oder im Log.

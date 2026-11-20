@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Generates the Angular API client from the OpenAPI contract (ADR 0003).
 // Run `make api-gen` from the repository root.
 import { defineConfig } from 'orval';
 
 export default defineConfig({
-  uptimecluster: {
+  pulsequorum: {
     input: { target: '../api/openapi.yaml' },
     output: {
       mode: 'tags-split',

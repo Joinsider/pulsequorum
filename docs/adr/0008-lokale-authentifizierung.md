@@ -41,12 +41,12 @@ Parent-Domain; Tokens in `localStorage` sind XSS-anfällig. WebSockets erlauben 
 - **Passwörter:** Argon2id (`golang.org/x/crypto/argon2`), m=19 MiB, t=2, p=1, 16-Byte-Salt, Parameter im Hash-String
   gespeichert (PHC-Format) für spätere Anhebung.
 - **Access-Token:** JWT, EdDSA (Ed25519), `kid`, Laufzeit 15 min, Claims `sub`, `tid` (Tenant), `roles`, `iss` =
-  Cluster-ID, `aud` = `uptimecluster`.
+  Cluster-ID, `aud` = `pulsequorum`.
 - **Signaturschlüssel:** im Raft-Zustand, privater Teil verschlüsselt (ADR 0011); Rotation alle 30 Tage, alter Schlüssel
   bleibt 1 Tag zur Verifikation gültig.
 - **Refresh-Token:** opak, 256 Bit, nur Hash gespeichert (Raft), Laufzeit 14 Tage gleitend, Rotation bei jeder Nutzung,
   Wiederverwendung → Widerruf der Familie (FA-AUTH-03). Refresh-Endpunkt verlangt zusätzlich den Header
-  `X-Requested-With: uptimecluster` (CSRF-Schutz zusätzlich zu `SameSite=Strict`).
+  `X-Requested-With: pulsequorum` (CSRF-Schutz zusätzlich zu `SameSite=Strict`).
 - **Konfiguration:** `AUTH_COOKIE_DOMAIN` (leer = Host-Cookie).
 - **Erst-Einrichtung:** Ohne Nutzer erzeugt der Leader einen einmaligen Setup-Token (Log-Ausgabe, 1 h gültig);
   `POST /api/v1/auth/setup` legt den ersten `platform-admin` an.

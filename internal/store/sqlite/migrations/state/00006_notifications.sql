@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Notification channels, their monitor assignment and the replicated alert
 -- outbox (ADR 0014, FA-ALR-01/03). Secrets are stored only as ciphertext

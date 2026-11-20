@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Consensus status and incidents (FA-CON-03/06, FA-INC-01, Konzept 6.5). Both
 -- are data class A: only status changes are written, by the leader via Raft.

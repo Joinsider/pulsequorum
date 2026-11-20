@@ -1,6 +1,6 @@
-# Mitwirken an UptimeCluster
+# Mitwirken an Pulsequorum
 
-Vielen Dank für dein Interesse an UptimeCluster.
+Vielen Dank für dein Interesse an Pulsequorum.
 
 ## Wichtig: Externe Beiträge werden derzeit noch nicht angenommen
 
@@ -19,7 +19,7 @@ als GitHub-App; der Bot kommentiert den Pull Request und fragt die Zustimmung ab
 - **Corporate CLA** für Beiträge im Auftrag eines Arbeitgebers oder einer Organisation.
 
 Die CLA räumt dem Projekt eine umfassende Lizenz an den Beiträgen ein, damit
-UptimeCluster sowohl unter der AGPL-3.0-only als auch unter der kommerziellen
+Pulsequorum sowohl unter der AGPL-3.0-only als auch unter der kommerziellen
 Lizenz vertrieben werden kann (siehe [LICENSING.md](LICENSING.md)). **Du behältst
 das Urheberrecht an deinem Beitrag.** Es wird nicht übertragen.
 

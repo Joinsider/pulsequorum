@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/statedb"
 )
 
 // Keys of fsm_meta.
@@ -216,7 +216,7 @@ func validateSnapshot(ctx context.Context, path string) error {
 		return err
 	}
 	if n != 2 {
-		return errors.New("not an UptimeCluster state database")
+		return errors.New("not an Pulsequorum state database")
 	}
 	return nil
 }

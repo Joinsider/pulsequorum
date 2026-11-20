@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package replication distributes heartbeats between voters outside of Raft
 // (data class B, ADR 0006, ADR 0012 B2/B3/B6). Pushes are best effort; the
@@ -16,7 +16,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Peer is another voter of the cluster.

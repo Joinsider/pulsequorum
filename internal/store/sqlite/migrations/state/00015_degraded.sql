@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Degraded mode and correction after the quorum returned (ADR 0024). A node
 -- that sent alerts without quorum reports them to the leader afterwards;

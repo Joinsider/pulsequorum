@@ -6,7 +6,7 @@
 # use the defaults documented there; the commented ones are optional.
 services:
   uptime:
-    image: ghcr.io/joinsider/uptimecluster:latest
+    image: ghcr.io/joinsider/pulsequorum:latest
     build:
       context: ..
     restart: unless-stopped
@@ -51,7 +51,7 @@ services:
     # Explicit healthcheck, so it also works with Podman (OCI images drop the
     # Dockerfile HEALTHCHECK). Same command as the image default.
     healthcheck:
-      test: ["CMD", "/uptimecluster", "healthcheck"]
+      test: ["CMD", "/pulsequorum", "healthcheck"]
       interval: 30s
       timeout: 5s
       start_period: 10s

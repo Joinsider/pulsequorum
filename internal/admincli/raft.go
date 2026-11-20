@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package admincli
 
@@ -18,9 +18,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/config"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 // recoverResult is the JSON output of "recover".
@@ -96,7 +96,7 @@ func parseFlags(flags *flag.FlagSet, args []string, env Env) (help bool, err err
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			flags.SetOutput(env.Stderr)
-			_, _ = fmt.Fprintf(env.Stderr, "usage: uptimecluster admin %s [flags]\n\nflags:\n", flags.Name())
+			_, _ = fmt.Fprintf(env.Stderr, "usage: pulsequorum admin %s [flags]\n\nflags:\n", flags.Name())
 			flags.PrintDefaults()
 			return true, nil
 		}

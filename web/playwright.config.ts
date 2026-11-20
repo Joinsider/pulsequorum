@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { defineConfig, devices } from '@playwright/test';
 import { SERVER_URL } from './e2e/support/state';
 
 /**
- * E2E smoke tests against the real embedded binary (../bin/uptimecluster).
+ * E2E smoke tests against the real embedded binary (../bin/pulsequorum).
  * Nothing is built here: `make web-e2e` runs `make build` first. The server
  * is started and stopped in e2e/global-setup.ts and e2e/global-teardown.ts.
  */

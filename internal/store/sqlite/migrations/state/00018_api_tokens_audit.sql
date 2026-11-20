@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- API tokens and the audit log (ADR 0031, FA-AUTH-10, FA-DAT-01). The FSM
 -- writes them from command level 9 on.

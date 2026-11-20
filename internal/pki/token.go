@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package pki
 
@@ -75,7 +75,7 @@ func ParseJoinToken(s string) (JoinToken, error) {
 // HashSecret is what the cluster stores. The secret has 256 bits of entropy,
 // so a plain domain-separated SHA-256 is sufficient (no password hashing).
 func HashSecret(secret string) string {
-	sum := sha256.Sum256([]byte("uptimecluster join token v1\x00" + secret))
+	sum := sha256.Sum256([]byte("pulsequorum join token v1\x00" + secret))
 	return hex.EncodeToString(sum[:])
 }
 

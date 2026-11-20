@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // CI gate around `npm audit`: fails on high or critical advisories, except
 // the ones listed in audit-exceptions.json. Every exception names the

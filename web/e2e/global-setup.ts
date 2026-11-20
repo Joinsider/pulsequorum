@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,7 +15,7 @@ import {
 } from './support/state';
 
 /** Built by `make build`; the E2E run never builds the binary itself. */
-const SERVER_BINARY = path.resolve(__dirname, '..', '..', 'bin', 'uptimecluster');
+const SERVER_BINARY = path.resolve(__dirname, '..', '..', 'bin', 'pulsequorum');
 const STARTUP_TIMEOUT_MS = 60_000;
 /** slog text format prints `setup_token=<token>`; the value may be quoted. */
 const TOKEN_PATTERN = /setup_token=("?)([^\s"]+)\1/;
@@ -30,7 +30,7 @@ export default async function globalSetup(): Promise<void> {
     throw new Error(`${SERVER_BINARY} not found; run "make build" first (make web-e2e does this)`);
   }
 
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uptimecluster-e2e-'));
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulsequorum-e2e-'));
   const dataDir = path.join(runDir, 'data');
   fs.mkdirSync(dataDir);
   const serverLog = path.join(runDir, 'server.log');

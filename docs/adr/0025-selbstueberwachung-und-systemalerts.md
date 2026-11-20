@@ -205,21 +205,21 @@ Ein Collector auf dem Leader bewertet alle 30 s:
 
 | Metrik                                                                                                           | Typ        |
 |------------------------------------------------------------------------------------------------------------------|------------|
-| `uptimecluster_checks_total{type,result}`                                                                        | Counter    |
-| `uptimecluster_check_duration_seconds{type}`                                                                     | Histogramm |
-| `uptimecluster_checks_running`                                                                                   | Gauge      |
-| `uptimecluster_raft_state{state}`                                                                                | Gauge      |
-| `uptimecluster_raft_applied_index`, `uptimecluster_raft_commit_index`, `uptimecluster_raft_last_contact_seconds` | Gauges     |
-| `uptimecluster_replication_lag_seconds{peer}`                                                                    | Gauge      |
-| `uptimecluster_replication_dropped_total{peer}`                                                                  | Counter    |
-| `uptimecluster_db_size_bytes{db}`, `uptimecluster_db_wal_bytes{db}`                                              | Gauges     |
-| `uptimecluster_disk_free_ratio`                                                                                  | Gauge      |
-| `uptimecluster_outbox_pending`                                                                                   | Gauge      |
-| `uptimecluster_alert_deliveries_total{kind,outcome}`                                                             | Counter    |
-| `uptimecluster_degraded`                                                                                         | Gauge      |
-| `uptimecluster_system_alerts_active{kind}`                                                                       | Gauge      |
-| `uptimecluster_clock_offset_seconds{peer}`                                                                       | Gauge      |
-| `uptimecluster_build_info{version}`                                                                              | Gauge      |
+| `pulsequorum_checks_total{type,result}`                                                                        | Counter    |
+| `pulsequorum_check_duration_seconds{type}`                                                                     | Histogramm |
+| `pulsequorum_checks_running`                                                                                   | Gauge      |
+| `pulsequorum_raft_state{state}`                                                                                | Gauge      |
+| `pulsequorum_raft_applied_index`, `pulsequorum_raft_commit_index`, `pulsequorum_raft_last_contact_seconds` | Gauges     |
+| `pulsequorum_replication_lag_seconds{peer}`                                                                    | Gauge      |
+| `pulsequorum_replication_dropped_total{peer}`                                                                  | Counter    |
+| `pulsequorum_db_size_bytes{db}`, `pulsequorum_db_wal_bytes{db}`                                              | Gauges     |
+| `pulsequorum_disk_free_ratio`                                                                                  | Gauge      |
+| `pulsequorum_outbox_pending`                                                                                   | Gauge      |
+| `pulsequorum_alert_deliveries_total{kind,outcome}`                                                             | Counter    |
+| `pulsequorum_degraded`                                                                                         | Gauge      |
+| `pulsequorum_system_alerts_active{kind}`                                                                       | Gauge      |
+| `pulsequorum_clock_offset_seconds{peer}`                                                                       | Gauge      |
+| `pulsequorum_build_info{version}`                                                                              | Gauge      |
 
 ### 8. UI
 

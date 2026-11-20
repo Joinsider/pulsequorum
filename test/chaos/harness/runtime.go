@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
-// Package harness runs UptimeCluster voters as containers and injects faults
+// Package harness runs Pulsequorum voters as containers and injects faults
 // into them: kill, stop, isolate, latency. It drives the container runtime
 // through its CLI and uses only flags that podman and docker both understand.
 package harness

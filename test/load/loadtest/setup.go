@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -26,7 +26,7 @@ const loadNamespace = "b1f5a7c2-3d4e-4f60-8a91-2c7e5d9b0a13"
 // name-based UUID (version 5 layout) of prefix and index, so a rerun of setup
 // sends the same keys and the voter deduplicates instead of creating twins.
 func idempotencyKey(prefix string, index int) string {
-	return uuidV5(parseUUID(loadNamespace), fmt.Sprintf("uptimecluster-loadtest/%s/%d", prefix, index))
+	return uuidV5(parseUUID(loadNamespace), fmt.Sprintf("pulsequorum-loadtest/%s/%d", prefix, index))
 }
 
 func parseUUID(s string) [16]byte {

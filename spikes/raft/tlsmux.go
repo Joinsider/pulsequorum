@@ -39,7 +39,7 @@ func genPKI(dir string, names []string) error {
 	}
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "uptimecluster spike CA"},
+		Subject:               pkix.Name{CommonName: "pulsequorum spike CA"},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(30 * 24 * time.Hour),
 		IsCA:                  true,

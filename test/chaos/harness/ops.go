@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package harness
 
@@ -43,7 +43,7 @@ func (c *Cluster) nodeEnv(i int) map[string]string {
 	}
 }
 
-// OneShot runs "uptimecluster admin <args>" in a throwaway container on the
+// OneShot runs "pulsequorum admin <args>" in a throwaway container on the
 // data volume of voter i and returns its stdout. The voter must be stopped
 // (raft-info, recover) or running (reset-password needs ExecStdin instead).
 func (c *Cluster) OneShot(ctx context.Context, image string, i int, args ...string) (string, error) {

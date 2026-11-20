@@ -89,4 +89,4 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make build
-      - run: docker build -t uptimecluster:ci .
+      - run: docker build -t pulsequorum:ci .

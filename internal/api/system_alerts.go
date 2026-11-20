@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
 )
 
 // ListSystemAlerts returns the replicated state of the system alerts (FA-OBS-01,

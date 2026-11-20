@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package harness
 
@@ -21,7 +21,7 @@ const (
 )
 
 // DefaultImage is the voter image the harness starts when none is given.
-const DefaultImage = "uptimecluster:chaos"
+const DefaultImage = "pulsequorum:chaos"
 
 // DefaultNetemImage is the fault sidecar image (test/chaos/netem).
 const DefaultNetemImage = "uc-chaos-netem:latest"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
-// Package admincli implements the "uptimecluster admin" subcommands for
+// Package admincli implements the "pulsequorum admin" subcommands for
 // recovery tasks (FA-OBS-04, ADR 0019). They read the same environment as the
 // server; none of them prints a secret or accepts one as an argument.
 package admincli
@@ -17,8 +17,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/config"
-	"github.com/joinsider/uptimecluster/internal/node"
+	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/node"
 )
 
 // Exit codes (ADR 0019).
@@ -91,11 +91,11 @@ func Run(ctx context.Context, args []string, env Env) int {
 
 func usage(w io.Writer) {
 	var b strings.Builder
-	b.WriteString("usage: uptimecluster admin <command> [flags]\n\ncommands:\n")
+	b.WriteString("usage: pulsequorum admin <command> [flags]\n\ncommands:\n")
 	for _, c := range commands() {
 		fmt.Fprintf(&b, "  %-15s %s\n", c.name, c.summary)
 	}
-	b.WriteString("\nRun \"uptimecluster admin <command> -h\" for the flags of a command.\nSee docs/betrieb/recovery.md before using recover.\n")
+	b.WriteString("\nRun \"pulsequorum admin <command> -h\" for the flags of a command.\nSee docs/betrieb/recovery.md before using recover.\n")
 	_, _ = io.WriteString(w, b.String())
 }
 

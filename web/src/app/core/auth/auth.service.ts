@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { HttpContext, HttpContextToken } from '@angular/common/http';
 import { DestroyRef, Injectable, Injector, computed, inject, signal } from '@angular/core';
@@ -21,7 +21,7 @@ import { SplitSecurityStorage } from './split-security-storage';
 export const SKIP_AUTH = new HttpContextToken<boolean>(() => false);
 
 /** Header the backend requires on cookie-authenticated calls (ADR 0008, CSRF). */
-const CSRF_HEADERS = { 'X-Requested-With': 'uptimecluster' };
+const CSRF_HEADERS = { 'X-Requested-With': 'pulsequorum' };
 
 /** Refresh this long before the access token expires. */
 const REFRESH_LEAD_MS = 60_000;

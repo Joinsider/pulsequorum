@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -69,7 +69,7 @@ describe('AuthService', () => {
   it('sends the CSRF header and credentials on refresh', async () => {
     const done = auth.restore();
     const req = http.expectOne('/api/v1/auth/refresh');
-    expect(req.request.headers.get('X-Requested-With')).toBe('uptimecluster');
+    expect(req.request.headers.get('X-Requested-With')).toBe('pulsequorum');
     expect(req.request.withCredentials).toBe(true);
     req.flush(token('a1'));
     await flushMe();
@@ -111,7 +111,7 @@ describe('AuthService', () => {
 
     const done = auth.logout();
     const req = http.expectOne('/api/v1/auth/logout');
-    expect(req.request.headers.get('X-Requested-With')).toBe('uptimecluster');
+    expect(req.request.headers.get('X-Requested-With')).toBe('pulsequorum');
     req.flush({}, { status: 500, statusText: 'Error' });
     await done;
     expect(auth.authenticated()).toBe(false);

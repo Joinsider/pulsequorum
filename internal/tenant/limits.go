@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package tenant holds the rules for tenants, plans and their limits (ADR 0029).
 // It has no I/O, so the Raft FSM and the API use the same rules.

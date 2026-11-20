@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Secrets in monitor configurations (ADR 0015). secrets_json maps JSON pointers
 -- into config_json to ciphertexts of the secret fields (for example

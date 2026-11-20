@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package icmpcheck
 
@@ -11,7 +11,7 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }

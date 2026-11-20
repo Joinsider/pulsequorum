@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package builtin_test
 
@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
-	_ "github.com/joinsider/uptimecluster/internal/checker/builtin"
-	"github.com/joinsider/uptimecluster/internal/configsecret"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	_ "github.com/joinsider/pulsequorum/internal/checker/builtin"
+	"github.com/joinsider/pulsequorum/internal/configsecret"
 )
 
 // secretName matches property names that hold credentials.

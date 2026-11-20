@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Maintenance windows (FA-MNT-01). Monitor IDs are kept as JSON without a
 -- foreign key: IDs of deleted monitors are ignored when windows are evaluated.

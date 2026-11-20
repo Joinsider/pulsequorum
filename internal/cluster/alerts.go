@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package cluster
 
@@ -10,9 +10,9 @@ import (
 	"slices"
 	"time"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/secrets"
-	"github.com/joinsider/uptimecluster/internal/store"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/secrets"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // alertRetention is how long finished outbox entries are kept, in command time.

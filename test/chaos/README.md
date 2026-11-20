@@ -1,6 +1,6 @@
 # Chaos-Testharness (AP-2.9)
 
-Der Harness startet UptimeCluster-Voter als Container, fügt Voter hinzu und
+Der Harness startet Pulsequorum-Voter als Container, fügt Voter hinzu und
 entfernt sie, injiziert Netzfehler und prüft das Verhalten gegen das
 Pflichtenheft. Er ist die Grundlage für die Szenarien AS-02 und folgende.
 Die Akzeptanzszenarien laufen auf echten Containern; die Unit-Tests brauchen
@@ -59,7 +59,7 @@ go run ./test/chaos/cmd/chaos -scenarios as02
 go run ./test/chaos/cmd/chaos -list
 ```
 
-Der Driver baut die Images, falls nötig: `uptimecluster:chaos` aus dem
+Der Driver baut die Images, falls nötig: `pulsequorum:chaos` aus dem
 `Dockerfile` (mit `--build-arg VERSION=<-version>`) und `uc-chaos-netem:latest`
 aus `test/chaos/netem`. Der Ablauf dauert beim ersten Mal einige Minuten
 (Frontend-Build im Dockerfile).
@@ -74,7 +74,7 @@ Secrets (Admin-Passwort, Setup-Token, Join-Token) werden nie ausgegeben.
 |------|----------|-----------|
 | `-runtime` | `podman` wenn vorhanden, sonst `docker` | Container-Runtime (`podman` oder `docker`) |
 | `-prefix` | `ucchaos` | Präfix aller Container, Volumes und des Netzes |
-| `-image` | `uptimecluster:chaos` | Voter-Image |
+| `-image` | `pulsequorum:chaos` | Voter-Image |
 | `-build` | `auto` | `auto` (nur wenn fehlend), `always`, `never` |
 | `-version` | `chaos` | Wert von `VERSION` beim Image-Build |
 | `-voters` | `3` | Voter-Plätze je Szenario (1 bis 5) |
@@ -178,7 +178,7 @@ test/internal/ucapi/      REST-Client der Admin-API
 
 - **Signing-Key nach dem Join fehlt.** Ein Voter startet seinen HTTP-Server
   und die Anmeldung, bevor sein Raft-Zustand repliziert ist. Beim Start
-  erzeugt `cmd/uptimecluster/main.go` den Signing-Key einmal; ist noch kein
+  erzeugt `cmd/pulsequorum/main.go` den Signing-Key einmal; ist noch kein
   Datenschlüssel da (`no active data key`), wird er nie erneut erzeugt.
   Jede Anmeldung auf diesem Voter antwortet dann mit HTTP 500
   (`no signing key available`, `internal/auth/local.go`). In den Läufen

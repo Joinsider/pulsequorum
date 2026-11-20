@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Command chaos runs container-based cluster scenarios (AP-2.9): it starts
-// UptimeCluster voters with podman or docker, adds and removes nodes, injects
+// Pulsequorum voters with podman or docker, adds and removes nodes, injects
 // network faults and checks the behaviour against the Pflichtenheft.
 //
 // Usage (from the repository root):
@@ -28,15 +28,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/chaos/harness"
-	"github.com/joinsider/uptimecluster/test/internal/fake"
+	"github.com/joinsider/pulsequorum/test/chaos/harness"
+	"github.com/joinsider/pulsequorum/test/internal/fake"
 )
 
 // Default ports and timeouts.
 const (
 	defaultFakeListenBase = 18950
 	scenarioTimeout       = 45 * time.Minute
-	modulePath            = "module github.com/joinsider/uptimecluster"
+	modulePath            = "module github.com/joinsider/pulsequorum"
 )
 
 // options holds the parsed command line.
@@ -126,7 +126,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	}
-	doc := harness.Document("UptimeCluster chaos run", reports...)
+	doc := harness.Document("Pulsequorum chaos run", reports...)
 	_, _ = fmt.Fprint(stdout, doc)
 	if opts.report != "" {
 		if err := os.WriteFile(opts.report, []byte(doc), 0o600); err != nil { //nolint:gosec // G703: the report path is chosen by the user on the command line
@@ -281,7 +281,7 @@ func findRepoRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("run the chaos driver inside the UptimeCluster repository")
+			return "", errors.New("run the chaos driver inside the Pulsequorum repository")
 		}
 		dir = parent
 	}

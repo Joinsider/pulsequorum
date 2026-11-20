@@ -79,8 +79,8 @@ Variablen des anderen Profils sind ein Startfehler, zum Beispiel `OIDC_ROLES_CLA
 AUTH_MODE=oidc
 OIDC_PROFILE=generic
 OIDC_ISSUER=https://idp.example.com/realms/uptime
-OIDC_AUDIENCE=uptimecluster-api
-OIDC_CLIENT_IDS=uptimecluster-spa
+OIDC_AUDIENCE=pulsequorum-api
+OIDC_CLIENT_IDS=pulsequorum-spa
 OIDC_ROLES_CLAIM=roles
 ```
 
@@ -120,7 +120,7 @@ Manche Anbieter schreiben Gruppen oder Rollen nicht ins Access-Token, sondern nu
 - **Schutz des Aufrufs:** Wie bei den JWKS gilt nur HTTPS (außer bei `OIDC_INSECURE_HTTP`), keine Weiterleitungen, Antworten höchstens 64 KiB, Zeitlimit 5 s.
 - **Fehlerabbildung:** Lehnt der IdP das Token ab (`401` oder `403` von `/userinfo`), antwortet der Cluster mit `401`. Ist der IdP nicht erreichbar, antwortet er mit `503`.
 - **Ausfall des IdP:** Tokens, die schon im Cache sind, funktionieren weiter. Neue Tokens schlagen während des Ausfalls fehl (`503`). Ein Token, das kurz vor dem Ausfall ausgestellt wurde, ist die Ausnahme, weil es noch nicht im Cache liegt.
-- **Metriken:** `uptimecluster_auth_userinfo_requests_total` zählt die Aufrufe bei `/userinfo`, `uptimecluster_auth_userinfo_failures_total` die fehlgeschlagenen. Ein Anstieg der Fehler ist ein Hinweis auf einen IdP-Ausfall oder eine falsche `userinfo_endpoint`-Adresse.
+- **Metriken:** `pulsequorum_auth_userinfo_requests_total` zählt die Aufrufe bei `/userinfo`, `pulsequorum_auth_userinfo_failures_total` die fehlgeschlagenen. Ein Anstieg der Fehler ist ein Hinweis auf einen IdP-Ausfall oder eine falsche `userinfo_endpoint`-Adresse.
 
 Die Rollen werden mit `OIDC_ROLE_MAP` zugeordnet wie bisher.
 
@@ -235,17 +235,17 @@ OIDC_CLIENT_IDS=<Client-ID>
 OIDC_ROLES_SOURCE=userinfo
 OIDC_ROLES_CLAIM=groups
 OIDC_SCOPES="openid profile email groups offline_access"
-OIDC_ROLE_MAP=uptimecluster_admins=tenant-admin,uptimecluster_editors=tenant-editor,uptimecluster_viewers=tenant-viewer
+OIDC_ROLE_MAP=pulsequorum_admins=tenant-admin,pulsequorum_editors=tenant-editor,pulsequorum_viewers=tenant-viewer
 ```
 
 - `OIDC_ISSUER` ist die `APP_URL` von PocketID ohne abschließendes `/`. Der Wert muss exakt dem `issuer` der Discovery entsprechen.
 - `OIDC_AUDIENCE` und `OIDC_CLIENT_IDS` sind die Client-ID. Der Claim `aud` enthält sie, und `client_id` ist der Claim, den der Cluster prüft.
 - `OIDC_SCOPES`: Der Scope `groups` ist für den Rollen-Claim nötig. `offline_access` ist laut Quelltext für Refresh-Tokens nicht zwingend, wenn der Client den Refresh-Grant erlaubt. Er schadet nicht und entspricht dem Standard, daher bleibt er in der Liste.
-- `OIDC_ROLE_MAP` ist ein Beispiel. Gruppennamen und Rollen wählt man selbst, die Zuordnung steht nur in dieser Variable. Maßgeblich ist das Feld **Name** der Gruppe in PocketID, nicht der Anzeigename, und zwar Zeichen für Zeichen (`uptimecluster_admins` ist nicht `uptimecluster-admins`). Ist ein Nutzer in mehreren zugeordneten Gruppen, bekommt er alle Rollen. Passt keine Gruppe, antwortet der Cluster mit 403 und schreibt „the token grants no role for this application“ ins Log.
+- `OIDC_ROLE_MAP` ist ein Beispiel. Gruppennamen und Rollen wählt man selbst, die Zuordnung steht nur in dieser Variable. Maßgeblich ist das Feld **Name** der Gruppe in PocketID, nicht der Anzeigename, und zwar Zeichen für Zeichen (`pulsequorum_admins` ist nicht `pulsequorum-admins`). Ist ein Nutzer in mehreren zugeordneten Gruppen, bekommt er alle Rollen. Passt keine Gruppe, antwortet der Cluster mit 403 und schreibt „the token grants no role for this application“ ins Log.
 
 ### Einrichtung in PocketID
 
-1. **Gruppen anlegen**, zum Beispiel `uptimecluster_admins`, `uptimecluster_editors` und `uptimecluster_viewers`, und die Nutzer zuweisen.
+1. **Gruppen anlegen**, zum Beispiel `pulsequorum_admins`, `pulsequorum_editors` und `pulsequorum_viewers`, und die Nutzer zuweisen.
 2. **OIDC-Client anlegen:**
    - **Public Client** aktivieren. PKCE wird automatisch verlangt. PocketID akzeptiert zusätzlich `plain`, die SPA sendet aber immer `S256`.
    - **Callback-URL:** `https://<host>/auth/callback`
@@ -275,8 +275,8 @@ OIDC_ROLE_MAP=uptimecluster_admins=tenant-admin,uptimecluster_editors=tenant-edi
 Gegen Keycloak 26.8.2 Ende zu Ende geprüft: API mit echten Tokens und Anmeldung in der SPA.
 
 1. Realm anlegen. Der Issuer lautet `https://kc.example.com/realms/<realm>`.
-2. Client `uptimecluster-spa` anlegen: Client-Typ **public**, Standard-Flow aktiviert, PKCE mit Code Challenge Method `S256`. Valid Redirect URIs `https://<host>/auth/callback`, Valid Post Logout Redirect URIs `https://<host>/login`, Web Origins `https://<host>`.
-3. Audience sicherstellen: Ein Audience-Mapper im Client-Scope des SPA-Clients nimmt den API-Client `uptimecluster-api` in `aud` auf. Im Token steht `aud` dann zusätzlich `account`. Das ist unschädlich, weil der Cluster nur verlangt, dass `OIDC_AUDIENCE` enthalten ist.
+2. Client `pulsequorum-spa` anlegen: Client-Typ **public**, Standard-Flow aktiviert, PKCE mit Code Challenge Method `S256`. Valid Redirect URIs `https://<host>/auth/callback`, Valid Post Logout Redirect URIs `https://<host>/login`, Web Origins `https://<host>`.
+3. Audience sicherstellen: Ein Audience-Mapper im Client-Scope des SPA-Clients nimmt den API-Client `pulsequorum-api` in `aud` auf. Im Token steht `aud` dann zusätzlich `account`. Das ist unschädlich, weil der Cluster nur verlangt, dass `OIDC_AUDIENCE` enthalten ist.
 4. Den Scope `offline_access` dem SPA-Client zuweisen.
 5. Realm-Rollen `platform-admin`, `tenant-admin`, `tenant-editor` und `tenant-viewer` anlegen oder über eigene Namen zuordnen. Keycloak legt die Realm-Rollen im Token unter `realm_access.roles` ab.
 6. Die Access-Token-Laufzeit im Realm auf 15 min setzen.
@@ -285,8 +285,8 @@ Gegen Keycloak 26.8.2 Ende zu Ende geprüft: API mit echten Tokens und Anmeldung
 AUTH_MODE=oidc
 OIDC_PROFILE=generic
 OIDC_ISSUER=https://kc.example.com/realms/<realm>
-OIDC_AUDIENCE=uptimecluster-api
-OIDC_CLIENT_IDS=uptimecluster-spa
+OIDC_AUDIENCE=pulsequorum-api
+OIDC_CLIENT_IDS=pulsequorum-spa
 OIDC_ROLES_CLAIM=realm_access.roles
 ```
 
@@ -305,8 +305,8 @@ OIDC_ROLES_CLAIM=realm_access.roles
 AUTH_MODE=oidc
 OIDC_PROFILE=generic
 OIDC_ISSUER=https://auth.example.com/application/o/<slug>/
-OIDC_AUDIENCE=uptimecluster-spa
-OIDC_CLIENT_IDS=uptimecluster-spa
+OIDC_AUDIENCE=pulsequorum-spa
+OIDC_CLIENT_IDS=pulsequorum-spa
 OIDC_ROLES_CLAIM=groups
 OIDC_ROLE_MAP=uptime-admins=tenant-admin,ops=tenant-editor,staff=tenant-viewer,platform=platform-admin
 ```
@@ -349,7 +349,7 @@ OIDC_ROLES_CLAIM=roles
 - Mit `OIDC_ROLES_SOURCE=userinfo` braucht jedes neue Token einen Aufruf bei `/userinfo`. Während eines Ausfalls schlagen neue Tokens mit `503` fehl. Tokens, die schon im Cache sind, laufen weiter (siehe Abschnitt 4).
 - Die letzten gültigen Schlüssel bleiben in Gebrauch, auch über längere Zeit.
 - Ein Neustart funktioniert mit der Cache-Datei, auch wenn der IdP nicht erreichbar ist. Der Cache für `/userinfo` ist dagegen nach einem Neustart leer.
-- Ein Fehlschlag beim Laden zählt die Metrik `uptimecluster_auth_jwks_fetch_failures_total`.
+- Ein Fehlschlag beim Laden zählt die Metrik `pulsequorum_auth_jwks_fetch_failures_total`.
 - Checks und Alarme laufen unabhängig vom IdP weiter.
 - Ein Voter ohne Cache-Datei und ohne Verbindung zum IdP beantwortet Anfragen mit `503` und meldet `/readyz` als nicht bereit. Der Grund steht in der Antwort.
 - **Reload der SPA:** Die Tokens liegen nur im Speicher und sind nach einem Neuladen weg. Die SPA leitet dann mit `prompt=none` zum IdP um. Dafür muss der IdP erreichbar sein. Liefert er `login_required`, folgt ein normaler Login. Zu Zitadel mit Login V2 siehe Abschnitt 5.
@@ -455,7 +455,7 @@ Die Begründung für `401` steht nicht in der Antwort, sondern im Log. Der Voter
 | `403`, `organization is not provisioned` | `multi`: Der Organisation ist kein Mandant zugeordnet. | Mandant anlegen und binden (Automatik und Admin-API mit AP-4.2). |
 | `403`, `the token names no organization …` | Der Scope `urn:zitadel:iam:user:resourceowner` fehlt. | Den Scope in `OIDC_SCOPES` ergänzen. |
 | `403`, `tenant does not exist`, `tenant is suspended` | Der Mandant fehlt oder ist gesperrt. | Mandanten in der Verwaltung prüfen. |
-| `503` | Keine Signaturschlüssel vorhanden oder ein Dienst ist vorübergehend nicht erreichbar. Bei `userinfo` auch: `/userinfo` ist nicht erreichbar. | `/readyz` abfragen, Log prüfen, Metriken `uptimecluster_auth_jwks_fetch_failures_total` und `uptimecluster_auth_userinfo_failures_total` ansehen, Verbindung vom Voter zum IdP prüfen. |
+| `503` | Keine Signaturschlüssel vorhanden oder ein Dienst ist vorübergehend nicht erreichbar. Bei `userinfo` auch: `/userinfo` ist nicht erreichbar. | `/readyz` abfragen, Log prüfen, Metriken `pulsequorum_auth_jwks_fetch_failures_total` und `pulsequorum_auth_userinfo_failures_total` ansehen, Verbindung vom Voter zum IdP prüfen. |
 | Start schlägt mit `invalid configuration` fehl | Eine OIDC-Variable ist ungültig oder passt nicht zum Profil. | Die Fehlerliste im Log lesen und die Tabelle in Abschnitt 3 vergleichen. |
 | Browser meldet CORS-Fehler am Token-Endpunkt | Der IdP erlaubt den Ursprung der SPA nicht. | Web Origins bzw. CORS-Einstellungen im IdP ergänzen. |
 | `409 Conflict`, „users are managed by the identity provider“ | Im Modus `oidc` ist lokale Anmeldung abgeschaltet. | Erwartet. Anmeldung über den IdP verwenden. |

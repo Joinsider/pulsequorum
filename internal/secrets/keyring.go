@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package secrets
 
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Errors of the keyring.
@@ -175,7 +175,7 @@ func parse(ciphertext string) (keyID string, payload []byte, ok bool) {
 }
 
 func valueAAD(keyID, aad string) []byte {
-	return []byte("uptimecluster-secret-v1/" + keyID + "/" + aad)
+	return []byte("pulsequorum-secret-v1/" + keyID + "/" + aad)
 }
 
 // Secret is a string that never appears in logs (ADR 0011).

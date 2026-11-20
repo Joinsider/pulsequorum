@@ -38,7 +38,7 @@ CGO-frei und lässt sich ohne QEMU für beide Architekturen cross-kompilieren.
 **Release: R1 GoReleaser**
 
 - Tag `vX.Y.Z` → Frontend-Build, Cross-Compile `linux/amd64`, `linux/arm64` (zusätzlich `darwin/arm64` als Binary),
-  Images `ghcr.io/<org>/uptimecluster:{X.Y.Z, X.Y, latest}` auf Basis `gcr.io/distroless/static-debian12:nonroot`, SBOM
+  Images `ghcr.io/<org>/pulsequorum:{X.Y.Z, X.Y, latest}` auf Basis `gcr.io/distroless/static-debian12:nonroot`, SBOM
   (Syft), Checksummen, Changelog aus Conventional Commits.
 - Image-Signatur mit cosign (keyless) – Kann, P5.
 

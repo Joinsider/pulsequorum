@@ -1,13 +1,13 @@
-# Pflichtenheft – UptimeCluster
+# Pflichtenheft – Pulsequorum
 
 | | |
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
-| **Produkt** | UptimeCluster (Arbeitstitel, E20) |
+| **Produkt** | Pulsequorum (Arbeitstitel, E20) |
 | **Version** | 1.5 |
 | **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
 | **Datum** | 2026-11-17 |
-| **Grundlage** | [Konzept v0.3](../uptime-cluster-konzept.md), Recherche zu Pitfalls (Kap. 12) |
+| **Grundlage** | [Konzept v0.3](../pulsequorum-konzept.md), Recherche zu Pitfalls (Kap. 12) |
 | **Auftraggeber / Product Owner** | Projektinhaber |
 | **Verfasser** | Claude (Opus 5.5) |
 
@@ -49,7 +49,7 @@
 
 ### 1.1 Zweck
 
-Dieses Pflichtenheft beschreibt verbindlich, **was** UptimeCluster leisten muss, und dient als Grundlage für Architekturentscheidungen (ADRs), Umsetzungsplanung ([Roadmap](roadmap.md)), Tests und Abnahme. Das **Wie** wird in ADRs festgelegt; dieses Dokument legt es nur fest, wo eine Lösung aus fachlichen oder Sicherheitsgründen zwingend ist.
+Dieses Pflichtenheft beschreibt verbindlich, **was** Pulsequorum leisten muss, und dient als Grundlage für Architekturentscheidungen (ADRs), Umsetzungsplanung ([Roadmap](roadmap.md)), Tests und Abnahme. Das **Wie** wird in ADRs festgelegt; dieses Dokument legt es nur fest, wo eine Lösung aus fachlichen oder Sicherheitsgründen zwingend ist.
 
 ### 1.2 Geltungsbereich
 
@@ -308,7 +308,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-CHK-10 | Methode, Header, Body, Basic-/Bearer-Auth, erwartete Statuscodes als Liste/Bereiche (`200-299,301`), Keyword vorhanden/nicht vorhanden (optional Groß-/Kleinschreibung), JSON-Pfad = Wert, max. Antwortzeit, Redirects folgen ja/nein mit Limit (Standard 10). | M | P1 | Tabellentests gegen `httptest.Server`. |
 | FA-CHK-11 **[neu]** | Jeder Check nutzt eine **frische Verbindung** (kein Connection-Reuse zwischen Checks, keine geteilten Transports zwischen Monitoren), damit Ausfälle beim Verbindungsaufbau nicht verdeckt werden. | M | P1 | Test: Server, der neue Verbindungen ablehnt, wird als DOWN erkannt. (PF-13) |
 | FA-CHK-12 **[neu]** | Getrennte Timeouts für DNS/Dial, TLS-Handshake, Response-Header und Gesamtdauer; Body-Lesen begrenzt auf konfigurierbare Größe (Standard 1 MiB) für Keyword/JSON-Prüfung. | M | P1 | Tests für jeden Timeout. (PF-14) |
-| FA-CHK-13 **[neu]** | Proxy-Umgebungsvariablen (`HTTP_PROXY` etc.) werden ignoriert; Proxy nur explizit pro Monitor (S, P6). Fester, identifizierbarer User-Agent (`UptimeCluster/<version>`), überschreibbar. | M | P1 | Test mit gesetzter `HTTP_PROXY`. (PF-13) |
+| FA-CHK-13 **[neu]** | Proxy-Umgebungsvariablen (`HTTP_PROXY` etc.) werden ignoriert; Proxy nur explizit pro Monitor (S, P6). Fester, identifizierbarer User-Agent (`Pulsequorum/<version>`), überschreibbar. | M | P1 | Test mit gesetzter `HTTP_PROXY`. (PF-13) |
 | FA-CHK-14 **[präzisiert]** | TLS: Gültigkeit der Kette inkl. Hostname (SNI) prüfen; Ablauf-Warnung N Tage vorher (Standard 14) als eigener Status **DEGRADED**. Bei „Zertifikatsfehler ignorieren“ wird die Kette dennoch separat geprüft und das Ablaufdatum ermittelt. | M | P1 | Tests mit abgelaufenem, selbstsigniertem und fast ablaufendem Zertifikat. |
 | FA-CHK-15 | IPv4/IPv6 wählbar (`auto`, `ipv4`, `ipv6`). | S | P1 | Test. |
 
@@ -473,7 +473,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-OBS-01 | Systemalerts an plattformweiten Admin-Kanal: Voter/Probe offline, Quorum verloren/wiederhergestellt, Replikationsrückstand, Uhrzeitabweichung > 2 s, Speicherplatz knapp (< 15 %), WAL-Datei > 512 MB, Raft-Replikationsstand `stale`, Zertifikatsablauf, Inkarnationswechsel, abweichender FSM-Fingerprint. | M | P3 | Test je Alarm. |
 | FA-OBS-02 | Prometheus-Metriken unter `/metrics` (optional, abschaltbar, separat absicherbar): Checks/s, Check-Dauer, laufende Checks, Raft-Status, Replikationsrückstand, DB-/WAL-Größe, Outbox-Länge. | S | P3 | Test. |
 | FA-OBS-03 | Backup: konsistenter Export (Konfiguration + optional Messdaten) über API/CLI; Restore nur in frischen Cluster (dokumentiert). | S | P5 | Restore-Test. |
-| FA-OBS-04 | CLI-Unterbefehle im Binary (z.B. `uptimecluster admin …`) für Recovery-Aufgaben (Peers-Override, Reset Admin-Passwort). | S | P2 | Runbook-Test. |
+| FA-OBS-04 | CLI-Unterbefehle im Binary (z.B. `pulsequorum admin …`) für Recovery-Aufgaben (Peers-Override, Reset Admin-Passwort). | S | P2 | Runbook-Test. |
 
 ### 6.19 Statusseiten (FA-STP, Phase 6)
 
@@ -703,7 +703,7 @@ Go (aktuelle stabile Version, derzeit 1.27), Angular 22 (aktuelle Major), hashic
 
 ## 12. Risiken und Pitfalls
 
-Ergebnis der Recherche (Okt. 2026). Jede Zeile nennt Problem, Bedeutung für UptimeCluster und die daraus abgeleitete Anforderung. Quellen in Kap. 16.
+Ergebnis der Recherche (Okt. 2026). Jede Zeile nennt Problem, Bedeutung für Pulsequorum und die daraus abgeleitete Anforderung. Quellen in Kap. 16.
 
 ### 12.1 Cluster und Raft
 

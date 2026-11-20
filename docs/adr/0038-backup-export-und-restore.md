@@ -28,7 +28,7 @@ Was es schon gibt:
 - **Hashes statt Geheimnisse**: Passwörter (Argon2id), Refresh-Sitzungen, API-Tokens (SHA-256), Join-Tokens.
 - **Cluster-Identität** im Raft-Zustand: CA (`cluster_ca`), Node-Register, Inkarnationen, gesperrte Nodes und
   Zertifikate, Join-Tokens.
-- **Recovery-CLI** (ADR 0019): `uptimecluster admin …`, Online-Befehle über den Cluster-Port mit dem Voter-Zertifikat,
+- **Recovery-CLI** (ADR 0019): `pulsequorum admin …`, Online-Befehle über den Cluster-Port mit dem Voter-Zertifikat,
   Offline-Befehle bei gestopptem Node, Übergabedateien im `DATA_DIR` (`recovery-revoke.json`).
 - **`GetStatus`** liefert `applied_index` und `commit_index` jedes Nodes.
 - Eine Lesesperre über `metrics.db` darf nicht lange offen bleiben (ADR 0013 C4, WAL-Wachstum).
@@ -206,7 +206,7 @@ offene Frage, nicht in AP-5.5.
 
 **1C, 2B, 3B, 4C, 5B, 6A, 7C.** Format und Verschlüsselung mit age.
 
-**1. Format `uptimecluster-backup`, Version 1**
+**1. Format `pulsequorum-backup`, Version 1**
 
 - Datei `*.ucbak` = age (gzip (NDJSON ) ). Nur `compress/gzip` und `encoding/json` aus der Standardbibliothek, dazu
   `filippo.io/age`.
@@ -245,7 +245,7 @@ neue Tabelle ohne Eintrag lässt den Test fehlschlagen.
 **3. Export**
 
 - **CLI:**
-  `uptimecluster admin backup --out <datei> (--recipient age1… | --recipients-file <f> | --passphrase-file <f> | Passphrase von stdin) [--metrics [--metrics-since <dauer>]]`.
+  `pulsequorum admin backup --out <datei> (--recipient age1… | --recipients-file <f> | --passphrase-file <f> | Passphrase von stdin) [--metrics [--metrics-since <dauer>]]`.
   Online wie `reset-password`: liest das lokale `DATA_DIR`, holt den `commit_index` über den Cluster-Port (Voter-mTLS)
   und schreibt die Datei mit 0600. `--out -` schreibt auf stdout.
 - **API:** `POST /api/v1/admin/backups`, nur `platform-admin`, nicht für API-Tokens. Im Body stehen `recipients` (nur
@@ -260,7 +260,7 @@ neue Tabelle ohne Eintrag lässt den Test fehlschlagen.
 
 **4. Restore**
 
-- **CLI:** `uptimecluster admin restore --in <datei> (--identity-file <f> | --passphrase-file <f> | stdin) [--yes]`,
+- **CLI:** `pulsequorum admin restore --in <datei> (--identity-file <f> | --passphrase-file <f> | stdin) [--yes]`,
   online gegen den lokalen Node.
 - Ablauf:
     1. Die CLI entschlüsselt und prüft die Datei vollständig: Kopf, Formatversion, Typen, Abschluss. Erst danach berührt
@@ -284,7 +284,7 @@ neue Tabelle ohne Eintrag lässt den Test fehlschlagen.
 
 - `metrics.db` ist lokal je Node, Rollups werden nicht repliziert. Jeder Voter importiert die Messdaten deshalb selbst:
   auf dem Leader beim Restore, auf jedem weiteren Voter nach dem Beitritt mit
-  `uptimecluster admin restore-metrics --in <datei> …`. Das ist rein lokal, ohne Raft.
+  `pulsequorum admin restore-metrics --in <datei> …`. Das ist rein lokal, ohne Raft.
 - Der Befehl prüft, dass `backup_id` dem Marker `restored_from` entspricht, und ist idempotent (Marker in `metrics.db`).
 - Serien alter Node-IDs bleiben als historische Serien erhalten. Die Uptime-Berechnung über alle Melder ist davon nicht
   betroffen.

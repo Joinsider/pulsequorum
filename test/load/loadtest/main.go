@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Command loadtest drives load and measurement scenarios against a running
-// UptimeCluster voter (NFA-PERF-01 to NFA-PERF-04). Subcommands:
+// Pulsequorum voter (NFA-PERF-01 to NFA-PERF-04). Subcommands:
 //
 //	targets  HTTP target farm whose endpoints the monitors check
 //	setup    creates N HTTP monitors through the REST API

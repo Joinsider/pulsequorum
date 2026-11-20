@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package httpcheck implements the HTTP(S) monitor type (FA-CHK-10..15).
 package httpcheck
@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // Type is the monitor type key.

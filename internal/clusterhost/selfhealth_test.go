@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/aggregator"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/selfhealth"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/aggregator"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/selfhealth"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // ADR 0022 and AS-05: a voter whose heartbeats show DOWN while its peers show
@@ -67,7 +67,7 @@ func (sn *shNode) feed(ctx context.Context, t *testing.T, monitorID string) {
 }
 
 // startSelfHeal runs the aggregator, the assessor and one feed per monitor of
-// a voter, as cmd/uptimecluster does. The assessor's Exclude feeds the aggregator.
+// a voter, as cmd/pulsequorum does. The assessor's Exclude feeds the aggregator.
 func startSelfHeal(ctx context.Context, t *testing.T, sn *shNode) {
 	t.Helper()
 	cn := sn.cn

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/metricsdb"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/metricsdb"
 )
 
 // A series is one (tenant, monitor, node) of this node's metrics.db; rollups

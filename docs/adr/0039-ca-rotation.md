@@ -261,11 +261,11 @@ Raft-Zustand steht (`next` vorhanden bzw. `previous` vorhanden).
 - **Online-Befehle über den Cluster-Port** mit dem Node-Zertifikat (Rolle Voter), wie `reset-password`, über ein neues
   RPC `ClusterService.RotateCA{action, fingerprint, force, emergency, manual}`. Ein Follower leitet an den Leader
   weiter. Nur Voter-Zertifikate dürfen es aufrufen.
-    - `uptimecluster admin ca status [--json]`: Phase, CAs mit Fingerprint, Zustand und `NotAfter`, je Node Aussteller
+    - `pulsequorum admin ca status [--json]`: Phase, CAs mit Fingerprint, Zustand und `NotAfter`, je Node Aussteller
       des Blatts und Bundle, offene Vorbedingungen.
-    - `uptimecluster admin ca rotate [--manual] [--emergency]`: Phase 1. Ohne `--yes` nur Vorschau.
-    - `uptimecluster admin ca activate [--force]`, `uptimecluster admin ca finish [--force]`: manuelle Schritte.
-    - `uptimecluster admin ca abort`: Abbruch vor `finish`. Vor der Aktivierung entfernt er `next`. Nach der Aktivierung
+    - `pulsequorum admin ca rotate [--manual] [--emergency]`: Phase 1. Ohne `--yes` nur Vorschau.
+    - `pulsequorum admin ca activate [--force]`, `pulsequorum admin ca finish [--force]`: manuelle Schritte.
+    - `pulsequorum admin ca abort`: Abbruch vor `finish`. Vor der Aktivierung entfernt er `next`. Nach der Aktivierung
       tauscht er zurück (`ActivateClusterCA(previous)`), danach `RemoveClusterCA(next)`.
 - **Admin-API:** nur lesend, `GET /api/v1/admin/cluster/ca` für `platform-admin`, mit Anzeige in der Cluster-Ansicht.
   Schreibende Aktionen gibt es nur über die CLI. Begründung: selten, folgenreich, setzt Zugriff auf einen Voter voraus.
@@ -327,7 +327,7 @@ Raft-Zustand steht (`next` vorhanden bzw. `previous` vorhanden).
 - **Neuer Systemalert `ca_rotation_stalled`:** Eine Rotation steht länger als 24 h in Phase 1 oder 2. Details sind die
   offenen Vorbedingungen und die Nodes, die sie blockieren. Lange Überlappung verlängert das Zeitfenster für die alte
   CA.
-- **Prometheus:** `uptimecluster_ca_not_after_seconds{state}` und `uptimecluster_ca_rotation_phase` (0 = keine, 1 =
+- **Prometheus:** `pulsequorum_ca_not_after_seconds{state}` und `pulsequorum_ca_rotation_phase` (0 = keine, 1 =
   trust, 2 = issue), ohne Mandanten-Labels.
 
 **9. Tests und Runbook (Akzeptanz FA-PKI-05)**

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package maintenance
 
@@ -8,7 +8,7 @@ import (
 	"time"
 	_ "time/tzdata" // deterministic zone data independent of the host
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // occCase expects Occurrence(at) to return [start, end); an empty start means no occurrence.

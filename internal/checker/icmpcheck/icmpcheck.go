@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package icmpcheck implements the ICMP (ping) monitor type (FA-CHK-30/31).
 package icmpcheck
@@ -18,7 +18,7 @@ import (
 
 	probing "github.com/prometheus-community/pro-bing"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // Type is the monitor type key.

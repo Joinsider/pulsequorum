@@ -1,4 +1,4 @@
-# UptimeCluster – Konzept (v0.3)
+# Pulsequorum – Konzept (v0.3)
 
 > Hochverfügbarer, mandantenfähiger, selbst hostbarer Uptime-Monitor im Stil von Uptime Kuma. Läuft als Cluster aus 1…N Docker-Containern auf verschiedenen Hosts.
 > Stand v0.3: Alle Grundsatzentscheidungen getroffen. Nächste Schritte stehen in Kapitel 21.
@@ -28,7 +28,7 @@
 | E17 | Projektrahmen | Eigene Nutzung + Open Source + kommerzielles Produkt |
 | E18 | Lizenz | **AGPLv3 + kommerzielle Lizenz** (Dual Licensing, Kap. 19) |
 | E19 | Rohdaten-Verdichtung | Standardmäßig **an** (nach 48 h), abschaltbar |
-| E20 | Projektname | Arbeitstitel **UptimeCluster** bleibt vorerst |
+| E20 | Projektname | Arbeitstitel **Pulsequorum** bleibt vorerst |
 | E21 | Plattform-Admin-UI | Im selben Frontend, nur für `platform-admin` sichtbar |
 
 ---
@@ -469,7 +469,7 @@ Mandanten-Kontext ergibt sich ausschließlich aus dem Token, nie aus URL-Paramet
 ```yaml
 services:
   uptime:
-    image: ghcr.io/<org>/uptime-cluster:latest
+    image: ghcr.io/<org>/pulsequorum:latest
     restart: unless-stopped
     environment:
       NODE_NAME: vps1
@@ -554,8 +554,8 @@ Ergebnis: **ein einziges statisches Binary** (Voter und Probe, gesteuert über `
 ### 18.2 Repository-Struktur (Vorschlag)
 
 ```
-uptime-cluster/
-├── cmd/uptimecluster/        # main – startet Voter oder Probe
+pulsequorum/
+├── cmd/pulsequorum/        # main – startet Voter oder Probe
 ├── internal/
 │   ├── api/                  # REST-Handler, WebSocket, Write-Forwarding
 │   ├── auth/                 # lokal + OIDC/Zitadel, Rollen, Tenant-Kontext
@@ -583,7 +583,7 @@ uptime-cluster/
 ## 19. Lizenz- und Geschäftsmodell (E18: AGPLv3 + kommerzielle Lizenz)
 
 ### 19.1 Modell
-- **Open Source unter AGPLv3:** Jeder darf UptimeCluster frei nutzen, verändern und selbst betreiben. Wer eine veränderte Version Dritten über das Netzwerk anbietet (z.B. als gehosteten Dienst), muss den Quellcode dieser Version offenlegen.
+- **Open Source unter AGPLv3:** Jeder darf Pulsequorum frei nutzen, verändern und selbst betreiben. Wer eine veränderte Version Dritten über das Netzwerk anbietet (z.B. als gehosteten Dienst), muss den Quellcode dieser Version offenlegen.
 - **Kommerzielle Lizenz:** Für Unternehmen, die die AGPL-Pflichten nicht erfüllen wollen oder können (z.B. eigene proprietäre Anpassungen, Einbettung in ein geschlossenes Produkt, White-Label-Hosting). Optional kombiniert mit Support und SLA.
 - Alle Features stehen unter beiden Lizenzen zur Verfügung; der Unterschied liegt in den Pflichten, nicht im Funktionsumfang.
 
