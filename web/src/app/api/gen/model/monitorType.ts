@@ -18,6 +18,6 @@ export interface MonitorType {
   description?: string;
   /** Node capability needed to run this type (e.g. icmp) */
   requiresCapability?: string;
-  /** JSON Schema (draft 2020-12) of `MonitorInput.config` */
+  /** JSON Schema (draft 2020-12) of `MonitorInput.config`. Every object schema with `properties` carries an `x-order` array with the property names in display order. */
   configSchema: MonitorTypeConfigSchema;
 }

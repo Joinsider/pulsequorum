@@ -1691,7 +1691,7 @@ components:
         configSchema:
           type: object
           additionalProperties: true
-          description: JSON Schema (draft 2020-12) of `MonitorInput.config`
+          description: JSON Schema (draft 2020-12) of `MonitorInput.config`. Every object schema with `properties` carries an `x-order` array with the property names in display order.
     CheckResult:
       type: object
       required: [status, latencyMs, checkedAt, nodeId]

@@ -469,8 +469,8 @@ func (h *Handlers) ListMonitorTypes(ctx context.Context, _ gen.ListMonitorTypesR
 	}
 	var out []gen.MonitorType
 	for _, c := range h.deps.Registry.Checkers() {
-		var schema map[string]any
-		if err := json.Unmarshal(c.ConfigSchema(), &schema); err != nil {
+		schema, err := schemaWithOrder(c.ConfigSchema())
+		if err != nil {
 			return nil, fmt.Errorf("schema of %s: %w", c.Type(), err)
 		}
 		t := gen.MonitorType{Type: c.Type(), Name: c.Name(), ConfigSchema: schema}

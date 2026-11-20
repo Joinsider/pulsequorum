@@ -426,6 +426,9 @@ func TestHeartbeatsAndTypesAndTestRun(t *testing.T) {
 	if len(byType) != 4 || byType["icmp"].RequiresCapability == nil || byType["http"].ConfigSchema["properties"] == nil {
 		t.Errorf("monitor types = %+v", types)
 	}
+	if order, ok := byType["http"].ConfigSchema["x-order"].([]any); !ok || len(order) == 0 || order[0] != "url" {
+		t.Errorf("http x-order = %v, want it to start with url", byType["http"].ConfigSchema["x-order"])
+	}
 
 	res := e.do("POST", "/api/v1/monitors/"+id+"/test", editor, nil)
 	if r := decode[gen.CheckResult](t, res); res.code != http.StatusOK || r.Status != gen.CheckStatusUP || r.NodeId != "n1" {
