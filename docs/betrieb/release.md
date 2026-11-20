@@ -44,7 +44,7 @@ Vor dem ersten Release prüfen:
 ```bash
 make release-dry-run                  # nächste Patch-Version
 make release-dry-run BUMP=minor       # nächste Minor-Version
-make release-dry-run VERSION=0.3.0-rc.1
+make release-dry-run RELEASE_VERSION=0.3.0-rc.1
 ```
 
 Der Befehl zeigt die nächste Version, die Zahl der Commits seit dem letzten Release und den Changelog. Er legt nichts an, pusht nichts und prüft die CI nicht. Er prüft aber Branch, Arbeitsbaum und Abgleich mit `origin/master`.
@@ -55,7 +55,7 @@ Der Befehl zeigt die nächste Version, die Zahl der Commits seit dem letzten Rel
 make release BUMP=patch               # Standard: patch
 make release BUMP=minor
 make release BUMP=major               # in 0.x nicht erlaubt, siehe Versionsregeln
-make release VERSION=0.3.0-rc.1       # explizite Version, hat Vorrang vor BUMP
+make release RELEASE_VERSION=0.3.0-rc.1       # explizite Version, hat Vorrang vor BUMP
 ```
 
 Das Werkzeug prüft in dieser Reihenfolge:
@@ -85,7 +85,7 @@ Der Editor wird über `GIT_EDITOR`, `VISUAL` oder `EDITOR` gewählt, sonst `vi`.
 
 - SemVer im Bereich `0.x`. Solange die Major-Version 0 ist, kann alles brechen.
 - Breaking Changes erhöhen in `0.x` die **Minor**-Stelle. Alle anderen Änderungen erhöhen die Patch-Stelle.
-- `BUMP=major` ist in `0.x` abgelehnt. `1.0.0` entsteht nur mit ausdrücklicher Angabe `VERSION=1.0.0`.
+- `BUMP=major` ist in `0.x` abgelehnt. `1.0.0` entsteht nur mit ausdrücklicher Angabe `RELEASE_VERSION=1.0.0`.
 - Erste Version ist `v0.0.1`. Sie dient dem technischen Durchstich der Pipeline.
 - Vorabversionen tragen ein Suffix: `-rc.N`, `-alpha.N` oder `-beta.N`. Sie werden auf GitHub als Pre-Release markiert.
 - Image-Tags: `X.Y.Z` immer. `X.Y` nur ohne Suffix. `latest` erst ab `1.0.0` und nur ohne Suffix. Ein `latest` auf einer `0.x`-Version würde Nutzer unbemerkt auf Breaking Changes bringen.

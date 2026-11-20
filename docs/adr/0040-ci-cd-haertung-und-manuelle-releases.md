@@ -378,7 +378,7 @@ Einstellungen. Alles andere gilt unverändert.
 
 - Wie bei Linux, Node.js, etcd oder Prometheus signiert ein Mensch den Tag auf seinem Rechner; in GitHub liegt kein
   Signaturschlüssel. Bot-Konto, Deploy-Key und die Secrets `RELEASE_TAG_*` entfallen.
-- `make release BUMP=patch|minor|major` (optional `VERSION=0.3.0-rc.1`) startet `go run ./build/release`:
+- `make release BUMP=patch|minor|major` (optional `RELEASE_VERSION=0.3.0-rc.1`) startet `go run ./build/release`:
   1. prüft: Branch `master`, sauberer Arbeitsbaum, lokaler `master` gleich `origin/master` nach `git fetch`, alle
      Pflicht-Checks auf diesem SHA grün (per `gh api`), Tag existiert noch nicht;
   2. berechnet die Version nach Abschnitt 1 (V1);
