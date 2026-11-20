@@ -113,6 +113,9 @@ const (
 	checkpointInterval = 60 * time.Second
 	// reconcileInterval bounds how long the scheduler may miss a change signal.
 	reconcileInterval = 30 * time.Second
+	// keyRefreshInterval bounds how long a joined voter has no active data key
+	// and how long a node encrypts with the previous key after a rotation.
+	keyRefreshInterval = 10 * time.Second
 )
 
 func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
@@ -290,6 +293,14 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	})
 	bg.Go(func() { host.Run(ctx) })
 	bg.Go(func() { cluster.RunKeyRotation(ctx, raftNode, state, kek, cluster.DefaultKeyRotation, time.Hour, log) })
+	// The keyring loads once in bootstrapCluster; a voter that joined loads it
+	// before catching up and would have no active key. Refresh also picks up
+	// rotated keys on every node.
+	bg.Go(func() {
+		if err := keyring.Refresh(ctx, keyRefreshInterval, log); err != nil {
+			stop(err)
+		}
+	})
 	bg.Go(func() { cluster.RunAuditPrune(ctx, raftNode, state, cfg.AuditRetention, log) })
 	bg.Go(func() { bridge.Run(ctx) })
 
