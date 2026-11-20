@@ -40,9 +40,9 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0032](0032-migration-lokal-nach-oidc.md) | Migration von `local` nach `oidc` | Accepted | 2026-11-18 |
 | [0033](0033-luecke-zwischen-gapjob-und-live-aggregator.md) | Lückenlose Übergabe vom GapJob an den Live-Aggregator | Accepted | 2026-11-18 |
 | [0034](0034-probe-protokoll-und-puffer.md) | Probe-Protokoll, Keepalive, Failover und lokaler Puffer | Proposed | 2026-11-19 |
-| [0035](0035-private-probes-und-mandantenbindung.md) | Private Probes, Mandantenbindung und Probe-Alerts | Proposed | 2026-11-19 |
-| [0036](0036-externes-frontend-und-client-failover.md) | Externes Frontend und Client-Failover | Proposed | 2026-11-19 |
-| [0037](0037-postgresql-backend-und-lease-leader.md) | PostgreSQL-Backend und Lease-basierte Leaderwahl | Proposed | 2026-11-19 |
-| [0038](0038-backup-export-und-restore.md) | Backup, Export und Restore | Proposed | 2026-11-19 |
-| [0039](0039-ca-rotation.md) | CA-Rotation mit überlappendem Trust-Bundle | Proposed | 2026-11-19 |
-| [0040](0040-ci-cd-haertung-und-manuelle-releases.md) | CI/CD-Härtung und manuell ausgelöste, signierte Releases | Proposed | 2026-11-19 |
+| [0035](0035-private-probes-und-mandantenbindung.md) | Private Probes, Mandantenbindung und Probe-Alerts | Accepted | 2026-11-20 |
+| [0036](0036-externes-frontend-und-client-failover.md) | Externes Frontend und Client-Failover | Accepted | 2026-11-20 |
+| [0037](0037-postgresql-backend-und-lease-leader.md) | PostgreSQL-Backend und Lease-basierte Leaderwahl | Accepted | 2026-11-20 |
+| [0038](0038-backup-export-und-restore.md) | Backup, Export und Restore | Accepted | 2026-11-20 |
+| [0039](0039-ca-rotation.md) | CA-Rotation mit überlappendem Trust-Bundle | Accepted | 2026-11-20 |
+| [0040](0040-ci-cd-haertung-und-manuelle-releases.md) | CI/CD-Härtung und manuell ausgelöste, signierte Releases | Accepted | 2026-11-20 |

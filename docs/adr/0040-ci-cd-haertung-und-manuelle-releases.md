@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                                                                             |
 |-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                                                                                    |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                                                                                  |
 | **Entscheider** | Projektinhaber                                                                                                                                                                                                    |
 | **Bezug**       | NFA-SEC-06, NFA-PORT-01, NFA-MNT-02/03, RB-LIC-03/05, AP-0.9, AP-0.10, AP-5.6; ergänzt und ersetzt teilweise ADR 0009 (Trigger, Release-Auslösung, Image-Tags, Signatur); ADR 0010 (Lizenzen der Werkzeuge) |
@@ -373,3 +373,4 @@ Muss, vorbehaltlich F1). Nach Accept erhält ADR 0009 den Status-Zusatz „teilw
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-19 | Proposed | Claude |           |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; vorgezogen vor AP-5.1; F1–F6 werden bei der Umsetzung geklärt |

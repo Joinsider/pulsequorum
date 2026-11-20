@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                                                                                                        |
 |-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                                                                                                               |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                                                                                                             |
 | **Entscheider** | Projektinhaber                                                                                                                                                                                                                               |
 | **Bezug**       | FA-UI-02, FA-UI-03, FA-API-05, FA-API-07, FA-AUTH-03, FA-AUTH-11, FA-CLU-06, NFA-SEC-04, NFA-SEC-05, PF-34, O-04, E15, Z7, ADR 0001, ADR 0002, ADR 0003, ADR 0007, ADR 0008, ADR 0012 (A8, A9), ADR 0018, ADR 0027, ADR 0028, ADR 0031 |
@@ -260,7 +260,7 @@ Umgebungsvariablen.
 
 ## Entscheidung
 
-Vorschlag: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6C.**
+Entscheidung: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6B + 6C.** (6B auf Wunsch von Projektinhaber, 2026-11-20)
 
 **Begründung:**
 
@@ -274,8 +274,24 @@ Vorschlag: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6C.**
 - **4A:** Ändert das Sicherheitsmodell aus ADR 0008 nicht. Externe Hosts unter fremder Domain nutzen OIDC oder eine
   eigene Domain. 4B bleibt als spätere Erweiterung offen.
 - **5A:** Standard ohne Abhängigkeit vom Frontend-Host. 5B nur, wer ausdrücklich einen kanonischen Origin will.
-- **6A + 6C:** Das Asset deckt CDN-Hosts ab, der Unterbefehl den Selbstbetrieb mit korrekten Headern. Kein zweites
-  Image.
+- **6A + 6B + 6C:** Das Asset deckt CDN-Hosts ab, der Unterbefehl den Selbstbetrieb im bestehenden Image. Zusätzlich
+  gibt es ein eigenes nginx-Image für Betreiber, die das Frontend getrennt vom Backend mit einem Standard-Webserver
+  betreiben wollen.
+
+### nginx-Image (6B)
+
+- Name `ghcr.io/<owner>/uptime-cluster-web:<version>`, gebaut und signiert im selben Release wie das Haupt-Image
+  (ADR 0040), Multi-Arch `linux/amd64` und `linux/arm64`.
+- Basis `nginxinc/nginx-unprivileged` (Alpine-Variante, nginx BSD-2-Clause), **per Digest gepinnt** und von Dependabot
+  aktualisiert. Läuft als UID 101 auf Port 8080 und ist für `read_only: true` mit `tmpfs` für `/tmp` geeignet.
+- **Keine doppelte Header-Logik:** Ein kleines statisches Go-Programm `uc-webconfig` (gleicher Code wie `internal/webui`
+  und `securityHeaders`, eigener `cmd/`-Eintrag) läuft beim Containerstart und erzeugt aus Umgebungsvariablen die
+  `config.json` und eine `headers.conf` mit CSP, `frame-ancestors`, HSTS und den übrigen Security-Headern. nginx bindet
+  die Datei per `include` ein. Kein `envsubst` mit frei eingesetzten Werten.
+- Ungültige oder fehlende Node-Origins lassen den Start fehlschlagen (gleiche URL-Normalisierung wie im Backend).
+- nginx liefert nur statische Dateien: `try_files $uri /index.html`, kein Proxy zur API, `server_tokens off`,
+  `index.html` und `config.json` mit `Cache-Control: no-store`, gehashte Bundles mit `immutable`.
+- CI scannt das Image vor dem Push (Trivy oder Grype, Fehlschlag ab `HIGH` mit befristeten Ausnahmen wie bei npm).
 
 ### Vertrag und Backend
 
@@ -384,10 +400,11 @@ Vorschlag: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6C.**
   Fall.
 - **O4 – Cross-site mit `local` (4B, CHIPS):** jetzt verwerfen oder für später vormerken?
 - **O5 – Kanonischer Origin (5B, `FRONTEND_URL`-Umleitung):** in AP-5.3 mitnehmen oder später?
-- **O6 – Auslieferung:** Reicht 6A + 6C, oder wird ausdrücklich ein nginx-Image (6B) gewünscht?
+- **O6 – Auslieferung:** entschieden am 2026-11-20: zusätzlich nginx-Image (6B).
 
 ## Approval
 
 | Datum      | Status   | Durch  | Anmerkung                                |
 |------------|----------|--------|------------------------------------------|
 | 2026-11-19 | Proposed | Claude | Vorbereitung AP-5.3; offene Fragen O1–O6 |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; zusätzlich nginx-Image (6B); O1–O5 wie vorgeschlagen |

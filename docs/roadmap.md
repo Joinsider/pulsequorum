@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P5 – Reichweite (P1 bis P4 abgenommen; P0 offen nur für Läufe, die GitHub brauchen: AP-0.9/0.10) |
-| **Wartet auf Projektinhaber** | Review der ADRs 0034–0040 (alle `Proposed`, offene Fragen je ADR markiert) |
-| **Nächster Schritt (Claude)** | Nach Accept: Umsetzung als GitHub-Stack in der Reihenfolge unten (AP-5.0 zuerst) |
+| **Wartet auf Projektinhaber** | ADR 0034 (Frage 1A/1B beantwortet, Accept offen); Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6) |
+| **Nächster Schritt (Claude)** | AP-5.0 CI/CD und erster Release `v0.0.1` |
 
 ---
 
@@ -118,17 +118,17 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 
 ## P5 – Reichweite
 
-ADRs 0034–0040 vorgeschlagen am 2026-11-19. Jedes AP startet erst, wenn sein ADR **Accepted** ist.
+ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptiert (0036 mit nginx-Image, 0037 mit testcontainers-go). 0034 ist noch `Proposed`.
 
 | AP | Inhalt | Anforderungen | ADR | Status |
 |----|--------|---------------|-----|--------|
-| AP-5.0 | CI/CD-Härtung, Release per `workflow_dispatch` mit signiertem Tag und Release, erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | ⛔ blockiert (ADR 0040) |
+| AP-5.0 | CI/CD-Härtung, Release per `workflow_dispatch` mit signiertem Tag und Release, erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | ⬜ (vorgezogen) |
 | AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ⛔ blockiert (ADR 0034) |
-| AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ⛔ blockiert (ADR 0035) |
-| AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⛔ blockiert (ADR 0036) |
-| AP-5.4 | PostgreSQL-Backend; Vorschlag: in P5 nur Vorarbeiten (Koordinations-Schnittstelle, geteilter Apply-Kern), Rest in eigener Phase nach 1.0 | Z-S-01, NFA-PORT-03 | 0037 | ⛔ blockiert (ADR 0037, Schnitt offen) |
-| AP-5.5a | Backup/Export/Restore (age-verschlüsselt, Restore nur in frischen Cluster) | FA-OBS-03 | 0038 | ⛔ blockiert (ADR 0038) |
-| AP-5.5b | CA-Rotation in drei Phasen über Raft, Runbook | FA-PKI-05 | 0039 | ⛔ blockiert (ADR 0039) |
+| AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ⛔ wartet auf AP-5.1 |
+| AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⬜ |
+| AP-5.4 | PostgreSQL-Backend; Vorschlag: in P5 nur Vorarbeiten (Koordinations-Schnittstelle, geteilter Apply-Kern), Rest in eigener Phase nach 1.0 | Z-S-01, NFA-PORT-03 | 0037 | ⬜ (nur Vorarbeiten in P5) |
+| AP-5.5a | Backup/Export/Restore (age-verschlüsselt, Restore nur in frischen Cluster) | FA-OBS-03 | 0038 | ⬜ |
+| AP-5.5b | CA-Rotation in drei Phasen über Raft, Runbook | FA-PKI-05 | 0039 | ⬜ |
 | AP-5.6 | Abnahme AS-08, Release-Reife 1.0 (Namensprüfung O-08); bis dahin 0.x-Vorabversionen (ADR 0040) | – | – | ⬜ |
 
 **Befehlsstufen (ADR 0018):** Jedes AP mit neuen FSM-Befehlen bekommt eine eigene Stufe, damit zwischen zwei Stack-PRs ein Release möglich bleibt: 10 = Probes (AP-5.1/5.2), 11 = `public_url` (AP-5.3), 12 = `RecordBackup` (AP-5.5a), 13 = CA-Rotation (AP-5.5b). PostgreSQL-Vorarbeiten brauchen keine Stufe.

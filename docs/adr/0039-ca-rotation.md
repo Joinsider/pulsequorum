@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                  |
 |-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                         |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                       |
 | **Entscheider** | Projektinhaber                                                                                                                                         |
 | **Bezug**       | FA-PKI-01..06, FA-OBS-01/03/04, PF-10, PF-11, NFA-SEC-01, E9, ADR 0006, ADR 0011, ADR 0012, ADR 0018, ADR 0019, ADR 0025, AP-2.1, AP-5.1, AP-5.5 |
@@ -394,3 +394,4 @@ Raft-Zustand steht (`next` vorhanden bzw. `previous` vorhanden).
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-19 | Proposed | Claude |           |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; offene Fragen wie vorgeschlagen |

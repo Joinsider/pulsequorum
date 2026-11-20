@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                                                                                                                                                                                                                                     |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                                                                                                                                                                                                                                            |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                                                                                                                                                                                                                                          |
 | **Entscheider** | Projektinhaber                                                                                                                                                                                                                                                                                                                                                            |
 | **Bezug**       | FA-PRB-05, FA-PRB-06, FA-PKI-02/04, FA-TEN-04, FA-SEC-SSRF, FA-OBS-01, FA-UI-04/05, AS-06, PF-10; Konzept 7.1 (Private Probes), E11, E21; ADR 0006, ADR 0015, ADR 0017, ADR 0018, ADR 0023 (`channel_failed`), ADR 0025 (Systemalerts), ADR 0029 (Limits, Löschen), ADR 0030 Abschnitt 5 (Vorgabe für private Probes), ADR 0031 (Audit), ADR 0034 (Probe-Protokoll) |
@@ -292,3 +292,4 @@ so).
 | Datum      | Status   | Durch  | Anmerkung                                |
 |------------|----------|--------|------------------------------------------|
 | 2026-11-19 | Proposed | Claude | Vorbereitung AP-5.2; offene Fragen F1–F6 |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; offene Fragen wie vorgeschlagen |

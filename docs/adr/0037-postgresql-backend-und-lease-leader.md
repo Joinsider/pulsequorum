@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                                                                                                                              |
 |-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                                                                                                                                     |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                                                                                                                                   |
 | **Entscheider** | Projektinhaber                                                                                                                                                                                                                                                     |
 | **Bezug**       | Z-S-01, Z-S-04, NFA-PORT-03, NFA-MNT-04, NFA-REL-02, FA-CLU-05/06/07, FA-NODE-04, FA-REP-01..05, FA-ALR-03/10, FA-UPT-03..07, FA-PRB-03, PF-04, PF-35, R-03 · Konzept 3, 6.3, E8, E10 · ADR 0004, 0005, 0012, 0013, 0016, 0017, 0018, 0021, 0024, 0025, 0033 |
@@ -230,7 +230,7 @@ einen Podman- bzw. Docker-Container. Jeder Test legt ein eigenes Schema an und l
 
 ## Entscheidung
 
-Vorgeschlagen: **1C + 2B + 3B + 4B + 5B + 6A + 7A.** Umgesetzt wird in zwei Stufen; für Stufe 1 ist die Aufnahme in
+Entscheidung: **1C + 2B + 3B + 4B + 5B + 6A + 7A.** Umgesetzt wird in zwei Stufen; für Stufe 1 ist die Aufnahme in
 Release 1.0 offen (siehe offene Frage 1).
 
 **1. Betriebsmodell (1C).**
@@ -398,10 +398,14 @@ wie bisher zuerst nach Mandant. Die Retention von 24 h übernimmt ein Leader-Job
 - Ein Live-Wechsel und ein Mischbetrieb während des Wechsels sind ausgeschlossen. Ohne AP-5.5 ist der Modus `postgres`
   nur für Neuinstallationen nutzbar.
 
-**12. Tests (7C).**
+**12. Tests (7A, testcontainers-go).**
 
-- `UC_TEST_POSTGRES_URL`; ein eigenes Schema je Test; in CI ein Job mit Service-Containern `postgres:16` und
-  `postgres:18`; bei `CI=true` schlägt ein fehlender Server fehl, statt zu überspringen.
+- `github.com/testcontainers/testcontainers-go` (MIT) mit dem Modul `modules/postgres`, nur in Testcode, nie im
+  Produkt-Binary; die Lizenzprüfung (ADR 0010) deckt den Abhängigkeitsbaum ab.
+- Ein Container je Testpaket (`TestMain`), ein eigenes Schema je Test; Images `postgres:16` und `postgres:18`, per
+  Digest gepinnt, als Matrix.
+- Ohne Docker- bzw. Podman-Socket werden die Tests lokal übersprungen; bei `CI=true` schlagen sie fehl, statt zu
+  überspringen.
 - `storetest.RunState`/`RunMetrics` laufen gegen beide Engines.
 - Zusätzlich:
     - Lease-Tests: Erwerb, Verlängerung, Ablauf, Selbstabsetzung, Fencing eines pausierten Halters, Shutdown-Übergabe
@@ -477,3 +481,4 @@ wie bisher zuerst nach Mandant. Die Retention von 24 h übernimmt ein Leader-Job
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-19 | Proposed | Claude |           |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; Tests auf 7A (testcontainers-go) geändert; offene Fragen wie vorgeschlagen (Stufe 1 nach Release 1.0) |

@@ -2,7 +2,7 @@
 
 |                 |                                                                                                                                                                                                  |
 |-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                                                                                                                         |
+| **Status** | Accepted |
 | **Datum**       | 2026-11-19                                                                                                                                                                                       |
 | **Entscheider** | Projektinhaber                                                                                                                                                                                         |
 | **Bezug**       | FA-OBS-03, Z-S-04, FA-CLU-02, FA-CLU-09, FA-SEC-SEC, FA-TEN-01, FA-DAT-01, NFA-MNT-04, PF-01, PF-08, PF-12; ADR 0004, 0005, 0011, 0012, 0013, 0015, 0016, 0018, 0019, 0029, 0031; AP-5.4, AP-5.5 |
@@ -355,3 +355,4 @@ neue Tabelle ohne Eintrag lässt den Test fehlschlagen.
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-19 | Proposed | Claude |           |
+| 2026-11-20 | Accepted | Projektinhaber | im Chat; offene Fragen wie vorgeschlagen |
