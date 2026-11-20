@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package dnscheck implements the DNS monitor type (FA-CHK-40/41).
 package dnscheck
@@ -19,7 +19,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // Type is the monitor type key.

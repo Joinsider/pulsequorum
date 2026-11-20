@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package scheduler
 
 import (
 	"log/slog"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // TenantGate hands Target only the monitors of tenants that may run: a

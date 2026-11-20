@@ -2,7 +2,7 @@
 
 Reproduzierbare, lokale Ende-zu-Ende-Umgebung für die Abnahme des SSRF-Schutzes (Pflichtenheft FA-SEC-SSRF, AS-07; Entscheidung in [ADR 0030](../../docs/adr/0030-ssrf-durchsetzung.md); Betrieb in [docs/betrieb/ssrf.md](../../docs/betrieb/ssrf.md)).
 
-Ein echter UptimeCluster-Node läuft in einem Podman-Netz. Ohne Internetdienst zeigt er, dass der Schutz interne Ziele blockiert, auch über DNS-Namen, Weiterleitungen und DNS-Rebinding.
+Ein echter Pulsequorum-Node läuft in einem Podman-Netz. Ohne Internetdienst zeigt er, dass der Schutz interne Ziele blockiert, auch über DNS-Namen, Weiterleitungen und DNS-Rebinding.
 
 > **Nur Entwicklung und Abnahme.** Die Umgebung nutzt feste Testnamen, legt einen Admin mit zufälligem Passwort an und hat keinen Bezug zu einem produktiven System.
 
@@ -17,7 +17,7 @@ Der Filter (`checker.BlockPrivate`, `internal/checker/dialer.go`) sperrt keine A
 | `ssrf-dns` | 203.0.113.53 | – | Autoritativer DNS für die Zone `ssrf.test.` auf UDP und TCP Port 53 |
 | `ssrf-redirect` | 203.0.113.10 | – | „Öffentlicher“ HTTP-Server mit Weiterleitungen auf interne Ziele, `/hit` antwortet 200 |
 | `ssrf-target` | – | 10.99.0.10 | Interner Canary: beantwortet jede Anfrage mit 200 und protokolliert sie |
-| `ssrf-node` | 203.0.113.20 | 10.99.0.20 | UptimeCluster als einzelner Voter, `127.0.0.1:18080` auf dem Host |
+| `ssrf-node` | 203.0.113.20 | 10.99.0.20 | Pulsequorum als einzelner Voter, `127.0.0.1:18080` auf dem Host |
 
 Der Node nutzt `ssrf-dns` als einzigen Resolver (`--dns 203.0.113.53`). Namen außerhalb von `ssrf.test.` beantwortet der DNS-Server mit REFUSED, unbekannte Namen darin mit NXDOMAIN.
 
@@ -56,7 +56,7 @@ deploy/ssrf-dev/check.sh off
 deploy/ssrf-dev/down.sh         # alles entfernen
 ```
 
-`setup.sh` baut `ssrfenv` (Testdienste) und `uptimecluster` für `linux/<Host-Architektur>` mit `CGO_ENABLED=0` nach `.generated/bin/`. Der Node startet jedes Mal frisch (`--tmpfs /data`), damit Canary-Protokoll und Monitore bei jedem Lauf bei null beginnen. Der Admin wird aus dem einmaligen Setup-Token gleich nach dem Start angelegt. Der Benutzer ist `admin`, das Passwort steht in `.generated/admin.env` (`chmod 600`) und wird nie ausgegeben.
+`setup.sh` baut `ssrfenv` (Testdienste) und `pulsequorum` für `linux/<Host-Architektur>` mit `CGO_ENABLED=0` nach `.generated/bin/`. Der Node startet jedes Mal frisch (`--tmpfs /data`), damit Canary-Protokoll und Monitore bei jedem Lauf bei null beginnen. Der Admin wird aus dem einmaligen Setup-Token gleich nach dem Start angelegt. Der Benutzer ist `admin`, das Passwort steht in `.generated/admin.env` (`chmod 600`) und wird nie ausgegeben.
 
 `check.sh` prüft zuerst, ob der laufende Node mit dem übergebenen Modus gestartet wurde, und bricht sonst ab.
 

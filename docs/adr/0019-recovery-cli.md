@@ -87,7 +87,7 @@ Für den Quorumverlust **Option A**, für das Passwort **Option A**.
 
 **1. Rahmen**
 
-- Neue Unterbefehle unter `uptimecluster admin …`, eigenes Paket `internal/admincli`. Sie lesen dieselbe Umgebung wie
+- Neue Unterbefehle unter `pulsequorum admin …`, eigenes Paket `internal/admincli`. Sie lesen dieselbe Umgebung wie
   der Server (`DATA_DIR`, `ADVERTISE_ADDR`, …).
 - Ausgaben sind für Menschen gedacht. Wo sinnvoll gibt es `--json`.
 - Exit-Codes: 0 = Erfolg, 1 = Fehler, 2 = falsche Bedienung.

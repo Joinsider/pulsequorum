@@ -1,6 +1,6 @@
 # SSRF-Schutz
 
-Dieses Dokument beschreibt den SSRF-Schutz von UptimeCluster: was er sperrt, wann er greift, welche Fehlerbilder auftreten und was der Betrieb zusätzlich tun muss (Pflichtenheft FA-SEC-SSRF, FA-ALR-12, FA-CHK-04; Entscheidung in [ADR 0030](../adr/0030-ssrf-durchsetzung.md)). Die Variable `SSRF_PROTECTION` ist in [compose.md](compose.md) beschrieben.
+Dieses Dokument beschreibt den SSRF-Schutz von Pulsequorum: was er sperrt, wann er greift, welche Fehlerbilder auftreten und was der Betrieb zusätzlich tun muss (Pflichtenheft FA-SEC-SSRF, FA-ALR-12, FA-CHK-04; Entscheidung in [ADR 0030](../adr/0030-ssrf-durchsetzung.md)). Die Variable `SSRF_PROTECTION` ist in [compose.md](compose.md) beschrieben.
 
 ## 1. Überblick
 

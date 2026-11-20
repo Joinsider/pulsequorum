@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package config
 
@@ -494,7 +494,7 @@ func genericOIDC() map[string]string {
 		"NODE_NAME":        "n1",
 		"AUTH_MODE":        "oidc",
 		"OIDC_ISSUER":      "https://idp.example.com/realms/ops",
-		"OIDC_AUDIENCE":    "uptimecluster",
+		"OIDC_AUDIENCE":    "pulsequorum",
 		"OIDC_CLIENT_IDS":  "spa",
 		"OIDC_ROLES_CLAIM": "roles",
 	}
@@ -728,7 +728,7 @@ func TestOIDCClientIDsAndFlags(t *testing.T) {
 		{"require azp false", with(genericOIDC(), "OIDC_REQUIRE_AZP", "false"), func(c OIDCConfig) bool { return !c.RequireAZP }, ""},
 		{"require azp not a bool", with(genericOIDC(), "OIDC_REQUIRE_AZP", "no"), nil, "OIDC_REQUIRE_AZP"},
 		{"insecure http default off", genericOIDC(), func(c OIDCConfig) bool { return !c.InsecureHTTP }, ""},
-		{"audience kept", genericOIDC(), func(c OIDCConfig) bool { return c.Audience == "uptimecluster" }, ""},
+		{"audience kept", genericOIDC(), func(c OIDCConfig) bool { return c.Audience == "pulsequorum" }, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

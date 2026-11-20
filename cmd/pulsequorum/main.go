@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
-// Command uptimecluster runs a UptimeCluster node. The role (voter or probe) is
+// Command pulsequorum runs a Pulsequorum node. The role (voter or probe) is
 // selected via NODE_ROLE; see docs/pflichtenheft.md, chapter 9.5.
 package main
 
@@ -23,39 +23,39 @@ import (
 	// All voters evaluate maintenance time zones with the same embedded database.
 	_ "time/tzdata"
 
-	"github.com/joinsider/uptimecluster/internal/admincli"
-	"github.com/joinsider/uptimecluster/internal/aggregator"
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/api"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/authswitch"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	_ "github.com/joinsider/uptimecluster/internal/checker/builtin" // registers all monitor types
-	"github.com/joinsider/uptimecluster/internal/checker/icmpcheck"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusterhost"
-	"github.com/joinsider/uptimecluster/internal/config"
-	"github.com/joinsider/uptimecluster/internal/configsecret"
-	"github.com/joinsider/uptimecluster/internal/degraded"
-	"github.com/joinsider/uptimecluster/internal/diskstat"
-	"github.com/joinsider/uptimecluster/internal/maintenance"
-	"github.com/joinsider/uptimecluster/internal/membership"
-	ucmetrics "github.com/joinsider/uptimecluster/internal/metrics"
-	"github.com/joinsider/uptimecluster/internal/node"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/secrets"
-	"github.com/joinsider/uptimecluster/internal/selfcheck"
-	"github.com/joinsider/uptimecluster/internal/selfhealth"
-	"github.com/joinsider/uptimecluster/internal/server"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
-	"github.com/joinsider/uptimecluster/internal/stream"
-	"github.com/joinsider/uptimecluster/internal/sysalert"
-	"github.com/joinsider/uptimecluster/internal/tenantpurge"
-	"github.com/joinsider/uptimecluster/internal/uptime"
-	"github.com/joinsider/uptimecluster/internal/version"
-	"github.com/joinsider/uptimecluster/internal/webui"
+	"github.com/joinsider/pulsequorum/internal/admincli"
+	"github.com/joinsider/pulsequorum/internal/aggregator"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/api"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/authswitch"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	_ "github.com/joinsider/pulsequorum/internal/checker/builtin" // registers all monitor types
+	"github.com/joinsider/pulsequorum/internal/checker/icmpcheck"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/clusterhost"
+	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/configsecret"
+	"github.com/joinsider/pulsequorum/internal/degraded"
+	"github.com/joinsider/pulsequorum/internal/diskstat"
+	"github.com/joinsider/pulsequorum/internal/maintenance"
+	"github.com/joinsider/pulsequorum/internal/membership"
+	ucmetrics "github.com/joinsider/pulsequorum/internal/metrics"
+	"github.com/joinsider/pulsequorum/internal/node"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/secrets"
+	"github.com/joinsider/pulsequorum/internal/selfcheck"
+	"github.com/joinsider/pulsequorum/internal/selfhealth"
+	"github.com/joinsider/pulsequorum/internal/server"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/stream"
+	"github.com/joinsider/pulsequorum/internal/sysalert"
+	"github.com/joinsider/pulsequorum/internal/tenantpurge"
+	"github.com/joinsider/pulsequorum/internal/uptime"
+	"github.com/joinsider/pulsequorum/internal/version"
+	"github.com/joinsider/pulsequorum/internal/webui"
 )
 
 func main() {
@@ -66,7 +66,7 @@ func run(args []string) int {
 	if len(args) > 0 {
 		switch args[0] {
 		case "version":
-			fmt.Printf("uptimecluster %s (commit %s, built %s)\n", version.Version, version.Commit, version.Date)
+			fmt.Printf("pulsequorum %s (commit %s, built %s)\n", version.Version, version.Commit, version.Date)
 			return 0
 		case "healthcheck":
 			return healthcheck()
@@ -86,7 +86,7 @@ func run(args []string) int {
 		return 2
 	}
 	log := newLogger(cfg)
-	log.Info("starting uptimecluster",
+	log.Info("starting pulsequorum",
 		"version", version.Version, "commit", version.Commit,
 		"role", cfg.Role, "node", cfg.NodeName)
 
@@ -301,7 +301,7 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	heartbeats.SetOnStored(host.Replication.Publish)
 	checkEnv := &checker.Env{
 		Dialer:    dialer,
-		UserAgent: "UptimeCluster/" + version.Version,
+		UserAgent: "Pulsequorum/" + version.Version,
 		ICMPMode:  icmpMode,
 		Now:       clock,
 	}

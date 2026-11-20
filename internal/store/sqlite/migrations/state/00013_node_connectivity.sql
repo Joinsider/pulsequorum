@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Node connectivity (ADR 0022). The leader marks a node impaired when its
 -- reference targets fail or its heartbeats deviate from the peers; the reason

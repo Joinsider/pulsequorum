@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package alert
 
@@ -21,9 +21,9 @@ import (
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // SendTimeout bounds one delivery (ADR 0014).
@@ -337,7 +337,7 @@ func (s *Sender) sendWebhook(ctx context.Context, t Target, p cluster.AlertPaylo
 		return &DeliveryError{Permanent: true, Msg: "invalid webhook URL"}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "UptimeCluster")
+	req.Header.Set("User-Agent", "Pulsequorum")
 	for k, v := range t.Headers {
 		req.Header.Set(k, v)
 	}

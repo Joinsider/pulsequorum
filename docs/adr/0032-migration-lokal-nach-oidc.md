@@ -19,7 +19,7 @@ AP-4.5 verschoben.
   Es gibt keine Spalte `created_by` an Mandantendaten. Ein Wechsel des Auth-Modus ändert sie nicht. Der Modus selbst
   steht nirgends im State, nur in der Konfiguration.
 - **Bindung von `default`:** Im Profil `zitadel` bindet der Leader `default` beim Start an `ZITADEL_PLATFORM_ORG_ID`
-  (`bindPlatformOrg` in `cmd/uptimecluster/oidc.go`). Mit `OIDC_TENANCY=single` landet die Plattform-Organisation
+  (`bindPlatformOrg` in `cmd/pulsequorum/oidc.go`). Mit `OIDC_TENANCY=single` landet die Plattform-Organisation
   ohnehin in `default`. Im Profil `generic` landet jeder Nutzer in `default`. Der Kern von FA-AUTH-08 ist damit gebaut,
   aber nicht getestet: Es gibt keinen Test für einen Wechsel auf einer bestehenden Datenbank und keinen für
   `tryBindPlatformOrg`.

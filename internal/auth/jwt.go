@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package auth
 
@@ -21,8 +21,8 @@ import (
 const (
 	jwtAlg      = "EdDSA"
 	jwtTyp      = "JWT"
-	Issuer      = "uptimecluster"
-	Audience    = "uptimecluster"
+	Issuer      = "pulsequorum"
+	Audience    = "pulsequorum"
 	AccessTTL   = 15 * time.Minute
 	clockLeeway = 30 * time.Second
 	maxJWTLen   = 4096

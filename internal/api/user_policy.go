@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -7,8 +7,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // User management rules (FA-AUTH-09). The handlers in users.go call these

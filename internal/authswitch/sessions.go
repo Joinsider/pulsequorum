@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package authswitch holds the leader tasks that run after a cluster moved
 // from AUTH_MODE=local to oidc (ADR 0032, FA-AUTH-08).
@@ -13,9 +13,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // SessionInterval is how often the leader looks for local refresh sessions.

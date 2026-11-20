@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Command as01 automates acceptance scenario AS-01 (docs/pflichtenheft.md,
-// section 13.2) against a running single-node UptimeCluster.
+// section 13.2) against a running single-node Pulsequorum.
 //
 // The node is started separately (Compose or binary). The driver starts an
 // in-process fake ntfy server and an HTTP target, sets up the admin, creates
@@ -37,8 +37,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/internal/fake"
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/internal/fake"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // Limits accepted by the node's API (api/openapi.yaml, MonitorInput).

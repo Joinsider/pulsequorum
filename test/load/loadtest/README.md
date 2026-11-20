@@ -1,6 +1,6 @@
 # loadtest
 
-Load and measurement CLI for UptimeCluster voters (NFA-PERF-01 to NFA-PERF-04,
+Load and measurement CLI for Pulsequorum voters (NFA-PERF-01 to NFA-PERF-04,
 roadmap AP-1.15). It runs against a voter started locally or as a container.
 
     go build -o loadtest ./test/load/loadtest
@@ -80,7 +80,7 @@ The number of heartbeats is not counted. The report gives the expected rate
 Run the target farm inside the container network of the voter, not on the macOS
 host. With targets on the host, Podman's gvproxy dropped SYNs at about 17 new
 connections per second (66 sockets in SYN-SENT and about 420 false DOWNs in 20
-minutes). That measures the VM networking, not UptimeCluster. Inside the network
+minutes). That measures the VM networking, not Pulsequorum. Inside the network
 the monitors reach the farm directly.
 
 Build a static Linux binary for the Podman VM (same architecture as the host):
@@ -103,7 +103,7 @@ container name as target base, and drive the control endpoint from the host:
       -target-base http://uctargets:18900
     loadtest measure -base http://127.0.0.1:8080 -user admin -password "$PW" \
       -duration 15m -targets-control http://127.0.0.1:18900 \
-      -container uptimecluster -out "$S/report.json"
+      -container pulsequorum -out "$S/report.json"
 
 ## Example run
 
@@ -112,7 +112,7 @@ container name as target base, and drive the control endpoint from the host:
     loadtest setup -setup-token "$TOKEN" -user admin -password "$PW" \
       -count 1000 -interval 60 -target-base http://host.containers.internal:18900
     loadtest measure -user admin -password "$PW" -duration 10m \
-      -targets-control http://127.0.0.1:18900 -container uptimecluster -out "$S/report.json"
+      -targets-control http://127.0.0.1:18900 -container pulsequorum -out "$S/report.json"
 
 ## Tests
 

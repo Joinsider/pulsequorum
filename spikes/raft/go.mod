@@ -1,4 +1,4 @@
-module github.com/joinsider/uptimecluster/spikes/raft
+module github.com/joinsider/pulsequorum/spikes/raft
 
 go 1.27.2
 

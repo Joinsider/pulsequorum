@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package harness
 
@@ -84,7 +84,7 @@ func TestResolveRuntime(t *testing.T) {
 func TestRunArgsArePodmanAndDockerCompatible(t *testing.T) {
 	spec := RunSpec{
 		Name:    "ucchaos-v2",
-		Image:   "uptimecluster:chaos",
+		Image:   "pulsequorum:chaos",
 		Network: "ucchaos-net",
 		Detach:  true,
 		Env:     map[string]string{"NODE_NAME": "ucchaos-v2", "AUTH_MODE": "local", "CLUSTER_JOIN": "ucchaos-v1:9443"},
@@ -98,7 +98,7 @@ func TestRunArgsArePodmanAndDockerCompatible(t *testing.T) {
 		"-p", "127.0.0.1:18102:8080",
 		"-v", "ucchaos-v2-data:/data", "-v", "/tmp/x/join.token:/run/secrets/join-token:ro",
 		"--add-host", "host.docker.internal:host-gateway",
-		"uptimecluster:chaos",
+		"pulsequorum:chaos",
 	}
 	if got := spec.RunArgs(); !reflect.DeepEqual(got, want) {
 		t.Errorf("RunArgs =\n %v\nwant\n %v", got, want)
@@ -130,8 +130,8 @@ func TestRunArgsUserAndRm(t *testing.T) {
 }
 
 func TestBuildArgsSortedBuildArgs(t *testing.T) {
-	spec := BuildSpec{Tag: "uptimecluster:chaos", Context: ".", BuildArgs: map[string]string{"VERSION": "chaos", "COMMIT": "abc"}}
-	want := []string{"build", "-t", "uptimecluster:chaos", "--build-arg", "COMMIT=abc", "--build-arg", "VERSION=chaos", "."}
+	spec := BuildSpec{Tag: "pulsequorum:chaos", Context: ".", BuildArgs: map[string]string{"VERSION": "chaos", "COMMIT": "abc"}}
+	want := []string{"build", "-t", "pulsequorum:chaos", "--build-arg", "COMMIT=abc", "--build-arg", "VERSION=chaos", "."}
 	if got := spec.args(); !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}

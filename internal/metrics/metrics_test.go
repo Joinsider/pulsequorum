@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package metrics
 
@@ -64,27 +64,27 @@ func TestMetricNamesAreExported(t *testing.T) {
 	body := scrape(t, m.Handler())
 
 	want := []string{
-		`uptimecluster_checks_total{result="up",type="http"} 1`,
-		`uptimecluster_check_duration_seconds_bucket{type="http",le="0.05"} 1`,
-		`uptimecluster_check_duration_seconds_count{type="http"} 1`,
-		`uptimecluster_checks_running 0`,
-		`uptimecluster_alert_deliveries_total{kind="system",outcome="sent"} 1`,
-		`uptimecluster_raft_state{state="Leader"} 1`,
-		`uptimecluster_raft_state{state="Follower"} 0`,
-		`uptimecluster_raft_applied_index 42`,
-		`uptimecluster_raft_commit_index 43`,
-		`uptimecluster_raft_last_contact_seconds 0.15`,
-		`uptimecluster_replication_lag_seconds{peer="voter-2"} 2`,
-		`uptimecluster_replication_lag_seconds{peer="voter-3"} -1`,
-		`uptimecluster_replication_dropped_total{peer="voter-2"} 7`,
-		`uptimecluster_db_size_bytes{db="state"} 1000`,
-		`uptimecluster_db_wal_bytes{db="metrics"} 20`,
-		`uptimecluster_disk_free_ratio 0.5`,
-		`uptimecluster_outbox_pending 3`,
-		`uptimecluster_degraded 0`,
-		`uptimecluster_system_alerts_active{kind="voter_offline"} 1`,
-		`uptimecluster_clock_offset_seconds{peer="voter-2"} -0.25`,
-		`uptimecluster_build_info{version="1.2.3"} 1`,
+		`pulsequorum_checks_total{result="up",type="http"} 1`,
+		`pulsequorum_check_duration_seconds_bucket{type="http",le="0.05"} 1`,
+		`pulsequorum_check_duration_seconds_count{type="http"} 1`,
+		`pulsequorum_checks_running 0`,
+		`pulsequorum_alert_deliveries_total{kind="system",outcome="sent"} 1`,
+		`pulsequorum_raft_state{state="Leader"} 1`,
+		`pulsequorum_raft_state{state="Follower"} 0`,
+		`pulsequorum_raft_applied_index 42`,
+		`pulsequorum_raft_commit_index 43`,
+		`pulsequorum_raft_last_contact_seconds 0.15`,
+		`pulsequorum_replication_lag_seconds{peer="voter-2"} 2`,
+		`pulsequorum_replication_lag_seconds{peer="voter-3"} -1`,
+		`pulsequorum_replication_dropped_total{peer="voter-2"} 7`,
+		`pulsequorum_db_size_bytes{db="state"} 1000`,
+		`pulsequorum_db_wal_bytes{db="metrics"} 20`,
+		`pulsequorum_disk_free_ratio 0.5`,
+		`pulsequorum_outbox_pending 3`,
+		`pulsequorum_degraded 0`,
+		`pulsequorum_system_alerts_active{kind="voter_offline"} 1`,
+		`pulsequorum_clock_offset_seconds{peer="voter-2"} -0.25`,
+		`pulsequorum_build_info{version="1.2.3"} 1`,
 	}
 	for _, line := range want {
 		if !hasLine(body, line) {
@@ -96,15 +96,15 @@ func TestMetricNamesAreExported(t *testing.T) {
 func TestNilSourcesAreNotExported(t *testing.T) {
 	body := scrape(t, New(Sources{}).Handler())
 	for _, name := range []string{
-		"uptimecluster_raft_", "uptimecluster_replication_", "uptimecluster_db_",
-		"uptimecluster_disk_free_ratio", "uptimecluster_outbox_pending", "uptimecluster_degraded",
-		"uptimecluster_system_alerts_active", "uptimecluster_clock_offset_seconds",
+		"pulsequorum_raft_", "pulsequorum_replication_", "pulsequorum_db_",
+		"pulsequorum_disk_free_ratio", "pulsequorum_outbox_pending", "pulsequorum_degraded",
+		"pulsequorum_system_alerts_active", "pulsequorum_clock_offset_seconds",
 	} {
 		if strings.Contains(body, name) {
 			t.Errorf("%s exported without its source:\n%s", name, body)
 		}
 	}
-	if !hasLine(body, `uptimecluster_build_info{version="unknown"} 1`) {
+	if !hasLine(body, `pulsequorum_build_info{version="unknown"} 1`) {
 		t.Errorf("build_info without version missing:\n%s", body)
 	}
 }
@@ -114,7 +114,7 @@ func TestFailingSourceIsSkipped(t *testing.T) {
 	src.DiskFree = func() (float64, error) { return 0, errors.New("statfs failed") }
 	src.OutboxPending = func(context.Context) (int, error) { return 0, errors.New("db closed") }
 	body := scrape(t, New(src).Handler())
-	if strings.Contains(body, "uptimecluster_disk_free_ratio") || strings.Contains(body, "uptimecluster_outbox_pending") {
+	if strings.Contains(body, "pulsequorum_disk_free_ratio") || strings.Contains(body, "pulsequorum_outbox_pending") {
 		t.Errorf("failed sources still exported:\n%s", body)
 	}
 }
@@ -170,15 +170,15 @@ func TestNoTenantOrMonitorLabels(t *testing.T) {
 func TestCheckObserverCounts(t *testing.T) {
 	m := New(Sources{})
 	m.CheckStarted("tcp")
-	if body := scrape(t, m.Handler()); !hasLine(body, "uptimecluster_checks_running 1") {
+	if body := scrape(t, m.Handler()); !hasLine(body, "pulsequorum_checks_running 1") {
 		t.Errorf("running gauge not 1 during check:\n%s", body)
 	}
 	m.CheckFinished("tcp", "degraded", 2*time.Second)
 	body := scrape(t, m.Handler())
 	for _, line := range []string{
-		`uptimecluster_checks_total{result="degraded",type="tcp"} 1`,
-		`uptimecluster_checks_running 0`,
-		`uptimecluster_check_duration_seconds_bucket{type="tcp",le="2.5"} 1`,
+		`pulsequorum_checks_total{result="degraded",type="tcp"} 1`,
+		`pulsequorum_checks_running 0`,
+		`pulsequorum_check_duration_seconds_bucket{type="tcp",le="2.5"} 1`,
 	} {
 		if !hasLine(body, line) {
 			t.Errorf("missing %q in:\n%s", line, body)

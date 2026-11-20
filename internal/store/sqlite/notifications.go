@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -10,8 +10,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/statedb"
 )
 
 // GetChannel returns a notification channel of the tenant.
@@ -56,7 +56,7 @@ func (s *StateStore) DueAlerts(ctx context.Context, nowMs int64, limit int) ([]s
 }
 
 // CountPendingAlerts returns the number of outbox entries that are not delivered
-// yet (the uptimecluster_outbox_pending metric, ADR 0025).
+// yet (the pulsequorum_outbox_pending metric, ADR 0025).
 func (s *StateStore) CountPendingAlerts(ctx context.Context) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

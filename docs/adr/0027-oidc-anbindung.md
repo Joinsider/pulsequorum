@@ -310,7 +310,7 @@ aber keinen Eigenbau (1A). Dieser Entwurf setzt das um, bis zur Annahme ist er a
 - **Unbekanntes `kid`:** löst sofort ein Nachladen aus, höchstens einmal je 30 s pro Voter. Parallele Anfragen warten
   auf denselben Abruf (single-flight).
 - **Fehlschlag:** Schlägt ein Abruf fehl, bleiben die letzten gültigen Schlüssel unbegrenzt in Gebrauch (FA-AUTH-07).
-  Die Metrik `uptimecluster_auth_jwks_fetch_failures_total` zählt die Fehlschläge mit. Ein Systemalert dazu folgt bei
+  Die Metrik `pulsequorum_auth_jwks_fetch_failures_total` zählt die Fehlschläge mit. Ein Systemalert dazu folgt bei
   Bedarf in P5.
 - **Wechsel:** Ein erfolgreich geladenes Schlüsselset ersetzt das alte vollständig. Damit verschwinden auch Schlüssel,
   die der IdP entfernt hat.

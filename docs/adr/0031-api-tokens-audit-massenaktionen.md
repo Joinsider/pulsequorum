@@ -43,7 +43,7 @@ Einzelpersonen. Das deckt ein eigener ADR ab. Dieser ADR hält das Modell nur da
 einer festen Rolle an. Es bleibt gültig, wenn der Ersteller den Mandanten verlässt. ← gewählt
 
 - Vorteile: passt zu CI und Automatisierung. Funktioniert in allen Auth-Modi gleich, auch mit OIDC, wo Nutzerrollen nur
-  im IdP liegen und UptimeCluster sie zwischen zwei Logins nicht kennt.
+  im IdP liegen und Pulsequorum sie zwischen zwei Logins nicht kennt.
 - Nachteile: Ein Token überlebt seinen Ersteller. Dagegen helfen der Pflicht-Ablauf (Frage 3) und die Token-Liste mit
   Ersteller.
 
@@ -63,7 +63,7 @@ einer festen Rolle an. Es bleibt gültig, wenn der Ersteller den Mandanten verl�
   Geltungsbereich `provisioning` ergänzen, ohne Migration: Mandanten anlegen, Plan setzen, sperren, aber kein Zugriff
   auf Cluster, Join-Tokens oder die CA.
 - Bis dahin deckt das Zitadel-Profil Firmen und Einzelpersonen ab. Ein Backend legt über die Zitadel-API eine
-  Organisation mit Nutzer an. UptimeCluster legt den Mandanten beim ersten Login an (Auto-Provisionierung, ADR 0029).
+  Organisation mit Nutzer an. Pulsequorum legt den Mandanten beim ersten Login an (Auto-Provisionierung, ADR 0029).
   Ein Mandant mit nur einem Nutzer ist dabei kein Sonderfall.
 - Vorteile: Ein geleaktes Token gefährdet höchstens einen Mandanten.
 - Nachteile: Automatisierung auf Plattform-Ebene geht vorerst nur über Zitadel oder interaktive Logins.

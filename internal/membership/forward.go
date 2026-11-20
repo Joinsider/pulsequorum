@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package membership
 
@@ -11,8 +11,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 )
 
 // Apply runs a command forwarded by a follower (FA-CLU-05). Only the leader

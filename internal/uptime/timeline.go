@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package uptime computes uptime and latency from heartbeats and the consensus
 // status history, maintains the hourly and daily rollups, compacts old raw
@@ -14,7 +14,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // coverMs is how long a heartbeat counts: until the next heartbeat of the same

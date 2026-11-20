@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package cluster
 
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // allEvents subscribes a channel to every event of command level 4.

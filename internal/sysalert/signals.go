@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package sysalert evaluates the system alerts of the cluster (FA-OBS-01,
 // FA-REP-05, FA-REP-06, FA-PKI-06, ADR 0025). The leader reads the signals of
@@ -11,7 +11,7 @@ package sysalert
 import (
 	"time"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 )
 
 // Kinds of system alerts (ADR 0025, section 3). The quorum kind is raised by

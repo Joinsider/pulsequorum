@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Consensus status changes, kept 30 days (Pflichtenheft 7.3). They are the
 -- source of the consensus uptime (FA-UPT-01); every voter computes the same

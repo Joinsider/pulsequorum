@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package admincli
 
@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/node"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/node"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 const testNodeID = "11111111-1111-1111-1111-111111111111"

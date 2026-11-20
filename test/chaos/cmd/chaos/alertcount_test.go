@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/test/internal/fake"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/test/internal/fake"
 )
 
 // postNtfy delivers one message to the recorder the way shoutrrr does: the

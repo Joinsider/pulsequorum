@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Startet die lokale Keycloak-Entwicklungsinstanz, legt die Testnutzer an und schreibt
-# .generated/uptimecluster.env fuer den Cluster. Idempotent: mehrfacher Aufruf ist sicher.
+# .generated/pulsequorum.env fuer den Cluster. Idempotent: mehrfacher Aufruf ist sicher.
 # NUR ENTWICKLUNG. Zugangsdaten landen in .generated/credentials.env (chmod 600), nie in der Ausgabe.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ cd "$HERE"
 
 GEN="$HERE/.generated"
 CRED="$GEN/credentials.env"
-UPT="$GEN/uptimecluster.env"
+UPT="$GEN/pulsequorum.env"
 BASE="http://localhost:8081"
 REALM="uptime"
 EXPECTED_ISSUER="$BASE/realms/$REALM"
@@ -133,13 +133,13 @@ ensure_user "editor@example.test" "Test" "Editor" "$USER_EDITOR_PASSWORD" "tenan
 ensure_user "nobody@example.test" "Test" "Nobody" "$USER_NOBODY_PASSWORD" "staff"
 
 # Cluster-Umgebung schreiben (atomar).
-tmp="$(mktemp "$GEN/uptimecluster.XXXXXX")"
+tmp="$(mktemp "$GEN/pulsequorum.XXXXXX")"
 cat > "$tmp" <<ENV
 AUTH_MODE=oidc
 OIDC_PROFILE=generic
 OIDC_ISSUER=$issuer
-OIDC_AUDIENCE=uptimecluster-api
-OIDC_CLIENT_IDS=uptimecluster-spa,uptimecluster-cli
+OIDC_AUDIENCE=pulsequorum-api
+OIDC_CLIENT_IDS=pulsequorum-spa,pulsequorum-cli
 OIDC_ROLES_CLAIM=realm_access.roles
 OIDC_INSECURE_HTTP=true
 OIDC_MAX_TOKEN_TTL=1h

@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Tenants whose data this node has purged from metrics.db (ADR 0029). It is
 -- node-local: every node purges on its own after it sees the tombstone, and a

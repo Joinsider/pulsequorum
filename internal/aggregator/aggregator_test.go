@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package aggregator
 
@@ -12,11 +12,11 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 const nodeID = "66666666-6666-6666-6666-666666666666"

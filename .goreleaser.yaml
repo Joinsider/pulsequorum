@@ -3,7 +3,7 @@
 # Release: .github/workflows/release.yml on tags v*, runs `goreleaser release --clean`.
 version: 2
 
-project_name: uptimecluster
+project_name: pulsequorum
 
 before:
   hooks:
@@ -11,18 +11,18 @@ before:
     - make notices
 
 builds:
-  - id: uptimecluster
-    main: ./cmd/uptimecluster
-    binary: uptimecluster
+  - id: pulsequorum
+    main: ./cmd/pulsequorum
+    binary: pulsequorum
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/joinsider/uptimecluster/internal/version.Version={{.Version}}
-      - -X github.com/joinsider/uptimecluster/internal/version.Commit={{.ShortCommit}}
-      - -X github.com/joinsider/uptimecluster/internal/version.Date={{.Date}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Version={{.Version}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Date={{.Date}}
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
@@ -35,9 +35,9 @@ builds:
         goarch: amd64
 
 archives:
-  - id: uptimecluster
+  - id: pulsequorum
     ids:
-      - uptimecluster
+      - pulsequorum
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -55,12 +55,12 @@ sboms:
     artifacts: archive
 
 dockers_v2:
-  - id: uptimecluster
+  - id: pulsequorum
     ids:
-      - uptimecluster
+      - pulsequorum
     dockerfile: Dockerfile.release
     images:
-      - ghcr.io/joinsider/uptimecluster
+      - ghcr.io/joinsider/pulsequorum
     tags:
       - "{{ .Version }}"
       - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
@@ -73,8 +73,8 @@ dockers_v2:
       - LICENSE
       - THIRD_PARTY_NOTICES.md
     labels:
-      org.opencontainers.image.title: uptimecluster
-      org.opencontainers.image.source: https://github.com/joinsider/uptimecluster
+      org.opencontainers.image.title: pulsequorum
+      org.opencontainers.image.source: https://github.com/Joinsider/pulsequorum
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.licenses: AGPL-3.0-only
@@ -83,7 +83,7 @@ dockers_v2:
 release:
   github:
     owner: joinsider
-    name: uptimecluster
+    name: pulsequorum
 
 changelog:
   sort: asc

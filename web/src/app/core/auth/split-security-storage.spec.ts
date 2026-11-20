@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { REDIRECT_STATE_PREFIX, SplitSecurityStorage } from './split-security-storage';

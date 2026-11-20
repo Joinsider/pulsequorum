@@ -82,7 +82,7 @@ Slot liegt bei etwa `(LeaderGrace + δ)/I`, bei 20 s also rund 50 %, bei 60 s ru
 
 ### Nebenbefund: `GapOptions.Degraded` im Test
 
-Der Test setzt `GapOptions.Degraded` nicht, `cmd/uptimecluster/main.go` schon. Damit bleibt `afterDegraded` im Test
+Der Test setzt `GapOptions.Degraded` nicht, `cmd/pulsequorum/main.go` schon. Damit bleibt `afterDegraded` im Test
 `false`, und `announceRestored` (ADR 0025, Abschnitt 5) läuft nie. Auf das Urteil hat das keinen Einfluss. Der Test
 prüft aber einen Pfad der Produktion nicht mit.
 

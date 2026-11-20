@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package alert
 
@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/joinsider/uptimecluster/internal/secrets"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/secrets"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Keyring encrypts and decrypts channel secrets (*secrets.Keyring, ADR 0011).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package cluster
 
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/store"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // putOp builds a batch operation that puts a document of kind with id at the

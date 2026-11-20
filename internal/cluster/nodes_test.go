@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package cluster
 
@@ -17,9 +17,9 @@ import (
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 // nodeFSM applies commands to a fresh FSM over a fresh state.db. Request IDs

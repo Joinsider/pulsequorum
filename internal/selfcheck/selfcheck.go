@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package selfcheck probes the reference targets of a node to tell whether the
 // node itself has lost its connectivity (ADR 0022, FA-CON-04). A round counts
@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/checker"
 )
 
 // Defaults for Options fields that are left at their zero value (ADR 0022).

@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Local authentication (ADR 0008, FA-AUTH-01..03). Secrets are never stored in
 -- plaintext: password_hash is an Argon2id PHC string, refresh tokens are stored

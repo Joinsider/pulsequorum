@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusternet
 
@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
-	"github.com/joinsider/uptimecluster/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/pki"
 )
 
 // handshaked are server credentials for connections the Mux has already

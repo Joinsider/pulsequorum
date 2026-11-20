@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package degraded decides whether this voter is in the degraded mode of
 // ADR 0024: it has known no leader for a while, so the cluster cannot decide

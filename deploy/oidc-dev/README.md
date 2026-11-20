@@ -1,6 +1,6 @@
 # Lokale OIDC-Testumgebungen
 
-Lokale Identity-Provider für die manuelle Ende-zu-Ende-Prüfung der OIDC-Anmeldung von UptimeCluster (siehe [docs/betrieb/oidc.md](../../docs/betrieb/oidc.md)).
+Lokale Identity-Provider für die manuelle Ende-zu-Ende-Prüfung der OIDC-Anmeldung von Pulsequorum (siehe [docs/betrieb/oidc.md](../../docs/betrieb/oidc.md)).
 
 > **Nur Entwicklung.** Die Instanzen laufen ohne TLS im `start-dev`-Modus, binden nur an `127.0.0.1` und enthalten feste Testrollen. Sie sind nicht für den Produktivbetrieb gedacht.
 
@@ -24,7 +24,7 @@ cd deploy/oidc-dev/keycloak
 Die Skripte erzeugen `.generated/` (Verzeichnis `chmod 700`) mit:
 
 - `credentials.env` (`chmod 600`): Admin-Zugang Keycloak und Passwörter der Testnutzer. Wird nur beim ersten Lauf erzeugt und danach nicht überschrieben. Die Datei ist per `.gitignore` ausgeschlossen.
-- `uptimecluster.env`: Umgebungsvariablen für den Cluster im OIDC-Modus. `OIDC_ISSUER` entspricht exakt dem `issuer` aus der Discovery-Datei.
+- `pulsequorum.env`: Umgebungsvariablen für den Cluster im OIDC-Modus. `OIDC_ISSUER` entspricht exakt dem `issuer` aus der Discovery-Datei.
 
 Die Passwörter werden nie ausgegeben.
 
@@ -38,9 +38,9 @@ Die Passwörter werden nie ausgegeben.
 
 ### Clients
 
-- `uptimecluster-spa`: öffentlicher Client, nur Authorization Code mit PKCE (`S256`). Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/login`, Web Origin `http://localhost:8080`. `offline_access` ist als optionaler Scope freigegeben.
-- `uptimecluster-cli`: öffentlicher Client mit Direct Access Grants (Password Grant). Er dient nur dem Abruf von Tokens in Entwicklungsskripten (`token.sh`).
-- Beide Clients enthalten einen Audience-Mapper, der `aud` = `uptimecluster-api` setzt.
+- `pulsequorum-spa`: öffentlicher Client, nur Authorization Code mit PKCE (`S256`). Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/login`, Web Origin `http://localhost:8080`. `offline_access` ist als optionaler Scope freigegeben.
+- `pulsequorum-cli`: öffentlicher Client mit Direct Access Grants (Password Grant). Er dient nur dem Abruf von Tokens in Entwicklungsskripten (`token.sh`).
+- Beide Clients enthalten einen Audience-Mapper, der `aud` = `pulsequorum-api` setzt.
 - Access-Token-Laufzeit im Realm: 900 s.
 
 Nutzer sind nicht in `realm.json` enthalten; `setup.sh` legt sie über die Admin-REST-API an.
@@ -48,8 +48,8 @@ Nutzer sind nicht in `realm.json` enthalten; `setup.sh` legt sie über die Admin
 ### Hinweise
 
 - `realm.json` wird nur beim ersten Start eines leeren Containers importiert. Änderungen daran wirken erst nach `./down.sh` und `./setup.sh`.
-- Die Issuer-URL ist `http://localhost:8081/realms/uptime`. Der Cluster braucht `OIDC_INSECURE_HTTP=true`, dafür setzt `setup.sh` die Variable in `uptimecluster.env`.
-- Im Cluster lädt man die Variablen mit `set -a; source deploy/oidc-dev/keycloak/.generated/uptimecluster.env; set +a`.
+- Die Issuer-URL ist `http://localhost:8081/realms/uptime`. Der Cluster braucht `OIDC_INSECURE_HTTP=true`, dafür setzt `setup.sh` die Variable in `pulsequorum.env`.
+- Im Cluster lädt man die Variablen mit `set -a; source deploy/oidc-dev/keycloak/.generated/pulsequorum.env; set +a`.
 
 ## Zitadel
 
@@ -82,9 +82,9 @@ cd deploy/oidc-dev/zitadel
 - `ids.env`: `PROJECT_ID`, `SPA_CLIENT_ID`, `PLATFORM_ORG_ID`, `ACME_ORG_ID`, `GLOBEX_ORG_ID`, `INITECH_ORG_ID`.
 - `bots.env`: Client-IDs und Client-Secrets der Bots. Bei jedem Lauf neu erzeugt.
 - `users.env`: Passwörter der Testnutzer. Bei jedem Lauf neu gesetzt.
-- `uptimecluster.env`: Umgebung für den Cluster (`AUTH_MODE=oidc`, `OIDC_PROFILE=zitadel`, `OIDC_TENANCY=multi`, Issuer, Audience, Client-IDs, Plattform-Organisation).
+- `pulsequorum.env`: Umgebung für den Cluster (`AUTH_MODE=oidc`, `OIDC_PROFILE=zitadel`, `OIDC_TENANCY=multi`, Issuer, Audience, Client-IDs, Plattform-Organisation).
 
-Passwörter und Secrets werden nie ausgegeben. Im Cluster lädt man die Variablen mit `set -a; source deploy/oidc-dev/zitadel/.generated/uptimecluster.env; set +a`.
+Passwörter und Secrets werden nie ausgegeben. Im Cluster lädt man die Variablen mit `set -a; source deploy/oidc-dev/zitadel/.generated/pulsequorum.env; set +a`.
 
 ### Aufbau
 
@@ -92,11 +92,11 @@ Passwörter und Secrets werden nie ausgegeben. Im Cluster lädt man die Variable
 | --- | --- |
 | Plattform-Organisation | `platform` (Standard-Organisation der Instanz) |
 | Weitere Organisationen | `acme` (Kunde), `globex` (Kunde, mit Grant), `initech` (ohne Grant, Negativtest) |
-| Projekt | `uptimecluster`, „Assert Roles on Authentication“ aktiv |
+| Projekt | `pulsequorum`, „Assert Roles on Authentication“ aktiv |
 | Projektrollen | `platform-admin`, `tenant-admin`, `tenant-editor`, `tenant-viewer` |
 | Projekt-Grant an `acme` und `globex` | `tenant-admin`, `tenant-editor`, `tenant-viewer` (ohne `platform-admin`) |
 | Kein Projekt-Grant an `initech` | Tokens der Organisation tragen keine Projektrollen |
-| Anwendung `uptimecluster-spa` | öffentlich (`USER_AGENT`), `AUTH_METHOD_NONE` (PKCE), Code-Flow mit Refresh-Token, JWT-Access-Token mit Rollen-Assertion, Dev-Modus. Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/login` |
+| Anwendung `pulsequorum-spa` | öffentlich (`USER_AGENT`), `AUTH_METHOD_NONE` (PKCE), Code-Flow mit Refresh-Token, JWT-Access-Token mit Rollen-Assertion, Dev-Modus. Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/login` |
 | Instanz | Access-Token-Laufzeit 900 s (15 min) |
 
 Testnutzer und Bots:

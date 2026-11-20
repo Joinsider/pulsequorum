@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package configsecret protects secrets inside monitor configurations
 // (ADR 0015). A field is secret if the type's JSON Schema marks it with

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -13,11 +13,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // FA-ALR-03: a leader change during delivery leads to exactly one notification
@@ -25,7 +25,7 @@ import (
 // sender confirmed a delivery that the cluster did not record (at least once).
 //
 // The tests start three voters, run the alert dispatcher on every voter as
-// cmd/uptimecluster does, and count the successful sends per channel URL and
+// cmd/pulsequorum does, and count the successful sends per channel URL and
 // alert ID. The dispatcher runs only where IsLeader is true.
 
 const (

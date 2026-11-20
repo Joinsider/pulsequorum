@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Startet den lokalen Zitadel und provisioniert ihn für UptimeCluster (OIDC, Profil zitadel, Tenancy multi).
+# Startet den lokalen Zitadel und provisioniert ihn für Pulsequorum (OIDC, Profil zitadel, Tenancy multi).
 # NUR ENTWICKLUNG. Idempotent: vorhandene Ressourcen werden wiederverwendet. Passwörter und Bot-Secrets
 # werden bei jedem Lauf neu erzeugt und in .generated/ geschrieben (chmod 600).
 #
@@ -15,8 +15,8 @@ readonly COMPOSE_ENV="$GEN/compose.env"
 readonly PAT_FILE="$BOOT/iam-admin.pat"
 readonly BASE="http://localhost:8082"
 readonly LOGIN_HEALTH="http://localhost:3000/ui/v2/login/healthy"
-readonly PROJECT_NAME="uptimecluster"
-readonly SPA_NAME="uptimecluster-spa"
+readonly PROJECT_NAME="pulsequorum"
+readonly SPA_NAME="pulsequorum-spa"
 readonly SPA_REDIRECT="http://localhost:8080/auth/callback"
 readonly SPA_POST_LOGOUT="http://localhost:8080/login"
 readonly SPA_ORIGIN="http://localhost:8080"
@@ -350,7 +350,7 @@ EDITOR_EMAIL=$EDITOR_EMAIL
 EDITOR_PASSWORD=$EDITOR_PW
 USERS
 
-write_env "$GEN/uptimecluster.env" <<APP
+write_env "$GEN/pulsequorum.env" <<APP
 AUTH_MODE=oidc
 OIDC_PROFILE=zitadel
 OIDC_TENANCY=multi
@@ -364,5 +364,5 @@ APP
 
 log "fertig. Issuer: $ISSUER"
 log "Konsole: $BASE/ui/console (Benutzer zitadel-admin, Passwort: DEV_ADMIN_PASSWORD in $COMPOSE_ENV)"
-log "Umgebung für UptimeCluster: $GEN/uptimecluster.env"
+log "Umgebung für Pulsequorum: $GEN/pulsequorum.env"
 log "Bot-Tokens: ./token.sh platform-bot|acme-bot|platform-admin-bot|acme-admin-bot|globex-admin-bot|initech-bot"

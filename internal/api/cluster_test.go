@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusterpki"
-	"github.com/joinsider/uptimecluster/internal/membership"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/replication"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/clusterpki"
+	"github.com/joinsider/pulsequorum/internal/membership"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/replication"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // fakeClusterAdmin records the calls and returns the configured results.

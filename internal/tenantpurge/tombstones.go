@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package tenantpurge deletes the metrics of deleted tenants on every node and
 // keeps heartbeats of deleted tenants out of metrics.db (ADR 0029).
@@ -10,7 +10,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Tombstones is the node-local cache of the deleted tenant IDs. It is replaced

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package clusterhost assembles the cluster side of a voter: join, master
 // key hand-over, the mTLS cluster port with Raft and ClusterService, the CA
@@ -19,17 +19,17 @@ import (
 	"github.com/hashicorp/raft"
 	"google.golang.org/grpc"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusternet"
-	"github.com/joinsider/uptimecluster/internal/clusterpki"
-	"github.com/joinsider/uptimecluster/internal/membership"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/replication"
-	"github.com/joinsider/uptimecluster/internal/secrets"
-	"github.com/joinsider/uptimecluster/internal/selfcheck"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/clusternet"
+	"github.com/joinsider/pulsequorum/internal/clusterpki"
+	"github.com/joinsider/pulsequorum/internal/membership"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/replication"
+	"github.com/joinsider/pulsequorum/internal/secrets"
+	"github.com/joinsider/pulsequorum/internal/selfcheck"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 // Intervals of the background jobs.

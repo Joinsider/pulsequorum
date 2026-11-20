@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 const (

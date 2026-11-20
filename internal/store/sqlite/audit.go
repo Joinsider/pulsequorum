@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/statedb"
 )
 
 // Page sizes of the audit log (ADR 0031): 50 by default, at most 200.

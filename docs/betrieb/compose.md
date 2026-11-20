@@ -11,7 +11,7 @@ Dieses Dokument beschreibt die Inbetriebnahme eines einzelnen Voters mit lokalen
 
 ## Schnellstart
 
-1. Repository holen und das Image starten (Build aus dem Quellcode; ein fertiges Image gibt es unter `ghcr.io/joinsider/uptimecluster:latest`):
+1. Repository holen und das Image starten (Build aus dem Quellcode; ein fertiges Image gibt es unter `ghcr.io/joinsider/pulsequorum:latest`):
 
    ```bash
    docker compose -f deploy/compose.single.yaml up -d --build
@@ -190,7 +190,7 @@ curl -s http://localhost:8080/healthz
 curl -s -w '\n%{http_code}\n' http://localhost:8080/readyz
 ```
 
-Der Container-Healthcheck ruft denselben lokalen Liveness-Endpunkt über `/uptimecluster healthcheck` auf. Ein Status `unhealthy` deutet auf einen nicht startenden Prozess hin; die Ursache steht im Log.
+Der Container-Healthcheck ruft denselben lokalen Liveness-Endpunkt über `/pulsequorum healthcheck` auf. Ein Status `unhealthy` deutet auf einen nicht startenden Prozess hin; die Ursache steht im Log.
 
 **Fehlermeldung beim Start (`invalid configuration`).** Die Meldung nennt jede ungültige Variable mit dem erwarteten Wert. Die Tabelle oben zeigt die zulässigen Werte.
 

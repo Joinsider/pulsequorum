@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package maintenance computes when maintenance windows are active
 // (FA-MNT-01). It is pure: no I/O, no clock reads; callers pass the instants
@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 const (

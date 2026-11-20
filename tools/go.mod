@@ -1,4 +1,4 @@
-module github.com/joinsider/uptimecluster/tools
+module github.com/joinsider/pulsequorum/tools
 
 go 1.27.4
 

@@ -1,6 +1,6 @@
 # Lizenzierung
 
-UptimeCluster steht unter einem **Dual-Licensing-Modell**:
+Pulsequorum steht unter einem **Dual-Licensing-Modell**:
 
 1. **GNU Affero General Public License v3.0 (AGPL-3.0-only)** für alle Nutzer.
    Den vollständigen Lizenztext finden Sie in der Datei [LICENSE](LICENSE).
@@ -16,18 +16,18 @@ abgeleitete Werke ebenfalls unter der AGPL veröffentlicht werden – auch dann,
 wenn sie als Netzwerkdienst betrieben werden. Eine kommerzielle Lizenz brauchen
 Sie typischerweise, wenn Sie
 
-- UptimeCluster **verändern** und die Änderungen **nicht** unter der AGPL veröffentlichen wollen,
-- UptimeCluster in ein **proprietäres Produkt** einbetten oder mit diesem ausliefern,
-- UptimeCluster als **White-Label-Dienst** für Dritte betreiben, ohne den Quellcode nach AGPL bereitzustellen.
+- Pulsequorum **verändern** und die Änderungen **nicht** unter der AGPL veröffentlichen wollen,
+- Pulsequorum in ein **proprietäres Produkt** einbetten oder mit diesem ausliefern,
+- Pulsequorum als **White-Label-Dienst** für Dritte betreiben, ohne den Quellcode nach AGPL bereitzustellen.
 
-Wenn Sie UptimeCluster unverändert intern betreiben oder Ihre Änderungen unter
+Wenn Sie Pulsequorum unverändert intern betreiben oder Ihre Änderungen unter
 der AGPL veröffentlichen, benötigen Sie keine kommerzielle Lizenz.
 
 ## AGPL §13: Quellcode-Angebot
 
 Wer eine geänderte Version über ein Netzwerk für andere Nutzer bereitstellt,
 muss diesen den Quellcode der laufenden Version anbieten (AGPL §13).
-UptimeCluster erfüllt diese Pflicht über die Benutzeroberfläche: „Über“ und der
+Pulsequorum erfüllt diese Pflicht über die Benutzeroberfläche: „Über“ und der
 Footer verlinken auf den Quellcode der laufenden Version (Repository-URL und
 Commit). Wer den Dienst verändert, muss diesen Link auf den eigenen,
 veränderten Quellcode umstellen.

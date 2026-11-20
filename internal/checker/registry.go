@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package checker
 
@@ -154,7 +154,7 @@ func compileSchema(typ string, raw json.RawMessage) (*jsonschema.Schema, error) 
 	if err != nil {
 		return nil, err
 	}
-	url := "uptimecluster:checker/" + typ + ".json"
+	url := "pulsequorum:checker/" + typ + ".json"
 	c := jsonschema.NewCompiler()
 	if err := c.AddResource(url, doc); err != nil {
 		return nil, err

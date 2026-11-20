@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { Observable, Subject, firstValueFrom } from 'rxjs';

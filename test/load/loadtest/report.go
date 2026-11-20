@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -274,7 +274,7 @@ func passIf(ok bool) string {
 
 func renderMarkdown(r report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# UptimeCluster load test report\n\n")
+	fmt.Fprintf(&b, "# Pulsequorum load test report\n\n")
 	fmt.Fprintf(&b, "- Start: %s\n", r.StartedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "- End: %s\n", r.EndedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "- Elapsed: %s\n\n", r.EndedAt.Sub(r.StartedAt).Round(time.Second))

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package harness
 
@@ -48,7 +48,7 @@ func TestNewClusterTempDirIsPrivate(t *testing.T) {
 
 func TestVoterSpecPodmanJoin(t *testing.T) {
 	c, _ := newTestCluster(t, "podman", DefaultConfig(), func([]string) (string, error) { return "", nil })
-	spec := c.voterSpec(2, "uptimecluster:chaos", &joinSpec{Seed: "ucchaos-v1:9443", HostFile: "/tmp/t/join-v2.token"})
+	spec := c.voterSpec(2, "pulsequorum:chaos", &joinSpec{Seed: "ucchaos-v1:9443", HostFile: "/tmp/t/join-v2.token"})
 	args := strings.Join(spec.RunArgs(), " ")
 	for _, want := range []string{
 		"--name ucchaos-v2",
@@ -73,7 +73,7 @@ func TestVoterSpecPodmanJoin(t *testing.T) {
 
 func TestVoterSpecDockerAddsHostGateway(t *testing.T) {
 	c, _ := newTestCluster(t, "docker", DefaultConfig(), func([]string) (string, error) { return "", nil })
-	spec := c.voterSpec(1, "uptimecluster:chaos", nil)
+	spec := c.voterSpec(1, "pulsequorum:chaos", nil)
 	args := strings.Join(spec.RunArgs(), " ")
 	if !strings.Contains(args, "--add-host host.docker.internal:host-gateway") {
 		t.Errorf("docker voter lacks host gateway:\n%s", args)
@@ -217,7 +217,7 @@ func TestEnsureImagePolicies(t *testing.T) {
 		}
 		return "", errors.New("Error: no such image")
 	}
-	spec := BuildSpec{Tag: "uptimecluster:chaos", Context: "."}
+	spec := BuildSpec{Tag: "pulsequorum:chaos", Context: "."}
 	tests := []struct {
 		name    string
 		handler func([]string) (string, error)
@@ -258,12 +258,12 @@ func TestVoterSpecSelfCheckTargets(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.SelfCheckTargets = []string{"http://host.containers.internal:18952/healthz", "10.0.0.1:443"}
 	c, _ := newTestCluster(t, "podman", cfg, func([]string) (string, error) { return "", nil })
-	spec := strings.Join(c.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " ")
+	spec := strings.Join(c.voterSpec(1, "pulsequorum:chaos", nil).RunArgs(), " ")
 	if !strings.Contains(spec, "-e SELF_CHECK_TARGETS=http://host.containers.internal:18952/healthz,10.0.0.1:443") {
 		t.Errorf("run args lack SELF_CHECK_TARGETS: %s", spec)
 	}
 	plain, _ := newTestCluster(t, "podman", DefaultConfig(), func([]string) (string, error) { return "", nil })
-	if strings.Contains(strings.Join(plain.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "SELF_CHECK_TARGETS") {
+	if strings.Contains(strings.Join(plain.voterSpec(1, "pulsequorum:chaos", nil).RunArgs(), " "), "SELF_CHECK_TARGETS") {
 		t.Error("self-check env set without targets")
 	}
 }
@@ -284,11 +284,11 @@ func TestVoterSpecAlertBundleWindow(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.AlertBundleWindow = "0s"
 	c, _ := newTestCluster(t, "podman", cfg, func([]string) (string, error) { return "", nil })
-	if !strings.Contains(strings.Join(c.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "-e ALERT_BUNDLE_WINDOW=0s") {
+	if !strings.Contains(strings.Join(c.voterSpec(1, "pulsequorum:chaos", nil).RunArgs(), " "), "-e ALERT_BUNDLE_WINDOW=0s") {
 		t.Error("ALERT_BUNDLE_WINDOW not passed")
 	}
 	plain, _ := newTestCluster(t, "podman", DefaultConfig(), func([]string) (string, error) { return "", nil })
-	if strings.Contains(strings.Join(plain.voterSpec(1, "uptimecluster:chaos", nil).RunArgs(), " "), "ALERT_BUNDLE_WINDOW") {
+	if strings.Contains(strings.Join(plain.voterSpec(1, "pulsequorum:chaos", nil).RunArgs(), " "), "ALERT_BUNDLE_WINDOW") {
 		t.Error("bundle window set without a value")
 	}
 	bad := DefaultConfig()

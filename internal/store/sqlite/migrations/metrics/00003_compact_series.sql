@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Compact storage for latency minutes and rollups (ADR 0016). A series is one
 -- (tenant, monitor, node) of this node's metrics.db; its integer ID replaces

@@ -1,6 +1,6 @@
 {
   "realm": "uptime",
-  "displayName": "UptimeCluster (Entwicklung)",
+  "displayName": "Pulsequorum (Entwicklung)",
   "enabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,
@@ -10,17 +10,17 @@
   "accessTokenLifespan": 900,
   "roles": {
     "realm": [
-      { "name": "platform-admin", "description": "Plattform-Administrator (UptimeCluster)" },
-      { "name": "tenant-admin", "description": "Administrator im eigenen Mandanten (UptimeCluster)" },
-      { "name": "tenant-editor", "description": "Bearbeitung im eigenen Mandanten (UptimeCluster)" },
-      { "name": "tenant-viewer", "description": "Nur Lesezugriff im eigenen Mandanten (UptimeCluster)" },
-      { "name": "staff", "description": "Kein UptimeCluster-Recht; Testrolle fuer abgelehnte Anmeldungen" }
+      { "name": "platform-admin", "description": "Plattform-Administrator (Pulsequorum)" },
+      { "name": "tenant-admin", "description": "Administrator im eigenen Mandanten (Pulsequorum)" },
+      { "name": "tenant-editor", "description": "Bearbeitung im eigenen Mandanten (Pulsequorum)" },
+      { "name": "tenant-viewer", "description": "Nur Lesezugriff im eigenen Mandanten (Pulsequorum)" },
+      { "name": "staff", "description": "Kein Pulsequorum-Recht; Testrolle fuer abgelehnte Anmeldungen" }
     ]
   },
   "clients": [
     {
-      "clientId": "uptimecluster-spa",
-      "name": "UptimeCluster SPA",
+      "clientId": "pulsequorum-spa",
+      "name": "Pulsequorum SPA",
       "enabled": true,
       "publicClient": true,
       "secret": null,
@@ -42,12 +42,12 @@
       "optionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt"],
       "protocolMappers": [
         {
-          "name": "uptimecluster-api-audience",
+          "name": "pulsequorum-api-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "uptimecluster-api",
+            "included.custom.audience": "pulsequorum-api",
             "access.token.claim": "true",
             "id.token.claim": "false",
             "introspection.token.claim": "true"
@@ -56,8 +56,8 @@
       ]
     },
     {
-      "clientId": "uptimecluster-cli",
-      "name": "UptimeCluster CLI (nur Entwicklung, Password Grant)",
+      "clientId": "pulsequorum-cli",
+      "name": "Pulsequorum CLI (nur Entwicklung, Password Grant)",
       "enabled": true,
       "publicClient": true,
       "secret": null,
@@ -75,12 +75,12 @@
       "optionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt"],
       "protocolMappers": [
         {
-          "name": "uptimecluster-api-audience",
+          "name": "pulsequorum-api-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "uptimecluster-api",
+            "included.custom.audience": "pulsequorum-api",
             "access.token.claim": "true",
             "id.token.claim": "false",
             "introspection.token.claim": "true"

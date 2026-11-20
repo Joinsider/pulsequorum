@@ -3,10 +3,10 @@
     "claims": {
       "acr": "1",
       "aud": [
-        "uptimecluster-api",
+        "pulsequorum-api",
         "account"
       ],
-      "azp": "uptimecluster-cli",
+      "azp": "pulsequorum-cli",
       "email": "admin@example.test",
       "email_verified": true,
       "exp": 1794930249,
@@ -46,10 +46,10 @@
     "claims": {
       "acr": "1",
       "aud": [
-        "uptimecluster-api",
+        "pulsequorum-api",
         "account"
       ],
-      "azp": "uptimecluster-cli",
+      "azp": "pulsequorum-cli",
       "email": "nobody@example.test",
       "email_verified": true,
       "exp": 1794930249,

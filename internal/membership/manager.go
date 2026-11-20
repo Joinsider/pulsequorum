@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package membership changes the voter set of the cluster (ADR 0005 point 7,
 // ADR 0012 A3–A5, FA-CLU-03/04/08/10): joining nodes enter as nonvoters and
@@ -19,8 +19,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 )
 
 // Timings of the promotion (FA-CLU-03).

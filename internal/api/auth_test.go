@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/auth"
 )
 
 // Helpers for the tests that run with real local authentication (ADR 0008).
@@ -24,7 +24,7 @@ const testPassword = "correct horse battery"
 func bearer(token string) []string { return []string{"Authorization", "Bearer " + token} }
 
 // requestedWith is the CSRF header of the refresh and logout endpoints.
-var requestedWith = []string{"X-Requested-With", "uptimecluster"}
+var requestedWith = []string{"X-Requested-With", "pulsequorum"}
 
 // cookieHeader sends a refresh cookie back to the API.
 func cookieHeader(c *http.Cookie) []string { return []string{"Cookie", c.Name + "=" + c.Value} }

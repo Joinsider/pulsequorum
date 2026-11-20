@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package scheduler_test
 
@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/aggregator"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	_ "github.com/joinsider/uptimecluster/internal/checker/builtin"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/aggregator"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	_ "github.com/joinsider/pulsequorum/internal/checker/builtin"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 // TestEndToEnd runs the phase-1 pipeline: a monitor created through Raft is

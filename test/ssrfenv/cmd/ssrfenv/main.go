@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Command ssrfenv provides the network services of the local SSRF test
 // environment (AS-07, ADR 0030, deploy/ssrf-dev/README.md):

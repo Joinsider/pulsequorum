@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/sysalert"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/sysalert"
 )
 
 // FA-OBS-01 and ADR 0025, sections 3, 4 and 6: a stopped voter raises the
@@ -29,7 +29,7 @@ import (
 //
 // The test starts three voters as TestLeaderChangeAlerting does and runs the
 // collector, the system jobs and the alert dispatcher on every voter, as
-// cmd/uptimecluster does. The system channel delivers to a httptest webhook
+// cmd/pulsequorum does. The system channel delivers to a httptest webhook
 // with the default template; the test checks its system object and the
 // structured payload in the outbox.
 
@@ -158,7 +158,7 @@ func waitSystemAlert(ctx context.Context, t *testing.T, n *testNode, kind, subje
 }
 
 // startSysStack runs the collector, the system jobs and the alert dispatcher of
-// voter n as cmd/uptimecluster does. The stack stops with the cancel func that
+// voter n as cmd/pulsequorum does. The stack stops with the cancel func that
 // alertCluster keeps for n, so stopNode ends it before the voter stops.
 func startSysStack(c *alertCluster, n *testNode) {
 	ctx, cancel := context.WithCancel(c.ctx)

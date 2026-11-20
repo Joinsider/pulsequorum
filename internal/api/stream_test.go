@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -17,10 +17,10 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/config"
-	"github.com/joinsider/uptimecluster/internal/stream"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/stream"
 )
 
 // expiringAuth is headerAuth with a credential expiry.

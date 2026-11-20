@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Local log of the alerts a voter sent while it was degraded (FA-ALR-10,
 -- ADR 0024). It is node-local: it is neither replicated nor part of the

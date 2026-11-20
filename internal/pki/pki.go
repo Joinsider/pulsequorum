@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package pki implements the cluster's own certificate authority (ADR 0006,
 // FA-PKI-01..04): an ECDSA P-256 CA created at bootstrap, node certificates
@@ -153,7 +153,7 @@ func NewCA(clusterID string, now time.Time) (*CA, error) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "UptimeCluster CA " + clusterID},
+		Subject:               pkix.Name{CommonName: "Pulsequorum CA " + clusterID},
 		NotBefore:             now.Add(-Backdate),
 		NotAfter:              now.Add(CAValidity),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

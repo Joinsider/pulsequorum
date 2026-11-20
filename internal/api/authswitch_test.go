@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -17,19 +17,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/auth/oidc"
-	"github.com/joinsider/uptimecluster/internal/auth/oidctest"
-	"github.com/joinsider/uptimecluster/internal/authswitch"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/auth/oidc"
+	"github.com/joinsider/pulsequorum/internal/auth/oidctest"
+	"github.com/joinsider/pulsequorum/internal/authswitch"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/config"
 )
 
 // newIDPAuthenticator builds the OIDC authenticator against the fake identity
-// provider, the way cmd/uptimecluster does (generic profile, RS256 only).
+// provider, the way cmd/pulsequorum does (generic profile, RS256 only).
 func newIDPAuthenticator(t *testing.T, idp *oidctest.Server, tenants oidc.TenantStore) *oidc.Authenticator {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

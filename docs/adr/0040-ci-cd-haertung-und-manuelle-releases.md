@@ -10,7 +10,7 @@
 ## Kontext
 
 ADR 0009 legt GitHub Actions, GoReleaser, GHCR und Multi-Arch-Images fest. Die Pipeline liegt im Repository, ein Release
-ist aber noch nie gelaufen und es gibt keinen Tag. Das Repository `Joinsider/uptime-cluster` ist **privat** und gehört
+ist aber noch nie gelaufen und es gibt keinen Tag. Das Repository `Joinsider/pulsequorum` ist **privat** und gehört
 einem **persönlichen Konto**, nicht einer Organisation. Der Default-Branch heißt `master`.
 
 Der Projektinhaber wünscht:
@@ -30,13 +30,13 @@ Der Projektinhaber wünscht:
 | B1  | `ci.yml` triggert auf `push: branches: [main]`, der Branch heißt aber `master`.                                                                                                                                        | CI läuft nur für Pull Requests, nie nach einem Merge auf `master`. Ein Release-Commit hätte keinen eigenen grünen Lauf. |
 | B2  | `govulncheck` läuft mit `@latest`.                                                                                                                                                                                     | Nicht reproduzierbar, ungepinnte Ausführung fremden Codes in CI.                                                        |
 | B3  | `release.yml` vergibt `contents: write` und `packages: write` auf Workflow-Ebene.                                                                                                                                      | Jeder künftige Job erbt Schreibrechte (Least Privilege verletzt).                                                       |
-| B4  | `.goreleaser.yaml` hat `release.github: joinsider/uptimecluster`, das Label `org.opencontainers.image.source` zeigt auf `https://github.com/joinsider/uptimecluster`. Das Repository heißt `Joinsider/uptime-cluster`. | Der Release-Upload würde mit 404 scheitern. Das GHCR-Paket würde nicht mit dem Repository verknüpft.                    |
+| B4  | `.goreleaser.yaml` hat `release.github: joinsider/pulsequorum`, das Label `org.opencontainers.image.source` zeigt auf `https://github.com/Joinsider/pulsequorum`. Das Repository heißt `Joinsider/pulsequorum`. | Der Release-Upload würde mit 404 scheitern. Das GHCR-Paket würde nicht mit dem Repository verknüpft.                    |
 | B5  | `actions/checkout` ohne `persist-credentials: false`.                                                                                                                                                                  | Das Token bleibt in `.git/config` und ist für jeden späteren Schritt lesbar.                                            |
 | B6  | Repo-Einstellung `sha_pinning_required: false`, `allowed_actions: all`.                                                                                                                                                | Ungepinnte oder beliebige Actions wären erlaubt. Die Pins existieren heute nur per Konvention.                          |
 | B7  | Ruleset „Protect main“ (Ziel `~DEFAULT_BRANCH`) hat die Bypass-Akteure `DeployKey: always` und `RepositoryRole 5 (Admin): always`.                                                                                     | Ein künftiger Deploy-Key mit Schreibrecht könnte direkt auf `master` pushen und PR, Checks und Signaturpflicht umgehen. |
 | B8  | Kein Tag-Ruleset, keine Environments, keine Secrets, Immutable Releases deaktiviert (`GET /immutable-releases` → `enabled: false`), Code Scanning und Secret Scanning deaktiviert.                                     | –                                                                                                                       |
 | B9  | Basis-Images (`node:24-alpine`, `golang:1.27-alpine`, `distroless/static-debian12:nonroot`) sind nicht per Digest gepinnt. Dependabot pflegt kein `docker`-Ökosystem und hat keinen Cooldown.                          | Unbemerkte Änderungen an den Basis-Images. Brandneue (ggf. kompromittierte) Versionen werden sofort vorgeschlagen.      |
-| B10 | Der Go-Modulpfad `github.com/joinsider/uptimecluster` passt nicht zum Repository-Namen.                                                                                                                                | `go install …@vX` funktioniert nicht. Für Images und Binaries egal, siehe offene Fragen.                                |
+| B10 | Der Go-Modulpfad `github.com/joinsider/pulsequorum` passt nicht zum Repository-Namen.                                                                                                                                | `go install …@vX` funktioniert nicht. Für Images und Binaries egal, siehe offene Fragen.                                |
 
 ### Einschränkungen durch privates Repository auf einem persönlichen Konto (Stand Ende 2026)
 
@@ -70,7 +70,7 @@ PR-Abhängigkeiten, als Pflicht-Check), `golangci-lint` mit `gosec`, `npm audit`
 
 #### Option T2: SSH-Signaturschlüssel eines dedizierten Bot-Kontos, Push per Deploy-Key
 
-- Ablauf: Ein Maschinenkonto (z.B. `uptimecluster-release`) hinterlegt einen Ed25519- **Signing Key**. Der private
+- Ablauf: Ein Maschinenkonto (z.B. `pulsequorum-release`) hinterlegt einen Ed25519- **Signing Key**. Der private
   Schlüssel liegt als Environment-Secret. Der Workflow erzeugt `git tag -s` mit `gpg.format=ssh` und dem Tagger auf der
   Noreply-Adresse des Bots. Gepusht wird über einen eigenen **Deploy-Key mit Schreibrecht**, der im Tag-Ruleset als
   einziger Bypass-Akteur steht.
@@ -252,7 +252,7 @@ Lauf starten. `permissions: {}` auf Workflow-Ebene, Rechte nur je Job. `concurre
 | `gates`      | `contents: read`                                        | `govulncheck` (gepinnt) und `npm audit` mit Ausnahmeliste. Befunde blockieren den Release (NFA-SEC-06).                                                                                                                                                                                                                                                                                                                                 |
 | `tag`        | `contents: read`, Environment `release`                 | Erzeugt den signierten Tag nach Abschnitt 2 und pusht ihn per Deploy-Key. Wird bei `dry_run` übersprungen.                                                                                                                                                                                                                                                                                                                              |
 | `goreleaser` | `contents: write`, `packages: write`, `id-token: write` | Checkout des Tags. `goreleaser release --clean` als Draft, Images nach GHCR, cosign-Signaturen. Bei `dry_run`: `goreleaser release --snapshot --clean --skip=publish,sign` und Upload der Artefakte als Workflow-Artefakt.                                                                                                                                                                                                              |
-| `verify`     | `contents: read`, `packages: read`                      | `git verify-tag`, `sha256sum -c`, `cosign verify-blob` und `cosign verify` mit fester Identität `https://github.com/Joinsider/uptime-cluster/.github/workflows/release.yml@refs/heads/master` und Issuer `https://token.actions.githubusercontent.com`. Schreibt einen Link auf den Draft ins Step Summary.                                                                                                                             |
+| `verify`     | `contents: read`, `packages: read`                      | `git verify-tag`, `sha256sum -c`, `cosign verify-blob` und `cosign verify` mit fester Identität `https://github.com/Joinsider/pulsequorum/.github/workflows/release.yml@refs/heads/master` und Issuer `https://token.actions.githubusercontent.com`. Schreibt einen Link auf den Draft ins Step Summary.                                                                                                                             |
 
 ### 6. CI-Härtung (`ci.yml` und neue Workflows)
 
@@ -275,9 +275,9 @@ Lauf starten. `permissions: {}` auf Workflow-Ebene, Rechte nur je Job. `concurre
   Gruppierung für Actions. Basis-Images werden per Digest gepinnt (`image:tag@sha256:…`, B9).
 - `docker/setup-qemu-action` entfällt im Release, falls `Dockerfile.release` weiter ohne `RUN` auskommt (nur `COPY`,
   Cross-Kompilat). Das prüft der Dry-Run.
-- `.goreleaser.yaml`: `release.github` auf `Joinsider/uptime-cluster` und das Source-Label auf
-  `https://github.com/Joinsider/uptime-cluster` korrigieren (B4). Der Image-Name bleibt
-  `ghcr.io/joinsider/uptimecluster` (GHCR verlangt Kleinschreibung, der Paketname darf vom Repo-Namen abweichen).
+- `.goreleaser.yaml`: `release.github` auf `Joinsider/pulsequorum` und das Source-Label auf
+  `https://github.com/Joinsider/pulsequorum` korrigieren (B4). Der Image-Name bleibt
+  `ghcr.io/joinsider/pulsequorum` (GHCR verlangt Kleinschreibung, der Paketname darf vom Repo-Namen abweichen).
 
 ### 7. Bei Veröffentlichung des Repositorys (vorgemerkt, nicht Teil dieses ADR-Umfangs)
 
@@ -345,13 +345,13 @@ Muss, vorbehaltlich F1). Nach Accept erhält ADR 0009 den Status-Zusatz „teilw
 4. **Actions-Einstellungen**: „Require actions to be pinned to a full-length commit SHA“ an. „Allow select actions“ mit
    Liste (`actions/*`, `docker/*`, `goreleaser/*`, `sigstore/*`, `anchore/*`, `golangci/*`, `zizmorcore/*`).
    Workflow-Default-Rechte bleiben `read`, „Allow GitHub Actions to create and approve pull requests“ bleibt aus.
-5. **Maschinenkonto** anlegen (z.B. `uptimecluster-release`), 2FA, verifizierte Noreply-Adresse. Einen **SSH Signing
+5. **Maschinenkonto** anlegen (z.B. `pulsequorum-release`), 2FA, verifizierte Noreply-Adresse. Einen **SSH Signing
    Key** hinterlegen. Keine Repo-Rechte vergeben.
 6. **Deploy-Key** („release-tag-push“, *Allow write access*) im Repository anlegen.
 7. **Environment `release`** (benötigt GitHub Pro, F2): Deployment branches „Selected“ → `master`. Secrets
    `RELEASE_TAG_SIGNING_KEY` und `RELEASE_TAG_DEPLOY_KEY`. Variable `RELEASE_TAGGER` (Name/E-Mail des Bots).
 8. **Merge-Methoden**: optional nur Squash und PR-Titel als Commit-Nachricht.
-9. Nach dem ersten Image-Push: das GHCR-Paket `uptimecluster` mit dem Repository verknüpfen (geschieht per Source-Label)
+9. Nach dem ersten Image-Push: das GHCR-Paket `pulsequorum` mit dem Repository verknüpfen (geschieht per Source-Label)
    und die Sichtbarkeit prüfen (privat, solange das Repo privat ist).
 
 ### Offene Fragen
@@ -363,8 +363,8 @@ Muss, vorbehaltlich F1). Nach Accept erhält ADR 0009 den Status-Zusatz „teilw
   Repository-Secrets ohne Branch-Bindung (für Fork-PRs und Dependabot weiterhin nicht sichtbar).
 - **F3:** Ein Bot-Konto (T2) oder doch der Schlüssel auf dem eigenen Konto (T3, einfacher, größerer Schadensradius)?
 - **F4:** Sollen `0.x`-Releases auf GitHub generell als Pre-Release markiert werden (nicht nur bei `-rc`)?
-- **F5:** Wird der Go-Modulpfad auf `github.com/joinsider/uptime-cluster` umgestellt oder das Repository in
-  `uptimecluster` umbenannt (B10)? Das berührt alle Importpfade und ist ein eigener Schritt.
+- **F5:** Wird der Go-Modulpfad auf `github.com/joinsider/pulsequorum` umgestellt oder das Repository in
+  `pulsequorum` umbenannt (B10)? Das berührt alle Importpfade und ist ein eigener Schritt.
 - **F6:** Wann soll das Repository öffentlich werden? AGPL §13 und RB-LIC-04 verlangen spätestens bei Weitergabe des
   Images an Dritte einen erreichbaren Quellcode. Damit hängt Abschnitt 7 zusammen.
 

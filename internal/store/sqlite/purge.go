@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/metricsdb"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/metricsdb"
 )
 
 // PurgeTenant deletes up to batchSize rows of the tenant from each metrics

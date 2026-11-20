@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- System alerts and the last known incarnation of each node (FA-OBS-01,
 -- FA-REP-06, ADR 0025). The FSM writes both from command level 6 on.

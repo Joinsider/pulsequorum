@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Raft FSM bookkeeping (ADR 0005 points 2 and 3, ADR 0012 A1/A2). Lives in
 -- state.db so that it is written in the same transaction as the data and is

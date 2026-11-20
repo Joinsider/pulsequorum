@@ -38,7 +38,7 @@ mit einem Voter verbindet, seine Monitore abonniert, prüft und die Heartbeats h
 | `scheduler`               | `Scheduler.Sync([]store.Monitor)`, `Sink`, `HeartbeatWriter` (seq je Inkarnation, Batches), `Assigner` (Probes noch ausgeschlossen), `Options.Unit` für verkürzte Tests.                                                                           |
 | `store` / `metrics.db`    | Heartbeat-Schlüssel `(node_id, incarnation, seq)`, `InsertHeartbeats` idempotent, lückenlose `stream_positions`, `HeartbeatsAfter`, Inkarnation in `metrics.db` (ADR 0012 B4).                                                                     |
 | `replication`             | Push Best Effort, Anti-Entropie zieht alle Ströme, auch die dritter Nodes. Backoff mit Jitter (privat im Paket).                                                                                                                                   |
-| `cmd/uptimecluster`       | `NODE_ROLE=probe` wartet nur auf das Ende („not implemented yet“).                                                                                                                                                                                 |
+| `cmd/pulsequorum`       | `NODE_ROLE=probe` wartet nur auf das Ende („not implemented yet“).                                                                                                                                                                                 |
 | Register                  | `nodes`-Tabelle ohne `owner_tenant_id`. `nodeFromInfo` verwirft den Owner. `SetNodeHealth` beruht auf Raft-Beobachtungen und erfasst Probes daher nicht.                                                                                           |
 
 **Randbedingungen aus der Recherche**

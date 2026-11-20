@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package storetest is the shared test suite for every store implementation
 // (ADR 0004, NFA-PORT-03). It includes the tenant isolation tests required by
@@ -15,7 +15,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 const (

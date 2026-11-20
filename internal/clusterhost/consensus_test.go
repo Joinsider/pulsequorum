@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -18,20 +18,20 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/aggregator"
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/scheduler"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/aggregator"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // FA-CON-01/02/06, ADR 0021: the consensus of a monitor is evaluated on the
 // leader only, from the heartbeats of all responsible voters, and each status
 // change is proposed once through Raft.
 //
-// Every voter runs an aggregator as cmd/uptimecluster does. The heartbeats are
+// Every voter runs an aggregator as cmd/pulsequorum does. The heartbeats are
 // synthetic: each voter stores one heartbeat per slot of its own stream and
 // hands it to the same hooks as the HeartbeatWriter (replication push and the
 // aggregator), so the heartbeats reach the other voters through the real

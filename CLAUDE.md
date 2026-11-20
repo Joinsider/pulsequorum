@@ -1,4 +1,4 @@
-# CLAUDE.md – UptimeCluster
+# CLAUDE.md – Pulsequorum
 
 Hochverfügbarer, mandantenfähiger, selbst hostbarer Uptime-Monitor (Go-Backend, Angular-SPA, Raft-Cluster).
 Ein Binary/Image für alle Rollen (`NODE_ROLE=voter|probe`).
@@ -7,7 +7,7 @@ Ein Binary/Image für alle Rollen (`NODE_ROLE=voter|probe`).
 
 | Dokument | Zweck |
 |----------|-------|
-| [uptime-cluster-konzept.md](uptime-cluster-konzept.md) | Ursprüngliches Konzept (v0.3) inkl. Entscheidungslog E1–E21 |
+| [pulsequorum-konzept.md](pulsequorum-konzept.md) | Ursprüngliches Konzept (v0.3) inkl. Entscheidungslog E1–E21 |
 | [docs/pflichtenheft.md](docs/pflichtenheft.md) | Verbindliche Anforderungen (FA-/NFA-IDs). Bei Widerspruch zum Konzept gilt das Pflichtenheft. |
 | [docs/roadmap.md](docs/roadmap.md) | Phasen, Arbeitspakete, Status. **Vor jeder Arbeit lesen, nach jeder Arbeit aktualisieren.** |
 | [docs/adr/](docs/adr/) | Architecture Decision Records. Akzeptierte ADRs sind bindend. |
@@ -74,7 +74,7 @@ Wegwerf-Prototypen (Spikes) liegen unter `spikes/`, dürfen ohne Approval entste
 ## Projektstruktur
 
 ```
-cmd/uptimecluster/   main – startet Voter oder Probe
+cmd/pulsequorum/   main – startet Voter oder Probe
 internal/            Go-Pakete (api, auth, checker, scheduler, aggregator, alert, cluster, store, tenant, config, …)
 proto/               Protobuf-Definitionen (Inter-Node, Probe-Service)
 api/openapi.yaml     REST-Vertrag zwischen Backend und Frontend

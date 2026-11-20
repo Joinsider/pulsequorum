@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { inject, Pipe, PipeTransform } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';

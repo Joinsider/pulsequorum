@@ -228,7 +228,7 @@ externe Frontend um, `/api` bleibt.
 
 ### Frage 6: Auslieferung des externen Frontends und CSP
 
-**Option 6A: nur ein Release-Asset** `uptimecluster-web-<version>.tar.gz` (Inhalt von `web/dist` plus
+**Option 6A: nur ein Release-Asset** `pulsequorum-web-<version>.tar.gz` (Inhalt von `web/dist` plus
 `config.example.json` und eine generierte `_headers`-Vorlage).
 
 - Vorteile: Läuft auf jedem statischen Host, keine Laufzeit-Komponente von uns.
@@ -241,7 +241,7 @@ Umgebungsvariablen.
 - Nachteile: Zweites Image mit eigener Paketbasis (Debian oder Alpine), eigene CVE-Pflege, Header-Logik doppelt (Go und
   nginx-Konfiguration), Lizenzprüfung für ein weiteres Image.
 
-**Option 6C: Unterbefehl `uptimecluster frontend` im bestehenden Binary und Image (distroless).**
+**Option 6C: Unterbefehl `pulsequorum frontend` im bestehenden Binary und Image (distroless).**
 
 - Liefert nur die eingebettete SPA, eine aus Umgebungsvariablen erzeugte `config.json` und dieselben Security-Header wie
   der Voter (`internal/webui` und `securityHeaders` werden wiederverwendet). Kein Raft, kein Datenverzeichnis, keine
@@ -280,7 +280,7 @@ Entscheidung: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6B + 6C.** (6B auf Wuns
 
 ### nginx-Image (6B)
 
-- Name `ghcr.io/<owner>/uptime-cluster-web:<version>`, gebaut und signiert im selben Release wie das Haupt-Image
+- Name `ghcr.io/<owner>/pulsequorum-web:<version>`, gebaut und signiert im selben Release wie das Haupt-Image
   (ADR 0040), Multi-Arch `linux/amd64` und `linux/arm64`.
 - Basis `nginxinc/nginx-unprivileged` (Alpine-Variante, nginx BSD-2-Clause), **per Digest gepinnt** und von Dependabot
   aktualisiert. Läuft als UID 101 auf Port 8080 und ist für `read_only: true` mit `tmpfs` für `/tmp` geeignet.
@@ -349,10 +349,10 @@ Entscheidung: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6B + 6C.** (6B auf Wuns
 
 ### Auslieferung
 
-- **Release-Asset** `uptimecluster-web-<version>.tar.gz` über GoReleaser. Inhalt: SPA, `config.example.json`, Skript
-  `uptimecluster frontend headers --config config.json > _headers` (Go-Unterbefehl, damit die CSP-Logik nur einmal
+- **Release-Asset** `pulsequorum-web-<version>.tar.gz` über GoReleaser. Inhalt: SPA, `config.example.json`, Skript
+  `pulsequorum frontend headers --config config.json > _headers` (Go-Unterbefehl, damit die CSP-Logik nur einmal
   existiert).
-- **Unterbefehl `uptimecluster frontend`:** liest `FRONTEND_NODES`, `AUTH_MODE` und die `OIDC_*`-Werte für die SPA,
+- **Unterbefehl `pulsequorum frontend`:** liest `FRONTEND_NODES`, `AUTH_MODE` und die `OIDC_*`-Werte für die SPA,
   `FRONTEND_LISTEN` (Standard `:8080`) und optional TLS-Dateien. Liefert die SPA mit `config.json` und Security-Headern
   wie der Voter, `/healthz` für den Container-Healthcheck. Gleiches Image, anderer `CMD`.
 - **Doku `docs/betrieb/frontend.md`:** „Domains und Cookies“ (Folgearbeit aus ADR 0008), Matrix Host × Auth-Modus,

@@ -142,7 +142,7 @@ Die Lesevorteile von `ncruces` sind real. Sie sind aber nicht eindeutig und stam
 - `main.go`: Treiber-Setup, Pragma-Selbsttest, Messphasen, Summary-Tabelle (`-summarize`).
 - `bench.go`: Datengenerator, Schema, Insert, Lese- und Schreib-Last, Retention, Hilfsfunktionen.
 - `run_all.sh`: Die gesamte Messmatrix (ca. 25 Minuten).
-- `go.mod`, `go.sum`: Module `uptimecluster/spikes/sqlite`, Abhängigkeiten `modernc.org/sqlite v1.60.1`, `github.com/ncruces/go-sqlite3 v0.35.6`.
+- `go.mod`, `go.sum`: Module `pulsequorum/spikes/sqlite`, Abhängigkeiten `modernc.org/sqlite v1.60.1`, `github.com/ncruces/go-sqlite3 v0.35.6`.
 - `results/*.json`, `results/*.log`: Rohdaten und Logs je Lauf.
 - `RESULTS.md`: Ergebnistabellen, generiert.
 

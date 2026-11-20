@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
-// Package ucapi is a minimal client for the UptimeCluster REST API
+// Package ucapi is a minimal client for the Pulsequorum REST API
 // (api/openapi.yaml). It covers the operations the acceptance and chaos
 // drivers need. Secrets (access token, password, join tokens) are never
 // included in errors.

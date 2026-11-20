@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
--- Copyright (C) 2026 The UptimeCluster Authors
+-- Copyright (C) 2026 The Pulsequorum Authors
 --
 -- Cluster PKI (ADR 0006, FA-PKI-01..04). These tables are platform-level data,
 -- not tenant-scoped. The CA private key is stored encrypted (key_enc, ADR 0011),

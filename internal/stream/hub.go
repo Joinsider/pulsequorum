@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package stream fans out live events (heartbeats, status changes, incidents)
 // to the WebSocket clients of this node (FA-API-04). Every event belongs to

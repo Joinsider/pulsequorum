@@ -56,7 +56,7 @@ log "building linux/$GOARCH binaries"
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath \
   -o "$BIN/ssrfenv" ./test/ssrfenv/cmd/ssrfenv)
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath \
-  -o "$BIN/uptimecluster" ./cmd/uptimecluster)
+  -o "$BIN/pulsequorum" ./cmd/pulsequorum)
 
 # 2. Networks. --disable-dns: the test DNS server at 203.0.113.53 is the only resolver.
 ensure_network() {
@@ -112,8 +112,8 @@ podman run -d --name ssrf-node \
   -e DATA_DIR=/data \
   -e HTTP_ADDR=:8080 \
   -e ICMP_MODE=off \
-  -v "$BIN/uptimecluster:/usr/local/bin/uptimecluster:ro" \
-  "$IMAGE" /usr/local/bin/uptimecluster >/dev/null
+  -v "$BIN/pulsequorum:/usr/local/bin/pulsequorum:ro" \
+  "$IMAGE" /usr/local/bin/pulsequorum >/dev/null
 
 # 4. Wait for readiness.
 log "waiting for the node (up to ${READY_TIMEOUT_S}s)"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package api
 
@@ -12,11 +12,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/alert"
-	"github.com/joinsider/uptimecluster/internal/api/gen"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/alert"
+	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Notification channels (FA-ALR-01, FA-ALR-08, ADR 0014). Plaintext secrets
@@ -262,7 +262,7 @@ func testPayload(tenantID, testID string, now time.Time) cluster.AlertPayload {
 	return cluster.AlertPayload{
 		AlertID:        "test:" + testID,
 		TenantID:       tenantID,
-		MonitorName:    "UptimeCluster test",
+		MonitorName:    "Pulsequorum test",
 		Event:          store.EventUp,
 		Status:         string(store.StatusUp),
 		PreviousStatus: string(store.StatusDown),

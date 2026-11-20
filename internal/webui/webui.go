@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package webui serves the embedded Angular single-page application.
 package webui
@@ -65,7 +65,7 @@ func NewHandler(fsys fs.FS) http.Handler {
 		if !serveFile(w, r, fsys, "index.html") {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = io.WriteString(w, "UptimeCluster UI is not built. Run `make build`.\n")
+			_, _ = io.WriteString(w, "Pulsequorum UI is not built. Run `make build`.\n")
 		}
 	})
 }

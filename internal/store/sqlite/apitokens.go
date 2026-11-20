@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite/statedb"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/statedb"
 )
 
 // GetAPITokenBySecretHash returns the API token with the secret hash or ErrNotFound (ADR 0031).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/degraded"
-	"github.com/joinsider/uptimecluster/internal/replication"
-	"github.com/joinsider/uptimecluster/internal/selfcheck"
-	"github.com/joinsider/uptimecluster/internal/sysalert"
+	"github.com/joinsider/pulsequorum/internal/degraded"
+	"github.com/joinsider/pulsequorum/internal/replication"
+	"github.com/joinsider/pulsequorum/internal/selfcheck"
+	"github.com/joinsider/pulsequorum/internal/sysalert"
 )
 
 // Timings of the clock offset measurement (ADR 0020).

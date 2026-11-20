@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sqlite
 
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // TestFingerprintLevelGates covers ADR 0029, ADR 0031 and ADR 0018: the plans,

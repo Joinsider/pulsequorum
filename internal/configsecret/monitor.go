@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package configsecret
 
@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/joinsider/uptimecluster/internal/checker"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/checker"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Schemas returns the secret paths of each monitor type of a registry. The

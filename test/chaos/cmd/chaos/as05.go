@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package main
 
@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joinsider/uptimecluster/test/internal/fake"
-	"github.com/joinsider/uptimecluster/test/internal/ucapi"
+	"github.com/joinsider/pulsequorum/test/internal/fake"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // as05SystemLimit bounds the time from the block until the system alert

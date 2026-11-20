@@ -1,4 +1,4 @@
-module uptimecluster/spikes/sqlite
+module pulsequorum/spikes/sqlite
 
 go 1.27
 

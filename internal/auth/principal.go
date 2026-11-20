@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package auth defines the authenticated principal and the role model
 // (Konzept 12.2, FA-AUTH-09). The tenant always comes from the principal,
@@ -14,7 +14,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Role is a role from the role model.

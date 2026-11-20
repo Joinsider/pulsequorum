@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gibt ein Access-Token eines Testnutzers auf stdout aus (Password Grant mit uptimecluster-cli).
+# Gibt ein Access-Token eines Testnutzers auf stdout aus (Password Grant mit pulsequorum-cli).
 # Nur fuer Entwicklungsskripte. Passwoerter kommen aus .generated/credentials.env und werden nie ausgegeben.
 set -euo pipefail
 
@@ -28,7 +28,7 @@ password="${!var:-}"
 
 resp="$(curl -sS -X POST "$TOKEN_URL" \
   --data-urlencode "grant_type=password" \
-  --data-urlencode "client_id=uptimecluster-cli" \
+  --data-urlencode "client_id=pulsequorum-cli" \
   --data-urlencode "scope=openid" \
   --data-urlencode "username=$user" \
   --data-urlencode "password=$password")"

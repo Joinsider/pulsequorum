@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 // Package server provides the HTTP server of a voter: REST API, health endpoints,
 // runtime frontend configuration and the embedded SPA.
@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/joinsider/uptimecluster/internal/api"
-	"github.com/joinsider/uptimecluster/internal/config"
+	"github.com/joinsider/pulsequorum/internal/api"
+	"github.com/joinsider/pulsequorum/internal/config"
 )
 
 // Server is the HTTP server of a voter node.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package metrics
 
@@ -26,20 +26,20 @@ type collector struct {
 func newCollector(src Sources) *collector {
 	return &collector{
 		src:             src,
-		raftState:       prometheus.NewDesc("uptimecluster_raft_state", "Raft state of this node: 1 for the current state, 0 otherwise.", []string{"state"}, nil),
-		raftApplied:     prometheus.NewDesc("uptimecluster_raft_applied_index", "Last applied Raft log index.", nil, nil),
-		raftCommit:      prometheus.NewDesc("uptimecluster_raft_commit_index", "Last committed Raft log index.", nil, nil),
-		raftLastContact: prometheus.NewDesc("uptimecluster_raft_last_contact_seconds", "Seconds since the last contact with the leader (0 on the leader).", nil, nil),
-		replLag:         prometheus.NewDesc("uptimecluster_replication_lag_seconds", "Replication lag to a peer in seconds; -1 if the peer never caught up.", []string{"peer"}, nil),
-		replDropped:     prometheus.NewDesc("uptimecluster_replication_dropped_total", "Replication messages dropped for a peer.", []string{"peer"}, nil),
-		dbSize:          prometheus.NewDesc("uptimecluster_db_size_bytes", "Size of a database file in bytes.", []string{"db"}, nil),
-		dbWAL:           prometheus.NewDesc("uptimecluster_db_wal_bytes", "Size of a database write-ahead log in bytes.", []string{"db"}, nil),
-		diskFree:        prometheus.NewDesc("uptimecluster_disk_free_ratio", "Free share of the data directory's file system.", nil, nil),
-		outboxPending:   prometheus.NewDesc("uptimecluster_outbox_pending", "Notifications in the outbox that are not delivered yet.", nil, nil),
-		degraded:        prometheus.NewDesc("uptimecluster_degraded", "1 if the node is in degraded mode, 0 otherwise.", nil, nil),
-		alertsActive:    prometheus.NewDesc("uptimecluster_system_alerts_active", "Active system alerts by kind.", []string{"kind"}, nil),
-		clockOffset:     prometheus.NewDesc("uptimecluster_clock_offset_seconds", "Clock offset to a peer in seconds.", []string{"peer"}, nil),
-		buildInfo:       prometheus.NewDesc("uptimecluster_build_info", "Build information; always 1.", []string{"version"}, nil),
+		raftState:       prometheus.NewDesc("pulsequorum_raft_state", "Raft state of this node: 1 for the current state, 0 otherwise.", []string{"state"}, nil),
+		raftApplied:     prometheus.NewDesc("pulsequorum_raft_applied_index", "Last applied Raft log index.", nil, nil),
+		raftCommit:      prometheus.NewDesc("pulsequorum_raft_commit_index", "Last committed Raft log index.", nil, nil),
+		raftLastContact: prometheus.NewDesc("pulsequorum_raft_last_contact_seconds", "Seconds since the last contact with the leader (0 on the leader).", nil, nil),
+		replLag:         prometheus.NewDesc("pulsequorum_replication_lag_seconds", "Replication lag to a peer in seconds; -1 if the peer never caught up.", []string{"peer"}, nil),
+		replDropped:     prometheus.NewDesc("pulsequorum_replication_dropped_total", "Replication messages dropped for a peer.", []string{"peer"}, nil),
+		dbSize:          prometheus.NewDesc("pulsequorum_db_size_bytes", "Size of a database file in bytes.", []string{"db"}, nil),
+		dbWAL:           prometheus.NewDesc("pulsequorum_db_wal_bytes", "Size of a database write-ahead log in bytes.", []string{"db"}, nil),
+		diskFree:        prometheus.NewDesc("pulsequorum_disk_free_ratio", "Free share of the data directory's file system.", nil, nil),
+		outboxPending:   prometheus.NewDesc("pulsequorum_outbox_pending", "Notifications in the outbox that are not delivered yet.", nil, nil),
+		degraded:        prometheus.NewDesc("pulsequorum_degraded", "1 if the node is in degraded mode, 0 otherwise.", nil, nil),
+		alertsActive:    prometheus.NewDesc("pulsequorum_system_alerts_active", "Active system alerts by kind.", []string{"kind"}, nil),
+		clockOffset:     prometheus.NewDesc("pulsequorum_clock_offset_seconds", "Clock offset to a peer in seconds.", []string{"peer"}, nil),
+		buildInfo:       prometheus.NewDesc("pulsequorum_build_info", "Build information; always 1.", []string{"version"}, nil),
 	}
 }
 

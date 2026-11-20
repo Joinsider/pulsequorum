@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package sysalert
 
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 )
 
 func TestFromStatus(t *testing.T) {

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 syntax = "proto3";
 
-package uptimecluster.v1;
+package pulsequorum.v1;
 
-option go_package = "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1;uptimeclusterv1";
+option go_package = "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1;pulsequorumv1";
 
 // Result of a single check on a single node.
 enum CheckStatus {

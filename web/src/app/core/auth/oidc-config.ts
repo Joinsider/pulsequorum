@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 import { LogLevel, OpenIdConfiguration } from 'angular-auth-oidc-client';
 import { AuthConfig } from '../config/app-config';
 
 /** Config id of the library; also the key under which the library asks our storage. */
-export const OIDC_CONFIG_ID = 'uptimecluster';
+export const OIDC_CONFIG_ID = 'pulsequorum';
 
 /** In-app route that receives the identity provider redirect (redirect_uri and silent login). */
 export const CALLBACK_PATH = '/auth/callback';

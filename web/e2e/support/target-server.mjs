@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 //
 // Tiny HTTP target for the E2E monitors. Started as a child process by
 // global-setup.ts. GET /__down makes it answer 503, GET /__up restores 200.

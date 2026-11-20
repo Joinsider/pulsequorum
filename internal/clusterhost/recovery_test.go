@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package clusterhost
 
@@ -15,14 +15,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/joinsider/uptimecluster/internal/admincli"
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusternet"
-	"github.com/joinsider/uptimecluster/internal/node"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/store"
+	"github.com/joinsider/pulsequorum/internal/admincli"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/clusternet"
+	"github.com/joinsider/pulsequorum/internal/node"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // writeNodeIDFile stores the node ID in dir, as the binary does at first start;
@@ -44,7 +44,7 @@ func joinToken(ctx context.Context, t *testing.T, leader *testNode) string {
 	return tok
 }
 
-// runAdmin runs "uptimecluster admin <args>" with the environment vars and
+// runAdmin runs "pulsequorum admin <args>" with the environment vars and
 // stdin, and returns the exit code and the outputs.
 func runAdmin(t *testing.T, vars map[string]string, stdin string, args ...string) (int, string, string) {
 	t.Helper()

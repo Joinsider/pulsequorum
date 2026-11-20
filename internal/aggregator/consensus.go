@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package aggregator
 
-import "github.com/joinsider/uptimecluster/internal/store"
+import "github.com/joinsider/pulsequorum/internal/store"
 
 // consensus returns the target status of one evaluation round from the
 // heartbeats of its reporting nodes (FA-CON-01/02/05, ADR 0021). It is pure:

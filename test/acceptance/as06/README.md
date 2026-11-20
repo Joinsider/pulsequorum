@@ -17,13 +17,13 @@ Der Treiber `as06` läuft danach gegen die Basis-URL des Knotens.
    braucht `podman-compose`, `curl`, `jq` und `openssl`. Es legt die Organisationen
    `acme` und `globex` an, dazu die Maschinenbenutzer `acme-admin-bot` und
    `globex-admin-bot` mit der Rolle `tenant-admin`. Die Umgebung für den Knoten landet
-   in `deploy/oidc-dev/zitadel/.generated/uptimecluster.env` (Modus `oidc`, Profil
+   in `deploy/oidc-dev/zitadel/.generated/pulsequorum.env` (Modus `oidc`, Profil
    `zitadel`, Tenancy `multi`).
 
 2. **Knoten mit dieser Umgebung starten.** Die Variablen müssen in den Prozess:
 
    ```bash
-   set -a; source deploy/oidc-dev/zitadel/.generated/uptimecluster.env; set +a
+   set -a; source deploy/oidc-dev/zitadel/.generated/pulsequorum.env; set +a
    make run   # oder das gebaute Binary mit denselben Variablen
    ```
 

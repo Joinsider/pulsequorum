@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 The UptimeCluster Authors
+// Copyright (C) 2026 The Pulsequorum Authors
 
 package admincli
 
@@ -19,15 +19,15 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
-	"github.com/joinsider/uptimecluster/internal/auth"
-	"github.com/joinsider/uptimecluster/internal/cluster"
-	"github.com/joinsider/uptimecluster/internal/clusternet"
-	"github.com/joinsider/uptimecluster/internal/clusterpki"
-	"github.com/joinsider/uptimecluster/internal/config"
-	pb "github.com/joinsider/uptimecluster/internal/pb/uptimecluster/v1"
-	"github.com/joinsider/uptimecluster/internal/pki"
-	"github.com/joinsider/uptimecluster/internal/store"
-	"github.com/joinsider/uptimecluster/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/auth"
+	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/clusternet"
+	"github.com/joinsider/pulsequorum/internal/clusterpki"
+	"github.com/joinsider/pulsequorum/internal/config"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
 // resetTimeout bounds the whole reset: status call and Apply.
@@ -46,7 +46,7 @@ func runResetPassword(ctx context.Context, cfg config.Config, args []string, env
 	passwordFile := fs.String("password-file", "", "read the new password from this file instead of stdin")
 	enable := fs.Bool("enable", false, "also enable the user if it is disabled")
 	fs.Usage = func() {
-		_, _ = fmt.Fprint(env.Stderr, "usage: uptimecluster admin reset-password --username <name> [--password-file <file>] [--enable]\n\n"+
+		_, _ = fmt.Fprint(env.Stderr, "usage: pulsequorum admin reset-password --username <name> [--password-file <file>] [--enable]\n\n"+
 			"Sets a new password and ends all sessions of the user. The node must be running and the\n"+
 			"cluster must have a leader. The password is read from stdin (twice, without echo, on a terminal).\n\n")
 		fs.PrintDefaults()
@@ -215,7 +215,7 @@ func applyOnLeader(ctx context.Context, localAddr string, sec clusternet.Securit
 	}
 	leaderAddr := st.GetLeaderAddress()
 	if leaderAddr == "" {
-		return errors.New("the cluster has no leader: without quorum, see \"uptimecluster admin recover\" in docs/betrieb/recovery.md")
+		return errors.New("the cluster has no leader: without quorum, see \"pulsequorum admin recover\" in docs/betrieb/recovery.md")
 	}
 	conn := local
 	if leaderAddr != localAddr {
