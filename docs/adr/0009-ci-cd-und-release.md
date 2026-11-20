@@ -7,6 +7,8 @@
 | **Entscheider** | Projektinhaber                                                                                              |
 | **Bezug**       | NFA-MNT-01/02, NFA-SEC-06, NFA-PORT-01, RB-LIC-03/05, Konzept 18.1 (GitHub Actions, GHCR, distroless) |
 
+> Teilweise ersetzt durch [ADR 0040](0040-ci-cd-haertung-und-manuelle-releases.md) (Trigger, Release-Ablauf, Image-Tag `latest`, cosign).
+
 ## Kontext
 
 Das Konzept sieht GitHub Actions, Multi-Arch-Images (amd64/arm64) in GHCR und `distroless/static` vor. Dazu kommen

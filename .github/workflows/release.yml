@@ -1,0 +1,217 @@
+# Release per ADR 0040 (amendment of 2026-11-20).
+#
+# A release starts when the project owner pushes a tag signed locally with
+# `make release`. This workflow never holds a signing key: it verifies the tag
+# against .github/allowed_signers on master, runs the security gates, builds a
+# DRAFT release with GoReleaser (archives, SBOMs, multi-arch images on GHCR),
+# signs checksums and images with cosign keyless and attests build provenance.
+# The owner reviews and publishes the draft.
+#
+# workflow_dispatch is a dry run only: a snapshot build that publishes nothing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/joinsider/pulsequorum
+  GORELEASER_VERSION: v2.20.2
+
+jobs:
+  verify-tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: tag
+        name: Verify signed annotated tag on master
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(rc|alpha|beta)\.(0|[1-9][0-9]*))?$'
+          [[ "$TAG" =~ $semver ]] || { echo "::error::tag $TAG is not a release version"; exit 1; }
+          [[ "$(git cat-file -t "refs/tags/$TAG")" == tag ]] || { echo "::error::$TAG is not an annotated tag"; exit 1; }
+          # Trust anchor comes from master, not from the tagged commit.
+          git show origin/master:.github/allowed_signers > "$RUNNER_TEMP/allowed_signers"
+          git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" verify-tag "refs/tags/$TAG"
+          sha="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          git merge-base --is-ancestor "$sha" origin/master || { echo "::error::$TAG does not point to a commit on master"; exit 1; }
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Require green CI on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.tag.outputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+            --jq '.check_runs[] | select(.status == "completed" and .conclusion == "success") | .name' \
+            | sort -u > "$RUNNER_TEMP/green"
+          missing=0
+          for check in go golangci web licenses generate workflow-lint secrets build; do
+            grep -qx "$check" "$RUNNER_TEMP/green" || { echo "::error::required check $check is not green on $SHA"; missing=1; }
+          done
+          exit "$missing"
+
+  gates:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # release builds never restore caches (cache poisoning)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: govulncheck (NFA-SEC-06)
+        run: go tool -modfile=tools/go.mod govulncheck ./cmd/... ./internal/...
+      - name: npm audit with reviewed exceptions
+        working-directory: web
+        run: |
+          npm ci
+          node scripts/audit.mjs
+
+  goreleaser:
+    needs: [verify-tag, gates]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # draft release and assets
+      packages: write # images on GHCR
+      id-token: write # cosign keyless and provenance
+      attestations: write # actions/attest-build-provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # GoReleaser needs the history and the previous tag
+      - name: Check out exactly the verified commit
+        env:
+          SHA: ${{ needs.verify-tag.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SHA"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # release builds never restore caches (cache poisoning)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      # syft is called by the `sboms` section of .goreleaser.yaml.
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - name: Release notes from the signed tag message
+        env:
+          TAG: ${{ github.ref_name }}
+        run: git tag -l --format='%(contents:body)' "$TAG" > "$RUNNER_TEMP/release-notes.md"
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image digest
+        id: image
+        env:
+          VERSION: ${{ needs.verify-tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Verify checksums, signatures and provenance
+        env:
+          VERSION: ${{ needs.verify-tag.outputs.version }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          identity="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          (cd dist && sha256sum --ignore-missing -c checksums.txt)
+          cosign verify-blob --bundle dist/checksums.txt.sigstore.json \
+            --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" dist/checksums.txt
+          cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$IMAGE@$DIGEST" > /dev/null
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$REPO"
+          {
+            echo "### Draft release $TAG ready"
+            echo "Image: \`$IMAGE:$VERSION\` (\`$DIGEST\`)"
+            echo "Review and publish: https://github.com/$REPO/releases"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  snapshot:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # release builds never restore caches (cache poisoning)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --snapshot --clean --skip=publish,sign
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: snapshot-dist
+          path: |
+            dist/*.tar.gz
+            dist/*.sbom.json
+            dist/checksums.txt
+          retention-days: 7

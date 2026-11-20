@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
 
 MODULE    := github.com/joinsider/pulsequorum
-GO_PKGS   := ./cmd/... ./internal/...
+GO_PKGS   := ./cmd/... ./internal/... ./build/...
 BIN       := bin/pulsequorum
 WEB_DIST  := web/dist/pulsequorum-web/browser
 EMBED_DIR := internal/webui/dist
@@ -75,7 +75,7 @@ lint: go-lint golangci web-lint api-lint proto-lint ## Run all linters
 
 go-lint: ## go vet and gofmt check
 	go vet $(GO_PKGS)
-	@out="$$(gofmt -l cmd internal)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+	@out="$$(gofmt -l cmd internal build)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 golangci: ## Run golangci-lint v2 (standard + errorlint, gosec, revive, ...; config in .golangci.yml)
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
@@ -113,6 +113,13 @@ web-dev: web/node_modules ## Angular dev server on :4200 proxying the API to :80
 
 docker: ## Build the container image
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t pulsequorum:dev .
+
+BUMP ?= patch
+release: ## Cut a release: signed tag on master, editable changelog (BUMP=patch|minor|major, optional VERSION=x.y.z)
+	go run ./build/release -bump=$(BUMP) $(if $(VERSION),-version=$(VERSION))
+
+release-dry-run: ## Show the next version and changelog without creating anything
+	go run ./build/release -bump=$(BUMP) $(if $(VERSION),-version=$(VERSION)) -dry-run
 
 clean: ## Remove build output
 	rm -rf bin web/dist THIRD_PARTY_NOTICES.md
