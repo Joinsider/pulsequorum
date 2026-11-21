@@ -35,6 +35,7 @@ type Checker struct {
 
 var _ checker.Checker = (*Checker)(nil)
 var _ checker.TargetLister = (*Checker)(nil)
+var _ checker.ClusterCapabilityRequirer = (*Checker)(nil)
 
 func init() { checker.Default.Register(&Checker{}) }
 
@@ -64,8 +65,23 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 		return checker.Result{Status: checker.StatusDown, Message: err.Error(), ErrorClass: checker.ClassInternal}
 	}
 
+	// The client certificate is parsed per check and lives only in this call
+	// (ADR 0042, section 8).
+	certs := &clientCertSession{host: urlHost(cfg.URL)}
+	var certWarning string
+	if cc := cfg.ClientCertificate; cc != nil {
+		cert, err := loadClientCertificate(cc)
+		if err != nil {
+			return checker.Result{Status: checker.StatusDown, Message: err.Error(), ErrorClass: checker.ClassInternal}
+		}
+		if certWarning, err = clientCertValidity(cert.Leaf, c.clock(env), *cfg.TLSExpiryWarningDays); err != nil {
+			return checker.Down(err, 0, nil)
+		}
+		certs.cert = cert
+	}
+
 	obs := &observer{start: start, now: func() time.Time { return c.clock(env) }}
-	transport := c.transport(env, cfg, obs)
+	transport := c.transport(env, cfg, obs, certs)
 	defer transport.CloseIdleConnections()
 
 	redirects := 0
@@ -90,7 +106,7 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return checker.Down(err, ms(time.Since(start)), obs.details(nil, redirects))
+		return checker.Down(certs.explain(err), ms(time.Since(start)), obs.details(nil, redirects))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -101,7 +117,7 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 		details["bodyTruncated"] = true
 	}
 	if err != nil {
-		return checker.Down(err, latency, details)
+		return checker.Down(certs.explain(err), latency, details)
 	}
 
 	if err := evaluate(cfg, ranges, resp.StatusCode, body, latency); err != nil {
@@ -114,6 +130,13 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 		if left < float64(*cfg.TLSExpiryWarningDays) {
 			res.Status = checker.StatusDegraded
 			res.Message = fmt.Sprintf("TLS certificate expires in %.0f days (%s)", left, info.notAfter.UTC().Format(time.DateOnly))
+		}
+	}
+	if certWarning != "" {
+		if res.Status == checker.StatusDegraded {
+			res.Message += "; " + certWarning
+		} else {
+			res.Status, res.Message = checker.StatusDegraded, certWarning
 		}
 	}
 	return res
@@ -132,7 +155,7 @@ func (c *Checker) clock(env *checker.Env) time.Time {
 	}
 }
 
-func (c *Checker) transport(env *checker.Env, cfg *Config, obs *observer) *http.Transport {
+func (c *Checker) transport(env *checker.Env, cfg *Config, obs *observer, certs *clientCertSession) *http.Transport {
 	network := map[string]string{"ipv4": "tcp4", "ipv6": "tcp6"}[cfg.IPFamily]
 	dial := func(ctx context.Context, n, addr string) (net.Conn, error) {
 		if network != "" {
@@ -162,7 +185,7 @@ func (c *Checker) transport(env *checker.Env, cfg *Config, obs *observer) *http.
 				_ = raw.Close()
 				return nil, err
 			}
-			conn, err := c.handshake(ctx, raw, host, cfg, obs)
+			conn, err := c.handshake(ctx, raw, host, cfg, obs, certs)
 			if err != nil {
 				_ = raw.Close()
 				return nil, err
@@ -178,12 +201,15 @@ func (c *Checker) transport(env *checker.Env, cfg *Config, obs *observer) *http.
 
 // handshake runs the TLS handshake and verifies the chain itself, so the
 // expiry is recorded even when errors are ignored (FA-CHK-14).
-func (c *Checker) handshake(ctx context.Context, raw net.Conn, host string, cfg *Config, obs *observer) (*tls.Conn, error) {
+func (c *Checker) handshake(ctx context.Context, raw net.Conn, host string, cfg *Config, obs *observer, certs *clientCertSession) (*tls.Conn, error) {
 	conn := tls.Client(raw, &tls.Config{
 		ServerName:         host,
 		NextProtos:         []string{"h2", "http/1.1"},
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true, //nolint:gosec // G402: the chain and host are verified in VerifyConnection
+		// host is the host of this connection, so a redirect target gets no
+		// client certificate unless it is the monitor's own host (ADR 0042).
+		GetClientCertificate: certs.hook(host),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			info, err := c.verify(cs, host, obs.now)
 			obs.setTLS(info, err)

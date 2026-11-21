@@ -113,3 +113,11 @@ type Checker interface {
 type CapabilityRequirer interface {
 	RequiredCapability() string
 }
+
+// ClusterCapabilityRequirer is implemented by checkers whose configuration
+// may use fields that older binaries reject. The API accepts such a
+// configuration only when every voter announces the returned capabilities
+// (ADR 0042, section 10).
+type ClusterCapabilityRequirer interface {
+	RequiredClusterCapabilities(cfg json.RawMessage) []string
+}

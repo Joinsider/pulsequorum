@@ -16,7 +16,7 @@ import (
 )
 
 // secretName matches property names that hold credentials.
-var secretName = regexp.MustCompile(`(?i)password|passwd|token|secret|api_?key|credential`)
+var secretName = regexp.MustCompile(`(?i)password|passwd|token|secret|api_?key|private_?key|credential`)
 
 // ADR 0015: a secret field the schema does not mark writeOnly would be stored
 // and returned in plaintext. Every built-in type must mark such fields.

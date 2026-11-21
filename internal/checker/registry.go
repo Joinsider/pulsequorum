@@ -203,3 +203,16 @@ func joinPointer(parts []string) string {
 	}
 	return b.String()
 }
+
+// ClusterCapabilities returns the node capabilities every voter needs to run
+// cfg of type typ (ClusterCapabilityRequirer), or nil.
+func (r *Registry) ClusterCapabilities(typ string, cfg json.RawMessage) []string {
+	c, err := r.Lookup(typ)
+	if err != nil {
+		return nil
+	}
+	if req, ok := c.(ClusterCapabilityRequirer); ok {
+		return req.RequiredClusterCapabilities(cfg)
+	}
+	return nil
+}

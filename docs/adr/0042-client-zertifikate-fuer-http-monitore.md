@@ -129,6 +129,20 @@ Option A zu brechen. Festlegungen:
 - **F3 – Ablaufwarnung:** Dieselbe Schwelle `tlsExpiryWarningDays` wie für das Serverzertifikat (Vorschlag) oder ein
   eigenes Feld?
 
+### Nachtrag 2026-11-21: Gate über das Node-Register statt Befehlsstufe
+
+Punkt 10 sah die nächste freie Befehlsstufe als Gate vor. Die Stufen 10–13 sind für P5 reserviert und noch nicht
+umgesetzt. Ein Binary mit Stufe 14 würde behaupten, deren Befehle anwenden zu können, und wäre in einem gemischten
+Cluster unsicher. Auf Entscheidung des Projektinhabers im Chat gilt stattdessen:
+
+- Jedes Binary, das `clientCertificate` versteht, meldet in der Node-Registrierung (ADR 0017) die Capability
+  `http-client-cert`. Das bestehende Feld `capabilities` reicht; es gibt keinen neuen FSM-Befehl und keine neue Stufe.
+- Die API nimmt eine HTTP-Konfiguration mit `clientCertificate` nur an, wenn jeder registrierte Voter diese Capability
+  meldet. Sonst antwortet sie mit 422 und nennt die Voter, die noch aktualisiert werden müssen. Ohne Register (einzelner
+  Voter vor der ersten Registrierung) entscheidet das lokale Binary.
+- Der Mechanismus ist allgemein (`checker.ClusterCapabilityRequirer`) und kann für künftige Konfigurationsfelder
+  wiederverwendet werden.
+
 ## Konsequenzen
 
 - Positiv: mTLS-geschützte Ziele lassen sich überwachen. Der Schlüssel ist at rest verschlüsselt und für keine Rolle
