@@ -106,13 +106,16 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return checker.Down(certs.explain(err), ms(time.Since(start)), obs.details(nil, redirects))
+		details := obs.details(nil, redirects)
+		certs.addDetails(details)
+		return checker.Down(certs.explain(err), ms(time.Since(start)), details)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, truncated, err := readBody(resp.Body, cfg.MaxBodyBytes)
 	latency := ms(time.Since(start))
 	details := obs.details(resp, redirects)
+	certs.addDetails(details)
 	if truncated {
 		details["bodyTruncated"] = true
 	}
@@ -140,6 +143,27 @@ func (c *Checker) Check(ctx context.Context, env *checker.Env, raw json.RawMessa
 		}
 	}
 	return res
+}
+
+// addDetails adds the non-secret facts of the configured client certificate
+// to d (ADR 0042). Certificate and key material never enter the details.
+func (s *clientCertSession) addDetails(d map[string]any) {
+	if s.cert == nil || s.cert.Leaf == nil {
+		return
+	}
+	leaf := s.cert.Leaf
+	d["clientCertSubject"] = leaf.Subject.String()
+	d["clientCertIssuer"] = leaf.Issuer.String()
+	d["clientCertNotAfter"] = leaf.NotAfter.UTC().Format(time.RFC3339)
+	d["clientCertSent"] = s.wasSent()
+}
+
+// wasSent reports whether the latest handshake that asked for a client
+// certificate was answered with it.
+func (s *clientCertSession) wasSent() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sent
 }
 
 // clock is the clock for TLS expiry: the test override, then the node clock
