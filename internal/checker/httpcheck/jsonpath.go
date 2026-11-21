@@ -23,50 +23,61 @@ type segment struct {
 func parsePath(p string) ([]segment, error) {
 	p = strings.TrimSpace(p)
 	p = strings.TrimPrefix(p, "$")
+	if len(p) > 0 && p[0] != '.' && p[0] != '[' {
+		p = "." + p // allow "a.b" without leading "$."
+	}
 	var segs []segment
 	for len(p) > 0 {
+		var seg segment
+		var err error
 		switch p[0] {
 		case '.':
-			p = p[1:]
-			end := strings.IndexAny(p, ".[")
-			if end < 0 {
-				end = len(p)
-			}
-			if end == 0 {
-				return nil, errors.New("empty key in path")
-			}
-			segs = append(segs, segment{key: p[:end]})
-			p = p[end:]
+			seg, p, err = parseDotSegment(p[1:])
 		case '[':
-			end := strings.IndexByte(p, ']')
-			if end < 0 {
-				return nil, errors.New("missing ] in path")
-			}
-			inner := p[1:end]
-			p = p[end+1:]
-			if strings.HasPrefix(inner, `"`) || strings.HasPrefix(inner, `'`) {
-				if len(inner) < 2 || inner[len(inner)-1] != inner[0] {
-					return nil, errors.New("unterminated quoted key in path")
-				}
-				segs = append(segs, segment{key: inner[1 : len(inner)-1]})
-				continue
-			}
-			idx, err := strconv.Atoi(inner)
-			if err != nil || idx < 0 {
-				return nil, fmt.Errorf("invalid array index %q", inner)
-			}
-			segs = append(segs, segment{index: idx, isIdx: true})
+			seg, p, err = parseBracketSegment(p[1:])
 		default:
-			if len(segs) > 0 {
-				return nil, fmt.Errorf("unexpected %q in path", p[0])
-			}
-			p = "." + p // allow "a.b" without leading "$."
+			return nil, fmt.Errorf("unexpected %q in path", p[0])
 		}
+		if err != nil {
+			return nil, err
+		}
+		segs = append(segs, seg)
 	}
 	if len(segs) == 0 {
 		return nil, errors.New("empty path")
 	}
 	return segs, nil
+}
+
+func parseDotSegment(p string) (segment, string, error) {
+	end := strings.IndexAny(p, ".[")
+	if end < 0 {
+		end = len(p)
+	}
+	if end == 0 {
+		return segment{}, "", errors.New("empty key in path")
+	}
+	return segment{key: p[:end]}, p[end:], nil
+}
+
+func parseBracketSegment(p string) (segment, string, error) {
+	end := strings.IndexByte(p, ']')
+	if end < 0 {
+		return segment{}, "", errors.New("missing ] in path")
+	}
+	inner := p[:end]
+	rest := p[end+1:]
+	if strings.HasPrefix(inner, `"`) || strings.HasPrefix(inner, `'`) {
+		if len(inner) < 2 || inner[len(inner)-1] != inner[0] {
+			return segment{}, "", errors.New("unterminated quoted key in path")
+		}
+		return segment{key: inner[1 : len(inner)-1]}, rest, nil
+	}
+	idx, err := strconv.Atoi(inner)
+	if err != nil || idx < 0 {
+		return segment{}, "", fmt.Errorf("invalid array index %q", inner)
+	}
+	return segment{index: idx, isIdx: true}, rest, nil
 }
 
 // lookup evaluates the path on a JSON document and renders the value as a

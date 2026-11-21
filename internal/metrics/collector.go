@@ -44,10 +44,24 @@ func newCollector(src Sources) *collector {
 }
 
 // Describe implements prometheus.Collector. It sends nothing (unchecked collector).
-func (*collector) Describe(chan<- *prometheus.Desc) {}
+func (*collector) Describe(chan<- *prometheus.Desc) {
+	// Intentionally empty: unchecked collector whose series vary with Sources.
+}
 
 // Collect implements prometheus.Collector.
 func (c *collector) Collect(ch chan<- prometheus.Metric) {
+	c.collectRaft(ch)
+	c.collectReplication(ch)
+	c.collectStorage(ch)
+	c.collectAlertsAndClock(ch)
+	version := c.src.Version
+	if version == "" {
+		version = "unknown"
+	}
+	c.gauge(ch, c.buildInfo, 1, version)
+}
+
+func (c *collector) collectRaft(ch chan<- prometheus.Metric) {
 	s := c.src
 	if s.RaftState != nil {
 		current := s.RaftState()
@@ -65,6 +79,10 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 		c.gauge(ch, c.raftCommit, float64(commit))
 		c.gauge(ch, c.raftLastContact, last.Seconds())
 	}
+}
+
+func (c *collector) collectReplication(ch chan<- prometheus.Metric) {
+	s := c.src
 	if s.ReplicationLag != nil {
 		for peer, lag := range s.ReplicationLag() {
 			v := lag.Seconds()
@@ -79,6 +97,10 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(c.replDropped, prometheus.CounterValue, float64(n), peer)
 		}
 	}
+}
+
+func (c *collector) collectStorage(ch chan<- prometheus.Metric) {
+	s := c.src
 	if s.DBSizes != nil {
 		for db, sz := range s.DBSizes() {
 			c.gauge(ch, c.dbSize, float64(sz.Size), db)
@@ -98,6 +120,10 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 			c.gauge(ch, c.outboxPending, float64(n))
 		}
 	}
+}
+
+func (c *collector) collectAlertsAndClock(ch chan<- prometheus.Metric) {
+	s := c.src
 	if s.Degraded != nil {
 		c.gauge(ch, c.degraded, boolValue(s.Degraded()))
 	}
@@ -116,11 +142,6 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 			c.gauge(ch, c.clockOffset, off.Seconds(), peer)
 		}
 	}
-	version := s.Version
-	if version == "" {
-		version = "unknown"
-	}
-	c.gauge(ch, c.buildInfo, 1, version)
 }
 
 func (*collector) gauge(ch chan<- prometheus.Metric, d *prometheus.Desc, v float64, labels ...string) {

@@ -19,6 +19,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/api/gen"
 	"github.com/joinsider/pulsequorum/internal/auth"
 	"github.com/joinsider/pulsequorum/internal/store"
+	"github.com/joinsider/pulsequorum/internal/stream"
 )
 
 // Live stream (FA-API-04, FA-AUTH-11, FA-TEN-05). A browser fetches a
@@ -127,24 +128,43 @@ func (h *Handlers) revalidate(ctx context.Context, p auth.Principal) bool {
 
 // serveStream upgrades to a WebSocket and forwards the tenant's events.
 func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
-	if h.deps.Tickets == nil || h.deps.Stream == nil {
-		WriteProblem(w, http.StatusServiceUnavailable, "Service Unavailable", "live stream is not available on this node")
+	conn, ticket, filter, ok := h.acceptStream(w, r)
+	if !ok {
 		return
+	}
+	defer func() { _ = conn.CloseNow() }()
+
+	sub := h.deps.Stream.Subscribe(ticket.Principal.TenantID)
+	defer sub.Close()
+	sub.SetMonitors(filter)
+
+	// The request context is not cancelled by http.Server.Shutdown for
+	// hijacked connections; StreamClosing is.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	readErr := readStreamFilters(ctx, conn, sub)
+	h.runStream(ctx, conn, sub, ticket, readErr)
+}
+
+func (h *Handlers) acceptStream(w http.ResponseWriter, r *http.Request) (*websocket.Conn, auth.Ticket, []string, bool) {
+	if h.deps.Tickets == nil || h.deps.Stream == nil {
+		WriteProblem(w, http.StatusServiceUnavailable, problemTitleServiceUnavailable, "live stream is not available on this node")
+		return nil, auth.Ticket{}, nil, false
 	}
 	if !h.allowedOrigin(r) {
 		WriteProblem(w, http.StatusForbidden, "Forbidden", "origin is not allowed")
-		return
+		return nil, auth.Ticket{}, nil, false
 	}
 	ticket, err := h.deps.Tickets.Redeem(r.URL.Query().Get("ticket"))
 	if err != nil {
 		WriteProblem(w, http.StatusUnauthorized, "Unauthorized", err.Error())
-		return
+		return nil, auth.Ticket{}, nil, false
 	}
-	p := ticket.Principal
 	filter, err := parseMonitorIDs(r.URL.Query()["monitorId"])
 	if err != nil {
-		WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())
-		return
+		WriteProblem(w, http.StatusBadRequest, problemTitleBadRequest, err.Error())
+		return nil, auth.Ticket{}, nil, false
 	}
 
 	// The server's read and write timeouts must not end a long-lived stream.
@@ -154,20 +174,13 @@ func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
 	// The origin was checked above, exactly instead of by host pattern.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
-		return
+		return nil, auth.Ticket{}, nil, false
 	}
-	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(streamReadLimit)
+	return conn, ticket, filter, true
+}
 
-	sub := h.deps.Stream.Subscribe(p.TenantID)
-	defer sub.Close()
-	sub.SetMonitors(filter)
-
-	// The request context is not cancelled by http.Server.Shutdown for
-	// hijacked connections; StreamClosing is.
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
+func readStreamFilters(ctx context.Context, conn *websocket.Conn, sub *stream.Subscription) <-chan error {
 	// Reader: filter updates; any read error ends the stream.
 	readErr := make(chan error, 1)
 	go func() {
@@ -177,26 +190,32 @@ func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
 				readErr <- err
 				return
 			}
-			var f streamFilter
-			if err := json.Unmarshal(data, &f); err != nil {
-				readErr <- errors.New("invalid filter message")
-				return
-			}
-			ids, err := parseMonitorIDs(f.MonitorIDs)
-			if err != nil {
+			if err := handleStreamFilterMessage(data, sub); err != nil {
 				readErr <- err
 				return
 			}
-			sub.SetMonitors(ids)
 		}
 	}()
+	return readErr
+}
 
-	var sessionEnd <-chan time.Time
-	if !ticket.SessionEnd.IsZero() {
-		t := time.NewTimer(ticket.SessionEnd.Sub(h.deps.Now()))
-		defer t.Stop()
-		sessionEnd = t.C
+func handleStreamFilterMessage(data []byte, sub *stream.Subscription) error {
+	var f streamFilter
+	if err := json.Unmarshal(data, &f); err != nil {
+		return errors.New("invalid filter message")
 	}
+	ids, err := parseMonitorIDs(f.MonitorIDs)
+	if err != nil {
+		return err
+	}
+	sub.SetMonitors(ids)
+	return nil
+}
+
+func (h *Handlers) runStream(ctx context.Context, conn *websocket.Conn, sub *stream.Subscription, ticket auth.Ticket, readErr <-chan error) {
+	sessionEnd, stopSession := sessionEndTimer(ticket.SessionEnd, h.deps.Now)
+	defer stopSession()
+
 	revalidate := time.NewTicker(streamRevalidate)
 	defer revalidate.Stop()
 	ping := time.NewTicker(streamPing)
@@ -205,32 +224,18 @@ func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case data, ok := <-sub.Events():
-			if !ok {
-				if sub.Overflowed() {
-					_ = conn.Close(closeTooSlow, "client too slow, reconnect")
-				}
-				return
-			}
-			wctx, wcancel := context.WithTimeout(ctx, streamWrite)
-			err := conn.Write(wctx, websocket.MessageText, data)
-			wcancel()
-			if err != nil {
+			if !forwardStreamEvent(ctx, conn, sub, data, ok) {
 				return
 			}
 		case err := <-readErr:
-			if websocket.CloseStatus(err) == -1 && ctx.Err() == nil {
-				_ = conn.Close(websocket.StatusPolicyViolation, "invalid message")
-			}
+			closeOnStreamReadError(ctx, conn, err)
 			return
 		case <-ping.C:
-			pctx, pcancel := context.WithTimeout(ctx, streamWrite)
-			err := conn.Ping(pctx)
-			pcancel()
-			if err != nil {
+			if !pingStream(ctx, conn) {
 				return
 			}
 		case <-revalidate.C:
-			if !h.revalidate(ctx, p) {
+			if !h.revalidate(ctx, ticket.Principal) {
 				_ = conn.Close(closeForbidden, "access revoked")
 				return
 			}
@@ -243,5 +248,39 @@ func (h *Handlers) serveStream(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func sessionEndTimer(sessionEnd time.Time, now func() time.Time) (<-chan time.Time, func()) {
+	if sessionEnd.IsZero() {
+		return nil, func() {}
+	}
+	t := time.NewTimer(sessionEnd.Sub(now()))
+	return t.C, func() { t.Stop() }
+}
+
+func forwardStreamEvent(ctx context.Context, conn *websocket.Conn, sub *stream.Subscription, data []byte, ok bool) bool {
+	if !ok {
+		if sub.Overflowed() {
+			_ = conn.Close(closeTooSlow, "client too slow, reconnect")
+		}
+		return false
+	}
+	wctx, wcancel := context.WithTimeout(ctx, streamWrite)
+	err := conn.Write(wctx, websocket.MessageText, data)
+	wcancel()
+	return err == nil
+}
+
+func pingStream(ctx context.Context, conn *websocket.Conn) bool {
+	pctx, pcancel := context.WithTimeout(ctx, streamWrite)
+	err := conn.Ping(pctx)
+	pcancel()
+	return err == nil
+}
+
+func closeOnStreamReadError(ctx context.Context, conn *websocket.Conn, err error) {
+	if websocket.CloseStatus(err) == -1 && ctx.Err() == nil {
+		_ = conn.Close(websocket.StatusPolicyViolation, "invalid message")
 	}
 }

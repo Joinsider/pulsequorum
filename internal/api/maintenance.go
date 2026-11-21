@@ -31,6 +31,9 @@ const (
 	maxMaintenanceMinutes = 7 * 24 * 60
 	// defaultTimezone applies to recurring schedules without a time zone.
 	defaultTimezone = "UTC"
+
+	fieldScheduleEndsAt          = "/schedule/endsAt"
+	fieldScheduleDurationMinutes = "/schedule/durationMinutes"
 )
 
 // ListMaintenanceWindows returns the maintenance windows of the caller's tenant.
@@ -238,52 +241,66 @@ func maintenanceSchedule(in gen.MaintenanceSchedule) (store.MaintenanceSchedule,
 
 	switch in.Kind {
 	case gen.Once:
-		if in.StartsAt == nil {
-			add("/schedule/startsAt", "required for kind once")
-		}
-		switch {
-		case in.EndsAt == nil:
-			add("/schedule/endsAt", "required for kind once")
-		case reversed:
-			add("/schedule/endsAt", "must be after startsAt")
-		}
-		if in.Cron != nil {
-			add("/schedule/cron", "not allowed for kind once")
-		}
-		if in.DurationMinutes != nil {
-			add("/schedule/durationMinutes", "not allowed for kind once")
-		}
+		validateOnceSchedule(in, reversed, add)
 	case gen.Recurring:
-		switch {
-		case in.Cron == nil || strings.TrimSpace(*in.Cron) == "":
-			add("/schedule/cron", "required for kind recurring")
-		default:
-			s.Cron = strings.TrimSpace(*in.Cron)
-		}
-		switch {
-		case in.DurationMinutes == nil:
-			add("/schedule/durationMinutes", "required for kind recurring")
-		case *in.DurationMinutes < 1 || *in.DurationMinutes > maxMaintenanceMinutes:
-			add("/schedule/durationMinutes", fmt.Sprintf("must be between 1 and %d", maxMaintenanceMinutes))
-		default:
-			s.DurationMinutes = *in.DurationMinutes
-		}
-		if reversed {
-			add("/schedule/endsAt", "must be after startsAt")
-		}
+		validateRecurringSchedule(in, reversed, &s, add)
 	default:
 		add("/schedule/kind", "must be once or recurring")
 	}
 
+	applyScheduleTimezone(in, &s, add)
+	return s, fields
+}
+
+func validateOnceSchedule(in gen.MaintenanceSchedule, reversed bool, add func(string, string)) {
+	if in.StartsAt == nil {
+		add("/schedule/startsAt", "required for kind once")
+	}
+	switch {
+	case in.EndsAt == nil:
+		add(fieldScheduleEndsAt, "required for kind once")
+	case reversed:
+		add(fieldScheduleEndsAt, "must be after startsAt")
+	}
+	if in.Cron != nil {
+		add("/schedule/cron", "not allowed for kind once")
+	}
+	if in.DurationMinutes != nil {
+		add(fieldScheduleDurationMinutes, "not allowed for kind once")
+	}
+}
+
+func validateRecurringSchedule(in gen.MaintenanceSchedule, reversed bool, s *store.MaintenanceSchedule, add func(string, string)) {
+	switch {
+	case in.Cron == nil || strings.TrimSpace(*in.Cron) == "":
+		add("/schedule/cron", "required for kind recurring")
+	default:
+		s.Cron = strings.TrimSpace(*in.Cron)
+	}
+	switch {
+	case in.DurationMinutes == nil:
+		add(fieldScheduleDurationMinutes, "required for kind recurring")
+	case *in.DurationMinutes < 1 || *in.DurationMinutes > maxMaintenanceMinutes:
+		add(fieldScheduleDurationMinutes, fmt.Sprintf("must be between 1 and %d", maxMaintenanceMinutes))
+	default:
+		s.DurationMinutes = *in.DurationMinutes
+	}
+	if reversed {
+		add(fieldScheduleEndsAt, "must be after startsAt")
+	}
+}
+
+func applyScheduleTimezone(in gen.MaintenanceSchedule, s *store.MaintenanceSchedule, add func(string, string)) {
 	if in.Timezone != nil && strings.TrimSpace(*in.Timezone) != "" {
 		s.Timezone = strings.TrimSpace(*in.Timezone)
 		if _, err := time.LoadLocation(s.Timezone); err != nil {
 			add("/schedule/timezone", "unknown time zone "+s.Timezone)
 		}
-	} else if in.Kind == gen.Recurring {
+		return
+	}
+	if in.Kind == gen.Recurring {
 		s.Timezone = defaultTimezone
 	}
-	return s, fields
 }
 
 // apiMaintenance converts a window and computes whether it is active now and

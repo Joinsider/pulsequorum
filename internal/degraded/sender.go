@@ -208,6 +208,12 @@ func alertEvent(from, to store.MonitorStatus) string {
 	return ""
 }
 
+type notifyState struct {
+	flooded, logged bool
+	st              State
+	now             int64
+}
+
 // notify delivers or logs the alert of a status change for every channel of
 // the monitor that subscribes to the event.
 func (a *Applier) notify(ctx context.Context, m store.Monitor, set *pb.SetMonitorState, from, to store.MonitorStatus, event string) {
@@ -228,17 +234,29 @@ func (a *Applier) notify(ctx context.Context, m store.Monitor, set *pb.SetMonito
 	}
 
 	if a.opts.SelfCheckFailed != nil && a.opts.SelfCheckFailed() {
-		for _, ch := range chans {
-			if !logged {
-				break
-			}
-			r := row
-			r.ChannelID, r.SentMs, r.Outcome = ch.ID, now, OutcomeSuppressed
-			a.record(r)
-		}
+		a.recordSuppressed(chans, row, logged, now)
 		return
 	}
 
+	p := a.buildAlertPayload(m, set, from, to, event, st)
+	ns := notifyState{flooded: flooded, logged: logged, st: st, now: now}
+	for _, ch := range chans {
+		a.notifyChannel(ctx, ch, p, row, ns)
+	}
+}
+
+func (a *Applier) recordSuppressed(chans []store.NotificationChannel, row store.DegradedAlert, logged bool, now int64) {
+	if !logged {
+		return
+	}
+	for _, ch := range chans {
+		r := row
+		r.ChannelID, r.SentMs, r.Outcome = ch.ID, now, OutcomeSuppressed
+		a.record(r)
+	}
+}
+
+func (a *Applier) buildAlertPayload(m store.Monitor, set *pb.SetMonitorState, from, to store.MonitorStatus, event string, st State) cluster.AlertPayload {
 	p := cluster.AlertPayload{
 		AlertID:  fmt.Sprintf("degraded:%s:%s:%d:%s", a.opts.NodeID, m.ID, set.GetSinceMs(), to),
 		TenantID: m.TenantID, MonitorID: m.ID, MonitorName: m.Name, MonitorType: m.Type,
@@ -248,25 +266,25 @@ func (a *Applier) notify(ctx context.Context, m store.Monitor, set *pb.SetMonito
 	if inc := set.GetIncident(); to == store.StatusDown && inc != nil {
 		p.Cause, p.ErrorClass, p.IncidentID = inc.GetCause(), cluster.ErrorClassFromProto(inc.GetErrorClass()), inc.GetIncidentId()
 	}
+	return p
+}
 
-	for _, ch := range chans {
-		r := row
-		r.ChannelID = ch.ID
-		if !flooded {
-			if logged {
-				a.deliver(ctx, ch, p, &r)
-			} else {
-				a.deliver(ctx, ch, p, nil)
-			}
-			continue
+func (a *Applier) notifyChannel(ctx context.Context, ch store.NotificationChannel, p cluster.AlertPayload, row store.DegradedAlert, ns notifyState) {
+	row.ChannelID = ch.ID
+	if !ns.flooded {
+		var rowPtr *store.DegradedAlert
+		if ns.logged {
+			rowPtr = &row
 		}
-		if logged {
-			r.SentMs, r.Outcome = now, OutcomeSuppressed
-			a.record(r)
-		}
-		if n, ok := a.claimSummary(m.TenantID, ch.ID); ok {
-			a.sendSummary(ctx, ch, n, st)
-		}
+		a.deliver(ctx, ch, p, rowPtr)
+		return
+	}
+	if ns.logged {
+		row.SentMs, row.Outcome = ns.now, OutcomeSuppressed
+		a.record(row)
+	}
+	if n, ok := a.claimSummary(p.TenantID, ch.ID); ok {
+		a.sendSummary(ctx, ch, n, ns.st)
 	}
 }
 

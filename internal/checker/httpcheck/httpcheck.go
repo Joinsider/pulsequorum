@@ -25,6 +25,8 @@ import (
 // Type is the monitor type key.
 const Type = "http"
 
+const headerUserAgent = "User-Agent"
+
 // Checker runs HTTP(S) checks.
 type Checker struct {
 	// RootCAs overrides the system trust store (tests only).
@@ -275,9 +277,9 @@ func (c *Checker) request(ctx context.Context, env *checker.Env, cfg *Config) (*
 	}
 	switch ua := cfg.UserAgent; {
 	case ua != "":
-		req.Header.Set("User-Agent", ua)
-	case req.Header.Get("User-Agent") == "":
-		req.Header.Set("User-Agent", env.UserAgent)
+		req.Header.Set(headerUserAgent, ua)
+	case req.Header.Get(headerUserAgent) == "":
+		req.Header.Set(headerUserAgent, env.UserAgent)
 	}
 	if cfg.Auth != nil {
 		switch cfg.Auth.Type {

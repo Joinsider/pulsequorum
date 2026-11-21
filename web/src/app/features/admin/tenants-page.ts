@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -43,7 +50,7 @@ export interface TenantActionError {
   styleUrl: './tenants-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TenantsPage {
+export class TenantsPage implements OnInit {
   private readonly api = inject(TenantAdminService);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
@@ -68,7 +75,7 @@ export class TenantsPage {
     }));
   });
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 

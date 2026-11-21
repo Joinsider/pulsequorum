@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -40,7 +47,7 @@ export interface UserRow {
   styleUrl: './users-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class UsersPage {
+export class UsersPage implements OnInit {
   private readonly api = inject(UsersService);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
@@ -67,7 +74,7 @@ export class UsersPage {
       }));
   });
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 

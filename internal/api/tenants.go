@@ -34,6 +34,7 @@ import (
 const (
 	tenantIDRule   = "must be 1 to 64 characters of a-z, 0-9 and '-'"
 	tenantNameRule = "must be 1 to 100 characters without control characters or surrounding spaces"
+	fieldLimits    = "/limits"
 )
 
 // ListPlans returns the plans with the number of tenants on each.
@@ -94,7 +95,7 @@ func (h *Handlers) PutPlan(ctx context.Context, req gen.PutPlanRequestObject) (g
 		return nil, requestBodyRequired()
 	}
 	if req.PlanId == tenant.SystemPlanID {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity", Detail: "the system plan cannot be changed"}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleUnprocessableEntity, Detail: "the system plan cannot be changed"}
 	}
 	var fields []checker.FieldError
 	if !tenant.ValidID(req.PlanId) {
@@ -105,7 +106,7 @@ func (h *Handlers) PutPlan(ctx context.Context, req gen.PutPlanRequestObject) (g
 	}
 	limits, err := planLimits(req.Body.Limits)
 	if err != nil {
-		fields = append(fields, fieldError("/limits", limitMessage(err)))
+		fields = append(fields, fieldError(fieldLimits, limitMessage(err)))
 	}
 	if err := validationProblem(fields, "the plan is invalid"); err != nil {
 		return nil, err
@@ -144,7 +145,7 @@ func (h *Handlers) DeletePlan(ctx context.Context, req gen.DeletePlanRequestObje
 		return nil, err
 	}
 	if req.PlanId == tenant.DefaultPlanID {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity", Detail: "the default plan cannot be deleted"}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleUnprocessableEntity, Detail: "the default plan cannot be deleted"}
 	}
 	counts, err := h.planCounts(ctx)
 	if err != nil {
@@ -230,7 +231,7 @@ func (h *Handlers) CreateTenant(ctx context.Context, req gen.CreateTenantRequest
 	if in.Limits != nil {
 		s, err := overridesJSON(*in.Limits)
 		if err != nil {
-			fields = append(fields, fieldError("/limits", limitMessage(err)))
+			fields = append(fields, fieldError(fieldLimits, limitMessage(err)))
 		} else {
 			limits = s
 		}
@@ -309,7 +310,7 @@ func (h *Handlers) UpdateTenant(ctx context.Context, req gen.UpdateTenantRequest
 	if in.Limits != nil {
 		s, err := overridesJSON(*in.Limits)
 		if err != nil {
-			fields = append(fields, fieldError("/limits", limitMessage(err)))
+			fields = append(fields, fieldError(fieldLimits, limitMessage(err)))
 		} else {
 			upd.LimitsJson = &s
 		}
@@ -370,7 +371,7 @@ func (h *Handlers) ResumeTenant(ctx context.Context, req gen.ResumeTenantRequest
 // are never suspended.
 func (h *Handlers) setSuspended(ctx context.Context, p auth.Principal, id string, suspended bool) (gen.Tenant, error) {
 	if tenant.Protected(id) {
-		return gen.Tenant{}, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity",
+		return gen.Tenant{}, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleUnprocessableEntity,
 			Detail: fmt.Sprintf("tenant %s cannot be suspended or resumed", id)}
 	}
 	current, err := h.adminTenant(ctx, id)
@@ -409,10 +410,10 @@ func (h *Handlers) DeleteTenant(ctx context.Context, req gen.DeleteTenantRequest
 	}
 	switch {
 	case tenant.Protected(current.ID):
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity",
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleUnprocessableEntity,
 			Detail: fmt.Sprintf("tenant %s cannot be deleted", current.ID)}
 	case req.Body.ConfirmName != current.Name:
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Unprocessable Entity",
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleUnprocessableEntity,
 			Detail: "confirmName does not match the tenant name"}
 	case !current.Suspended:
 		return nil, &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "suspend the tenant before deleting it"}
