@@ -91,6 +91,11 @@
     "countRequired": "Gib die Anzahl der Nodes ein.",
     "nodesRequired": "Gib mindestens eine Node-ID ein."
   },
+  "pem": {
+    "loadFile": "Datei laden…",
+    "tooLarge": "Die Datei ist größer als 16 KiB.",
+    "notPem": "Keine PEM-Datei (PKCS#12/DER bitte mit openssl umwandeln)"
+  },
   "schema": {
     "http": {
       "url": {
@@ -169,6 +174,18 @@
       "userAgent": {
         "label": "User-Agent",
         "hint": "Höchstens 256 Zeichen"
+      },
+      "clientCertificate": {
+        "label": "Client-Zertifikat (mTLS)",
+        "hint": "Wird nur gesendet, wenn der Server ein Zertifikat anfordert, und nur an den Host der URL. PKCS#12 bitte vorher mit openssl umwandeln.",
+        "certificate": {
+          "label": "Zertifikat (PEM)",
+          "hint": "Blatt-Zertifikat zuerst, optional danach Zwischenzertifikate."
+        },
+        "privateKey": {
+          "label": "Privater Schlüssel (PEM)",
+          "hint": "Unverschlüsselt als PKCS#8, PKCS#1 oder SEC 1. Wird verschlüsselt gespeichert und maskiert angezeigt."
+        }
       }
     },
     "tcp": {

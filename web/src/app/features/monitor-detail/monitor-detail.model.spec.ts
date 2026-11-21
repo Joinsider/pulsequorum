@@ -10,6 +10,7 @@ import {
   appendHeartbeat,
   bucketSeries,
   buildNodeSeries,
+  clientCertificateInfo,
   collectPages,
   incidentDuration,
   isNotFound,
@@ -243,5 +244,43 @@ describe('uptimeQuery and isNotFound', () => {
     expect(isNotFound(new HttpErrorResponse({ status: 404 }))).toBe(true);
     expect(isNotFound(new HttpErrorResponse({ status: 500 }))).toBe(false);
     expect(isNotFound(undefined)).toBe(false);
+  });
+});
+
+describe('clientCertificateInfo', () => {
+  it('reads subject, issuer, expiry and the sent flag from the result details', () => {
+    expect(
+      clientCertificateInfo({
+        clientCertSubject: 'CN=client',
+        clientCertIssuer: 'CN=ca',
+        clientCertNotAfter: '2027-01-01T00:00:00Z',
+        clientCertSent: true,
+      }),
+    ).toEqual({
+      subject: 'CN=client',
+      issuer: 'CN=ca',
+      notAfter: '2027-01-01T00:00:00Z',
+      sent: true,
+    });
+  });
+
+  it('returns null without a client certificate subject', () => {
+    expect(clientCertificateInfo(undefined)).toBeNull();
+    expect(clientCertificateInfo({ statusCode: 200 })).toBeNull();
+    expect(clientCertificateInfo({ clientCertSubject: '' })).toBeNull();
+  });
+
+  it('defaults missing optional facts to empty values and not sent', () => {
+    expect(clientCertificateInfo({ clientCertSubject: 'CN=client' })).toEqual({
+      subject: 'CN=client',
+      issuer: '',
+      notAfter: '',
+      sent: false,
+    });
+  });
+
+  it('treats a non-boolean sent flag as not sent', () => {
+    const info = clientCertificateInfo({ clientCertSubject: 'CN=client', clientCertSent: 'yes' });
+    expect(info?.sent).toBe(false);
   });
 });

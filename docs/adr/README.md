@@ -47,3 +47,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0039](0039-ca-rotation.md) | CA-Rotation mit überlappendem Trust-Bundle | Accepted | 2026-11-20 |
 | [0040](0040-ci-cd-haertung-und-manuelle-releases.md) | CI/CD-Härtung und manuell ausgelöste, signierte Releases | Accepted | 2026-11-20 |
 | [0041](0041-projektname-und-veroeffentlichung.md) | Projektname Pulsequorum und Veröffentlichung als öffentliches Repository | Accepted | 2026-11-20 |
+| [0042](0042-client-zertifikate-fuer-http-monitore.md) | Client-Zertifikate (mTLS) für HTTP-Monitore | Accepted | 2026-11-21 |

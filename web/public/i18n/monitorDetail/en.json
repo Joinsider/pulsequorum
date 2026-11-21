@@ -22,7 +22,13 @@
     "latency": "Latency",
     "node": "Node",
     "errorClass": "Error class",
-    "message": "Message"
+    "message": "Message",
+    "clientCert": {
+      "subject": "Client certificate",
+      "issuer": "Issuer",
+      "notAfter": "Valid until",
+      "sent": "Certificate sent"
+    }
   },
   "errorHints": {
     "ssrfBlocked": "The target address is in a blocked network range (private, loopback, link-local or cloud metadata). SSRF protection is on for this installation."

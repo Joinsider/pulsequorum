@@ -31,6 +31,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/authswitch"
 	"github.com/joinsider/pulsequorum/internal/checker"
 	_ "github.com/joinsider/pulsequorum/internal/checker/builtin" // registers all monitor types
+	"github.com/joinsider/pulsequorum/internal/checker/httpcheck"
 	"github.com/joinsider/pulsequorum/internal/checker/icmpcheck"
 	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/clusterhost"
@@ -190,7 +191,9 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	// Capabilities tell the other nodes which monitors this node can run (ADR 0017).
-	var capabilities []string
+	// http-client-cert tells the API that this binary understands client
+	// certificates in HTTP monitors (ADR 0042).
+	capabilities := []string{httpcheck.ClientCertCapability}
 	if icmpMode != icmpcheck.ModeOff {
 		capabilities = append(capabilities, icmpcheck.Capability)
 	}

@@ -35,3 +35,4 @@ Bitte halte dich an die Projektkonventionen aus [CLAUDE.md](CLAUDE.md):
 - **Architekturentscheidungen:** Große Änderungen (siehe CLAUDE.md, Regel 2) brauchen vorab einen ADR in `docs/adr/`.
 - **Sprache:** Dokumentation auf Deutsch, Code, Bezeichner, Kommentare und Log-Meldungen auf Englisch.
 - **SPDX-Header:** Neue Quelldateien erhalten den Header `SPDX-License-Identifier: AGPL-3.0-only` mit Copyright-Zeile.
+- **Sicherheitslücken:** bitte nicht als Issue melden, siehe [SECURITY.md](SECURITY.md).

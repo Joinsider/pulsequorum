@@ -189,6 +189,37 @@ export function splitDuration(ms: number): DurationParts {
   return { unit: 'days', count: Math.round(seconds / 86_400) };
 }
 
+/**
+ * Client certificate facts of a check result (ADR 0042). The API sends them in
+ * the result `details`; they are absent when the check used no client certificate.
+ */
+export interface ClientCertificateInfo {
+  subject: string;
+  issuer: string;
+  /** Expiry as RFC 3339 timestamp; empty when the server did not send one. */
+  notAfter: string;
+  /** Whether the certificate was sent in the handshake. */
+  sent: boolean;
+}
+
+/** Reads the client certificate facts from check result details, or null when absent. */
+export function clientCertificateInfo(
+  details: Record<string, unknown> | undefined,
+): ClientCertificateInfo | null {
+  const subject = details?.['clientCertSubject'];
+  if (typeof subject !== 'string' || subject === '') {
+    return null;
+  }
+  const issuer = details?.['clientCertIssuer'];
+  const notAfter = details?.['clientCertNotAfter'];
+  return {
+    subject,
+    issuer: typeof issuer === 'string' ? issuer : '',
+    notAfter: typeof notAfter === 'string' ? notAfter : '',
+    sent: details?.['clientCertSent'] === true,
+  };
+}
+
 /** Monitor target for display: the first address-like field of the type config. */
 export function monitorTarget(config: Record<string, unknown> | undefined): string {
   if (!config) {

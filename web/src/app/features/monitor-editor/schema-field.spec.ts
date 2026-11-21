@@ -19,6 +19,11 @@ const EN = {
             options: { basic: 'Basic' },
           },
         },
+        clientCertificate: {
+          label: 'Client certificate (mTLS)',
+          certificate: { label: 'Certificate (PEM)' },
+          privateKey: { label: 'Private key (PEM)' },
+        },
       },
     },
   },
@@ -178,5 +183,43 @@ describe('SchemaField texts', () => {
     expect(field['childPath']('type')).toBe('auth.type');
     const root = create({ type: 'object', properties: {} }, '');
     expect(root['childPath']('url')).toBe('url');
+  });
+
+  it('labels the client certificate object and its PEM fields', () => {
+    const object = create({ type: 'object', properties: {} }, 'clientCertificate');
+    expect(object['title']()).toBe('Client certificate (mTLS)');
+
+    const certificate = create(
+      { type: 'string', maxLength: 16384 },
+      'clientCertificate.certificate',
+      undefined,
+      true,
+    );
+    expect(certificate['title']()).toBe('Certificate (PEM)');
+  });
+
+  it('renders long PEM strings with the PEM field instead of a single-line input', () => {
+    create({ type: 'string', maxLength: 16384 }, 'clientCertificate.certificate', '', true);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('app-pem-field textarea')).not.toBeNull();
+    expect(el.querySelector('input:not([type="file"])')).toBeNull();
+  });
+
+  it('keeps a stored private key masked and offers the replace action', () => {
+    create(
+      { type: 'string', writeOnly: true, maxLength: 16384 },
+      'clientCertificate.privateKey',
+      '***',
+    );
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('monitorEditor.secret.stored');
+    expect(el.querySelector('app-pem-field')).toBeNull();
+
+    const replace = el.querySelector<HTMLButtonElement>('.secret-state button');
+    replace?.click();
+    fixture.detectChanges();
+
+    expect(el.querySelector('app-pem-field textarea')).not.toBeNull();
+    expect(fixture.componentInstance['secretMode']()).toBe('entered');
   });
 });

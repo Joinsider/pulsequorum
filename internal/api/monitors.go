@@ -269,6 +269,9 @@ func (h *Handlers) UpdateMonitor(ctx context.Context, req gen.UpdateMonitorReque
 	if doc, err = h.sealSecrets(doc, current.ID, previous); err != nil {
 		return nil, err
 	}
+	if err := h.validateResolved(ctx, doc, current.ID); err != nil {
+		return nil, err
+	}
 	m, err := h.replace(ctx, p, current, doc, "")
 	if err != nil {
 		return nil, err
@@ -628,6 +631,9 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 			add("/config"+f.Field, f.Message)
 		}
 	default:
+		if err := h.checkClusterCapabilities(ctx, in.Type, cfg, add); err != nil {
+			return cluster.MonitorDocument{}, err
+		}
 		// The destination hosts are checked against the node's address policy
 		// once the configuration itself is valid (ADR 0030).
 		if h.deps.SSRFPolicy != nil {

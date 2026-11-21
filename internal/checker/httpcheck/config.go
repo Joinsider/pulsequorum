@@ -49,6 +49,8 @@ type Config struct {
 	TLSTimeoutMs            int               `json:"tlsTimeoutMs,omitempty"`
 	ResponseHeaderTimeoutMs int               `json:"responseHeaderTimeoutMs,omitempty"`
 	UserAgent               string            `json:"userAgent,omitempty"`
+	// ClientCertificate is presented when the server asks for one (ADR 0042).
+	ClientCertificate *ClientCertificate `json:"clientCertificate,omitempty"`
 }
 
 // Auth adds Basic or Bearer authentication.
@@ -124,7 +126,18 @@ const schemaJSON = `{
     "connectTimeoutMs": {"type": "integer", "minimum": 1},
     "tlsTimeoutMs": {"type": "integer", "minimum": 1},
     "responseHeaderTimeoutMs": {"type": "integer", "minimum": 1},
-    "userAgent": {"type": "string", "maxLength": 256}
+    "userAgent": {"type": "string", "maxLength": 256},
+    "clientCertificate": {
+      "type": "object",
+      "title": "Client certificate (mTLS)",
+      "description": "Sent only when the server asks for one, and only to the host of the URL",
+      "additionalProperties": false,
+      "required": ["certificate", "privateKey"],
+      "properties": {
+        "certificate": {"type": "string", "title": "Certificate (PEM)", "minLength": 1, "maxLength": 16384, "description": "Leaf certificate first, optionally followed by intermediates"},
+        "privateKey": {"type": "string", "title": "Private key (PEM)", "minLength": 1, "maxLength": 16384, "writeOnly": true, "description": "Unencrypted PKCS#8, PKCS#1 or SEC 1; stored encrypted and shown masked"}
+      }
+    }
   }
 }`
 
@@ -207,6 +220,9 @@ func validate(raw json.RawMessage) error {
 		case c.Auth.Type == "bearer" && c.Auth.Token == "":
 			add("/auth/token", "required for bearer auth")
 		}
+	}
+	if c.ClientCertificate != nil {
+		validateClientCertificate(c.ClientCertificate, add)
 	}
 	for name, value := range c.Headers {
 		if !validHeaderName(name) || strings.ContainsAny(value, "\r\n") {

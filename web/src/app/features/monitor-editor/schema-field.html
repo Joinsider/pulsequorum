@@ -63,30 +63,40 @@
   }
 
   @case ('string') {
-    <mat-form-field appearance="outline" class="full">
-      <mat-label>{{ title() }}</mat-label>
-      <input
-        matInput
-        [attr.type]="isUri() ? 'url' : 'text'"
-        autocomplete="off"
-        autocapitalize="none"
-        spellcheck="false"
-        [formControl]="leaf()"
+    @if (pem()) {
+      <app-pem-field
+        [control]="leaf()"
+        [label]="title()"
+        [hint]="description()"
         [required]="required()"
+        [error]="error()"
       />
-      @if (description()) {
-        <mat-hint>{{ description() }}</mat-hint>
-      }
-      @if (error(); as msg) {
-        <mat-error>
-          @if (msg.text) {
-            {{ msg.text }}
-          } @else {
-            {{ msg.key! | transloco: msg.params }}
-          }
-        </mat-error>
-      }
-    </mat-form-field>
+    } @else {
+      <mat-form-field appearance="outline" class="full">
+        <mat-label>{{ title() }}</mat-label>
+        <input
+          matInput
+          [attr.type]="isUri() ? 'url' : 'text'"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          [formControl]="leaf()"
+          [required]="required()"
+        />
+        @if (description()) {
+          <mat-hint>{{ description() }}</mat-hint>
+        }
+        @if (error(); as msg) {
+          <mat-error>
+            @if (msg.text) {
+              {{ msg.text }}
+            } @else {
+              {{ msg.key! | transloco: msg.params }}
+            }
+          </mat-error>
+        }
+      </mat-form-field>
+    }
   }
 
   @case ('secret') {
@@ -129,30 +139,40 @@
       }
     }
     @if (secretMode() !== 'stored' && secretMode() !== 'removed') {
-      <mat-form-field appearance="outline" class="full">
-        <mat-label>{{ title() }}</mat-label>
-        <input
-          matInput
-          type="password"
-          autocomplete="new-password"
-          autocapitalize="none"
-          spellcheck="false"
-          [formControl]="leaf()"
+      @if (pem()) {
+        <app-pem-field
+          [control]="leaf()"
+          [label]="title()"
+          [hint]="description()"
           [required]="required()"
+          [error]="error()"
         />
-        @if (description()) {
-          <mat-hint>{{ description() }}</mat-hint>
-        }
-        @if (error(); as msg) {
-          <mat-error>
-            @if (msg.text) {
-              {{ msg.text }}
-            } @else {
-              {{ msg.key! | transloco: msg.params }}
-            }
-          </mat-error>
-        }
-      </mat-form-field>
+      } @else {
+        <mat-form-field appearance="outline" class="full">
+          <mat-label>{{ title() }}</mat-label>
+          <input
+            matInput
+            type="password"
+            autocomplete="new-password"
+            autocapitalize="none"
+            spellcheck="false"
+            [formControl]="leaf()"
+            [required]="required()"
+          />
+          @if (description()) {
+            <mat-hint>{{ description() }}</mat-hint>
+          }
+          @if (error(); as msg) {
+            <mat-error>
+              @if (msg.text) {
+                {{ msg.text }}
+              } @else {
+                {{ msg.key! | transloco: msg.params }}
+              }
+            </mat-error>
+          }
+        </mat-form-field>
+      }
       @if (secret(); as sc) {
         @if (sc.stored) {
           <div class="secret-actions">

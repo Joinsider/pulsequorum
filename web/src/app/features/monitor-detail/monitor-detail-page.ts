@@ -51,6 +51,7 @@ import {
   appendHeartbeat,
   buildNodeSeries,
   bucketSeries,
+  clientCertificateInfo,
   collectPages,
   heartbeatWindowStart,
   incidentDuration,
@@ -246,6 +247,11 @@ export class MonitorDetailPage {
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(time);
+  }
+
+  /** Client certificate facts of a check result, or null when the check sent none. */
+  protected clientCert(result: CheckResult) {
+    return clientCertificateInfo(result.details);
   }
 
   protected locale(): string {

@@ -18,6 +18,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 import { asapScheduler, observeOn, scan, switchMap } from 'rxjs';
 import { Icon } from '../../shared/icon/icon';
+import { PemField, isPemField } from './pem-field';
 import {
   JsonSchema,
   SecretControl,
@@ -54,6 +55,7 @@ import {
     MatSlideToggleModule,
     TranslocoPipe,
     Icon,
+    PemField,
   ],
   templateUrl: './schema-field.html',
   styles: `
@@ -215,6 +217,8 @@ export class SchemaField {
     }));
   });
   protected readonly isUri = computed(() => this.schema().format === 'uri');
+  /** PEM text (certificate or key): edited with the file loader of {@link PemField}. */
+  protected readonly pem = computed(() => isPemField(this.schema(), this.path()));
 
   /** Object properties in display order (x-order, else required first; composites last). */
   protected readonly properties = computed(() => orderedProperties(this.schema()));
