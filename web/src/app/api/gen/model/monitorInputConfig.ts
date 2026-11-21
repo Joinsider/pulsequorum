@@ -17,5 +17,6 @@
  * stored encrypted and returned as `***`. On update, `***` or an omitted
  * field keeps the stored secret (same type only), a new value replaces it
  * and an empty string removes it. `***` without a stored secret is a 422.
+ * Private keys of client certificates (`clientCertificate.privateKey`) are secrets too (ADR 0042).
  */
 export type MonitorInputConfig = { [key: string]: unknown };
