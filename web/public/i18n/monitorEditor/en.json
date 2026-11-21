@@ -91,6 +91,11 @@
     "countRequired": "Enter the number of nodes.",
     "nodesRequired": "Enter at least one node ID."
   },
+  "pem": {
+    "loadFile": "Load file…",
+    "tooLarge": "The file is larger than 16 KiB.",
+    "notPem": "Not a PEM file (convert PKCS#12/DER with openssl first)"
+  },
   "schema": {
     "http": {
       "url": {
@@ -169,6 +174,18 @@
       "userAgent": {
         "label": "User agent",
         "hint": "At most 256 characters"
+      },
+      "clientCertificate": {
+        "label": "Client certificate (mTLS)",
+        "hint": "Sent only when the server asks for a certificate, and only to the host of the URL. Convert PKCS#12 with openssl first.",
+        "certificate": {
+          "label": "Certificate (PEM)",
+          "hint": "Leaf certificate first, optionally followed by intermediate certificates."
+        },
+        "privateKey": {
+          "label": "Private key (PEM)",
+          "hint": "Unencrypted PKCS#8, PKCS#1 or SEC 1. Stored encrypted and shown masked."
+        }
       }
     },
     "tcp": {

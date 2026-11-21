@@ -1,0 +1,41 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<mat-form-field appearance="outline" class="full">
+  <mat-label>{{ label() }}</mat-label>
+  <textarea
+    matInput
+    class="mono"
+    rows="6"
+    autocomplete="off"
+    autocapitalize="none"
+    spellcheck="false"
+    [formControl]="control()"
+    [required]="required()"
+  ></textarea>
+  @if (hint()) {
+    <mat-hint>{{ hint() }}</mat-hint>
+  }
+  @if (error(); as msg) {
+    <mat-error>
+      @if (msg.text) {
+        {{ msg.text }}
+      } @else {
+        {{ msg.key! | transloco: msg.params }}
+      }
+    </mat-error>
+  }
+</mat-form-field>
+<div class="actions">
+  <input
+    #fileInput
+    type="file"
+    accept=".pem,.crt,.cer,.key,.txt"
+    hidden
+    (change)="onFile($event)"
+  />
+  <button mat-stroked-button type="button" (click)="fileInput.click()">
+    {{ 'monitorEditor.pem.loadFile' | transloco }}
+  </button>
+</div>
+@if (fileError(); as key) {
+  <p class="error-text" role="alert">{{ key | transloco }}</p>
+}

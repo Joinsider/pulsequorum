@@ -22,7 +22,13 @@
     "latency": "Latenz",
     "node": "Node",
     "errorClass": "Fehlerklasse",
-    "message": "Meldung"
+    "message": "Meldung",
+    "clientCert": {
+      "subject": "Client-Zertifikat",
+      "issuer": "Aussteller",
+      "notAfter": "Gültig bis",
+      "sent": "Zertifikat gesendet"
+    }
   },
   "errorHints": {
     "ssrfBlocked": "Die Zieladresse liegt in einem gesperrten Netzbereich (privat, Loopback, Link-Local oder Cloud-Metadaten). Auf dieser Installation ist der SSRF-Schutz aktiv."

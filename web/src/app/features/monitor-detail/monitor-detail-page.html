@@ -106,6 +106,28 @@
               <dd>{{ r.message }}</dd>
             </div>
           }
+          @if (clientCert(r); as cert) {
+            <div class="wide">
+              <dt>{{ t('monitorDetail.test.clientCert.subject') }}</dt>
+              <dd>{{ cert.subject }}</dd>
+            </div>
+            @if (cert.issuer) {
+              <div class="wide">
+                <dt>{{ t('monitorDetail.test.clientCert.issuer') }}</dt>
+                <dd>{{ cert.issuer }}</dd>
+              </div>
+            }
+            @if (cert.notAfter) {
+              <div>
+                <dt>{{ t('monitorDetail.test.clientCert.notAfter') }}</dt>
+                <dd>{{ formatTime(cert.notAfter) }}</dd>
+              </div>
+            }
+            <div>
+              <dt>{{ t('monitorDetail.test.clientCert.sent') }}</dt>
+              <dd>{{ t(cert.sent ? 'common.yes' : 'common.no') }}</dd>
+            </div>
+          }
         </dl>
         @if (r.errorClass === 'ssrf_blocked') {
           <p class="muted hint" role="note">{{ t('monitorDetail.errorHints.ssrfBlocked') }}</p>
