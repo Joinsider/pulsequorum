@@ -205,15 +205,17 @@ type Config struct {
 	ShutdownTimeout time.Duration
 }
 
+func envOrDefault(getenv func(string) string, key, def string) string {
+	if v := strings.TrimSpace(getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
 // Load reads the configuration using getenv (usually os.Getenv) and validates it.
 // All validation errors are reported at once.
 func Load(getenv func(string) string) (Config, error) {
-	get := func(key, def string) string {
-		if v := strings.TrimSpace(getenv(key)); v != "" {
-			return v
-		}
-		return def
-	}
+	get := func(key, def string) string { return envOrDefault(getenv, key, def) }
 
 	hostname, _ := os.Hostname()
 	cfg := Config{
@@ -227,6 +229,26 @@ func Load(getenv func(string) string) (Config, error) {
 		LogFormat:   get("LOG_FORMAT", "json"),
 	}
 
+	var errs []error
+	errs = append(errs, loadCore(get, &cfg)...)
+	errs = append(errs, loadURLsAndCORS(get, &cfg)...)
+	errs = append(errs, loadSecurity(get, getenv, &cfg)...)
+	errs = append(errs, loadCluster(get, getenv, &cfg)...)
+	errs = append(errs, loadRetentionAndAlerts(get, &cfg)...)
+	errs = append(errs, loadSelfHealthAndDegraded(get, getenv, &cfg)...)
+	errs = append(errs, loadMetricsConfig(get, getenv, &cfg)...)
+	errs = append(errs, loadSystemAlertThresholds(get, getenv, &cfg)...)
+
+	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
+	if err != nil || timeout <= 0 {
+		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: must be a positive duration, got %q", getenv("SHUTDOWN_TIMEOUT")))
+	}
+	cfg.ShutdownTimeout = timeout
+
+	return cfg, errors.Join(errs...)
+}
+
+func loadCore(get func(string, string) string, cfg *Config) []error {
 	var errs []error
 	switch cfg.Role {
 	case RoleVoter, RoleProbe:
@@ -252,37 +274,47 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.NodeName == "" {
 		errs = append(errs, errors.New("NODE_NAME: must not be empty"))
 	}
-
 	if err := cfg.LogLevel.UnmarshalText([]byte(get("LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL: %w", err))
 	}
-
 	switch cfg.LogFormat {
 	case "json", "text":
 	default:
 		errs = append(errs, fmt.Errorf("LOG_FORMAT: must be \"json\" or \"text\", got %q", cfg.LogFormat))
 	}
+	return errs
+}
 
-	if cfg.PublicURL != "" {
-		u, err := url.Parse(cfg.PublicURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			errs = append(errs, fmt.Errorf("PUBLIC_URL: must be an absolute http(s) URL, got %q", cfg.PublicURL))
-		}
+func loadURLsAndCORS(get func(string, string) string, cfg *Config) []error {
+	var errs []error
+	if err := validatePublicURL(cfg); err != nil {
+		errs = append(errs, err)
 	}
+	errs = append(errs, loadCORSOrigins(get("CORS_ORIGINS", ""), cfg)...)
+	return errs
+}
 
-	if cfg.PublicURL != "" {
-		if o, err := ParseOrigin(cfg.PublicURL); err == nil {
-			cfg.CORSOrigins = append(cfg.CORSOrigins, o)
-		}
+func validatePublicURL(cfg *Config) error {
+	if cfg.PublicURL == "" {
+		return nil
 	}
-	for _, raw := range strings.Split(get("CORS_ORIGINS", ""), ",") {
+	u, err := url.Parse(cfg.PublicURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("PUBLIC_URL: must be an absolute http(s) URL, got %q", cfg.PublicURL)
+	}
+	if o, err := ParseOrigin(cfg.PublicURL); err == nil {
+		cfg.CORSOrigins = append(cfg.CORSOrigins, o)
+	}
+	return nil
+}
+
+func loadCORSOrigins(rawList string, cfg *Config) []error {
+	var errs []error
+	for _, raw := range strings.Split(rawList, ",") {
 		if raw = strings.TrimSpace(raw); raw == "" {
 			continue
 		}
-		o, err := ParseOrigin(raw)
-		if u, _ := url.Parse(raw); err == nil && u.Path != "" && u.Path != "/" {
-			err = fmt.Errorf("must be an origin without path, got %q", raw)
-		}
+		o, err := parseCORSOrigin(raw)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("CORS_ORIGINS: %w", err))
 			continue
@@ -291,7 +323,22 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.CORSOrigins = append(cfg.CORSOrigins, o)
 		}
 	}
+	return errs
+}
 
+func parseCORSOrigin(raw string) (string, error) {
+	o, err := ParseOrigin(raw)
+	if err != nil {
+		return "", err
+	}
+	if u, _ := url.Parse(raw); u.Path != "" && u.Path != "/" {
+		return "", fmt.Errorf("must be an origin without path, got %q", raw)
+	}
+	return o, nil
+}
+
+func loadSecurity(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
 	cfg.MasterKey = getenv("MASTER_KEY")
 	cfg.MasterKeyFile = get("MASTER_KEY_FILE", "")
 	if cfg.MasterKey != "" && cfg.MasterKeyFile != "" {
@@ -311,7 +358,11 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("SSRF_PROTECTION: must be auto, on or off, got %q", cfg.SSRFProtection))
 	}
+	return errs
+}
 
+func loadCluster(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
 	cfg.ClusterAdvertise = get("CLUSTER_ADVERTISE", "")
 	if cfg.ClusterAdvertise == "" {
 		_, port, _ := net.SplitHostPort(cfg.ClusterAddr)
@@ -321,17 +372,10 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("CLUSTER_ADVERTISE: must be host:port, got %q", cfg.ClusterAdvertise))
 	}
 
-	for _, seed := range strings.Split(getenv("CLUSTER_JOIN"), ",") {
-		seed = strings.TrimSpace(seed)
-		if seed == "" {
-			continue
-		}
-		if host, port, err := net.SplitHostPort(seed); err != nil || host == "" || port == "" {
-			errs = append(errs, fmt.Errorf("CLUSTER_JOIN: entries must be host:port, got %q", seed))
-			continue
-		}
-		cfg.ClusterJoin = append(cfg.ClusterJoin, seed)
-	}
+	seeds, joinErrs := parseClusterJoin(getenv("CLUSTER_JOIN"))
+	cfg.ClusterJoin = seeds
+	errs = append(errs, joinErrs...)
+
 	cfg.JoinToken = getenv("JOIN_TOKEN")
 	cfg.JoinTokenFile = getenv("JOIN_TOKEN_FILE")
 	if cfg.JoinToken != "" && cfg.JoinTokenFile != "" {
@@ -343,26 +387,45 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("RAFT_TIMEOUT: must be a duration >= 100ms, got %q", getenv("RAFT_TIMEOUT")))
 	}
 	cfg.RaftTimeout = raftTimeout
+	return errs
+}
 
+func parseClusterJoin(raw string) ([]string, []error) {
+	var seeds []string
+	var errs []error
+	for _, seed := range strings.Split(raw, ",") {
+		seed = strings.TrimSpace(seed)
+		if seed == "" {
+			continue
+		}
+		if host, port, err := net.SplitHostPort(seed); err != nil || host == "" || port == "" {
+			errs = append(errs, fmt.Errorf("CLUSTER_JOIN: entries must be host:port, got %q", seed))
+			continue
+		}
+		seeds = append(seeds, seed)
+	}
+	return seeds, errs
+}
+
+func loadRetentionAndAlerts(get func(string, string) string, cfg *Config) []error {
+	var errs []error
 	switch v := get("RAW_COMPACTION", "true"); v {
 	case "true", "false":
 		cfg.RawCompaction = v == "true"
 	default:
 		errs = append(errs, fmt.Errorf("RAW_COMPACTION: must be true or false, got %q", v))
 	}
-	days := func(key, def string, minDays int) time.Duration {
-		v := get(key, def)
-		n, err := strconv.Atoi(v)
-		if err != nil || n < minDays {
-			errs = append(errs, fmt.Errorf("%s: must be a whole number of days >= %d, got %q", key, minDays, v))
-			return 0
-		}
-		return time.Duration(n) * 24 * time.Hour
-	}
 	// Raw data must outlive compaction and the rollup of the last day.
-	cfg.RetentionRaw = days("RETENTION_RAW_DAYS", "30", 3)
-	cfg.RetentionHourly = days("RETENTION_HOURLY_DAYS", "365", 1)
-	cfg.RetentionDaily = days("RETENTION_DAILY_DAYS", "0", 0)
+	var err error
+	if cfg.RetentionRaw, err = parseDays(get, "RETENTION_RAW_DAYS", "30", 3); err != nil {
+		errs = append(errs, err)
+	}
+	if cfg.RetentionHourly, err = parseDays(get, "RETENTION_HOURLY_DAYS", "365", 1); err != nil {
+		errs = append(errs, err)
+	}
+	if cfg.RetentionDaily, err = parseDays(get, "RETENTION_DAILY_DAYS", "0", 0); err != nil {
+		errs = append(errs, err)
+	}
 
 	auditRaw := get("AUDIT_RETENTION", "8760h")
 	auditRetention, err := time.ParseDuration(auditRaw)
@@ -389,7 +452,20 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("ALERT_BUNDLE_WINDOW: must be a duration of 0 or more, got %q", bundleRaw))
 	}
 	cfg.AlertBundleWindow = bundleWindow
+	return errs
+}
 
+func parseDays(get func(string, string) string, key, def string, minDays int) (time.Duration, error) {
+	v := get(key, def)
+	n, err := strconv.Atoi(v)
+	if err != nil || n < minDays {
+		return 0, fmt.Errorf("%s: must be a whole number of days >= %d, got %q", key, minDays, v)
+	}
+	return time.Duration(n) * 24 * time.Hour, nil
+}
+
+func loadSelfHealthAndDegraded(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
 	for _, raw := range strings.Split(getenv("SELF_CHECK_TARGETS"), ",") {
 		if raw = strings.TrimSpace(raw); raw != "" {
 			cfg.SelfCheckTargets = append(cfg.SelfCheckTargets, raw)
@@ -412,7 +488,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("DEGRADED_AFTER: must be a duration of 0 or more, got %q", degradedRaw))
 	}
 	cfg.DegradedAfter = degradedAfter
+	return errs
+}
 
+func loadMetricsConfig(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
 	cfg.MetricsAddr = get("METRICS_ADDR", "")
 	if cfg.MetricsAddr != "" {
 		_, port, err := net.SplitHostPort(cfg.MetricsAddr)
@@ -425,7 +505,12 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.MetricsToken != "" && cfg.MetricsTokenFile != "" {
 		errs = append(errs, errors.New("METRICS_TOKEN and METRICS_TOKEN_FILE: set only one"))
 	}
+	return errs
+}
 
+func loadSystemAlertThresholds(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
+	var err error
 	cfg.ReplicationLagAlert, err = durationAbove(get("REPLICATION_LAG_ALERT", "5m"), 0)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("REPLICATION_LAG_ALERT: must be a duration above 0, got %q", getenv("REPLICATION_LAG_ALERT")))
@@ -446,14 +531,7 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("WAL_SIZE_ALERT: must be a size above 0 such as 512MiB (B, KiB, MiB or GiB), got %q", walRaw))
 	}
 	cfg.WALSizeAlert = wal
-
-	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
-	if err != nil || timeout <= 0 {
-		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: must be a positive duration, got %q", getenv("SHUTDOWN_TIMEOUT")))
-	}
-	cfg.ShutdownTimeout = timeout
-
-	return cfg, errors.Join(errs...)
+	return errs
 }
 
 // durationAbove parses a duration that must be greater than floor.
@@ -541,29 +619,9 @@ func (c Config) SSRFProtectionEnabled() bool {
 // mode, which fixes the profile to zitadel. Variables that belong to the other
 // profile are errors instead of being ignored.
 func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error) {
-	var errs []error
-	var err error
-	add := func(e error) {
-		if e != nil {
-			errs = append(errs, e)
-		}
-	}
-	fail := func(format string, args ...any) {
-		errs = append(errs, fmt.Errorf(format, args...))
-	}
-
 	var c OIDCConfig
-	profile := OIDCProfile(get("OIDC_PROFILE", ""))
-	switch {
-	case alias:
-		if profile != "" && profile != ProfileZitadel {
-			fail("OIDC_PROFILE: AUTH_MODE=zitadel implies profile %q, got %q", ProfileZitadel, profile)
-		}
-		profile = ProfileZitadel
-	case profile == "":
-		profile = ProfileGeneric
-	case profile != ProfileGeneric && profile != ProfileZitadel:
-		fail("OIDC_PROFILE: must be %q or %q, got %q", ProfileGeneric, ProfileZitadel, profile)
+	profile, errs := parseOIDCProfile(get, alias)
+	if profile == "" {
 		return c, errs
 	}
 	c.Profile = profile
@@ -571,44 +629,85 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 	var autoErrs []error
 	c.AutoProvision, c.AutoProvisionPlan, c.AutoProvisionMax, autoErrs = loadAutoProvision(get, profile)
 	errs = append(errs, autoErrs...)
+	errs = append(errs, loadOIDCIdentity(get, &c)...)
+	errs = append(errs, loadOIDCAlgorithmsAndScopes(get, profile, &c)...)
 
+	if profile == ProfileZitadel {
+		errs = append(errs, loadOIDCZitadel(get, &c)...)
+		return c, errs
+	}
+	errs = append(errs, loadOIDCGeneric(get, &c)...)
+	return c, errs
+}
+
+func parseOIDCProfile(get func(string, string) string, alias bool) (OIDCProfile, []error) {
+	var errs []error
+	profile := OIDCProfile(get("OIDC_PROFILE", ""))
+	switch {
+	case alias:
+		if profile != "" && profile != ProfileZitadel {
+			errs = append(errs, fmt.Errorf("OIDC_PROFILE: AUTH_MODE=zitadel implies profile %q, got %q", ProfileZitadel, profile))
+		}
+		return ProfileZitadel, errs
+	case profile == "":
+		return ProfileGeneric, nil
+	case profile != ProfileGeneric && profile != ProfileZitadel:
+		errs = append(errs, fmt.Errorf("OIDC_PROFILE: must be %q or %q, got %q", ProfileGeneric, ProfileZitadel, profile))
+		return "", errs
+	}
+	return profile, nil
+}
+
+func loadOIDCIdentity(get func(string, string) string, c *OIDCConfig) []error {
+	var errs []error
+	var err error
 	c.InsecureHTTP, err = boolVar(get, "OIDC_INSECURE_HTTP", false)
-	add(err)
+	if err != nil {
+		errs = append(errs, err)
+	}
 
 	c.Issuer = get("OIDC_ISSUER", "")
 	if c.Issuer == "" {
-		fail("OIDC_ISSUER: required with AUTH_MODE=oidc")
+		errs = append(errs, errors.New("OIDC_ISSUER: required with AUTH_MODE=oidc"))
 	} else if e := checkIssuer(c.Issuer, c.InsecureHTTP); e != nil {
-		fail("OIDC_ISSUER: %v", e)
+		errs = append(errs, fmt.Errorf("OIDC_ISSUER: %w", e))
 	}
 
 	c.Audience = get("OIDC_AUDIENCE", "")
 	if c.Audience == "" {
-		fail("OIDC_AUDIENCE: required with AUTH_MODE=oidc")
+		errs = append(errs, errors.New("OIDC_AUDIENCE: required with AUTH_MODE=oidc"))
 	}
 
 	c.ClientIDs = splitList(get("OIDC_CLIENT_IDS", ""))
 	if len(c.ClientIDs) == 0 {
-		fail("OIDC_CLIENT_IDS: required with AUTH_MODE=oidc")
-	} else {
-		add(checkList("OIDC_CLIENT_IDS", c.ClientIDs))
+		errs = append(errs, errors.New("OIDC_CLIENT_IDS: required with AUTH_MODE=oidc"))
+	} else if err := checkList("OIDC_CLIENT_IDS", c.ClientIDs); err != nil {
+		errs = append(errs, err)
 	}
 
 	c.RequireAZP, err = boolVar(get, "OIDC_REQUIRE_AZP", true)
-	add(err)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
 
+func loadOIDCAlgorithmsAndScopes(get func(string, string) string, profile OIDCProfile, c *OIDCConfig) []error {
+	var errs []error
 	c.Algorithms = splitList(get("OIDC_ALGORITHMS", "RS256"))
-	add(checkList("OIDC_ALGORITHMS", c.Algorithms))
+	if err := checkList("OIDC_ALGORITHMS", c.Algorithms); err != nil {
+		errs = append(errs, err)
+	}
 	for _, alg := range c.Algorithms {
 		if alg != "" && !isOIDCAlgorithm(alg) {
-			fail("OIDC_ALGORITHMS: must be RS256, ES256 or EdDSA, got %q", alg)
+			errs = append(errs, fmt.Errorf("OIDC_ALGORITHMS: must be RS256, ES256 or EdDSA, got %q", alg))
 		}
 	}
 
 	ttlRaw := get("OIDC_MAX_TOKEN_TTL", "1h")
 	ttl, e := time.ParseDuration(ttlRaw)
 	if e != nil || ttl <= 0 || ttl > 12*time.Hour {
-		fail("OIDC_MAX_TOKEN_TTL: must be a duration above 0 and at most 12h, got %q", ttlRaw)
+		errs = append(errs, fmt.Errorf("OIDC_MAX_TOKEN_TTL: must be a duration above 0 and at most 12h, got %q", ttlRaw))
 	}
 	c.MaxTokenTTL = ttl
 
@@ -617,65 +716,69 @@ func loadOIDC(get func(key, def string) string, alias bool) (OIDCConfig, []error
 	} else {
 		c.Scopes = strings.FieldsFunc(scopesRaw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 		if !slices.Contains(c.Scopes, "openid") {
-			fail("OIDC_SCOPES: must contain openid, got %q", scopesRaw)
+			errs = append(errs, fmt.Errorf("OIDC_SCOPES: must contain openid, got %q", scopesRaw))
 		}
 	}
+	return errs
+}
 
-	if profile == ProfileZitadel {
-		if get("OIDC_ROLES_CLAIM", "") != "" {
-			fail("OIDC_ROLES_CLAIM: not used with OIDC_PROFILE=zitadel, roles come from the project claim")
+func loadOIDCZitadel(get func(string, string) string, c *OIDCConfig) []error {
+	var errs []error
+	for _, disallowed := range []struct{ key, msg string }{
+		{"OIDC_ROLES_CLAIM", "OIDC_ROLES_CLAIM: not used with OIDC_PROFILE=zitadel, roles come from the project claim"},
+		{"OIDC_ROLE_MAP", "OIDC_ROLE_MAP: not used with OIDC_PROFILE=zitadel"},
+		{"OIDC_ROLES_SOURCE", "OIDC_ROLES_SOURCE: not used with OIDC_PROFILE=zitadel"},
+		{"OIDC_DEFAULT_ROLE", "OIDC_DEFAULT_ROLE: not used with OIDC_PROFILE=zitadel"},
+	} {
+		if get(disallowed.key, "") != "" {
+			errs = append(errs, errors.New(disallowed.msg))
 		}
-		if get("OIDC_ROLE_MAP", "") != "" {
-			fail("OIDC_ROLE_MAP: not used with OIDC_PROFILE=zitadel")
-		}
-		if get("OIDC_ROLES_SOURCE", "") != "" {
-			fail("OIDC_ROLES_SOURCE: not used with OIDC_PROFILE=zitadel")
-		}
-		if get("OIDC_DEFAULT_ROLE", "") != "" {
-			fail("OIDC_DEFAULT_ROLE: not used with OIDC_PROFILE=zitadel")
-		}
-		c.Tenancy = Tenancy(get("OIDC_TENANCY", string(TenancySingle)))
-		if c.Tenancy != TenancySingle && c.Tenancy != TenancyMulti {
-			fail("OIDC_TENANCY: must be %q or %q, got %q", TenancySingle, TenancyMulti, c.Tenancy)
-		}
-		c.PlatformOrgID = get("ZITADEL_PLATFORM_ORG_ID", "")
-		if c.PlatformOrgID == "" {
-			fail("ZITADEL_PLATFORM_ORG_ID: required with OIDC_PROFILE=zitadel")
-		}
-		return c, errs
 	}
+	c.Tenancy = Tenancy(get("OIDC_TENANCY", string(TenancySingle)))
+	if c.Tenancy != TenancySingle && c.Tenancy != TenancyMulti {
+		errs = append(errs, fmt.Errorf("OIDC_TENANCY: must be %q or %q, got %q", TenancySingle, TenancyMulti, c.Tenancy))
+	}
+	c.PlatformOrgID = get("ZITADEL_PLATFORM_ORG_ID", "")
+	if c.PlatformOrgID == "" {
+		errs = append(errs, errors.New("ZITADEL_PLATFORM_ORG_ID: required with OIDC_PROFILE=zitadel"))
+	}
+	return errs
+}
 
+func loadOIDCGeneric(get func(string, string) string, c *OIDCConfig) []error {
+	var errs []error
 	if get("OIDC_TENANCY", "") != "" {
-		fail("OIDC_TENANCY: only valid with OIDC_PROFILE=zitadel")
+		errs = append(errs, errors.New("OIDC_TENANCY: only valid with OIDC_PROFILE=zitadel"))
 	}
 	if get("ZITADEL_PLATFORM_ORG_ID", "") != "" {
-		fail("ZITADEL_PLATFORM_ORG_ID: only valid with OIDC_PROFILE=zitadel")
+		errs = append(errs, errors.New("ZITADEL_PLATFORM_ORG_ID: only valid with OIDC_PROFILE=zitadel"))
 	}
 	c.Tenancy = TenancySingle
 	c.RolesClaim = get("OIDC_ROLES_CLAIM", "")
 	switch {
 	case c.RolesClaim == "":
-		fail("OIDC_ROLES_CLAIM: required with OIDC_PROFILE=generic")
+		errs = append(errs, errors.New("OIDC_ROLES_CLAIM: required with OIDC_PROFILE=generic"))
 	case !validClaimPath(c.RolesClaim):
-		fail("OIDC_ROLES_CLAIM: must be a dot path with non-empty segments, got %q", c.RolesClaim)
+		errs = append(errs, fmt.Errorf("OIDC_ROLES_CLAIM: must be a dot path with non-empty segments, got %q", c.RolesClaim))
 	}
+	var err error
 	c.RoleMap, err = parseRoleMap(get("OIDC_ROLE_MAP", ""))
 	if err != nil {
-		fail("OIDC_ROLE_MAP: %v", err)
+		errs = append(errs, fmt.Errorf("OIDC_ROLE_MAP: %w", err))
 	}
 	c.RolesSource = get("OIDC_ROLES_SOURCE", RolesSourceAccessToken)
 	if c.RolesSource != RolesSourceAccessToken && c.RolesSource != RolesSourceUserInfo {
-		fail("OIDC_ROLES_SOURCE: must be %q or %q, got %q", RolesSourceAccessToken, RolesSourceUserInfo, c.RolesSource)
+		errs = append(errs, fmt.Errorf("OIDC_ROLES_SOURCE: must be %q or %q, got %q", RolesSourceAccessToken, RolesSourceUserInfo, c.RolesSource))
 	}
 	c.DefaultRole = get("OIDC_DEFAULT_ROLE", "")
 	switch c.DefaultRole {
 	case "", "tenant-admin", "tenant-editor", "tenant-viewer":
 	case "platform-admin":
-		fail("OIDC_DEFAULT_ROLE: platform-admin cannot be a default role")
+		errs = append(errs, errors.New("OIDC_DEFAULT_ROLE: platform-admin cannot be a default role"))
 	default:
-		fail("OIDC_DEFAULT_ROLE: must be empty, tenant-admin, tenant-editor or tenant-viewer, got %q", c.DefaultRole)
+		errs = append(errs, fmt.Errorf("OIDC_DEFAULT_ROLE: must be empty, tenant-admin, tenant-editor or tenant-viewer, got %q", c.DefaultRole))
 	}
-	return c, errs
+	return errs
 }
 
 // Defaults of the automatic provisioning (ADR 0029). DefaultAutoProvisionMax

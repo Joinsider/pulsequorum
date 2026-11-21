@@ -26,66 +26,99 @@ func (m *MetricsStore) PurgeTenant(ctx context.Context, tenantID string, batchSi
 	limit := int64(batchSize)
 	var total int64
 	err := m.write(ctx, "purge tenant", func(q *metricsdb.Queries) error {
-		total = 0
-		n, err := q.PurgeHeartbeatsOfTenant(ctx, metricsdb.PurgeHeartbeatsOfTenantParams{TenantID: tenantID, RowLimit: limit})
-		if err != nil {
-			return mapErr(err)
-		}
-		total += n
-		n, err = q.PurgeDegradedAlertsOfTenant(ctx, metricsdb.PurgeDegradedAlertsOfTenantParams{TenantID: tenantID, RowLimit: limit})
-		if err != nil {
-			return mapErr(err)
-		}
-		total += n
-
-		rollupsLeft, minutesLeft := limit, limit
-		var after int64
-		for rollupsLeft > 0 || minutesLeft > 0 {
-			ids, err := q.ListSeriesIDsOfTenantAfter(ctx, metricsdb.ListSeriesIDsOfTenantAfterParams{
-				TenantID: tenantID, AfterID: after, RowLimit: seriesPage,
-			})
-			if err != nil {
-				return mapErr(err)
-			}
-			if len(ids) == 0 {
-				break
-			}
-			for _, id := range ids {
-				after = id
-				if rollupsLeft > 0 {
-					n, err := q.PurgeRollupsOfSeries(ctx, metricsdb.PurgeRollupsOfSeriesParams{SeriesID: id, RowLimit: rollupsLeft})
-					if err != nil {
-						return mapErr(err)
-					}
-					total += n
-					rollupsLeft -= n
-				}
-				if minutesLeft > 0 {
-					n, err := q.PurgeMinutesOfSeries(ctx, metricsdb.PurgeMinutesOfSeriesParams{SeriesID: id, RowLimit: minutesLeft})
-					if err != nil {
-						return mapErr(err)
-					}
-					total += n
-					minutesLeft -= n
-				}
-				if rollupsLeft <= 0 && minutesLeft <= 0 {
-					break
-				}
-			}
-		}
-
-		n, err = q.PurgeSeriesOfTenant(ctx, metricsdb.PurgeSeriesOfTenantParams{TenantID: tenantID, RowLimit: limit})
-		if err != nil {
-			return mapErr(err)
-		}
-		total += n
-		return nil
+		var err error
+		total, err = purgeTenantTx(ctx, q, tenantID, limit)
+		return err
 	})
 	if err != nil {
 		return 0, err
 	}
 	// Cached series IDs of the tenant may point at deleted rows; drop them.
 	m.series.forget(tenantID)
+	return total, nil
+}
+
+func purgeTenantTx(ctx context.Context, q *metricsdb.Queries, tenantID string, limit int64) (int64, error) {
+	var total int64
+	n, err := q.PurgeHeartbeatsOfTenant(ctx, metricsdb.PurgeHeartbeatsOfTenantParams{TenantID: tenantID, RowLimit: limit})
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	total += n
+	n, err = q.PurgeDegradedAlertsOfTenant(ctx, metricsdb.PurgeDegradedAlertsOfTenantParams{TenantID: tenantID, RowLimit: limit})
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	total += n
+	n, err = purgeTenantSeriesData(ctx, q, tenantID, limit)
+	if err != nil {
+		return 0, err
+	}
+	total += n
+	n, err = q.PurgeSeriesOfTenant(ctx, metricsdb.PurgeSeriesOfTenantParams{TenantID: tenantID, RowLimit: limit})
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	return total + n, nil
+}
+
+func purgeTenantSeriesData(ctx context.Context, q *metricsdb.Queries, tenantID string, limit int64) (int64, error) {
+	rollupsLeft, minutesLeft := limit, limit
+	var total, after int64
+	for rollupsLeft > 0 || minutesLeft > 0 {
+		ids, err := q.ListSeriesIDsOfTenantAfter(ctx, metricsdb.ListSeriesIDsOfTenantAfterParams{
+			TenantID: tenantID, AfterID: after, RowLimit: seriesPage,
+		})
+		if err != nil {
+			return 0, mapErr(err)
+		}
+		if len(ids) == 0 {
+			break
+		}
+		n, lastID, err := purgeSeriesBatch(ctx, q, ids, &rollupsLeft, &minutesLeft)
+		if err != nil {
+			return 0, err
+		}
+		total += n
+		after = lastID
+	}
+	return total, nil
+}
+
+func purgeSeriesBatch(ctx context.Context, q *metricsdb.Queries, ids []int64, rollupsLeft, minutesLeft *int64) (int64, int64, error) {
+	var total, after int64
+	for _, id := range ids {
+		after = id
+		n, err := purgeOneSeries(ctx, q, id, rollupsLeft, minutesLeft)
+		if err != nil {
+			return 0, 0, err
+		}
+		total += n
+		if *rollupsLeft <= 0 && *minutesLeft <= 0 {
+			break
+		}
+	}
+	return total, after, nil
+}
+
+func purgeOneSeries(ctx context.Context, q *metricsdb.Queries, seriesID int64, rollupsLeft, minutesLeft *int64) (int64, error) {
+	var total int64
+	if *rollupsLeft > 0 {
+		n, err := q.PurgeRollupsOfSeries(ctx, metricsdb.PurgeRollupsOfSeriesParams{SeriesID: seriesID, RowLimit: *rollupsLeft})
+		if err != nil {
+			return 0, mapErr(err)
+		}
+		total += n
+		*rollupsLeft -= n
+	}
+	if *minutesLeft > 0 {
+		n, err := q.PurgeMinutesOfSeries(ctx, metricsdb.PurgeMinutesOfSeriesParams{SeriesID: seriesID, RowLimit: *minutesLeft})
+		if err != nil {
+			return 0, mapErr(err)
+		}
+		total += n
+		*minutesLeft -= n
+	}
 	return total, nil
 }
 

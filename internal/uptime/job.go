@@ -292,43 +292,55 @@ func compactRows(m store.Monitor, byNode map[string][]store.Heartbeat, from int6
 	var minutes []store.LatencyMinute
 	var deleted []store.HeartbeatKey
 	for node, hbs := range byNode {
-		var prev store.CheckStatus
-		known := false
-		var ok []int
-		cur := store.LatencyMinute{TenantID: m.TenantID, MonitorID: m.ID, NodeID: node, MinuteMs: -1}
-		flush := func() {
-			if cur.MinuteMs < 0 {
-				return
-			}
-			if len(ok) > 0 {
-				l := latencyOf(ok)
-				cur.Min, cur.Max, cur.Avg, cur.P95 = minOf(ok), maxOf(ok), l.avg, l.p95
-			}
-			cur.OKCount = len(ok)
-			minutes = append(minutes, cur)
-		}
-		for _, hb := range hbs {
-			if hb.TsMs >= from {
-				minute := floorTo(hb.TsMs, 60_000)
-				if minute != cur.MinuteMs {
-					flush()
-					cur = store.LatencyMinute{TenantID: m.TenantID, MonitorID: m.ID, NodeID: node, MinuteMs: minute}
-					ok = ok[:0]
-				}
-				if hb.Status == store.CheckDown {
-					cur.ErrCount++
-				} else {
-					ok = append(ok, hb.LatencyMs)
-				}
-				if known && hb.Status == prev {
-					deleted = append(deleted, store.HeartbeatKey{NodeID: hb.NodeID, Incarnation: hb.Incarnation, Seq: hb.Seq})
-				}
-			}
-			prev, known = hb.Status, true
-		}
-		flush()
+		nm, nd := compactNodeRows(m, node, hbs, from)
+		minutes = append(minutes, nm...)
+		deleted = append(deleted, nd...)
 	}
 	return minutes, deleted
+}
+
+func compactNodeRows(m store.Monitor, node string, hbs []store.Heartbeat, from int64) ([]store.LatencyMinute, []store.HeartbeatKey) {
+	var minutes []store.LatencyMinute
+	var deleted []store.HeartbeatKey
+	var prev store.CheckStatus
+	known := false
+	var ok []int
+	cur := store.LatencyMinute{TenantID: m.TenantID, MonitorID: m.ID, NodeID: node, MinuteMs: -1}
+	for _, hb := range hbs {
+		if hb.TsMs < from {
+			prev, known = hb.Status, true
+			continue
+		}
+		minute := floorTo(hb.TsMs, 60_000)
+		if minute != cur.MinuteMs {
+			minutes = flushLatencyMinute(minutes, cur, ok)
+			cur = store.LatencyMinute{TenantID: m.TenantID, MonitorID: m.ID, NodeID: node, MinuteMs: minute}
+			ok = ok[:0]
+		}
+		if hb.Status == store.CheckDown {
+			cur.ErrCount++
+		} else {
+			ok = append(ok, hb.LatencyMs)
+		}
+		if known && hb.Status == prev {
+			deleted = append(deleted, store.HeartbeatKey{NodeID: hb.NodeID, Incarnation: hb.Incarnation, Seq: hb.Seq})
+		}
+		prev, known = hb.Status, true
+	}
+	minutes = flushLatencyMinute(minutes, cur, ok)
+	return minutes, deleted
+}
+
+func flushLatencyMinute(minutes []store.LatencyMinute, cur store.LatencyMinute, ok []int) []store.LatencyMinute {
+	if cur.MinuteMs < 0 {
+		return minutes
+	}
+	if len(ok) > 0 {
+		l := latencyOf(ok)
+		cur.Min, cur.Max, cur.Avg, cur.P95 = minOf(ok), maxOf(ok), l.avg, l.p95
+	}
+	cur.OKCount = len(ok)
+	return append(minutes, cur)
 }
 
 func minOf(v []int) int {
