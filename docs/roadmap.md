@@ -143,4 +143,4 @@ ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptie
 | AP-6.2 | Push-/Heartbeat-Monitore | ⬜ |
 | AP-6.3 | Weitere Typen (Zertifikats-/Domain-Ablauf, gRPC-Health, SMTP/IMAP, DB, MQTT) | ⬜ |
 | AP-6.4 | Node-Labels, Proxy pro Monitor, Gruppen-Monitore | ⬜ |
-| AP-6.5 | Client-Zertifikate (mTLS) für HTTP-Monitore (FA-CHK-16), ADR 0042 akzeptiert am 2026-11-21 | 🔄 |
+| AP-6.5 | Client-Zertifikate (mTLS) für HTTP-Monitore (FA-CHK-16), ADR 0042 akzeptiert am 2026-11-21: PEM-Upload im Editor, Senden nur auf Anforderung und nur an den Host der URL, Ablaufwarnung, Gate über die Node-Capability `http-client-cert` | ✅ |
