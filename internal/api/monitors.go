@@ -515,6 +515,37 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 		Assignment:        store.Assignment{Mode: string(gen.AssignmentModeAll)},
 		ConsensusPolicy:   string(gen.ConsensusPolicyMajority),
 	}
+	validateMonitorIdentity(in, &doc, add)
+	validateMonitorTiming(in, &doc, add)
+
+	assignment, err := h.validateMonitorAssignment(ctx, in.Assignment, add)
+	if err != nil {
+		return cluster.MonitorDocument{}, err
+	}
+	doc.Assignment = assignment
+
+	validateMonitorPolicyAndTags(in, &doc, add)
+
+	channels, err := h.monitorChannels(ctx, tenantID, in.NotificationChannelIds, creating, add)
+	if err != nil {
+		return cluster.MonitorDocument{}, err
+	}
+	doc.NotificationChannelIDs = channels
+
+	cfg, err := h.validateMonitorConfig(ctx, in.Type, in.Config, add)
+	if err != nil {
+		return cluster.MonitorDocument{}, err
+	}
+	doc.Config = cfg
+
+	if len(fields) > 0 {
+		return cluster.MonitorDocument{}, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
+			Detail: "the monitor configuration is invalid", Fields: fields}
+	}
+	return doc, nil
+}
+
+func validateMonitorIdentity(in *gen.MonitorInput, doc *cluster.MonitorDocument, add func(string, string)) {
 	if doc.Name == "" || len([]rune(doc.Name)) > maxNameLength {
 		add("/name", fmt.Sprintf("must be 1 to %d characters", maxNameLength))
 	}
@@ -524,6 +555,9 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 			add("/description", fmt.Sprintf("must be at most %d characters", maxDescription))
 		}
 	}
+}
+
+func validateMonitorTiming(in *gen.MonitorInput, doc *cluster.MonitorDocument, add func(string, string)) {
 	if doc.IntervalSeconds < minIntervalSeconds || doc.IntervalSeconds > maxIntervalSeconds {
 		add("/intervalSeconds", fmt.Sprintf("must be between %d and %d", minIntervalSeconds, maxIntervalSeconds))
 	}
@@ -534,128 +568,140 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 			add("/timeoutSeconds", "must be at least 1 and at most 80 % of the interval")
 		}
 	}
-	if in.Retries != nil {
-		doc.Retries = *in.Retries
-		if doc.Retries < 0 || doc.Retries > 10 {
-			add("/retries", "must be between 0 and 10")
-		}
-	}
-	if in.RecoveryThreshold != nil {
-		doc.RecoveryThreshold = *in.RecoveryThreshold
-		if doc.RecoveryThreshold < 1 || doc.RecoveryThreshold > 10 {
-			add("/recoveryThreshold", "must be between 1 and 10")
-		}
-	}
+	checkOptionalRange(in.Retries, &doc.Retries, 0, 10, "/retries", "must be between 0 and 10", add)
+	checkOptionalRange(in.RecoveryThreshold, &doc.RecoveryThreshold, 1, 10, "/recoveryThreshold", "must be between 1 and 10", add)
 	if in.ResendIntervalMinutes != nil {
 		doc.ResendIntervalMinutes = *in.ResendIntervalMinutes
 		if doc.ResendIntervalMinutes < 0 {
 			add("/resendIntervalMinutes", "must not be negative")
 		}
 	}
-	if in.Assignment != nil {
-		a := store.Assignment{Mode: string(in.Assignment.Mode)}
-		if in.Assignment.Count != nil {
-			a.Count = *in.Assignment.Count
-		}
-		if in.Assignment.Nodes != nil {
-			a.Nodes = *in.Assignment.Nodes
-		}
-		switch {
-		case !in.Assignment.Mode.Valid():
-			add("/assignment/mode", "must be all, count or nodes")
-		case a.Mode == string(gen.AssignmentModeCount) && a.Count < 1:
-			add("/assignment/count", "required for mode count")
-		case a.Mode == string(gen.AssignmentModeNodes) && len(a.Nodes) == 0:
-			add("/assignment/nodes", "required for mode nodes")
-		case a.Mode == string(gen.AssignmentModeNodes):
-			// Without a registry (single voter before its first registration)
-			// any node ID is accepted (ADR 0017).
-			registry, err := h.deps.State.ListNodes(ctx)
-			if err != nil {
-				return cluster.MonitorDocument{}, err
-			}
-			if len(registry) > 0 {
-				known := make(map[string]bool, len(registry))
-				for _, n := range registry {
-					known[n.ID] = true
-				}
-				for i, id := range a.Nodes {
-					if !known[id] {
-						add(fmt.Sprintf("/assignment/nodes/%d", i), "unknown node")
-					}
-				}
-			}
-		}
-		doc.Assignment = a
+}
+
+func checkOptionalRange(val *int, dst *int, lo, hi int, field, msg string, add func(string, string)) {
+	if val == nil {
+		return
 	}
+	*dst = *val
+	if *dst < lo || *dst > hi {
+		add(field, msg)
+	}
+}
+
+func (h *Handlers) validateMonitorAssignment(ctx context.Context, in *gen.Assignment, add func(string, string)) (store.Assignment, error) {
+	a := store.Assignment{Mode: string(gen.AssignmentModeAll)}
+	if in == nil {
+		return a, nil
+	}
+	a.Mode = string(in.Mode)
+	if in.Count != nil {
+		a.Count = *in.Count
+	}
+	if in.Nodes != nil {
+		a.Nodes = *in.Nodes
+	}
+	switch {
+	case !in.Mode.Valid():
+		add("/assignment/mode", "must be all, count or nodes")
+	case a.Mode == string(gen.AssignmentModeCount) && a.Count < 1:
+		add("/assignment/count", "required for mode count")
+	case a.Mode == string(gen.AssignmentModeNodes) && len(a.Nodes) == 0:
+		add("/assignment/nodes", "required for mode nodes")
+	case a.Mode == string(gen.AssignmentModeNodes):
+		if err := h.validateAssignedNodes(ctx, a.Nodes, add); err != nil {
+			return store.Assignment{}, err
+		}
+	}
+	return a, nil
+}
+
+// validateAssignedNodes checks node IDs against the cluster registry. Without
+// a registry (single voter before its first registration) any node ID is
+// accepted (ADR 0017).
+func (h *Handlers) validateAssignedNodes(ctx context.Context, nodeIDs []string, add func(string, string)) error {
+	registry, err := h.deps.State.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	if len(registry) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(registry))
+	for _, n := range registry {
+		known[n.ID] = true
+	}
+	for i, id := range nodeIDs {
+		if !known[id] {
+			add(fmt.Sprintf("/assignment/nodes/%d", i), "unknown node")
+		}
+	}
+	return nil
+}
+
+func validateMonitorPolicyAndTags(in *gen.MonitorInput, doc *cluster.MonitorDocument, add func(string, string)) {
 	if in.ConsensusPolicy != nil {
 		doc.ConsensusPolicy = string(*in.ConsensusPolicy)
 		if !in.ConsensusPolicy.Valid() {
 			add("/consensusPolicy", "must be majority, any or all")
 		}
 	}
-	if in.Tags != nil {
-		doc.Tags = *in.Tags
-		if len(doc.Tags) > maxTags {
-			add("/tags", fmt.Sprintf("at most %d tags", maxTags))
-		}
-		for i, t := range doc.Tags {
-			if t == "" || len([]rune(t)) > maxTagLength {
-				add(fmt.Sprintf("/tags/%d", i), fmt.Sprintf("must be 1 to %d characters", maxTagLength))
-			}
-		}
-	}
+	validateMonitorTags(in.Tags, doc, add)
 	if in.Paused != nil {
 		doc.Paused = *in.Paused
 	}
-	channels, err := h.monitorChannels(ctx, tenantID, in.NotificationChannelIds, creating, add)
-	if err != nil {
-		return cluster.MonitorDocument{}, err
-	}
-	doc.NotificationChannelIDs = channels
+}
 
-	cfg, err := json.Marshal(in.Config)
-	if err != nil {
-		return cluster.MonitorDocument{}, err
+func validateMonitorTags(tags *[]string, doc *cluster.MonitorDocument, add func(string, string)) {
+	if tags == nil {
+		return
 	}
-	doc.Config = cfg
-	switch err := h.deps.Registry.Validate(in.Type, cfg); {
+	doc.Tags = *tags
+	if len(doc.Tags) > maxTags {
+		add("/tags", fmt.Sprintf("at most %d tags", maxTags))
+	}
+	for i, t := range doc.Tags {
+		if t == "" || len([]rune(t)) > maxTagLength {
+			add(fmt.Sprintf("/tags/%d", i), fmt.Sprintf("must be 1 to %d characters", maxTagLength))
+		}
+	}
+}
+
+func (h *Handlers) validateMonitorConfig(ctx context.Context, monType string, rawCfg map[string]any, add func(string, string)) (json.RawMessage, error) {
+	cfg, err := json.Marshal(rawCfg)
+	if err != nil {
+		return nil, err
+	}
+	switch err := h.deps.Registry.Validate(monType, cfg); {
 	case errors.Is(err, checker.ErrUnknownType):
 		add("/type", "unknown monitor type")
+		return cfg, nil
 	case err != nil:
-		var verr *checker.ValidationError
-		if !errors.As(err, &verr) {
-			return cluster.MonitorDocument{}, err
-		}
-		for _, f := range verr.Fields {
-			add("/config"+f.Field, f.Message)
-		}
-	default:
-		if err := h.checkClusterCapabilities(ctx, in.Type, cfg, add); err != nil {
-			return cluster.MonitorDocument{}, err
-		}
-		// The destination hosts are checked against the node's address policy
-		// once the configuration itself is valid (ADR 0030).
-		if h.deps.SSRFPolicy != nil {
-			err := h.deps.Registry.ValidateTargets(in.Type, cfg, h.deps.SSRFPolicy)
-			var verr *checker.ValidationError
-			switch {
-			case err == nil:
-			case !errors.As(err, &verr):
-				return cluster.MonitorDocument{}, err
-			default:
-				for _, f := range verr.Fields {
-					add("/config"+f.Field, f.Message)
-				}
+		return cfg, appendValidationFields(err, add)
+	}
+	if err := h.checkClusterCapabilities(ctx, monType, cfg, add); err != nil {
+		return nil, err
+	}
+	// The destination hosts are checked against the node's address policy
+	// once the configuration itself is valid (ADR 0030).
+	if h.deps.SSRFPolicy != nil {
+		if err := h.deps.Registry.ValidateTargets(monType, cfg, h.deps.SSRFPolicy); err != nil {
+			if err := appendValidationFields(err, add); err != nil {
+				return nil, err
 			}
 		}
 	}
+	return cfg, nil
+}
 
-	if len(fields) > 0 {
-		return cluster.MonitorDocument{}, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
-			Detail: "the monitor configuration is invalid", Fields: fields}
+func appendValidationFields(err error, add func(string, string)) error {
+	var verr *checker.ValidationError
+	if !errors.As(err, &verr) {
+		return err
 	}
-	return doc, nil
+	for _, f := range verr.Fields {
+		add("/config"+f.Field, f.Message)
+	}
+	return nil
 }
 
 // monitorChannels returns the notification channel IDs of a monitor. Unknown

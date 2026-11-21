@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"slices"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/joinsider/pulsequorum/internal/api/gen"
 	"github.com/joinsider/pulsequorum/internal/checker"
 	"github.com/joinsider/pulsequorum/internal/cluster"
@@ -35,75 +37,19 @@ func (h *Handlers) BulkMonitors(ctx context.Context, req gen.BulkMonitorsRequest
 		return nil, requestBodyRequired()
 	}
 	in := req.Body
-	action := in.Action
-	ids := in.Ids
 	tags := []string{}
 	if in.Tags != nil {
 		tags = *in.Tags
 	}
-
-	var fields []checker.FieldError
-	if !action.Valid() {
-		fields = append(fields, fieldError("/action", "must be pause, resume, delete, addTags or removeTags"))
-	}
-	if n := len(ids); n < 1 || n > bulkMaxIDs {
-		fields = append(fields, fieldError("/ids", fmt.Sprintf("must contain 1 to %d monitors", bulkMaxIDs)))
-	}
-	if action == gen.AddTags || action == gen.RemoveTags {
-		fields = append(fields, bulkTagFields(tags)...)
-	}
-	if err := validationProblem(fields, "the bulk action is invalid"); err != nil {
+	if err := validateBulkInput(in.Action, in.Ids, tags); err != nil {
 		return nil, err
 	}
-
-	seen := make(map[string]bool, len(ids))
-	monitors := make([]store.Monitor, len(ids))
-	for i, id := range ids {
-		if seen[id.String()] {
-			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), "duplicate monitor"))
-			continue
-		}
-		seen[id.String()] = true
-		m, err := h.deps.State.GetMonitor(ctx, p.TenantID, id.String())
-		if errors.Is(err, store.ErrNotFound) {
-			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), "unknown monitor"))
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		monitors[i] = m
-	}
-	if err := validationProblem(fields, "the bulk action cannot be applied"); err != nil {
+	monitors, err := h.loadBulkMonitors(ctx, p.TenantID, in.Ids)
+	if err != nil {
 		return nil, err
 	}
-
-	// opOf maps each monitor to its operation in the batch; -1 if it needs no change.
-	ops := make([]*pb.BatchOp, 0, len(ids))
-	opOf := make([]int, len(ids))
-	for i, m := range monitors {
-		if action == gen.Delete {
-			opOf[i] = len(ops)
-			ops = append(ops, bulkDeleteOp(m.ID))
-			continue
-		}
-		doc, hint, changed := bulkChange(m, action, tags)
-		if !changed {
-			opOf[i] = -1
-			continue
-		}
-		if action == gen.AddTags && len(doc.Tags) > maxTags {
-			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), fmt.Sprintf("the monitor would have more than %d tags", maxTags)))
-			continue
-		}
-		cmd, err := cluster.NewPutMonitor("", p.TenantID, m.ID, doc, m.Revision)
-		if err != nil {
-			return nil, err
-		}
-		opOf[i] = len(ops)
-		ops = append(ops, &pb.BatchOp{Op: &pb.BatchOp_PutEntity{PutEntity: cmd.GetPutEntity()}, AuditAction: hint})
-	}
-	if err := validationProblem(fields, "the bulk action cannot be applied"); err != nil {
+	ops, opOf, err := buildBulkOps(p.TenantID, monitors, in.Action, tags)
+	if err != nil {
 		return nil, err
 	}
 
@@ -121,6 +67,84 @@ func (h *Handlers) BulkMonitors(ctx context.Context, req gen.BulkMonitorsRequest
 		}
 	}
 
+	out := buildBulkResults(in.Ids, monitors, in.Action, opOf, applied)
+	return gen.BulkMonitors200JSONResponse(gen.BulkMonitorsResult{Results: out}), nil
+}
+
+func validateBulkInput(action gen.BulkMonitorsInputAction, ids []openapi_types.UUID, tags []string) error {
+	var fields []checker.FieldError
+	if !action.Valid() {
+		fields = append(fields, fieldError("/action", "must be pause, resume, delete, addTags or removeTags"))
+	}
+	if n := len(ids); n < 1 || n > bulkMaxIDs {
+		fields = append(fields, fieldError("/ids", fmt.Sprintf("must contain 1 to %d monitors", bulkMaxIDs)))
+	}
+	if action == gen.AddTags || action == gen.RemoveTags {
+		fields = append(fields, bulkTagFields(tags)...)
+	}
+	return validationProblem(fields, "the bulk action is invalid")
+}
+
+func (h *Handlers) loadBulkMonitors(ctx context.Context, tenantID string, ids []openapi_types.UUID) ([]store.Monitor, error) {
+	var fields []checker.FieldError
+	seen := make(map[string]bool, len(ids))
+	monitors := make([]store.Monitor, len(ids))
+	for i, id := range ids {
+		if seen[id.String()] {
+			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), "duplicate monitor"))
+			continue
+		}
+		seen[id.String()] = true
+		m, err := h.deps.State.GetMonitor(ctx, tenantID, id.String())
+		if errors.Is(err, store.ErrNotFound) {
+			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), "unknown monitor"))
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		monitors[i] = m
+	}
+	if err := validationProblem(fields, "the bulk action cannot be applied"); err != nil {
+		return nil, err
+	}
+	return monitors, nil
+}
+
+func buildBulkOps(tenantID string, monitors []store.Monitor, action gen.BulkMonitorsInputAction, tags []string) ([]*pb.BatchOp, []int, error) {
+	var fields []checker.FieldError
+	// opOf maps each monitor to its operation in the batch; -1 if it needs no change.
+	ops := make([]*pb.BatchOp, 0, len(monitors))
+	opOf := make([]int, len(monitors))
+	for i, m := range monitors {
+		if action == gen.Delete {
+			opOf[i] = len(ops)
+			ops = append(ops, bulkDeleteOp(m.ID))
+			continue
+		}
+		doc, hint, changed := bulkChange(m, action, tags)
+		if !changed {
+			opOf[i] = -1
+			continue
+		}
+		if action == gen.AddTags && len(doc.Tags) > maxTags {
+			fields = append(fields, fieldError(fmt.Sprintf("/ids/%d", i), fmt.Sprintf("the monitor would have more than %d tags", maxTags)))
+			continue
+		}
+		cmd, err := cluster.NewPutMonitor("", tenantID, m.ID, doc, m.Revision)
+		if err != nil {
+			return nil, nil, err
+		}
+		opOf[i] = len(ops)
+		ops = append(ops, &pb.BatchOp{Op: &pb.BatchOp_PutEntity{PutEntity: cmd.GetPutEntity()}, AuditAction: hint})
+	}
+	if err := validationProblem(fields, "the bulk action cannot be applied"); err != nil {
+		return nil, nil, err
+	}
+	return ops, opOf, nil
+}
+
+func buildBulkResults(ids []openapi_types.UUID, monitors []store.Monitor, action gen.BulkMonitorsInputAction, opOf []int, applied cluster.BatchResult) []gen.BulkMonitorResult {
 	out := make([]gen.BulkMonitorResult, 0, len(ids))
 	for i, id := range ids {
 		r := gen.BulkMonitorResult{Id: id}
@@ -136,7 +160,7 @@ func (h *Handlers) BulkMonitors(ctx context.Context, req gen.BulkMonitorsRequest
 		}
 		out = append(out, r)
 	}
-	return gen.BulkMonitors200JSONResponse(gen.BulkMonitorsResult{Results: out}), nil
+	return out
 }
 
 // bulkTagFields checks the tags of addTags and removeTags with the rules of a

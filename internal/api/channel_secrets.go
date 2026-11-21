@@ -71,8 +71,31 @@ func (h *Handlers) channelEvents(ctx context.Context, tenantID string, requested
 // decides the event policy (channelEvents). current is nil on create; on update
 // an omitted URL or a value containing the mask keeps the stored secret.
 func (h *Handlers) channelDocument(ctx context.Context, tenantID, id string, in *gen.NotificationChannelInput, current *store.NotificationChannel) (cluster.ChannelDocument, error) {
+	doc, err := h.initChannelDocument(ctx, tenantID, in)
+	if err != nil {
+		return cluster.ChannelDocument{}, err
+	}
+	sameKind := current != nil && current.Kind == doc.Kind
+
+	var target alert.Target
+	var keepURL bool
+	switch in.Kind {
+	case gen.Shoutrrr:
+		target, keepURL, err = shoutrrrTarget(in, sameKind)
+	case gen.Webhook:
+		target, keepURL, err = h.webhookTarget(id, in, current, sameKind, &doc)
+	default:
+		return cluster.ChannelDocument{}, invalidChannel("kind must be shoutrrr or webhook")
+	}
+	if err != nil {
+		return cluster.ChannelDocument{}, err
+	}
+	return h.finalizeChannelDocument(in.Kind, id, target, keepURL, current, doc)
+}
+
+func (h *Handlers) initChannelDocument(ctx context.Context, tenantID string, in *gen.NotificationChannelInput) (cluster.ChannelDocument, error) {
 	if in == nil {
-		return cluster.ChannelDocument{}, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
+		return cluster.ChannelDocument{}, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "request body is required"}
 	}
 	if h.deps.Keyring == nil || h.deps.Alerts == nil {
 		return cluster.ChannelDocument{}, errors.New("notification channels are not configured")
@@ -90,69 +113,78 @@ func (h *Handlers) channelDocument(ctx context.Context, tenantID, id string, in 
 	if in.IsDefault != nil && tenantID != store.SystemTenantID {
 		doc.IsDefault = *in.IsDefault
 	}
-	sameKind := current != nil && current.Kind == doc.Kind
+	return doc, nil
+}
 
-	var target alert.Target
-	keepURL := false
-	switch in.Kind {
-	case gen.Shoutrrr:
-		if in.Webhook != nil {
-			return cluster.ChannelDocument{}, invalidChannel("webhook settings are only allowed for kind webhook")
-		}
-		switch {
-		case in.Url != nil && !strings.Contains(*in.Url, alert.Mask):
-			target = alert.Target{Kind: store.ChannelShoutrrr, URL: strings.TrimSpace(*in.Url)}
-		case sameKind:
-			keepURL = true
-		default:
-			return cluster.ChannelDocument{}, invalidChannel("url is required")
-		}
-	case gen.Webhook:
-		if in.Webhook == nil {
-			return cluster.ChannelDocument{}, invalidChannel("webhook settings are required for kind webhook")
-		}
-		if in.Url != nil {
-			return cluster.ChannelDocument{}, invalidChannel("url is only allowed for kind shoutrrr; use webhook.url")
-		}
-		w := in.Webhook
-		target = alert.Target{Kind: store.ChannelWebhook, URL: strings.TrimSpace(w.Url)}
-		if w.Method != nil {
-			target.Method = string(*w.Method)
-		}
-		if w.BodyTemplate != nil {
-			target.Template = *w.BodyTemplate
-		}
-		if target.URL == "" || strings.Contains(target.URL, alert.Mask) {
-			if !sameKind {
-				return cluster.ChannelDocument{}, invalidChannel("webhook.url is required")
-			}
-			keepURL = true
-		}
-		doc.WebhookMethod, doc.WebhookTemplate = target.Method, target.Template
-		if w.Headers != nil {
-			var previous map[string]string
-			if sameKind {
-				previous = current.WebhookHeaders
-			}
-			for name := range *w.Headers {
-				if http.CanonicalHeaderKey(name) == "Content-Type" || strings.TrimSpace(name) == "" {
-					return cluster.ChannelDocument{}, invalidChannel("header " + name + " cannot be set")
-				}
-			}
-			enc, err := alert.EncryptHeaders(h.deps.Keyring, id, *w.Headers, previous, alert.Mask)
-			if err != nil {
-				return cluster.ChannelDocument{}, invalidChannel("headers: a masked value can only keep an existing header")
-			}
-			doc.WebhookHeaders = enc
-		}
-	default:
-		return cluster.ChannelDocument{}, invalidChannel("kind must be shoutrrr or webhook")
+func shoutrrrTarget(in *gen.NotificationChannelInput, sameKind bool) (alert.Target, bool, error) {
+	if in.Webhook != nil {
+		return alert.Target{}, false, invalidChannel("webhook settings are only allowed for kind webhook")
 	}
+	switch {
+	case in.Url != nil && !strings.Contains(*in.Url, alert.Mask):
+		return alert.Target{Kind: store.ChannelShoutrrr, URL: strings.TrimSpace(*in.Url)}, false, nil
+	case sameKind:
+		return alert.Target{}, true, nil
+	default:
+		return alert.Target{}, false, invalidChannel("url is required")
+	}
+}
 
+func (h *Handlers) webhookTarget(id string, in *gen.NotificationChannelInput, current *store.NotificationChannel, sameKind bool, doc *cluster.ChannelDocument) (alert.Target, bool, error) {
+	if in.Webhook == nil {
+		return alert.Target{}, false, invalidChannel("webhook settings are required for kind webhook")
+	}
+	if in.Url != nil {
+		return alert.Target{}, false, invalidChannel("url is only allowed for kind shoutrrr; use webhook.url")
+	}
+	w := in.Webhook
+	target := alert.Target{Kind: store.ChannelWebhook, URL: strings.TrimSpace(w.Url)}
+	if w.Method != nil {
+		target.Method = string(*w.Method)
+	}
+	if w.BodyTemplate != nil {
+		target.Template = *w.BodyTemplate
+	}
+	keepURL := false
+	if target.URL == "" || strings.Contains(target.URL, alert.Mask) {
+		if !sameKind {
+			return alert.Target{}, false, invalidChannel("webhook.url is required")
+		}
+		keepURL = true
+	}
+	doc.WebhookMethod, doc.WebhookTemplate = target.Method, target.Template
+	if w.Headers != nil {
+		enc, err := h.encryptWebhookHeaders(id, *w.Headers, current, sameKind)
+		if err != nil {
+			return alert.Target{}, false, err
+		}
+		doc.WebhookHeaders = enc
+	}
+	return target, keepURL, nil
+}
+
+func (h *Handlers) encryptWebhookHeaders(id string, headers map[string]string, current *store.NotificationChannel, sameKind bool) (map[string]string, error) {
+	var previous map[string]string
+	if sameKind {
+		previous = current.WebhookHeaders
+	}
+	for name := range headers {
+		if http.CanonicalHeaderKey(name) == "Content-Type" || strings.TrimSpace(name) == "" {
+			return nil, invalidChannel("header " + name + " cannot be set")
+		}
+	}
+	enc, err := alert.EncryptHeaders(h.deps.Keyring, id, headers, previous, alert.Mask)
+	if err != nil {
+		return nil, invalidChannel("headers: a masked value can only keep an existing header")
+	}
+	return enc, nil
+}
+
+func (h *Handlers) finalizeChannelDocument(kind gen.NotificationKind, id string, target alert.Target, keepURL bool, current *store.NotificationChannel, doc cluster.ChannelDocument) (cluster.ChannelDocument, error) {
 	if keepURL {
 		doc.URLEnc = current.URLEnc
 		// Validate settings that are not secret against the stored URL.
-		if in.Kind == gen.Webhook {
+		if kind == gen.Webhook {
 			if err := alert.ValidateTemplate(target.Template); err != nil {
 				return cluster.ChannelDocument{}, invalidChannel(err.Error())
 			}
