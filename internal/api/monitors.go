@@ -445,7 +445,7 @@ func (h *Handlers) ListHeartbeats(ctx context.Context, req gen.ListHeartbeatsReq
 		}
 		var c store.HeartbeatCursor
 		if err := json.Unmarshal([]byte(raw), &c); err != nil {
-			return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "invalid cursor"}
+			return nil, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "invalid cursor"}
 		}
 		q.After = &c
 	}
@@ -501,7 +501,7 @@ func (h *Handlers) monitor(ctx context.Context, p auth.Principal, id uuid.UUID) 
 // tenant's default channels (FA-ALR-01).
 func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen.MonitorInput, creating bool) (cluster.MonitorDocument, error) {
 	if in == nil {
-		return cluster.MonitorDocument{}, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
+		return cluster.MonitorDocument{}, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "request body is required"}
 	}
 	var fields []checker.FieldError
 	add := func(field, msg string) { fields = append(fields, checker.FieldError{Field: field, Message: msg}) }
@@ -853,7 +853,7 @@ func decodeCursor(cursor, kind string) (string, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	value, ok := strings.CutPrefix(string(raw), kind+":")
 	if err != nil || !ok {
-		return "", &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "invalid cursor"}
+		return "", &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "invalid cursor"}
 	}
 	return value, nil
 }

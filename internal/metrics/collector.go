@@ -44,7 +44,9 @@ func newCollector(src Sources) *collector {
 }
 
 // Describe implements prometheus.Collector. It sends nothing (unchecked collector).
-func (*collector) Describe(chan<- *prometheus.Desc) {}
+func (*collector) Describe(chan<- *prometheus.Desc) {
+	// Intentionally empty: unchecked collector whose series vary with Sources.
+}
 
 // Collect implements prometheus.Collector.
 func (c *collector) Collect(ch chan<- prometheus.Metric) {

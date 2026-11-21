@@ -44,7 +44,7 @@ type ClusterAdmin interface {
 // clusterAdmin returns the cluster administration or 503 when this node has none.
 func (h *Handlers) clusterAdmin() (ClusterAdmin, error) {
 	if h.deps.ClusterAdmin == nil {
-		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "cluster administration is not available"}
 	}
 	return h.deps.ClusterAdmin, nil
@@ -54,13 +54,13 @@ func (h *Handlers) clusterAdmin() (ClusterAdmin, error) {
 func clusterAdminError(err error) error {
 	switch {
 	case errors.Is(err, membership.ErrNotLeader):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "this node is not the leader, retry", RetryAfter: 1}
 	case errors.Is(err, cluster.ErrNotApplied), errors.Is(err, cluster.ErrUnknownOutcome), errors.Is(err, membership.ErrLeaderUnavailable):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "no leader available, retry", RetryAfter: 1}
 	case errors.Is(err, clusterpki.ErrNoCA):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "the cluster CA does not exist yet, retry", RetryAfter: 1}
 	case errors.Is(err, membership.ErrUnknownNode):
 		return &Problem{Status: http.StatusNotFound, Title: "Not Found", Detail: "node is not a member of the cluster"}
@@ -77,7 +77,7 @@ func clusterAdminError(err error) error {
 	if errors.As(err, &cmdErr) {
 		switch cmdErr.Code {
 		case cluster.CodeInvalid:
-			return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: cmdErr.Message}
+			return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: cmdErr.Message}
 		case cluster.CodeNotEnabled:
 			return notEnabled(cmdErr)
 		}
@@ -88,7 +88,7 @@ func clusterAdminError(err error) error {
 // notEnabled maps a command that waits for a rolling update to finish (ADR
 // 0018) to 503. The detail names the required version; no secrets are involved.
 func notEnabled(ce *cluster.CommandError) *Problem {
-	return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable", Detail: ce.Message, RetryAfter: 30}
+	return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable, Detail: ce.Message, RetryAfter: 30}
 }
 
 // CreateJoinToken issues a one-time token. The secret is returned once and
@@ -102,7 +102,7 @@ func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenR
 		return nil, err
 	}
 	if req.Body == nil {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed,
 			Detail: "request body is required", Fields: []checker.FieldError{{Field: "/role", Message: "required"}}}
 	}
 	role := pki.Role(req.Body.Role)
@@ -125,7 +125,7 @@ func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenR
 		fields = append(fields, checker.FieldError{Field: "/ttlMinutes", Message: fmt.Sprintf("must be between 1 and %d", maxJoinTokenMinutes)})
 	}
 	if len(fields) > 0 {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Fields: fields}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Fields: fields}
 	}
 
 	token, expires, err := admin.CreateJoinToken(ctx, role, tenantID, time.Duration(minutes)*time.Minute)
@@ -159,7 +159,7 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	members, _, err := admin.Members()
 	if err != nil {
 		h.log.Error("could not read the cluster configuration", "err", err)
-		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "cluster configuration is not available, retry", RetryAfter: 1}
 	}
 	_, leaderID := admin.Leader()

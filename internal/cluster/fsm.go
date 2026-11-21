@@ -709,7 +709,9 @@ func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	return sink.Close()
 }
 
-func (s *fsmSnapshot) Release() {}
+func (s *fsmSnapshot) Release() {
+	// Nothing to release: Persist streams directly from SQLite and closes on return.
+}
 
 // checkMonitorSecrets rejects secrets whose pointer is not a JSON pointer into
 // Config or whose value is not a ciphertext (ADR 0015). Keys are visited in

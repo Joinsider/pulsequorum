@@ -49,6 +49,8 @@ const (
 	// gapMaxLength bounds the re-evaluated gap (ADR 0024, section 7).
 	gapMaxLength = 24 * time.Hour
 	gapPageSize  = 500
+
+	logReadCommandLevel = "degraded: read command level"
 )
 
 // Proposer proposes Raft commands. *cluster.Node satisfies it.
@@ -162,7 +164,7 @@ func (r *Reporter) ready(ctx context.Context) bool {
 	}
 	level, err := r.opts.CommandLevel(ctx)
 	if err != nil {
-		r.opts.Logger.Warn("degraded: read command level", "err", err)
+		r.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return false
 	}
 	return level >= cluster.DegradedCommandLevel
@@ -279,7 +281,7 @@ func (j *Judge) ready(ctx context.Context) bool {
 	}
 	level, err := j.opts.CommandLevel(ctx)
 	if err != nil {
-		j.opts.Logger.Warn("degraded: read command level", "err", err)
+		j.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return false
 	}
 	return level >= cluster.DegradedCommandLevel
@@ -610,7 +612,7 @@ func (g *GapJob) recordDegraded() {
 func (g *GapJob) run(ctx context.Context) {
 	level, err := g.opts.CommandLevel(ctx)
 	if err != nil {
-		g.opts.Logger.Warn("degraded: read command level", "err", err)
+		g.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return
 	}
 	if level < cluster.DegradedCommandLevel {

@@ -18,6 +18,8 @@ import (
 // alertRetention is how long finished outbox entries are kept, in command time.
 const alertRetention = 7 * 24 * time.Hour
 
+const errInvalidEventFormat = "event %q"
+
 // alertEvent returns the notification event of a status change, or "" if the
 // change is not notified (ADR 0014, FA-ALR-02): PENDING, PAUSED and the first
 // UP of a new monitor stay silent.
@@ -212,14 +214,14 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 		case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
 		case store.EventFlapping, store.EventChannelFailed:
 			if level < FlappingCommandLevel {
-				return store.NotificationChannel{}, invalid("event %q", e)
+				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
 			}
 		case store.EventSystem:
 			if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
-				return store.NotificationChannel{}, invalid("event %q", e)
+				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
 			}
 		default:
-			return store.NotificationChannel{}, invalid("event %q", e)
+			return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
 		}
 	}
 	return store.NotificationChannel{

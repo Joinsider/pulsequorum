@@ -30,6 +30,8 @@ import (
 // most once.
 const forwardedKey = "uc-forwarded"
 
+const errNotLeaderFormat = "not the leader; leader=%s"
+
 // Access levels of the ClusterService and ReplicationService methods
 // (clusternet.Authorize). Apply accepts forwarded commands from voters only: a
 // voter is a full member and could propose any command itself, probes never
@@ -121,7 +123,7 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	if peer, ok := clusternet.Peer(ctx); ok && req.GetTokenId() == "" {
 		if !s.Node.IsLeader() {
 			_, leaderID := s.Node.Leader()
-			return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+			return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
 		}
 		return s.updateAddress(ctx, peer, info)
 	}
@@ -270,7 +272,7 @@ func (s *Service) RenewCertificate(ctx context.Context, req *pb.RenewCertificate
 	}
 	if !s.Node.IsLeader() {
 		addr, _ := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", addr)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, addr)
 	}
 	if err := s.stillMember(ctx, peer); err != nil {
 		return nil, err
@@ -367,7 +369,7 @@ func (s *Service) RemoveNode(ctx context.Context, req *pb.RemoveNodeRequest) (*p
 	}
 	if !s.Node.IsLeader() {
 		_, leaderID := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
 	}
 	s.Log.Info("cluster node removal forwarded", "node_id", nodeID, "requested_by", req.GetRequestedBy())
 
@@ -382,7 +384,7 @@ func (s *Service) RemoveNode(ctx context.Context, req *pb.RemoveNodeRequest) (*p
 	case errors.Is(err, ErrNotLeader):
 		// Leadership moved between the check and the removal.
 		_, leaderID := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
 	case errors.Is(err, ErrUnknownNode):
 		code = "unknown_node"
 	case errors.Is(err, ErrRemoveLeader):

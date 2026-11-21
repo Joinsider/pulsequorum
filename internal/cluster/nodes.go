@@ -26,6 +26,8 @@ const (
 	maxLabelValueLen    = 256
 )
 
+const errInvalidNodeID = "node ID must be 1 to 128 characters of [A-Za-z0-9_-]"
+
 // NodeResult is the result of RegisterNode, SetNodeHealth and
 // SetNodeConnectivity: the registry entry after the command.
 type NodeResult struct {
@@ -77,7 +79,7 @@ func nodeInfoFrom(n store.Node) *pb.NodeInfo {
 // registry does not keep (incarnation, advertise address, owner) are dropped.
 func nodeFromInfo(info *pb.NodeInfo) (store.Node, error) {
 	if !isNodeID(info.GetId()) {
-		return store.Node{}, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
+		return store.Node{}, invalid(errInvalidNodeID)
 	}
 	role, ok := roleFromProto(info.GetRole())
 	if !ok {
@@ -206,7 +208,7 @@ func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r
 // without a write, so UpdatedMs keeps the time of the last real change.
 func applySetNodeHealth(ctx context.Context, tx store.StateTx, cmd *pb.Command, s *pb.SetNodeHealth) (json.RawMessage, error) {
 	if !isNodeID(s.GetNodeId()) {
-		return nil, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
+		return nil, invalid(errInvalidNodeID)
 	}
 	n, err := tx.GetNode(ctx, s.GetNodeId())
 	if err != nil {
@@ -235,7 +237,7 @@ const (
 // success without a write.
 func applySetNodeConnectivity(ctx context.Context, tx store.StateTx, cmd *pb.Command, s *pb.SetNodeConnectivity) (json.RawMessage, error) {
 	if !isNodeID(s.GetNodeId()) {
-		return nil, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
+		return nil, invalid(errInvalidNodeID)
 	}
 	reason := s.GetReason()
 	switch {

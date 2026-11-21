@@ -36,6 +36,8 @@ const tenantAdminLevel = 8
 // write neither, so a rolling update does not look like divergence.
 const auditLevel = 9
 
+const orderByTenantID = "tenant_id, id"
+
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
 // is excluded: the applied index legitimately differs between replicas that
 // are at different log positions. minLevel > 0 hashes a table only from that
@@ -47,18 +49,18 @@ var fingerprintTables = []struct {
 	{"tenants", "id", 0},
 	{"plans", "id", tenantAdminLevel},
 	{"deleted_tenants", "id", tenantAdminLevel},
-	{"monitors", "tenant_id, id", 0},
+	{"monitors", orderByTenantID, 0},
 	{"monitor_tags", "tenant_id, monitor_id, tag", 0},
 	{"request_dedup", "request_id", 0},
 	{"secret_keys", "key_id", 0},
 	{"monitor_states", "tenant_id, monitor_id", 0},
-	{"incidents", "tenant_id, id", 0},
+	{"incidents", orderByTenantID, 0},
 	{"monitor_status_history", "tenant_id, monitor_id, since_ms", 0},
-	{"notification_channels", "tenant_id, id", 0},
+	{"notification_channels", orderByTenantID, 0},
 	{"monitor_channels", "tenant_id, monitor_id, channel_id", 0},
 	{"alert_outbox", "alert_key, channel_id", 0},
-	{"maintenance_windows", "tenant_id, id", 0},
-	{"users", "tenant_id, id", 0},
+	{"maintenance_windows", orderByTenantID, 0},
+	{"users", orderByTenantID, 0},
 	{"signing_keys", "kid", 0},
 	{"refresh_sessions", "token_hash", 0},
 	{"cluster_ca", "fingerprint", 0},
@@ -69,7 +71,7 @@ var fingerprintTables = []struct {
 	{"unconfirmed_alerts", "node_id, local_id", 0},
 	{"system_alerts", "kind, subject", 0},
 	{"node_incarnations", "node_id", 0},
-	{"api_tokens", "tenant_id, id", auditLevel},
+	{"api_tokens", orderByTenantID, auditLevel},
 	{"audit_log", "raft_index, sub", auditLevel},
 }
 

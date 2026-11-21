@@ -31,6 +31,9 @@ const (
 	maxMaintenanceMinutes = 7 * 24 * 60
 	// defaultTimezone applies to recurring schedules without a time zone.
 	defaultTimezone = "UTC"
+
+	fieldScheduleEndsAt          = "/schedule/endsAt"
+	fieldScheduleDurationMinutes = "/schedule/durationMinutes"
 )
 
 // ListMaintenanceWindows returns the maintenance windows of the caller's tenant.
@@ -243,15 +246,15 @@ func maintenanceSchedule(in gen.MaintenanceSchedule) (store.MaintenanceSchedule,
 		}
 		switch {
 		case in.EndsAt == nil:
-			add("/schedule/endsAt", "required for kind once")
+			add(fieldScheduleEndsAt, "required for kind once")
 		case reversed:
-			add("/schedule/endsAt", "must be after startsAt")
+			add(fieldScheduleEndsAt, "must be after startsAt")
 		}
 		if in.Cron != nil {
 			add("/schedule/cron", "not allowed for kind once")
 		}
 		if in.DurationMinutes != nil {
-			add("/schedule/durationMinutes", "not allowed for kind once")
+			add(fieldScheduleDurationMinutes, "not allowed for kind once")
 		}
 	case gen.Recurring:
 		switch {
@@ -262,14 +265,14 @@ func maintenanceSchedule(in gen.MaintenanceSchedule) (store.MaintenanceSchedule,
 		}
 		switch {
 		case in.DurationMinutes == nil:
-			add("/schedule/durationMinutes", "required for kind recurring")
+			add(fieldScheduleDurationMinutes, "required for kind recurring")
 		case *in.DurationMinutes < 1 || *in.DurationMinutes > maxMaintenanceMinutes:
-			add("/schedule/durationMinutes", fmt.Sprintf("must be between 1 and %d", maxMaintenanceMinutes))
+			add(fieldScheduleDurationMinutes, fmt.Sprintf("must be between 1 and %d", maxMaintenanceMinutes))
 		default:
 			s.DurationMinutes = *in.DurationMinutes
 		}
 		if reversed {
-			add("/schedule/endsAt", "must be after startsAt")
+			add(fieldScheduleEndsAt, "must be after startsAt")
 		}
 	default:
 		add("/schedule/kind", "must be once or recurring")

@@ -29,6 +29,11 @@ import (
 // SendTimeout bounds one delivery (ADR 0014).
 const SendTimeout = 10 * time.Second
 
+const (
+	errInvalidShoutrrrURL = "invalid Shoutrrr URL: "
+	webhookAnsweredPrefix = "webhook answered "
+)
+
 // Target is a decrypted channel. It only lives in memory during a delivery.
 type Target struct {
 	Kind     string
@@ -120,7 +125,7 @@ func (s *Sender) Validate(t Target) error {
 		}
 		svc, err := router.Locate(t.URL)
 		if err != nil {
-			return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + Redact(err.Error(), t.secrets()...)}
+			return &DeliveryError{Permanent: true, Msg: errInvalidShoutrrrURL + Redact(err.Error(), t.secrets()...)}
 		}
 		_, http := svc.(types.HTTPClientSetter)
 		_, dial := svc.(types.DialContextSetter)
@@ -128,7 +133,7 @@ func (s *Sender) Validate(t Target) error {
 			return &DeliveryError{Permanent: true, Msg: "this service cannot be used while SSRF protection is on"}
 		}
 		if err := s.validateShoutrrrHost(t.URL); err != nil {
-			return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + Redact(err.Error(), t.secrets()...)}
+			return &DeliveryError{Permanent: true, Msg: errInvalidShoutrrrURL + Redact(err.Error(), t.secrets()...)}
 		}
 		return nil
 	case store.ChannelWebhook:
@@ -286,7 +291,7 @@ func (s *Sender) sendShoutrrrText(ctx context.Context, t Target, title, text str
 		HTTPClient: s.client, DialContext: s.dialer.DialContext, Timeout: SendTimeout,
 	}, t.URL)
 	if err != nil {
-		return &DeliveryError{Permanent: true, Msg: "invalid Shoutrrr URL: " + err.Error()}
+		return &DeliveryError{Permanent: true, Msg: errInvalidShoutrrrURL + err.Error()}
 	}
 	params := types.Params{}
 	params.SetTitle(title)
@@ -352,14 +357,14 @@ func (s *Sender) sendWebhook(ctx context.Context, t Target, p cluster.AlertPaylo
 		return nil
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden,
 		resp.StatusCode == http.StatusNotFound, resp.StatusCode == http.StatusGone:
-		return &DeliveryError{Permanent: true, Msg: "webhook answered " + resp.Status}
+		return &DeliveryError{Permanent: true, Msg: webhookAnsweredPrefix + resp.Status}
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return &DeliveryError{
 			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), s.now()),
-			Msg:        "webhook answered " + resp.Status,
+			Msg:        webhookAnsweredPrefix + resp.Status,
 		}
 	}
-	return &DeliveryError{Msg: "webhook answered " + resp.Status}
+	return &DeliveryError{Msg: webhookAnsweredPrefix + resp.Status}
 }
 
 // shoutrrrLogger routes the library's log output to slog at debug level,
