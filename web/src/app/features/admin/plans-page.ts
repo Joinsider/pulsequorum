@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -41,7 +48,7 @@ export interface PlanActionError {
   styleUrl: './plans-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class PlansPage {
+export class PlansPage implements OnInit {
   private readonly api = inject(TenantAdminService);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
@@ -61,7 +68,7 @@ export class PlansPage {
     this.plans().map((plan) => ({ plan, rights: planRights(plan) })),
   );
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 

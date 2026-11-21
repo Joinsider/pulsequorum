@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
@@ -253,7 +253,7 @@ import {
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MaintenanceList {
+export class MaintenanceList implements OnInit {
   private readonly api = inject(MaintenanceService);
   private readonly monitorsApi = inject(MonitorsService);
   private readonly dialog = inject(MatDialog);
@@ -270,7 +270,7 @@ export class MaintenanceList {
   protected readonly loadFailed = signal(false);
   protected readonly actionFailed = signal(false);
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
   }
 
