@@ -2,7 +2,7 @@
 
 |                 |                                                                                              |
 |-----------------|----------------------------------------------------------------------------------------------|
-| **Status**      | Proposed                                                                                     |
+| **Status**      | Accepted                                                                                     |
 | **Datum**       | 2026-11-21                                                                                   |
 | **Entscheider** | Projektinhaber                                                                               |
 | **Bezug**       | FA-CHK-10, FA-CHK-11, FA-CHK-14, FA-SEC-SEC, FA-API-06, ADR 0011, ADR 0015, ADR 0018, ADR 0034 |
@@ -153,3 +153,4 @@ Option A zu brechen. Festlegungen:
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-21 | Proposed | Claude |           |
+| 2026-11-21 | Accepted | Projektinhaber | im Chat bestätigt; F1 PEM, F2 kein Zertifikat für fremde Hosts, F3 gemeinsame Schwelle |
