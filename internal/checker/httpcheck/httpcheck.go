@@ -158,12 +158,12 @@ func (s *clientCertSession) addDetails(d map[string]any) {
 	d["clientCertSent"] = s.wasSent()
 }
 
-// wasSent reports whether the latest handshake that asked for a client
-// certificate was answered with it.
+// wasSent reports whether the client certificate was presented in any
+// handshake of this check, including the one before a redirect.
 func (s *clientCertSession) wasSent() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.sent
+	return s.delivered
 }
 
 // clock is the clock for TLS expiry: the test override, then the node clock

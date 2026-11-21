@@ -257,7 +257,8 @@ type clientCertSession struct {
 
 	mu        sync.Mutex
 	requested string // host that asked last, empty if none
-	sent      bool
+	sent      bool   // the last request was answered with cert
+	delivered bool   // cert was presented in any handshake of this check
 }
 
 // hook returns the GetClientCertificate callback for a handshake with host.
@@ -269,7 +270,7 @@ func (s *clientCertSession) hook(host string) func(*tls.CertificateRequestInfo) 
 		defer s.mu.Unlock()
 		s.requested = host
 		if s.cert != nil && sameHost(host, s.host) {
-			s.sent = true
+			s.sent, s.delivered = true, true
 			return s.cert, nil
 		}
 		s.sent = false
