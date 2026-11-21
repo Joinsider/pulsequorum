@@ -4,7 +4,7 @@
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, describe, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ConfigService } from '../config/config.service';
 import { apiBaseUrlInterceptor } from './api-base-url.interceptor';
 
@@ -25,21 +25,27 @@ describe('apiBaseUrlInterceptor', () => {
   it('prefixes API calls with the configured node', () => {
     const { http, controller } = setup('https://mon1.example.com');
     http.get('/api/v1/health').subscribe();
-    controller.expectOne('https://mon1.example.com/api/v1/health').flush({});
+    const req = controller.expectOne('https://mon1.example.com/api/v1/health');
+    expect(req.request.method).toBe('GET');
+    req.flush({});
     controller.verify();
   });
 
   it('keeps API calls same-origin without configured nodes', () => {
     const { http, controller } = setup('');
     http.get('/api/v1/health').subscribe();
-    controller.expectOne('/api/v1/health').flush({});
+    const req = controller.expectOne('/api/v1/health');
+    expect(req.request.method).toBe('GET');
+    req.flush({});
     controller.verify();
   });
 
   it('does not touch non-API URLs', () => {
     const { http, controller } = setup('https://mon1.example.com');
     http.get('/config.json').subscribe();
-    controller.expectOne('/config.json').flush({});
+    const req = controller.expectOne('/config.json');
+    expect(req.request.method).toBe('GET');
+    req.flush({});
     controller.verify();
   });
 });

@@ -44,7 +44,7 @@ type ClusterAdmin interface {
 // clusterAdmin returns the cluster administration or 503 when this node has none.
 func (h *Handlers) clusterAdmin() (ClusterAdmin, error) {
 	if h.deps.ClusterAdmin == nil {
-		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "cluster administration is not available"}
 	}
 	return h.deps.ClusterAdmin, nil
@@ -54,13 +54,13 @@ func (h *Handlers) clusterAdmin() (ClusterAdmin, error) {
 func clusterAdminError(err error) error {
 	switch {
 	case errors.Is(err, membership.ErrNotLeader):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "this node is not the leader, retry", RetryAfter: 1}
 	case errors.Is(err, cluster.ErrNotApplied), errors.Is(err, cluster.ErrUnknownOutcome), errors.Is(err, membership.ErrLeaderUnavailable):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "no leader available, retry", RetryAfter: 1}
 	case errors.Is(err, clusterpki.ErrNoCA):
-		return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "the cluster CA does not exist yet, retry", RetryAfter: 1}
 	case errors.Is(err, membership.ErrUnknownNode):
 		return &Problem{Status: http.StatusNotFound, Title: "Not Found", Detail: "node is not a member of the cluster"}
@@ -77,7 +77,7 @@ func clusterAdminError(err error) error {
 	if errors.As(err, &cmdErr) {
 		switch cmdErr.Code {
 		case cluster.CodeInvalid:
-			return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: cmdErr.Message}
+			return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: cmdErr.Message}
 		case cluster.CodeNotEnabled:
 			return notEnabled(cmdErr)
 		}
@@ -88,7 +88,7 @@ func clusterAdminError(err error) error {
 // notEnabled maps a command that waits for a rolling update to finish (ADR
 // 0018) to 503. The detail names the required version; no secrets are involved.
 func notEnabled(ce *cluster.CommandError) *Problem {
-	return &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable", Detail: ce.Message, RetryAfter: 30}
+	return &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable, Detail: ce.Message, RetryAfter: 30}
 }
 
 // CreateJoinToken issues a one-time token. The secret is returned once and
@@ -102,7 +102,7 @@ func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenR
 		return nil, err
 	}
 	if req.Body == nil {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed,
 			Detail: "request body is required", Fields: []checker.FieldError{{Field: "/role", Message: "required"}}}
 	}
 	role := pki.Role(req.Body.Role)
@@ -125,7 +125,7 @@ func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenR
 		fields = append(fields, checker.FieldError{Field: "/ttlMinutes", Message: fmt.Sprintf("must be between 1 and %d", maxJoinTokenMinutes)})
 	}
 	if len(fields) > 0 {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Fields: fields}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Fields: fields}
 	}
 
 	token, expires, err := admin.CreateJoinToken(ctx, role, tenantID, time.Duration(minutes)*time.Minute)
@@ -159,7 +159,7 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	members, _, err := admin.Members()
 	if err != nil {
 		h.log.Error("could not read the cluster configuration", "err", err)
-		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: "Service Unavailable",
+		return nil, &Problem{Status: http.StatusServiceUnavailable, Title: problemTitleServiceUnavailable,
 			Detail: "cluster configuration is not available, retry", RetryAfter: 1}
 	}
 	_, leaderID := admin.Leader()
@@ -173,11 +173,6 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if err != nil {
 		return nil, err
 	}
-	registered := make(map[string]store.Node, len(registry))
-	for _, n := range registry {
-		registered[n.ID] = n
-	}
-
 	var offsets map[string]int64
 	if h.deps.ClockOffsets != nil {
 		offsets = h.deps.ClockOffsets()
@@ -185,6 +180,15 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	var ssrf map[string]bool
 	if h.deps.SSRFProtectionByNode != nil {
 		ssrf = h.deps.SSRFProtectionByNode()
+	}
+	view := clusterNodeView{
+		leaderID:   leaderID,
+		self:       self,
+		registered: registeredNodesByID(registry),
+		offsets:    offsets,
+		ssrf:       ssrf,
+		peers:      peers,
+		now:        h.deps.Now(),
 	}
 	nodes := make([]gen.ClusterNode, 0, len(members))
 	voters := 0
@@ -195,46 +199,91 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		if m.Voter {
 			voters++
 		}
-		node := gen.ClusterNode{
-			Id: m.ID, Address: m.Address, Voter: m.Voter, Leader: m.ID == leaderID, Self: m.ID == self,
-		}
-		if n, ok := registered[m.ID]; ok {
-			name, version, healthy := n.Name, n.Version, n.Healthy
-			changedAt := time.UnixMilli(n.HealthChangedMs).UTC()
-			capabilities := append([]string{}, n.Capabilities...)
-			maxCommand := int32(min(n.MaxCommandVersion, math.MaxInt32))
-			node.Name, node.Version, node.Healthy = &name, &version, &healthy
-			node.Capabilities, node.HealthChangedAt = &capabilities, &changedAt
-			node.MaxCommandVersion = &maxCommand
-			impaired := n.ConnectivityImpaired
-			node.ConnectivityImpaired = &impaired
-			if n.ConnectivityReason != "" {
-				reason := gen.ClusterNodeConnectivityReason(n.ConnectivityReason)
-				node.ConnectivityReason = &reason
-			}
-			if m.Voter {
-				voterVersions = append(voterVersions, n.MaxCommandVersion)
-			}
-		}
-		if off, ok := offsets[m.ID]; ok && m.ID != self {
-			node.ClockOffsetMs = &off
-		}
-		// Absent for a node without a recent answer, so the SPA ignores it.
-		if enabled, ok := ssrf[m.ID]; ok {
-			node.SsrfProtection = &enabled
-		}
-		if ps, ok := peers[m.ID]; ok && m.ID != self {
-			if lag, caught := ps.Lag(h.deps.Now()); caught {
-				ms := max(lag.Milliseconds(), 0)
-				node.ReplicationLagMs = &ms
-			}
-			if ps.LastError != "" {
-				e := ps.LastError
-				node.ReplicationError = &e
-			}
+		node, maxCmd, hasVoterVersion := buildClusterNode(m, view)
+		if hasVoterVersion {
+			voterVersions = append(voterVersions, maxCmd)
 		}
 		nodes = append(nodes, node)
 	}
+	warnings := clusterWarnings(voters)
+	level := int32(min(cluster.EffectiveCommandLevel(commandLevel), math.MaxInt32))
+	upgradePending := upgradeInProgress(voterVersions)
+	return gen.ListClusterNodes200JSONResponse{
+		Nodes: nodes, LeaderId: leaderID, Warnings: warnings,
+		CommandLevel: &level, UpgradePending: &upgradePending,
+	}, nil
+}
+
+type clusterNodeView struct {
+	leaderID, self string
+	registered     map[string]store.Node
+	offsets        map[string]int64
+	ssrf           map[string]bool
+	peers          map[string]replication.PeerStatus
+	now            time.Time
+}
+
+func registeredNodesByID(registry []store.Node) map[string]store.Node {
+	registered := make(map[string]store.Node, len(registry))
+	for _, n := range registry {
+		registered[n.ID] = n
+	}
+	return registered
+}
+
+func buildClusterNode(m cluster.Member, view clusterNodeView) (gen.ClusterNode, uint32, bool) {
+	node := gen.ClusterNode{
+		Id: m.ID, Address: m.Address, Voter: m.Voter, Leader: m.ID == view.leaderID, Self: m.ID == view.self,
+	}
+	var maxCmd uint32
+	var hasVoterVersion bool
+	if n, ok := view.registered[m.ID]; ok {
+		applyRegisteredNode(&node, n)
+		if m.Voter {
+			maxCmd, hasVoterVersion = n.MaxCommandVersion, true
+		}
+	}
+	if off, ok := view.offsets[m.ID]; ok && m.ID != view.self {
+		node.ClockOffsetMs = &off
+	}
+	// Absent for a node without a recent answer, so the SPA ignores it.
+	if enabled, ok := view.ssrf[m.ID]; ok {
+		node.SsrfProtection = &enabled
+	}
+	if ps, ok := view.peers[m.ID]; ok && m.ID != view.self {
+		applyPeerStatus(&node, ps, view.now)
+	}
+	return node, maxCmd, hasVoterVersion
+}
+
+func applyRegisteredNode(node *gen.ClusterNode, n store.Node) {
+	name, version, healthy := n.Name, n.Version, n.Healthy
+	changedAt := time.UnixMilli(n.HealthChangedMs).UTC()
+	capabilities := append([]string{}, n.Capabilities...)
+	maxCommand := int32(min(n.MaxCommandVersion, math.MaxInt32))
+	node.Name, node.Version, node.Healthy = &name, &version, &healthy
+	node.Capabilities, node.HealthChangedAt = &capabilities, &changedAt
+	node.MaxCommandVersion = &maxCommand
+	impaired := n.ConnectivityImpaired
+	node.ConnectivityImpaired = &impaired
+	if n.ConnectivityReason != "" {
+		reason := gen.ClusterNodeConnectivityReason(n.ConnectivityReason)
+		node.ConnectivityReason = &reason
+	}
+}
+
+func applyPeerStatus(node *gen.ClusterNode, ps replication.PeerStatus, now time.Time) {
+	if lag, caught := ps.Lag(now); caught {
+		ms := max(lag.Milliseconds(), 0)
+		node.ReplicationLagMs = &ms
+	}
+	if ps.LastError != "" {
+		e := ps.LastError
+		node.ReplicationError = &e
+	}
+}
+
+func clusterWarnings(voters int) []string {
 	warnings := make([]string, 0, 2)
 	if voters > 0 && voters%2 == 0 {
 		warnings = append(warnings, fmt.Sprintf("the cluster has an even number of voters (%d); add or remove one voter (FA-CLU-11)", voters))
@@ -242,12 +291,7 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if voters > maxVoters {
 		warnings = append(warnings, fmt.Sprintf("the cluster has more than %d voters (%d); more voters add latency without adding fault tolerance (FA-CLU-11)", maxVoters, voters))
 	}
-	level := int32(min(cluster.EffectiveCommandLevel(commandLevel), math.MaxInt32))
-	upgradePending := upgradeInProgress(voterVersions)
-	return gen.ListClusterNodes200JSONResponse{
-		Nodes: nodes, LeaderId: leaderID, Warnings: warnings,
-		CommandLevel: &level, UpgradePending: &upgradePending,
-	}, nil
+	return warnings
 }
 
 // upgradeInProgress reports whether the registered voters support different

@@ -49,6 +49,8 @@ const (
 	// gapMaxLength bounds the re-evaluated gap (ADR 0024, section 7).
 	gapMaxLength = 24 * time.Hour
 	gapPageSize  = 500
+
+	logReadCommandLevel = "degraded: read command level"
 )
 
 // Proposer proposes Raft commands. *cluster.Node satisfies it.
@@ -162,7 +164,7 @@ func (r *Reporter) ready(ctx context.Context) bool {
 	}
 	level, err := r.opts.CommandLevel(ctx)
 	if err != nil {
-		r.opts.Logger.Warn("degraded: read command level", "err", err)
+		r.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return false
 	}
 	return level >= cluster.DegradedCommandLevel
@@ -279,7 +281,7 @@ func (j *Judge) ready(ctx context.Context) bool {
 	}
 	level, err := j.opts.CommandLevel(ctx)
 	if err != nil {
-		j.opts.Logger.Warn("degraded: read command level", "err", err)
+		j.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return false
 	}
 	return level >= cluster.DegradedCommandLevel
@@ -610,24 +612,14 @@ func (g *GapJob) recordDegraded() {
 func (g *GapJob) run(ctx context.Context) {
 	level, err := g.opts.CommandLevel(ctx)
 	if err != nil {
-		g.opts.Logger.Warn("degraded: read command level", "err", err)
+		g.opts.Logger.Warn(logReadCommandLevel, "err", err)
 		return
 	}
-	if level < cluster.DegradedCommandLevel {
+	if level < cluster.DegradedCommandLevel || !g.suspectsGap() {
 		g.setDone(true)
 		return
 	}
-	if !g.suspectsGap() {
-		g.setDone(true)
-		return
-	}
-	// Ask every reachable peer for a fresh round now, instead of waiting for
-	// the periodic anti-entropy pass.
-	if g.opts.Trigger != nil {
-		for _, id := range g.reachablePeers() {
-			g.opts.Trigger(id)
-		}
-	}
+	g.triggerReachablePeers()
 	if !g.awaitCatchUp(ctx) {
 		return
 	}
@@ -637,33 +629,8 @@ func (g *GapJob) run(ctx context.Context) {
 		return
 	}
 	for _, t := range tenants {
-		afterID := ""
-		for {
-			page, err := g.opts.State.ListMonitors(ctx, t.ID, store.MonitorQuery{AfterID: afterID, Limit: gapPageSize})
-			if err != nil {
-				g.opts.Logger.Warn("degraded: list monitors for gap job", "tenant", t.ID, "err", err)
-				return
-			}
-			for _, m := range page.Items {
-				if ctx.Err() != nil || !g.opts.IsLeader() {
-					return
-				}
-				err := g.reevaluate(ctx, m)
-				switch {
-				case err == nil:
-				case errors.Is(err, store.ErrConflict):
-					// The status moved on meanwhile; the live aggregator covers it.
-					g.opts.Logger.Info("degraded: gap changed meanwhile, skipped", "tenant", m.TenantID, "monitor", m.ID, "err", err)
-				default:
-					// Any other failure leaves the job open: the next tick retries it.
-					g.opts.Logger.Warn("degraded: re-evaluate gap, retrying", "tenant", m.TenantID, "monitor", m.ID, "err", err)
-					return
-				}
-			}
-			if page.NextAfterID == "" {
-				break
-			}
-			afterID = page.NextAfterID
+		if !g.reevaluateTenant(ctx, t.ID) {
+			return
 		}
 	}
 	if ctx.Err() != nil || !g.opts.IsLeader() {
@@ -673,6 +640,56 @@ func (g *GapJob) run(ctx context.Context) {
 		g.announceRestored(ctx)
 	}
 	g.setDone(true)
+}
+
+// triggerReachablePeers asks every reachable peer for a fresh round now,
+// instead of waiting for the periodic anti-entropy pass.
+func (g *GapJob) triggerReachablePeers() {
+	if g.opts.Trigger == nil {
+		return
+	}
+	for _, id := range g.reachablePeers() {
+		g.opts.Trigger(id)
+	}
+}
+
+func (g *GapJob) reevaluateTenant(ctx context.Context, tenantID string) bool {
+	afterID := ""
+	for {
+		page, err := g.opts.State.ListMonitors(ctx, tenantID, store.MonitorQuery{AfterID: afterID, Limit: gapPageSize})
+		if err != nil {
+			g.opts.Logger.Warn("degraded: list monitors for gap job", "tenant", tenantID, "err", err)
+			return false
+		}
+		for _, m := range page.Items {
+			if !g.reevaluateMonitor(ctx, m) {
+				return false
+			}
+		}
+		if page.NextAfterID == "" {
+			return true
+		}
+		afterID = page.NextAfterID
+	}
+}
+
+func (g *GapJob) reevaluateMonitor(ctx context.Context, m store.Monitor) bool {
+	if ctx.Err() != nil || !g.opts.IsLeader() {
+		return false
+	}
+	err := g.reevaluate(ctx, m)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, store.ErrConflict):
+		// The status moved on meanwhile; the live aggregator covers it.
+		g.opts.Logger.Info("degraded: gap changed meanwhile, skipped", "tenant", m.TenantID, "monitor", m.ID, "err", err)
+		return true
+	default:
+		// Any other failure leaves the job open: the next tick retries it.
+		g.opts.Logger.Warn("degraded: re-evaluate gap, retrying", "tenant", m.TenantID, "monitor", m.ID, "err", err)
+		return false
+	}
 }
 
 // announceRestored closes the quorum alert of the outage (ADR 0025, section 5).

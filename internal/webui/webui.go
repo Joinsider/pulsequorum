@@ -22,6 +22,8 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
+const indexHTML = "index.html"
+
 // hashedAsset matches file names produced with Angular's output hashing,
 // e.g. main-4K2ZQ3XH.js or chunk-ABCDEFGH.js.
 var hashedAsset = regexp.MustCompile(`-[A-Z0-9]{8}\.[a-z0-9]+$`)
@@ -51,7 +53,7 @@ func NewHandler(fsys fs.FS) http.Handler {
 			return
 		}
 
-		if name != "" && name != "index.html" {
+		if name != "" && name != indexHTML {
 			if serveFile(w, r, fsys, name) {
 				return
 			}
@@ -62,7 +64,7 @@ func NewHandler(fsys fs.FS) http.Handler {
 				return
 			}
 		}
-		if !serveFile(w, r, fsys, "index.html") {
+		if !serveFile(w, r, fsys, indexHTML) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = io.WriteString(w, "Pulsequorum UI is not built. Run `make build`.\n")
@@ -94,7 +96,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) 
 
 func cacheControl(name string) string {
 	switch {
-	case name == "index.html":
+	case name == indexHTML:
 		return "no-cache"
 	case hashedAsset.MatchString(path.Base(name)):
 		return "public, max-age=31536000, immutable"

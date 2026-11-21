@@ -117,7 +117,7 @@ func authError(err error) error {
 	case errors.Is(err, auth.ErrSetupUnavailable):
 		return &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: "setup token is invalid or expired"}
 	case errors.Is(err, auth.ErrWeakPassword):
-		return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: err.Error()}
+		return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: err.Error()}
 	case errors.Is(err, store.ErrConflict):
 		return &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "setup is already complete or the username is taken"}
 	case errors.Is(err, cluster.ErrNotApplied), errors.Is(err, cluster.ErrUnknownOutcome):
@@ -138,7 +138,7 @@ func (h *Handlers) Setup(ctx context.Context, req gen.SetupRequestObject) (gen.S
 		return nil, err
 	}
 	if req.Body == nil || !validUsername(req.Body.Username) {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: "username must have 3 to 64 characters"}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: "username must have 3 to 64 characters"}
 	}
 	display := ""
 	if req.Body.DisplayName != nil {
@@ -178,7 +178,7 @@ func (h *Handlers) Refresh(ctx context.Context, req gen.RefreshRequestObject) (g
 		return nil, err
 	}
 	if string(req.Params.XRequestedWith) != csrfHeader {
-		return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "missing X-Requested-With header"}
+		return nil, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "missing X-Requested-With header"}
 	}
 	t, err := l.Refresh(ctx, refreshFromCookie(ctx))
 	if err != nil {
@@ -198,7 +198,7 @@ func (h *Handlers) Logout(ctx context.Context, req gen.LogoutRequestObject) (gen
 		return nil, err
 	}
 	if string(req.Params.XRequestedWith) != csrfHeader {
-		return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "missing X-Requested-With header"}
+		return nil, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "missing X-Requested-With header"}
 	}
 	if err := l.Logout(ctx, refreshFromCookie(ctx)); err != nil {
 		return nil, authError(err)
@@ -239,11 +239,11 @@ func (h *Handlers) ChangeMyPassword(ctx context.Context, req gen.ChangeMyPasswor
 		return nil, err
 	}
 	if req.Body == nil {
-		return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request", Detail: "request body is required"}
+		return nil, &Problem{Status: http.StatusBadRequest, Title: problemTitleBadRequest, Detail: "request body is required"}
 	}
 	t, err := l.ChangePassword(ctx, p, req.Body.CurrentPassword, req.Body.NewPassword)
 	if errors.Is(err, auth.ErrInvalidCredentials) {
-		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed", Detail: "current password is wrong"}
+		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: "current password is wrong"}
 	}
 	if err != nil {
 		return nil, authError(err)

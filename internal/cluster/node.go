@@ -40,6 +40,7 @@ const (
 	DefaultSnapshotInterval  = 2 * time.Minute
 	defaultApplyTimeout      = 5 * time.Second
 	retainedSnapshots        = 2
+	raftDBFilename           = "raft.db"
 )
 
 // Bounds of forwarding a command from a follower to the leader (FA-CLU-05).
@@ -146,7 +147,7 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		Output:     os.Stderr,
 	})
 
-	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, "raft.db"))
+	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, raftDBFilename))
 	if err != nil {
 		return nil, fmt.Errorf("open raft log store: %w", err)
 	}
@@ -251,10 +252,10 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 // the node belongs to a cluster already (FA-CLU-02). Call it before Start.
 func HasState(dataDir string) (bool, error) {
 	dir := filepath.Join(dataDir, "raft")
-	if _, err := os.Stat(filepath.Join(dir, "raft.db")); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, raftDBFilename)); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, "raft.db"))
+	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, raftDBFilename))
 	if err != nil {
 		return false, fmt.Errorf("open raft log store: %w", err)
 	}

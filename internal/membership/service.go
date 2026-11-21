@@ -30,6 +30,8 @@ import (
 // most once.
 const forwardedKey = "uc-forwarded"
 
+const errNotLeaderFormat = "not the leader; leader=%s"
+
 // Access levels of the ClusterService and ReplicationService methods
 // (clusternet.Authorize). Apply accepts forwarded commands from voters only: a
 // voter is a full member and could propose any command itself, probes never
@@ -119,11 +121,7 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	// token (FA-CLU-10). Never forwarded: the leader must see the moving
 	// node's own certificate, so it calls the leader directly.
 	if peer, ok := clusternet.Peer(ctx); ok && req.GetTokenId() == "" {
-		if !s.Node.IsLeader() {
-			_, leaderID := s.Node.Leader()
-			return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
-		}
-		return s.updateAddress(ctx, peer, info)
+		return s.handleSelfAddressMove(ctx, peer, info)
 	}
 	if !s.Node.IsLeader() {
 		return s.forwardJoin(ctx, req)
@@ -133,36 +131,14 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	}
 	wantVoter := info.GetRole() != pb.NodeInfo_ROLE_PROBE
 	if wantVoter {
-		if host, port, err := net.SplitHostPort(info.GetAdvertiseAddr()); err != nil || host == "" || port == "" {
-			return nil, status.Error(codes.InvalidArgument, "voter address must be host:port")
-		}
-		// Before the token is spent: a new node under a used address is
-		// rejected with the old node ID (FA-CLU-08, ADR 0012 A5).
-		var inUse *AddressInUseError
-		if err := s.Manager.CheckAddress(info.GetId(), info.GetAdvertiseAddr()); errors.As(err, &inUse) {
-			return nil, status.Error(codes.AlreadyExists, inUse.Error())
-		} else if err != nil {
-			return nil, status.Error(codes.Unavailable, err.Error())
-		}
-		// Before the token is spent: a binary that cannot apply the cluster's
-		// command level must not become a voter (ADR 0018).
-		if err := s.checkJoinLevel(ctx, info); err != nil {
+		if err := s.validateVoterJoin(ctx, info); err != nil {
 			return nil, err
 		}
 	}
 
-	bundle, _, err := s.Authority.Bundle(ctx)
+	issued, err := s.redeemJoinToken(ctx, req, info)
 	if err != nil {
-		return nil, status.Error(codes.Unavailable, "cluster CA is not ready")
-	}
-	token := pki.JoinToken{ID: req.GetTokenId(), Secret: req.GetTokenSecret(), Fingerprint: pki.Fingerprint(bundle[0])}
-	issued, err := s.Authority.Redeem(ctx, token.String(), info.GetId(), req.GetCsrDer())
-	switch {
-	case errors.Is(err, clusterpki.ErrInvalidToken):
-		s.Log.Warn("join rejected: invalid token", "node_id", info.GetId(), "address", info.GetAdvertiseAddr())
-		return nil, status.Error(codes.PermissionDenied, "invalid join token")
-	case err != nil:
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, err
 	}
 	role := issued.Identity.Role
 	if (role == pki.RoleVoter) != wantVoter {
@@ -171,28 +147,77 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 
 	resp := &pb.JoinResponse{ClusterId: issued.Identity.ClusterID, CertificateChainDer: issued.ChainDER, CaBundleDer: issued.BundleDER}
 	if role == pki.RoleVoter {
-		if err := s.Manager.AddVoter(ctx, info.GetId(), info.GetAdvertiseAddr()); err != nil {
-			var inUse *AddressInUseError
-			if errors.As(err, &inUse) {
-				return nil, status.Error(codes.AlreadyExists, inUse.Error())
-			}
-			return nil, status.Errorf(codes.Unavailable, "add node to the cluster: %v", err)
-		}
-		if key, ok := s.KEK.Transferable(); ok {
-			resp.Kek = key
-		}
-		resp.KekFingerprint = s.KEKFingerprint
-		members, _, err := s.Node.Members()
-		if err == nil {
-			for _, m := range members {
-				if m.Voter {
-					resp.Voters = append(resp.Voters, &pb.NodeInfo{Id: m.ID, AdvertiseAddr: m.Address, Role: pb.NodeInfo_ROLE_VOTER})
-				}
-			}
+		if err := s.enrollVoter(ctx, info, resp); err != nil {
+			return nil, err
 		}
 	}
 	s.Log.Info("node joined", "node_id", info.GetId(), "role", role, "address", info.GetAdvertiseAddr())
 	return resp, nil
+}
+
+func (s *Service) handleSelfAddressMove(ctx context.Context, peer pki.Identity, info *pb.NodeInfo) (*pb.JoinResponse, error) {
+	if !s.Node.IsLeader() {
+		_, leaderID := s.Node.Leader()
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
+	}
+	return s.updateAddress(ctx, peer, info)
+}
+
+func (s *Service) validateVoterJoin(ctx context.Context, info *pb.NodeInfo) error {
+	if host, port, err := net.SplitHostPort(info.GetAdvertiseAddr()); err != nil || host == "" || port == "" {
+		return status.Error(codes.InvalidArgument, "voter address must be host:port")
+	}
+	// Before the token is spent: a new node under a used address is
+	// rejected with the old node ID (FA-CLU-08, ADR 0012 A5).
+	var inUse *AddressInUseError
+	if err := s.Manager.CheckAddress(info.GetId(), info.GetAdvertiseAddr()); errors.As(err, &inUse) {
+		return status.Error(codes.AlreadyExists, inUse.Error())
+	} else if err != nil {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	// Before the token is spent: a binary that cannot apply the cluster's
+	// command level must not become a voter (ADR 0018).
+	return s.checkJoinLevel(ctx, info)
+}
+
+func (s *Service) redeemJoinToken(ctx context.Context, req *pb.JoinRequest, info *pb.NodeInfo) (clusterpki.Issued, error) {
+	bundle, _, err := s.Authority.Bundle(ctx)
+	if err != nil {
+		return clusterpki.Issued{}, status.Error(codes.Unavailable, "cluster CA is not ready")
+	}
+	token := pki.JoinToken{ID: req.GetTokenId(), Secret: req.GetTokenSecret(), Fingerprint: pki.Fingerprint(bundle[0])}
+	issued, err := s.Authority.Redeem(ctx, token.String(), info.GetId(), req.GetCsrDer())
+	switch {
+	case errors.Is(err, clusterpki.ErrInvalidToken):
+		s.Log.Warn("join rejected: invalid token", "node_id", info.GetId(), "address", info.GetAdvertiseAddr())
+		return clusterpki.Issued{}, status.Error(codes.PermissionDenied, "invalid join token")
+	case err != nil:
+		return clusterpki.Issued{}, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return issued, nil
+}
+
+func (s *Service) enrollVoter(ctx context.Context, info *pb.NodeInfo, resp *pb.JoinResponse) error {
+	if err := s.Manager.AddVoter(ctx, info.GetId(), info.GetAdvertiseAddr()); err != nil {
+		var inUse *AddressInUseError
+		if errors.As(err, &inUse) {
+			return status.Error(codes.AlreadyExists, inUse.Error())
+		}
+		return status.Errorf(codes.Unavailable, "add node to the cluster: %v", err)
+	}
+	if key, ok := s.KEK.Transferable(); ok {
+		resp.Kek = key
+	}
+	resp.KekFingerprint = s.KEKFingerprint
+	members, _, err := s.Node.Members()
+	if err == nil {
+		for _, m := range members {
+			if m.Voter {
+				resp.Voters = append(resp.Voters, &pb.NodeInfo{Id: m.ID, AdvertiseAddr: m.Address, Role: pb.NodeInfo_ROLE_VOTER})
+			}
+		}
+	}
+	return nil
 }
 
 // upgradeRequiredText is part of the FailedPrecondition message of a join
@@ -270,7 +295,7 @@ func (s *Service) RenewCertificate(ctx context.Context, req *pb.RenewCertificate
 	}
 	if !s.Node.IsLeader() {
 		addr, _ := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", addr)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, addr)
 	}
 	if err := s.stillMember(ctx, peer); err != nil {
 		return nil, err
@@ -367,7 +392,7 @@ func (s *Service) RemoveNode(ctx context.Context, req *pb.RemoveNodeRequest) (*p
 	}
 	if !s.Node.IsLeader() {
 		_, leaderID := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
 	}
 	s.Log.Info("cluster node removal forwarded", "node_id", nodeID, "requested_by", req.GetRequestedBy())
 
@@ -382,7 +407,7 @@ func (s *Service) RemoveNode(ctx context.Context, req *pb.RemoveNodeRequest) (*p
 	case errors.Is(err, ErrNotLeader):
 		// Leadership moved between the check and the removal.
 		_, leaderID := s.Node.Leader()
-		return nil, status.Errorf(codes.FailedPrecondition, "not the leader; leader=%s", leaderID)
+		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, leaderID)
 	case errors.Is(err, ErrUnknownNode):
 		code = "unknown_node"
 	case errors.Is(err, ErrRemoveLeader):

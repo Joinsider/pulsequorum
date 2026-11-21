@@ -113,6 +113,13 @@ type Problem struct {
 	RetryAfter int // seconds; 0 = no header
 }
 
+const (
+	problemTitleBadRequest          = "Bad Request"
+	problemTitleValidationFailed    = "Validation Failed"
+	problemTitleUnprocessableEntity = "Unprocessable Entity"
+	problemTitleServiceUnavailable  = "Service Unavailable"
+)
+
 func (p *Problem) Error() string { return fmt.Sprintf("%d %s: %s", p.Status, p.Title, p.Detail) }
 
 // Register mounts all API operations on mux under BaseURL. It panics if the
@@ -136,7 +143,7 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 		schemas: &configsecret.Schemas{Registry: deps.Registry}}
 	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{authenticate(public, tokenOps, deps.Authenticator)}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())
+			WriteProblem(w, http.StatusBadRequest, problemTitleBadRequest, err.Error())
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			var p *Problem
@@ -157,7 +164,7 @@ func Register(mux *http.ServeMux, cfg config.Config, log *slog.Logger, deps Deps
 		BaseURL:    BaseURL,
 		BaseRouter: mux,
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			WriteProblem(w, http.StatusBadRequest, "Bad Request", err.Error())
+			WriteProblem(w, http.StatusBadRequest, problemTitleBadRequest, err.Error())
 		},
 	})
 }

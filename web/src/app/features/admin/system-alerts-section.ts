@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  inject,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoDirective } from '@jsverse/transloco';
 import { firstValueFrom } from 'rxjs';
@@ -154,8 +161,9 @@ const RELOAD_INTERVAL_MS = 10_000;
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class SystemAlertsSection {
+export class SystemAlertsSection implements OnInit {
   private readonly service = inject(SystemAlertsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly alerts = signal<SystemAlert[] | null>(null);
   protected readonly loading = signal(true);
@@ -163,14 +171,14 @@ export class SystemAlertsSection {
 
   private loadInFlight = false;
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void this.load();
       }
     }, RELOAD_INTERVAL_MS);
-    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+    this.destroyRef.onDestroy(() => clearInterval(timer));
   }
 
   /** Reloads the alerts. Skips the call if one is already running. */

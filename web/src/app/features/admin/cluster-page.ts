@@ -5,6 +5,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  OnInit,
   computed,
   inject,
   signal,
@@ -104,11 +105,12 @@ export function displayName(node: ClusterNode): string {
   styleUrl: './cluster-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ClusterPage {
+export class ClusterPage implements OnInit {
   private readonly api = inject(ClusterService);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
   private readonly transloco = inject(TranslocoService);
+  private readonly destroyRef = inject(DestroyRef);
 
   /** Last successful list; kept during reloads and after a failed poll. */
   protected readonly data = signal<ClusterNodeList | null>(null);
@@ -163,14 +165,14 @@ export class ClusterPage {
     };
   });
 
-  constructor() {
+  ngOnInit(): void {
     void this.load();
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void this.load();
       }
     }, POLL_INTERVAL_MS);
-    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+    this.destroyRef.onDestroy(() => clearInterval(timer));
   }
 
   /** Reloads the member list. Skips the call if one is already running. */

@@ -28,6 +28,10 @@ func forbidden(detail string) *Problem {
 	return &Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: detail}
 }
 
+func isPlatformRole(r string) bool {
+	return auth.Role(r) == auth.RolePlatformAdmin
+}
+
 // authorizeUserChange returns nil if actor may make the change:
 //   - only admins (tenant-admin, platform-admin) manage users, within their tenant;
 //   - only platform admins create, change or delete platform admins;
@@ -38,7 +42,6 @@ func (h *Handlers) authorizeUserChange(ctx context.Context, actor auth.Principal
 	if !actor.CanAdmin() {
 		return forbidden("your role does not allow this action")
 	}
-	isPlatform := func(r string) bool { return auth.Role(r) == auth.RolePlatformAdmin }
 	if c.NewRole != "" && !auth.CanAssignRole(actor, c.NewRole) {
 		return forbidden("you cannot assign this role")
 	}
@@ -48,38 +51,45 @@ func (h *Handlers) authorizeUserChange(ctx context.Context, actor auth.Principal
 	if c.Target.TenantID != actor.TenantID {
 		return notFound("user")
 	}
-	actorIsPlatform := false
-	for _, r := range actor.Roles {
-		actorIsPlatform = actorIsPlatform || r == auth.RolePlatformAdmin
-	}
-	if isPlatform(c.Target.Role) && !actorIsPlatform {
+	if isPlatformRole(c.Target.Role) && !actor.Has(auth.RolePlatformAdmin) {
 		return forbidden("only platform admins can change platform admins")
 	}
 	demote := c.NewRole != "" && c.NewRole != auth.Role(c.Target.Role)
-	if c.Target.ID == actor.UserID && (demote || c.Disable || c.Delete) {
-		return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
+	if err := checkSelfUserChange(actor, c, demote); err != nil {
+		return err
+	}
+	if isPlatformRole(c.Target.Role) && !c.Target.Disabled && (demote || c.Disable || c.Delete) {
+		return h.ensureOtherPlatformAdmin(ctx, c.Target)
+	}
+	return nil
+}
+
+func checkSelfUserChange(actor auth.Principal, c userChange, demote bool) error {
+	if c.Target.ID != actor.UserID {
+		return nil
+	}
+	if demote || c.Disable || c.Delete {
+		return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed,
 			Detail: "you cannot demote, disable or delete yourself"}
 	}
 	// Changing one's own password needs the current one (PUT /me/password);
 	// otherwise a stolen access token could take over the account for good.
-	if c.Target.ID == actor.UserID && c.Password {
-		return &Problem{Status: http.StatusUnprocessableEntity, Title: "Validation Failed",
+	if c.Password {
+		return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed,
 			Detail: "change your own password with PUT /me/password"}
 	}
-	if isPlatform(c.Target.Role) && !c.Target.Disabled && (demote || c.Disable || c.Delete) {
-		users, err := h.deps.State.ListUsers(ctx, c.Target.TenantID)
-		if err != nil {
-			return err
-		}
-		others := 0
-		for _, u := range users {
-			if u.ID != c.Target.ID && isPlatform(u.Role) && !u.Disabled {
-				others++
-			}
-		}
-		if others == 0 {
-			return &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "the last platform admin cannot be removed"}
+	return nil
+}
+
+func (h *Handlers) ensureOtherPlatformAdmin(ctx context.Context, target *store.User) error {
+	users, err := h.deps.State.ListUsers(ctx, target.TenantID)
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u.ID != target.ID && isPlatformRole(u.Role) && !u.Disabled {
+			return nil
 		}
 	}
-	return nil
+	return &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: "the last platform admin cannot be removed"}
 }

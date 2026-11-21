@@ -553,40 +553,51 @@ export class ChannelEditorPage implements OnInit {
       isDefault: this.isSystem() ? undefined : raw.isDefault,
     };
 
-    if (raw.kind === NotificationKind.shoutrrr) {
-      // Stored secrets are kept by omitting `url` on update; a new URL is needed on create.
-      if (!this.existing() || this.replacing()) {
-        const built = this.buildUrl();
-        if (!built.ok) {
-          this.shoutrrrError.set(built.message);
-          return;
-        }
-        input.url = built.url;
-      }
-    } else {
-      const headers = buildHeaders(this.headerRows());
-      if (!headers.ok) {
-        this.formError.set(this.transloco.translate(HEADER_ERROR_KEYS[headers.error]));
-        return;
-      }
-      const wh = this.form.controls.webhook.getRawValue();
-      if (this.form.controls.webhook.invalid) {
-        this.form.controls.webhook.markAllAsTouched();
-        this.formError.set(this.transloco.translate('channels.editor.errors.url'));
-        return;
-      }
-      input.webhook = {
-        url: wh.url.trim(),
-        method:
-          wh.method === WebhookConfigMethod.PUT
-            ? WebhookConfigMethod.PUT
-            : WebhookConfigMethod.POST,
-        headers: headers.headers,
-        bodyTemplate: wh.bodyTemplate.trim() || undefined,
-      };
+    const ok =
+      raw.kind === NotificationKind.shoutrrr
+        ? this.applyShoutrrrTarget(input)
+        : this.applyWebhookTarget(input);
+    if (!ok) {
+      return;
     }
 
     this.save(input);
+  }
+
+  private applyShoutrrrTarget(input: NotificationChannelInput): boolean {
+    // Stored secrets are kept by omitting `url` on update; a new URL is needed on create.
+    if (this.existing() && !this.replacing()) {
+      return true;
+    }
+    const built = this.buildUrl();
+    if (!built.ok) {
+      this.shoutrrrError.set(built.message);
+      return false;
+    }
+    input.url = built.url;
+    return true;
+  }
+
+  private applyWebhookTarget(input: NotificationChannelInput): boolean {
+    const headers = buildHeaders(this.headerRows());
+    if (!headers.ok) {
+      this.formError.set(this.transloco.translate(HEADER_ERROR_KEYS[headers.error]));
+      return false;
+    }
+    const wh = this.form.controls.webhook.getRawValue();
+    if (this.form.controls.webhook.invalid) {
+      this.form.controls.webhook.markAllAsTouched();
+      this.formError.set(this.transloco.translate('channels.editor.errors.url'));
+      return false;
+    }
+    input.webhook = {
+      url: wh.url.trim(),
+      method:
+        wh.method === WebhookConfigMethod.PUT ? WebhookConfigMethod.PUT : WebhookConfigMethod.POST,
+      headers: headers.headers,
+      bodyTemplate: wh.bodyTemplate.trim() || undefined,
+    };
+    return true;
   }
 
   private save(input: NotificationChannelInput): void {
