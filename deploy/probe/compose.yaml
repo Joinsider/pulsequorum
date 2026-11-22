@@ -6,11 +6,16 @@
 # use the defaults documented there; the commented ones are optional.
 services:
   probe:
-    image: ghcr.io/joinsider/pulsequorum:0.0
+    # Dedicated probe image (ADR 0043): no SPA, REST API, OIDC or Shoutrrr code.
+    # Tags follow the main image; "latest" is only published from 1.0.0 on (ADR 0040).
+    image: ghcr.io/joinsider/pulsequorum-probe:0.0
     build:
       context: ../..
+      dockerfile: Dockerfile.probe
     restart: unless-stopped
     environment:
+      # The probe image defaults to NODE_ROLE=probe; the setting is kept for clarity.
+      # The main image (ghcr.io/joinsider/pulsequorum) also works with NODE_ROLE=probe.
       NODE_ROLE: probe
       NODE_NAME: probe-eu-1
       NODE_REGION: eu-central
@@ -69,7 +74,7 @@ services:
     sysctls:
       net.ipv4.ping_group_range: "65532 65532"
     healthcheck:
-      test: ["CMD", "/pulsequorum", "healthcheck"]
+      test: ["CMD", "/pulsequorum-probe", "healthcheck"]
       interval: 30s
       timeout: 5s
       start_period: 10s

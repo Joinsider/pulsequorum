@@ -2,6 +2,22 @@
 
 Dieses Dokument beschreibt den Betrieb von Pulsequorum-Nodes mit der Rolle `NODE_ROLE=probe` (Pflichtenheft FA-PRB-01 bis FA-PRB-07, ADR 0034 und ADR 0035). Die Angaben entsprechen `internal/probe`, `internal/probegw`, `internal/membership`, `internal/sysalert`, `internal/config` und `cmd/pulsequorum/probe.go`. Ein einsatzfertiges Compose-Beispiel liegt in [deploy/probe/compose.yaml](../../deploy/probe/compose.yaml).
 
+## Probe-Image
+
+Probes laufen im eigenen Image `ghcr.io/joinsider/pulsequorum-probe` (ADR 0043). Das Binary `/pulsequorum-probe` ist der Entrypoint; es kennt die Unterbefehle `healthcheck` und `version` und setzt `NODE_ROLE=probe` standardmäßig. Mit `NODE_ROLE=voter` verweigert es den Start.
+
+Warum ein eigenes Image:
+
+- **Kleiner:** Ohne SPA, REST-API, OIDC- und Shoutrrr-Code ist das Image deutlich schlanker.
+- **Weniger Befunde und seltenere Zwangs-Updates:** Der Scanner findet in einem schlankeren Image weniger Schwachstellen. Dadurch müssen Probe-Betreiber seltener wegen Befunden außerhalb der Probe-Funktion aktualisieren.
+- **Ehrlich begrenzt:** Die Code-Pfade von Raft und bbolt sind im Probe-Binary weiterhin eingebunden, werden im Probe-Betrieb aber nie ausgeführt. Das ist **keine Sicherheitsgrenze**. Der wirksame Schutz ist die [lokale Richtlinie der Probe](#lokale-richtlinie-der-probe-adr-0044) in diesem Dokument.
+
+Das Hauptimage `ghcr.io/joinsider/pulsequorum` mit `NODE_ROLE=probe` funktioniert weiterhin. Bestehende Installationen müssen nicht umgestellt werden. Das Compose-Beispiel [deploy/probe/compose.yaml](../../deploy/probe/compose.yaml) nutzt das Probe-Image.
+
+**Tags:** Das Probe-Image folgt den Tags des Hauptimages: `X.Y.Z` (z. B. `0.0.5`) und `X.Y` (z. B. `0.0`) für Versionen ohne Suffix. Der Tag `latest` gibt es erst ab Version `1.0.0` (ADR 0040). Bis dahin ist `latest` nicht zu verwenden, weil er auf Breaking Changes in `0.x` zeigen würde. Für produktive Umgebungen empfiehlt sich ein fester Tag `X.Y.Z`.
+
+Der Container-Healthcheck im Compose-Beispiel ruft `/pulsequorum-probe healthcheck` auf.
+
 ## Architektur & Quorum-Neutralität
 
 - **Reine Mess-Nodes:** Eine Probe führt Monitore aus, hält aber keinen Raft-Zustand, kein `state.db`, keine Benutzer- oder Mandantendaten und keine Cluster-UI (`HTTP_ADDR` liefert ausschließlich `/healthz` und `/readyz`).
@@ -75,7 +91,7 @@ Bei Verbindungsabbruch zum Cluster puffert die Probe alle Prüfergebnisse fortla
 
 ## Gesundheit, Metriken & Ressourcenbedarf
 
-- **`/healthz` & `/readyz`:** Lauschen auf `HTTP_ADDR` (Standard `:8080`). `/healthz` meldet den Prozesszustand (für Docker/Compose-`healthcheck`), `/readyz` liefert erst `200 OK`, wenn die Probe aktiv mit einem Voter verbunden ist und ihren ersten Konfigurations-Snapshot empfangen hat (sonst `503 Service Unavailable`).
+- **`/healthz` & `/readyz`:** Lauschen auf `HTTP_ADDR` (Standard `:8080`). `/healthz` meldet den Prozesszustand (Docker/Compose-`healthcheck` über `/pulsequorum-probe healthcheck`, das denselben Endpunkt abfragt), `/readyz` liefert erst `200 OK`, wenn die Probe aktiv mit einem Voter verbunden ist und ihren ersten Konfigurations-Snapshot empfangen hat (sonst `503 Service Unavailable`).
 - **Prometheus `/metrics`:** Optional über `METRICS_ADDR` aktivierbar und optional mit `METRICS_TOKEN` / `METRICS_TOKEN_FILE` geschützt. Voter exportieren zudem `pulsequorum_probe_rejected_total{reason}` (u. a. `non_probe_role`, `revoked`, `unregistered`, `owner_mismatch`, `foreign_monitor`, `upload_identity`) für abgelehnte Probe-Zugriffe.
 - **Probe-Richtlinie `/metrics`:** Probes exportieren `pulsequorum_probe_policy_blocked_total{reason}` (`target`, `method`, `type`) für Checks, die durch die lokale Probe-Richtlinie (`PROBE_ALLOW_TARGETS`, `PROBE_ALLOW_HTTP_METHODS`, `PROBE_ALLOW_MONITOR_TYPES`) blockiert wurden.
 - **Speicherbedarf:** Durch den Verzicht auf Raft/UI/State-Store sowie den begrenzten SQLite-Reader-Pool (`1` Reader, `2 MiB` Cache) bleibt der Speicherbedarf im Regelbetrieb deutlich unter `64 MiB` RSS (NFA-PERF-02); im Compose-Beispiel kann ein enges Limit (z. B. `mem_limit: 128m`) gesetzt werden.
