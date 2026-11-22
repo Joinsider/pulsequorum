@@ -5,6 +5,7 @@ syntax = "proto3";
 
 package pulsequorum.v1;
 
+import "pulsequorum/v1/command.proto";
 import "pulsequorum/v1/heartbeat.proto";
 
 option go_package = "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1;pulsequorumv1";
@@ -27,6 +28,28 @@ message SubscribeRequest {
   string version = 2;
   // Last assignment revision the probe has applied; 0 requests a full snapshot.
   uint64 known_revision = 3;
+  // Protocol version (1); voters reject unknown versions with FAILED_PRECONDITION.
+  uint32 protocol_version = 4;
+  // Incarnation of the probe's local metrics.db.
+  string incarnation = 5;
+  string name = 6;
+  string region = 7;
+  map<string, string> labels = 8;
+  // Wall clock of the probe in Unix milliseconds (ADR 0020).
+  int64 wall_clock_unix_ms = 9;
+  // Expiry of the probe's current certificate in Unix milliseconds (FA-PKI-06).
+  int64 cert_not_after_ms = 10;
+  string cert_issuer_fingerprint = 11;
+  repeated string trust_bundle_fingerprints = 12;
+  ProbeBufferStatus buffer = 13;
+}
+
+message ProbeBufferStatus {
+  int64 bytes = 1;
+  uint64 unacked = 2;
+  int64 oldest_unacked_ms = 3;
+  // Number of heartbeats dropped due to buffer limits without acknowledgment.
+  uint64 dropped_total = 4;
 }
 
 message SubscribeResponse {
@@ -35,6 +58,13 @@ message SubscribeResponse {
   bool full_snapshot = 2;
   repeated ProbeMonitor upserts = 3;
   repeated string removed_monitor_ids = 4;
+  // Position of the probe's heartbeat stream on this voter.
+  StreamPosition stream_position = 5;
+  // Current voters for voters.json (sent in the first response and on changes).
+  repeated NodeInfo voters = 6;
+  int64 server_time_ms = 7;
+  string active_ca_fingerprint = 8;
+  repeated string trust_bundle_fingerprints = 9;
 }
 
 // ProbeMonitor is the subset of a monitor a probe needs to run its check.
@@ -51,6 +81,9 @@ message ProbeMonitor {
 
 message UploadHeartbeatsRequest {
   repeated Heartbeat heartbeats = 1;
+  // Everything with seq < lost_below was dropped by the probe buffer without
+  // acknowledgment. 0 means nothing lost.
+  uint64 lost_below = 2;
 }
 
 message UploadHeartbeatsResponse {

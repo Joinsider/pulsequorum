@@ -32,12 +32,16 @@ const (
 	maxHeartbeatLimit     = 5000
 	// DefaultMetricsCacheKiB is the writer page cache of metrics.db (ADR 0013 C5).
 	DefaultMetricsCacheKiB = 64 << 10
+	// ProbeMetricsCacheKiB is the reduced writer page cache for probes (NFA-PERF-02).
+	ProbeMetricsCacheKiB = 2 << 10
 )
 
 // MetricsOptions tune metrics.db.
 type MetricsOptions struct {
 	// CacheSizeKiB of the writer; 0 = DefaultMetricsCacheKiB.
 	CacheSizeKiB int
+	// ReadConns is the size of the read pool; 0 = 4.
+	ReadConns int
 }
 
 // MetricsStore implements store.Metrics on metrics.db.
@@ -60,10 +64,14 @@ func OpenMetrics(ctx context.Context, dataDir string, opts MetricsOptions) (*Met
 	if opts.CacheSizeKiB == 0 {
 		opts.CacheSizeKiB = DefaultMetricsCacheKiB
 	}
+	readConns := opts.ReadConns
+	if readConns <= 0 {
+		readConns = 4 // small pool leaves gaps for checkpoints (ADR 0013 C4)
+	}
 	db, err := Open(ctx, Options{
 		Path:         filepath.Join(dataDir, MetricsFile),
 		Synchronous:  SyncNormal,
-		ReadConns:    4, // small pool leaves gaps for checkpoints (ADR 0013 C4)
+		ReadConns:    readConns,
 		CacheSizeKiB: opts.CacheSizeKiB,
 		Migrations:   migrations,
 	})
@@ -442,4 +450,174 @@ func (m *MetricsStore) DeleteHeartbeatsBefore(ctx context.Context, beforeMs int6
 		return 0, fmt.Errorf("delete heartbeats: %w", mapErr(err))
 	}
 	return n, nil
+}
+
+// MinSeq returns the lowest stored seq of the stream, or 0 if empty.
+func (m *MetricsStore) MinSeq(ctx context.Context, nodeID, incarnation string) (uint64, error) {
+	seq, err := m.q.MinSeq(ctx, metricsdb.MinSeqParams{NodeID: nodeID, Incarnation: incarnation})
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	return uint64(max(seq, 0)), nil
+}
+
+// UnackedStats returns the count of heartbeats with seq > afterSeq and the
+// oldest timestamp in milliseconds (0 if count is 0).
+func (m *MetricsStore) UnackedStats(ctx context.Context, nodeID, incarnation string, afterSeq uint64) (uint64, int64, error) {
+	after, err := toInt64(afterSeq)
+	if err != nil {
+		return 0, 0, err
+	}
+	row, err := m.q.UnackedStats(ctx, metricsdb.UnackedStatsParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		AfterSeq:    after,
+	})
+	if err != nil {
+		return 0, 0, mapErr(err)
+	}
+	return uint64(max(row.UnackedCount, 0)), row.OldestTsMs, nil
+}
+
+// DeleteStreamHeartbeatsUpTo deletes up to limit heartbeats of the stream with
+// seq <= maxSeq, in ascending seq order.
+func (m *MetricsStore) DeleteStreamHeartbeatsUpTo(ctx context.Context, nodeID, incarnation string, maxSeq uint64, limit int) (int64, error) {
+	if limit <= 0 {
+		return 0, errors.New("delete stream heartbeats: limit must be positive")
+	}
+	maxS, err := toInt64(maxSeq)
+	if err != nil {
+		return 0, err
+	}
+	n, err := metricsdb.New(m.db.writer).DeleteStreamHeartbeatsUpTo(ctx, metricsdb.DeleteStreamHeartbeatsUpToParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		MaxSeq:      maxS,
+		RowLimit:    int64(limit),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("delete stream heartbeats up to %d: %w", maxSeq, mapErr(err))
+	}
+	return n, nil
+}
+
+const deleteStreamSeqsSQL = `DELETE FROM heartbeats WHERE node_id = ? AND incarnation = ? AND seq IN (SELECT value FROM json_each(?))`
+
+// DeleteStreamHeartbeatsOlderThan deletes up to limit unacked heartbeats
+// (seq > afterSeq) with ts_ms < beforeMs and returns the number deleted and
+// the highest deleted seq.
+func (m *MetricsStore) DeleteStreamHeartbeatsOlderThan(ctx context.Context, nodeID, incarnation string, afterSeq uint64, beforeMs int64, limit int) (int64, uint64, error) {
+	if limit <= 0 {
+		return 0, 0, errors.New("delete stream heartbeats: limit must be positive")
+	}
+	after, err := toInt64(afterSeq)
+	if err != nil {
+		return 0, 0, err
+	}
+	tx, err := m.db.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("begin delete older heartbeats: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := metricsdb.New(tx)
+	seqs, err := q.ListStreamSeqsOlderThan(ctx, metricsdb.ListStreamSeqsOlderThanParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		AfterSeq:    after,
+		BeforeMs:    beforeMs,
+		RowLimit:    int64(limit),
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("list older heartbeats: %w", mapErr(err))
+	}
+	if len(seqs) == 0 {
+		return 0, 0, nil
+	}
+	payload, err := json.Marshal(seqs)
+	if err != nil {
+		return 0, 0, fmt.Errorf("encode seqs: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, deleteStreamSeqsSQL, nodeID, incarnation, string(payload))
+	if err != nil {
+		return 0, 0, fmt.Errorf("delete older heartbeats: %w", mapErr(err))
+	}
+	deleted, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("commit delete older heartbeats: %w", err)
+	}
+	var maxSeq uint64
+	for _, s := range seqs {
+		if s > 0 && uint64(s) > maxSeq {
+			maxSeq = uint64(s)
+		}
+	}
+	return deleted, maxSeq, nil
+}
+
+// DeleteOldestStreamHeartbeats deletes up to limit oldest heartbeats of the
+// stream by seq, returning total deleted, how many had seq > ackedSeq, and
+// the highest unacked seq deleted (0 if none).
+func (m *MetricsStore) DeleteOldestStreamHeartbeats(ctx context.Context, nodeID, incarnation string, ackedSeq uint64, limit int) (int64, int64, uint64, error) {
+	if limit <= 0 {
+		return 0, 0, 0, errors.New("delete oldest heartbeats: limit must be positive")
+	}
+	tx, err := m.db.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("begin delete oldest heartbeats: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := metricsdb.New(tx)
+	seqs, err := q.ListOldestStreamSeqs(ctx, metricsdb.ListOldestStreamSeqsParams{
+		NodeID:      nodeID,
+		Incarnation: incarnation,
+		RowLimit:    int64(limit),
+	})
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("list oldest heartbeats: %w", mapErr(err))
+	}
+	if len(seqs) == 0 {
+		return 0, 0, 0, nil
+	}
+	payload, err := json.Marshal(seqs)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("encode seqs: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, deleteStreamSeqsSQL, nodeID, incarnation, string(payload))
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("delete oldest heartbeats: %w", mapErr(err))
+	}
+	deleted, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, 0, 0, fmt.Errorf("commit delete oldest heartbeats: %w", err)
+	}
+	var unackedDeleted int64
+	var maxUnacked uint64
+	for _, s := range seqs {
+		if s > 0 && uint64(s) > ackedSeq {
+			unackedDeleted++
+			if uint64(s) > maxUnacked {
+				maxUnacked = uint64(s)
+			}
+		}
+	}
+	return deleted, unackedDeleted, maxUnacked, nil
+}
+
+// DBSizeBytes returns the allocated database size in bytes (page_count * page_size).
+func (m *MetricsStore) DBSizeBytes(ctx context.Context) (int64, error) {
+	var pageCount, pageSize int64
+	if err := m.db.reader.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pageCount); err != nil {
+		return 0, fmt.Errorf("read page_count: %w", mapErr(err))
+	}
+	if err := m.db.reader.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize); err != nil {
+		return 0, fmt.Errorf("read page_size: %w", mapErr(err))
+	}
+	return pageCount * pageSize, nil
+}
+
+// IncrementalVacuum returns up to pages free pages to the filesystem (0 = all).
+func (m *MetricsStore) IncrementalVacuum(ctx context.Context, pages int) error {
+	return m.db.IncrementalVacuum(ctx, pages)
 }

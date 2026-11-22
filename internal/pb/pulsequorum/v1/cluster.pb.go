@@ -186,10 +186,13 @@ func (x *JoinResponse) GetKekFingerprint() string {
 }
 
 type RenewCertificateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CsrDer        []byte                 `protobuf:"bytes,1,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	CsrDer []byte                 `protobuf:"bytes,1,opt,name=csr_der,json=csrDer,proto3" json:"csr_der,omitempty"`
+	// Accepted only from voter certificates when forwarding a probe's renewal.
+	ForwardNodeId   string `protobuf:"bytes,2,opt,name=forward_node_id,json=forwardNodeId,proto3" json:"forward_node_id,omitempty"`
+	ForwardTenantId string `protobuf:"bytes,3,opt,name=forward_tenant_id,json=forwardTenantId,proto3" json:"forward_tenant_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RenewCertificateRequest) Reset() {
@@ -227,6 +230,20 @@ func (x *RenewCertificateRequest) GetCsrDer() []byte {
 		return x.CsrDer
 	}
 	return nil
+}
+
+func (x *RenewCertificateRequest) GetForwardNodeId() string {
+	if x != nil {
+		return x.ForwardNodeId
+	}
+	return ""
+}
+
+func (x *RenewCertificateRequest) GetForwardTenantId() string {
+	if x != nil {
+		return x.ForwardTenantId
+	}
+	return ""
 }
 
 type RenewCertificateResponse struct {
@@ -491,8 +508,10 @@ type GetStatusResponse struct {
 	// SSRF protection is on for this node's checks and notifications (ADR 0030).
 	// Nodes older than ADR 0030 do not send this field; it is then unknown.
 	SsrfProtection *bool `protobuf:"varint,21,opt,name=ssrf_protection,json=ssrfProtection,proto3,oneof" json:"ssrf_protection,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Live probe sessions connected to this voter (ADR 0034).
+	ProbeSessions []*ProbeSession `protobuf:"bytes,22,rep,name=probe_sessions,json=probeSessions,proto3" json:"probe_sessions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -672,6 +691,74 @@ func (x *GetStatusResponse) GetSsrfProtection() bool {
 	return false
 }
 
+func (x *GetStatusResponse) GetProbeSessions() []*ProbeSession {
+	if x != nil {
+		return x.ProbeSessions
+	}
+	return nil
+}
+
+// ProbeSession describes an active probe connection on a voter (ADR 0034).
+type ProbeSession struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	NodeId           string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	ConnectedSinceMs int64                  `protobuf:"varint,2,opt,name=connected_since_ms,json=connectedSinceMs,proto3" json:"connected_since_ms,omitempty"`
+	LastMessageMs    int64                  `protobuf:"varint,3,opt,name=last_message_ms,json=lastMessageMs,proto3" json:"last_message_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProbeSession) Reset() {
+	*x = ProbeSession{}
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProbeSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProbeSession) ProtoMessage() {}
+
+func (x *ProbeSession) ProtoReflect() protoreflect.Message {
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProbeSession.ProtoReflect.Descriptor instead.
+func (*ProbeSession) Descriptor() ([]byte, []int) {
+	return file_pulsequorum_v1_cluster_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ProbeSession) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ProbeSession) GetConnectedSinceMs() int64 {
+	if x != nil {
+		return x.ConnectedSinceMs
+	}
+	return 0
+}
+
+func (x *ProbeSession) GetLastMessageMs() int64 {
+	if x != nil {
+		return x.LastMessageMs
+	}
+	return 0
+}
+
 type RemoveNodeRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	NodeId string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
@@ -683,7 +770,7 @@ type RemoveNodeRequest struct {
 
 func (x *RemoveNodeRequest) Reset() {
 	*x = RemoveNodeRequest{}
-	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[8]
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +782,7 @@ func (x *RemoveNodeRequest) String() string {
 func (*RemoveNodeRequest) ProtoMessage() {}
 
 func (x *RemoveNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[8]
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +795,7 @@ func (x *RemoveNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNodeRequest.ProtoReflect.Descriptor instead.
 func (*RemoveNodeRequest) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_cluster_proto_rawDescGZIP(), []int{8}
+	return file_pulsequorum_v1_cluster_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RemoveNodeRequest) GetNodeId() string {
@@ -741,7 +828,7 @@ type RemoveNodeResponse struct {
 
 func (x *RemoveNodeResponse) Reset() {
 	*x = RemoveNodeResponse{}
-	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[9]
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -753,7 +840,7 @@ func (x *RemoveNodeResponse) String() string {
 func (*RemoveNodeResponse) ProtoMessage() {}
 
 func (x *RemoveNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[9]
+	mi := &file_pulsequorum_v1_cluster_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -766,7 +853,7 @@ func (x *RemoveNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNodeResponse.ProtoReflect.Descriptor instead.
 func (*RemoveNodeResponse) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_cluster_proto_rawDescGZIP(), []int{9}
+	return file_pulsequorum_v1_cluster_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RemoveNodeResponse) GetVotersLeft() int32 {
@@ -814,9 +901,11 @@ const file_pulsequorum_v1_cluster_proto_rawDesc = "" +
 	"\rca_bundle_der\x18\x03 \x03(\fR\vcaBundleDer\x120\n" +
 	"\x06voters\x18\x04 \x03(\v2\x18.pulsequorum.v1.NodeInfoR\x06voters\x12\x10\n" +
 	"\x03kek\x18\x05 \x01(\fR\x03kek\x12'\n" +
-	"\x0fkek_fingerprint\x18\x06 \x01(\tR\x0ekekFingerprint\"2\n" +
+	"\x0fkek_fingerprint\x18\x06 \x01(\tR\x0ekekFingerprint\"\x86\x01\n" +
 	"\x17RenewCertificateRequest\x12\x17\n" +
-	"\acsr_der\x18\x01 \x01(\fR\x06csrDer\"r\n" +
+	"\acsr_der\x18\x01 \x01(\fR\x06csrDer\x12&\n" +
+	"\x0fforward_node_id\x18\x02 \x01(\tR\rforwardNodeId\x12*\n" +
+	"\x11forward_tenant_id\x18\x03 \x01(\tR\x0fforwardTenantId\"r\n" +
 	"\x18RenewCertificateResponse\x122\n" +
 	"\x15certificate_chain_der\x18\x01 \x03(\fR\x13certificateChainDer\x12\"\n" +
 	"\rca_bundle_der\x18\x02 \x03(\fR\vcaBundleDer\"A\n" +
@@ -830,7 +919,7 @@ const file_pulsequorum_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10GetStatusRequest\"\xe3\x06\n" +
+	"\x10GetStatusRequest\"\xa8\a\n" +
 	"\x11GetStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -854,8 +943,13 @@ const file_pulsequorum_v1_cluster_proto_rawDesc = "" +
 	"\x12replication_lag_ms\x18\x12 \x01(\x03R\x10replicationLagMs\x12+\n" +
 	"\x11fingerprint_index\x18\x13 \x01(\x04R\x10fingerprintIndex\x12 \n" +
 	"\vfingerprint\x18\x14 \x01(\tR\vfingerprint\x12,\n" +
-	"\x0fssrf_protection\x18\x15 \x01(\bH\x00R\x0essrfProtection\x88\x01\x01B\x12\n" +
-	"\x10_ssrf_protection\"O\n" +
+	"\x0fssrf_protection\x18\x15 \x01(\bH\x00R\x0essrfProtection\x88\x01\x01\x12C\n" +
+	"\x0eprobe_sessions\x18\x16 \x03(\v2\x1c.pulsequorum.v1.ProbeSessionR\rprobeSessionsB\x12\n" +
+	"\x10_ssrf_protection\"}\n" +
+	"\fProbeSession\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12,\n" +
+	"\x12connected_since_ms\x18\x02 \x01(\x03R\x10connectedSinceMs\x12&\n" +
+	"\x0flast_message_ms\x18\x03 \x01(\x03R\rlastMessageMs\"O\n" +
 	"\x11RemoveNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
 	"\frequested_by\x18\x02 \x01(\tR\vrequestedBy\"\x93\x01\n" +
@@ -886,7 +980,7 @@ func file_pulsequorum_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_pulsequorum_v1_cluster_proto_rawDescData
 }
 
-var file_pulsequorum_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_pulsequorum_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_pulsequorum_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),              // 0: pulsequorum.v1.JoinRequest
 	(*JoinResponse)(nil),             // 1: pulsequorum.v1.JoinResponse
@@ -896,30 +990,32 @@ var file_pulsequorum_v1_cluster_proto_goTypes = []any{
 	(*ApplyResponse)(nil),            // 5: pulsequorum.v1.ApplyResponse
 	(*GetStatusRequest)(nil),         // 6: pulsequorum.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),        // 7: pulsequorum.v1.GetStatusResponse
-	(*RemoveNodeRequest)(nil),        // 8: pulsequorum.v1.RemoveNodeRequest
-	(*RemoveNodeResponse)(nil),       // 9: pulsequorum.v1.RemoveNodeResponse
-	(*NodeInfo)(nil),                 // 10: pulsequorum.v1.NodeInfo
-	(*Command)(nil),                  // 11: pulsequorum.v1.Command
+	(*ProbeSession)(nil),             // 8: pulsequorum.v1.ProbeSession
+	(*RemoveNodeRequest)(nil),        // 9: pulsequorum.v1.RemoveNodeRequest
+	(*RemoveNodeResponse)(nil),       // 10: pulsequorum.v1.RemoveNodeResponse
+	(*NodeInfo)(nil),                 // 11: pulsequorum.v1.NodeInfo
+	(*Command)(nil),                  // 12: pulsequorum.v1.Command
 }
 var file_pulsequorum_v1_cluster_proto_depIdxs = []int32{
-	10, // 0: pulsequorum.v1.JoinRequest.node:type_name -> pulsequorum.v1.NodeInfo
-	10, // 1: pulsequorum.v1.JoinResponse.voters:type_name -> pulsequorum.v1.NodeInfo
-	11, // 2: pulsequorum.v1.ApplyRequest.command:type_name -> pulsequorum.v1.Command
-	0,  // 3: pulsequorum.v1.ClusterService.Join:input_type -> pulsequorum.v1.JoinRequest
-	2,  // 4: pulsequorum.v1.ClusterService.RenewCertificate:input_type -> pulsequorum.v1.RenewCertificateRequest
-	4,  // 5: pulsequorum.v1.ClusterService.Apply:input_type -> pulsequorum.v1.ApplyRequest
-	6,  // 6: pulsequorum.v1.ClusterService.GetStatus:input_type -> pulsequorum.v1.GetStatusRequest
-	8,  // 7: pulsequorum.v1.ClusterService.RemoveNode:input_type -> pulsequorum.v1.RemoveNodeRequest
-	1,  // 8: pulsequorum.v1.ClusterService.Join:output_type -> pulsequorum.v1.JoinResponse
-	3,  // 9: pulsequorum.v1.ClusterService.RenewCertificate:output_type -> pulsequorum.v1.RenewCertificateResponse
-	5,  // 10: pulsequorum.v1.ClusterService.Apply:output_type -> pulsequorum.v1.ApplyResponse
-	7,  // 11: pulsequorum.v1.ClusterService.GetStatus:output_type -> pulsequorum.v1.GetStatusResponse
-	9,  // 12: pulsequorum.v1.ClusterService.RemoveNode:output_type -> pulsequorum.v1.RemoveNodeResponse
-	8,  // [8:13] is the sub-list for method output_type
-	3,  // [3:8] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	11, // 0: pulsequorum.v1.JoinRequest.node:type_name -> pulsequorum.v1.NodeInfo
+	11, // 1: pulsequorum.v1.JoinResponse.voters:type_name -> pulsequorum.v1.NodeInfo
+	12, // 2: pulsequorum.v1.ApplyRequest.command:type_name -> pulsequorum.v1.Command
+	8,  // 3: pulsequorum.v1.GetStatusResponse.probe_sessions:type_name -> pulsequorum.v1.ProbeSession
+	0,  // 4: pulsequorum.v1.ClusterService.Join:input_type -> pulsequorum.v1.JoinRequest
+	2,  // 5: pulsequorum.v1.ClusterService.RenewCertificate:input_type -> pulsequorum.v1.RenewCertificateRequest
+	4,  // 6: pulsequorum.v1.ClusterService.Apply:input_type -> pulsequorum.v1.ApplyRequest
+	6,  // 7: pulsequorum.v1.ClusterService.GetStatus:input_type -> pulsequorum.v1.GetStatusRequest
+	9,  // 8: pulsequorum.v1.ClusterService.RemoveNode:input_type -> pulsequorum.v1.RemoveNodeRequest
+	1,  // 9: pulsequorum.v1.ClusterService.Join:output_type -> pulsequorum.v1.JoinResponse
+	3,  // 10: pulsequorum.v1.ClusterService.RenewCertificate:output_type -> pulsequorum.v1.RenewCertificateResponse
+	5,  // 11: pulsequorum.v1.ClusterService.Apply:output_type -> pulsequorum.v1.ApplyResponse
+	7,  // 12: pulsequorum.v1.ClusterService.GetStatus:output_type -> pulsequorum.v1.GetStatusResponse
+	10, // 13: pulsequorum.v1.ClusterService.RemoveNode:output_type -> pulsequorum.v1.RemoveNodeResponse
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_pulsequorum_v1_cluster_proto_init() }
@@ -935,7 +1031,7 @@ func file_pulsequorum_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pulsequorum_v1_cluster_proto_rawDesc), len(file_pulsequorum_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

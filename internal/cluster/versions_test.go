@@ -61,6 +61,8 @@ func TestMinVersion(t *testing.T) {
 		{"constructor record monitor history", NewRecordMonitorHistory("t1", "m1", store.StatusUp, 1, 2, nil), 5},
 		{"bind tenant org", &pb.Command{Payload: &pb.Command_BindTenantOrg{BindTenantOrg: &pb.BindTenantOrg{}}}, 7},
 		{"constructor bind tenant org", NewBindTenantOrg("t1", "org-1"), 7},
+		{"register probe", &pb.Command{Payload: &pb.Command_RegisterProbe{RegisterProbe: &pb.RegisterProbe{}}}, ProbeCommandLevel},
+		{"constructor register probe", NewRegisterProbe("r", store.Node{ID: "probe-1"}), ProbeCommandLevel},
 		{"constructor set monitor state stays at 1", NewSetMonitorState(StateChange{TenantID: "t1", MonitorID: "m1", From: store.StatusUp, To: store.StatusDown, SinceMs: 1, Incident: &store.Incident{ID: "i"}, Reporters: []string{"n1"}}), 1},
 	}
 	for _, tt := range tests {

@@ -580,8 +580,9 @@ SELECT * FROM nodes ORDER BY id;
 -- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
                    max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
-                   connectivity_impaired, connectivity_reason, connectivity_changed_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   connectivity_impaired, connectivity_reason, connectivity_changed_ms,
+                   owner_tenant_id, incarnation)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -596,7 +597,9 @@ ON CONFLICT (id) DO UPDATE SET
     updated_ms = excluded.updated_ms,
     connectivity_impaired = excluded.connectivity_impaired,
     connectivity_reason = excluded.connectivity_reason,
-    connectivity_changed_ms = excluded.connectivity_changed_ms;
+    connectivity_changed_ms = excluded.connectivity_changed_ms,
+    owner_tenant_id = excluded.owner_tenant_id,
+    incarnation = excluded.incarnation;
 
 -- name: SetNodeConnectivity :execrows
 UPDATE nodes SET connectivity_impaired = ?, connectivity_reason = ?,

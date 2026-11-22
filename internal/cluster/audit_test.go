@@ -114,6 +114,12 @@ func TestAuditActions(t *testing.T) {
 			store.SystemTenantID, "node.revoke", "node", "node-1", "system"},
 		{"feature level", NewSetFeatureLevel("s19", AuditCommandLevel),
 			store.SystemTenantID, "cluster.set_feature_level", "cluster", fmt.Sprint(AuditCommandLevel), "unknown"},
+		{"feature level probe", NewSetFeatureLevel("s20", ProbeCommandLevel),
+			store.SystemTenantID, "cluster.set_feature_level", "cluster", fmt.Sprint(ProbeCommandLevel), "unknown"},
+		{"probe register public", NewRegisterProbe("s21", store.Node{ID: "probe-pub", Name: "pub"}),
+			store.SystemTenantID, "probe.register", "node", "probe-pub", "system"},
+		{"probe register private", NewRegisterProbe("s22", store.Node{ID: "probe-priv", Name: "priv", OwnerTenantID: "t1"}),
+			"t1", "probe.register", "node", "probe-priv", "system"},
 	}
 	for _, s := range steps {
 		t.Run(s.name, func(t *testing.T) {

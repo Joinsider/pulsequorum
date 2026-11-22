@@ -31,8 +31,22 @@ type SubscribeRequest struct {
 	Version      string   `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	// Last assignment revision the probe has applied; 0 requests a full snapshot.
 	KnownRevision uint64 `protobuf:"varint,3,opt,name=known_revision,json=knownRevision,proto3" json:"known_revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Protocol version (1); voters reject unknown versions with FAILED_PRECONDITION.
+	ProtocolVersion uint32 `protobuf:"varint,4,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	// Incarnation of the probe's local metrics.db.
+	Incarnation string            `protobuf:"bytes,5,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	Name        string            `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	Region      string            `protobuf:"bytes,7,opt,name=region,proto3" json:"region,omitempty"`
+	Labels      map[string]string `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Wall clock of the probe in Unix milliseconds (ADR 0020).
+	WallClockUnixMs int64 `protobuf:"varint,9,opt,name=wall_clock_unix_ms,json=wallClockUnixMs,proto3" json:"wall_clock_unix_ms,omitempty"`
+	// Expiry of the probe's current certificate in Unix milliseconds (FA-PKI-06).
+	CertNotAfterMs          int64              `protobuf:"varint,10,opt,name=cert_not_after_ms,json=certNotAfterMs,proto3" json:"cert_not_after_ms,omitempty"`
+	CertIssuerFingerprint   string             `protobuf:"bytes,11,opt,name=cert_issuer_fingerprint,json=certIssuerFingerprint,proto3" json:"cert_issuer_fingerprint,omitempty"`
+	TrustBundleFingerprints []string           `protobuf:"bytes,12,rep,name=trust_bundle_fingerprints,json=trustBundleFingerprints,proto3" json:"trust_bundle_fingerprints,omitempty"`
+	Buffer                  *ProbeBufferStatus `protobuf:"bytes,13,opt,name=buffer,proto3" json:"buffer,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *SubscribeRequest) Reset() {
@@ -86,6 +100,145 @@ func (x *SubscribeRequest) GetKnownRevision() uint64 {
 	return 0
 }
 
+func (x *SubscribeRequest) GetProtocolVersion() uint32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
+}
+
+func (x *SubscribeRequest) GetIncarnation() string {
+	if x != nil {
+		return x.Incarnation
+	}
+	return ""
+}
+
+func (x *SubscribeRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SubscribeRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *SubscribeRequest) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *SubscribeRequest) GetWallClockUnixMs() int64 {
+	if x != nil {
+		return x.WallClockUnixMs
+	}
+	return 0
+}
+
+func (x *SubscribeRequest) GetCertNotAfterMs() int64 {
+	if x != nil {
+		return x.CertNotAfterMs
+	}
+	return 0
+}
+
+func (x *SubscribeRequest) GetCertIssuerFingerprint() string {
+	if x != nil {
+		return x.CertIssuerFingerprint
+	}
+	return ""
+}
+
+func (x *SubscribeRequest) GetTrustBundleFingerprints() []string {
+	if x != nil {
+		return x.TrustBundleFingerprints
+	}
+	return nil
+}
+
+func (x *SubscribeRequest) GetBuffer() *ProbeBufferStatus {
+	if x != nil {
+		return x.Buffer
+	}
+	return nil
+}
+
+type ProbeBufferStatus struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Bytes           int64                  `protobuf:"varint,1,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	Unacked         uint64                 `protobuf:"varint,2,opt,name=unacked,proto3" json:"unacked,omitempty"`
+	OldestUnackedMs int64                  `protobuf:"varint,3,opt,name=oldest_unacked_ms,json=oldestUnackedMs,proto3" json:"oldest_unacked_ms,omitempty"`
+	// Number of heartbeats dropped due to buffer limits without acknowledgment.
+	DroppedTotal  uint64 `protobuf:"varint,4,opt,name=dropped_total,json=droppedTotal,proto3" json:"dropped_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProbeBufferStatus) Reset() {
+	*x = ProbeBufferStatus{}
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProbeBufferStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProbeBufferStatus) ProtoMessage() {}
+
+func (x *ProbeBufferStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProbeBufferStatus.ProtoReflect.Descriptor instead.
+func (*ProbeBufferStatus) Descriptor() ([]byte, []int) {
+	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ProbeBufferStatus) GetBytes() int64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
+func (x *ProbeBufferStatus) GetUnacked() uint64 {
+	if x != nil {
+		return x.Unacked
+	}
+	return 0
+}
+
+func (x *ProbeBufferStatus) GetOldestUnackedMs() int64 {
+	if x != nil {
+		return x.OldestUnackedMs
+	}
+	return 0
+}
+
+func (x *ProbeBufferStatus) GetDroppedTotal() uint64 {
+	if x != nil {
+		return x.DroppedTotal
+	}
+	return 0
+}
+
 type SubscribeResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Revision uint64                 `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
@@ -93,13 +246,20 @@ type SubscribeResponse struct {
 	FullSnapshot      bool            `protobuf:"varint,2,opt,name=full_snapshot,json=fullSnapshot,proto3" json:"full_snapshot,omitempty"`
 	Upserts           []*ProbeMonitor `protobuf:"bytes,3,rep,name=upserts,proto3" json:"upserts,omitempty"`
 	RemovedMonitorIds []string        `protobuf:"bytes,4,rep,name=removed_monitor_ids,json=removedMonitorIds,proto3" json:"removed_monitor_ids,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Position of the probe's heartbeat stream on this voter.
+	StreamPosition *StreamPosition `protobuf:"bytes,5,opt,name=stream_position,json=streamPosition,proto3" json:"stream_position,omitempty"`
+	// Current voters for voters.json (sent in the first response and on changes).
+	Voters                  []*NodeInfo `protobuf:"bytes,6,rep,name=voters,proto3" json:"voters,omitempty"`
+	ServerTimeMs            int64       `protobuf:"varint,7,opt,name=server_time_ms,json=serverTimeMs,proto3" json:"server_time_ms,omitempty"`
+	ActiveCaFingerprint     string      `protobuf:"bytes,8,opt,name=active_ca_fingerprint,json=activeCaFingerprint,proto3" json:"active_ca_fingerprint,omitempty"`
+	TrustBundleFingerprints []string    `protobuf:"bytes,9,rep,name=trust_bundle_fingerprints,json=trustBundleFingerprints,proto3" json:"trust_bundle_fingerprints,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *SubscribeResponse) Reset() {
 	*x = SubscribeResponse{}
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[1]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +271,7 @@ func (x *SubscribeResponse) String() string {
 func (*SubscribeResponse) ProtoMessage() {}
 
 func (x *SubscribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[1]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +284,7 @@ func (x *SubscribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeResponse.ProtoReflect.Descriptor instead.
 func (*SubscribeResponse) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{1}
+	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SubscribeResponse) GetRevision() uint64 {
@@ -155,6 +315,41 @@ func (x *SubscribeResponse) GetRemovedMonitorIds() []string {
 	return nil
 }
 
+func (x *SubscribeResponse) GetStreamPosition() *StreamPosition {
+	if x != nil {
+		return x.StreamPosition
+	}
+	return nil
+}
+
+func (x *SubscribeResponse) GetVoters() []*NodeInfo {
+	if x != nil {
+		return x.Voters
+	}
+	return nil
+}
+
+func (x *SubscribeResponse) GetServerTimeMs() int64 {
+	if x != nil {
+		return x.ServerTimeMs
+	}
+	return 0
+}
+
+func (x *SubscribeResponse) GetActiveCaFingerprint() string {
+	if x != nil {
+		return x.ActiveCaFingerprint
+	}
+	return ""
+}
+
+func (x *SubscribeResponse) GetTrustBundleFingerprints() []string {
+	if x != nil {
+		return x.TrustBundleFingerprints
+	}
+	return nil
+}
+
 // ProbeMonitor is the subset of a monitor a probe needs to run its check.
 type ProbeMonitor struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
@@ -172,7 +367,7 @@ type ProbeMonitor struct {
 
 func (x *ProbeMonitor) Reset() {
 	*x = ProbeMonitor{}
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[2]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -184,7 +379,7 @@ func (x *ProbeMonitor) String() string {
 func (*ProbeMonitor) ProtoMessage() {}
 
 func (x *ProbeMonitor) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[2]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -197,7 +392,7 @@ func (x *ProbeMonitor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeMonitor.ProtoReflect.Descriptor instead.
 func (*ProbeMonitor) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{2}
+	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ProbeMonitor) GetId() string {
@@ -250,15 +445,18 @@ func (x *ProbeMonitor) GetSsrfProtection() bool {
 }
 
 type UploadHeartbeatsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Heartbeats    []*Heartbeat           `protobuf:"bytes,1,rep,name=heartbeats,proto3" json:"heartbeats,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Heartbeats []*Heartbeat           `protobuf:"bytes,1,rep,name=heartbeats,proto3" json:"heartbeats,omitempty"`
+	// Everything with seq < lost_below was dropped by the probe buffer without
+	// acknowledgment. 0 means nothing lost.
+	LostBelow     uint64 `protobuf:"varint,2,opt,name=lost_below,json=lostBelow,proto3" json:"lost_below,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UploadHeartbeatsRequest) Reset() {
 	*x = UploadHeartbeatsRequest{}
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[3]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -270,7 +468,7 @@ func (x *UploadHeartbeatsRequest) String() string {
 func (*UploadHeartbeatsRequest) ProtoMessage() {}
 
 func (x *UploadHeartbeatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[3]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -283,7 +481,7 @@ func (x *UploadHeartbeatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadHeartbeatsRequest.ProtoReflect.Descriptor instead.
 func (*UploadHeartbeatsRequest) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{3}
+	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UploadHeartbeatsRequest) GetHeartbeats() []*Heartbeat {
@@ -291,6 +489,13 @@ func (x *UploadHeartbeatsRequest) GetHeartbeats() []*Heartbeat {
 		return x.Heartbeats
 	}
 	return nil
+}
+
+func (x *UploadHeartbeatsRequest) GetLostBelow() uint64 {
+	if x != nil {
+		return x.LostBelow
+	}
+	return 0
 }
 
 type UploadHeartbeatsResponse struct {
@@ -302,7 +507,7 @@ type UploadHeartbeatsResponse struct {
 
 func (x *UploadHeartbeatsResponse) Reset() {
 	*x = UploadHeartbeatsResponse{}
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[4]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -314,7 +519,7 @@ func (x *UploadHeartbeatsResponse) String() string {
 func (*UploadHeartbeatsResponse) ProtoMessage() {}
 
 func (x *UploadHeartbeatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_probe_proto_msgTypes[4]
+	mi := &file_pulsequorum_v1_probe_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -327,7 +532,7 @@ func (x *UploadHeartbeatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadHeartbeatsResponse.ProtoReflect.Descriptor instead.
 func (*UploadHeartbeatsResponse) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{4}
+	return file_pulsequorum_v1_probe_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UploadHeartbeatsResponse) GetPersisted() *StreamPosition {
@@ -341,16 +546,40 @@ var File_pulsequorum_v1_probe_proto protoreflect.FileDescriptor
 
 const file_pulsequorum_v1_probe_proto_rawDesc = "" +
 	"\n" +
-	"\x1apulsequorum/v1/probe.proto\x12\x0epulsequorum.v1\x1a\x1epulsequorum/v1/heartbeat.proto\"w\n" +
+	"\x1apulsequorum/v1/probe.proto\x12\x0epulsequorum.v1\x1a\x1cpulsequorum/v1/command.proto\x1a\x1epulsequorum/v1/heartbeat.proto\"\xf8\x04\n" +
 	"\x10SubscribeRequest\x12\"\n" +
 	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12%\n" +
-	"\x0eknown_revision\x18\x03 \x01(\x04R\rknownRevision\"\xbc\x01\n" +
+	"\x0eknown_revision\x18\x03 \x01(\x04R\rknownRevision\x12)\n" +
+	"\x10protocol_version\x18\x04 \x01(\rR\x0fprotocolVersion\x12 \n" +
+	"\vincarnation\x18\x05 \x01(\tR\vincarnation\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12\x16\n" +
+	"\x06region\x18\a \x01(\tR\x06region\x12D\n" +
+	"\x06labels\x18\b \x03(\v2,.pulsequorum.v1.SubscribeRequest.LabelsEntryR\x06labels\x12+\n" +
+	"\x12wall_clock_unix_ms\x18\t \x01(\x03R\x0fwallClockUnixMs\x12)\n" +
+	"\x11cert_not_after_ms\x18\n" +
+	" \x01(\x03R\x0ecertNotAfterMs\x126\n" +
+	"\x17cert_issuer_fingerprint\x18\v \x01(\tR\x15certIssuerFingerprint\x12:\n" +
+	"\x19trust_bundle_fingerprints\x18\f \x03(\tR\x17trustBundleFingerprints\x129\n" +
+	"\x06buffer\x18\r \x01(\v2!.pulsequorum.v1.ProbeBufferStatusR\x06buffer\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x94\x01\n" +
+	"\x11ProbeBufferStatus\x12\x14\n" +
+	"\x05bytes\x18\x01 \x01(\x03R\x05bytes\x12\x18\n" +
+	"\aunacked\x18\x02 \x01(\x04R\aunacked\x12*\n" +
+	"\x11oldest_unacked_ms\x18\x03 \x01(\x03R\x0foldestUnackedMs\x12#\n" +
+	"\rdropped_total\x18\x04 \x01(\x04R\fdroppedTotal\"\xcd\x03\n" +
 	"\x11SubscribeResponse\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x12#\n" +
 	"\rfull_snapshot\x18\x02 \x01(\bR\ffullSnapshot\x126\n" +
 	"\aupserts\x18\x03 \x03(\v2\x1c.pulsequorum.v1.ProbeMonitorR\aupserts\x12.\n" +
-	"\x13removed_monitor_ids\x18\x04 \x03(\tR\x11removedMonitorIds\"\xed\x01\n" +
+	"\x13removed_monitor_ids\x18\x04 \x03(\tR\x11removedMonitorIds\x12G\n" +
+	"\x0fstream_position\x18\x05 \x01(\v2\x1e.pulsequorum.v1.StreamPositionR\x0estreamPosition\x120\n" +
+	"\x06voters\x18\x06 \x03(\v2\x18.pulsequorum.v1.NodeInfoR\x06voters\x12$\n" +
+	"\x0eserver_time_ms\x18\a \x01(\x03R\fserverTimeMs\x122\n" +
+	"\x15active_ca_fingerprint\x18\b \x01(\tR\x13activeCaFingerprint\x12:\n" +
+	"\x19trust_bundle_fingerprints\x18\t \x03(\tR\x17trustBundleFingerprints\"\xed\x01\n" +
 	"\fProbeMonitor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
@@ -359,11 +588,13 @@ const file_pulsequorum_v1_probe_proto_rawDesc = "" +
 	"configJson\x12)\n" +
 	"\x10interval_seconds\x18\x05 \x01(\rR\x0fintervalSeconds\x12'\n" +
 	"\x0ftimeout_seconds\x18\x06 \x01(\rR\x0etimeoutSeconds\x12'\n" +
-	"\x0fssrf_protection\x18\a \x01(\bR\x0essrfProtection\"T\n" +
+	"\x0fssrf_protection\x18\a \x01(\bR\x0essrfProtection\"s\n" +
 	"\x17UploadHeartbeatsRequest\x129\n" +
 	"\n" +
 	"heartbeats\x18\x01 \x03(\v2\x19.pulsequorum.v1.HeartbeatR\n" +
-	"heartbeats\"X\n" +
+	"heartbeats\x12\x1d\n" +
+	"\n" +
+	"lost_below\x18\x02 \x01(\x04R\tlostBelow\"X\n" +
 	"\x18UploadHeartbeatsResponse\x12<\n" +
 	"\tpersisted\x18\x01 \x01(\v2\x1e.pulsequorum.v1.StreamPositionR\tpersisted2\xcd\x01\n" +
 	"\fProbeService\x12R\n" +
@@ -382,29 +613,36 @@ func file_pulsequorum_v1_probe_proto_rawDescGZIP() []byte {
 	return file_pulsequorum_v1_probe_proto_rawDescData
 }
 
-var file_pulsequorum_v1_probe_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_pulsequorum_v1_probe_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_pulsequorum_v1_probe_proto_goTypes = []any{
 	(*SubscribeRequest)(nil),         // 0: pulsequorum.v1.SubscribeRequest
-	(*SubscribeResponse)(nil),        // 1: pulsequorum.v1.SubscribeResponse
-	(*ProbeMonitor)(nil),             // 2: pulsequorum.v1.ProbeMonitor
-	(*UploadHeartbeatsRequest)(nil),  // 3: pulsequorum.v1.UploadHeartbeatsRequest
-	(*UploadHeartbeatsResponse)(nil), // 4: pulsequorum.v1.UploadHeartbeatsResponse
-	(*Heartbeat)(nil),                // 5: pulsequorum.v1.Heartbeat
-	(*StreamPosition)(nil),           // 6: pulsequorum.v1.StreamPosition
+	(*ProbeBufferStatus)(nil),        // 1: pulsequorum.v1.ProbeBufferStatus
+	(*SubscribeResponse)(nil),        // 2: pulsequorum.v1.SubscribeResponse
+	(*ProbeMonitor)(nil),             // 3: pulsequorum.v1.ProbeMonitor
+	(*UploadHeartbeatsRequest)(nil),  // 4: pulsequorum.v1.UploadHeartbeatsRequest
+	(*UploadHeartbeatsResponse)(nil), // 5: pulsequorum.v1.UploadHeartbeatsResponse
+	nil,                              // 6: pulsequorum.v1.SubscribeRequest.LabelsEntry
+	(*StreamPosition)(nil),           // 7: pulsequorum.v1.StreamPosition
+	(*NodeInfo)(nil),                 // 8: pulsequorum.v1.NodeInfo
+	(*Heartbeat)(nil),                // 9: pulsequorum.v1.Heartbeat
 }
 var file_pulsequorum_v1_probe_proto_depIdxs = []int32{
-	2, // 0: pulsequorum.v1.SubscribeResponse.upserts:type_name -> pulsequorum.v1.ProbeMonitor
-	5, // 1: pulsequorum.v1.UploadHeartbeatsRequest.heartbeats:type_name -> pulsequorum.v1.Heartbeat
-	6, // 2: pulsequorum.v1.UploadHeartbeatsResponse.persisted:type_name -> pulsequorum.v1.StreamPosition
-	0, // 3: pulsequorum.v1.ProbeService.Subscribe:input_type -> pulsequorum.v1.SubscribeRequest
-	3, // 4: pulsequorum.v1.ProbeService.UploadHeartbeats:input_type -> pulsequorum.v1.UploadHeartbeatsRequest
-	1, // 5: pulsequorum.v1.ProbeService.Subscribe:output_type -> pulsequorum.v1.SubscribeResponse
-	4, // 6: pulsequorum.v1.ProbeService.UploadHeartbeats:output_type -> pulsequorum.v1.UploadHeartbeatsResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 0: pulsequorum.v1.SubscribeRequest.labels:type_name -> pulsequorum.v1.SubscribeRequest.LabelsEntry
+	1, // 1: pulsequorum.v1.SubscribeRequest.buffer:type_name -> pulsequorum.v1.ProbeBufferStatus
+	3, // 2: pulsequorum.v1.SubscribeResponse.upserts:type_name -> pulsequorum.v1.ProbeMonitor
+	7, // 3: pulsequorum.v1.SubscribeResponse.stream_position:type_name -> pulsequorum.v1.StreamPosition
+	8, // 4: pulsequorum.v1.SubscribeResponse.voters:type_name -> pulsequorum.v1.NodeInfo
+	9, // 5: pulsequorum.v1.UploadHeartbeatsRequest.heartbeats:type_name -> pulsequorum.v1.Heartbeat
+	7, // 6: pulsequorum.v1.UploadHeartbeatsResponse.persisted:type_name -> pulsequorum.v1.StreamPosition
+	0, // 7: pulsequorum.v1.ProbeService.Subscribe:input_type -> pulsequorum.v1.SubscribeRequest
+	4, // 8: pulsequorum.v1.ProbeService.UploadHeartbeats:input_type -> pulsequorum.v1.UploadHeartbeatsRequest
+	2, // 9: pulsequorum.v1.ProbeService.Subscribe:output_type -> pulsequorum.v1.SubscribeResponse
+	5, // 10: pulsequorum.v1.ProbeService.UploadHeartbeats:output_type -> pulsequorum.v1.UploadHeartbeatsResponse
+	9, // [9:11] is the sub-list for method output_type
+	7, // [7:9] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_pulsequorum_v1_probe_proto_init() }
@@ -412,6 +650,7 @@ func file_pulsequorum_v1_probe_proto_init() {
 	if File_pulsequorum_v1_probe_proto != nil {
 		return
 	}
+	file_pulsequorum_v1_command_proto_init()
 	file_pulsequorum_v1_heartbeat_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -419,7 +658,7 @@ func file_pulsequorum_v1_probe_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pulsequorum_v1_probe_proto_rawDesc), len(file_pulsequorum_v1_probe_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

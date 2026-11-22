@@ -68,6 +68,7 @@ message Command {
     RevokeAPIToken revoke_api_token = 42;
     PruneAudit prune_audit = 43;
     Batch batch = 44;
+    RegisterProbe register_probe = 45;
   }
 }
 
@@ -204,6 +205,14 @@ message RevokeSessions {
 // RegisterNode adds or updates a node in the cluster registry.
 message RegisterNode {
   NodeInfo node = 1;
+}
+
+// RegisterProbe adds or updates a probe in the cluster registry (ADR 0034, ADR 0035).
+// Role, ID and owner_tenant_id are always taken from the verified certificate or
+// redeemed join token, never from the probe's self-reported request.
+message RegisterProbe {
+  NodeInfo node = 1;
+  string owner_tenant_id = 2;
 }
 
 // SetNodeHealth records a health change of a registered node (ADR 0017). Only

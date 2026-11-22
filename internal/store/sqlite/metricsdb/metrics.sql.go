@@ -101,6 +101,36 @@ func (q *Queries) DeleteRollupsOfSeriesBefore(ctx context.Context, arg DeleteRol
 	return result.RowsAffected()
 }
 
+const deleteStreamHeartbeatsUpTo = `-- name: DeleteStreamHeartbeatsUpTo :execrows
+DELETE FROM heartbeats
+WHERE rowid IN (
+    SELECT h.rowid FROM heartbeats AS h
+    WHERE h.node_id = ?1 AND h.incarnation = ?2 AND h.seq <= ?3
+    ORDER BY h.seq ASC
+    LIMIT ?4
+)
+`
+
+type DeleteStreamHeartbeatsUpToParams struct {
+	NodeID      string
+	Incarnation string
+	MaxSeq      int64
+	RowLimit    int64
+}
+
+func (q *Queries) DeleteStreamHeartbeatsUpTo(ctx context.Context, arg DeleteStreamHeartbeatsUpToParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteStreamHeartbeatsUpTo,
+		arg.NodeID,
+		arg.Incarnation,
+		arg.MaxSeq,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getMeta = `-- name: GetMeta :one
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -301,8 +331,10 @@ func (q *Queries) InsertSeries(ctx context.Context, arg InsertSeriesParams) (int
 }
 
 const lastSeq = `-- name: LastSeq :one
-SELECT CAST(COALESCE(MAX(seq), 0) AS INTEGER) AS last_seq
-FROM heartbeats WHERE node_id = ? AND incarnation = ?
+SELECT CAST(MAX(
+    COALESCE((SELECT MAX(h.seq) FROM heartbeats AS h WHERE h.node_id = ?1 AND h.incarnation = ?2), 0),
+    COALESCE((SELECT sp.seq FROM stream_positions AS sp WHERE sp.node_id = ?1 AND sp.incarnation = ?2), 0)
+) AS INTEGER) AS last_seq
 `
 
 type LastSeqParams struct {
@@ -442,6 +474,42 @@ func (q *Queries) ListHeartbeats(ctx context.Context, arg ListHeartbeatsParams) 
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOldestStreamSeqs = `-- name: ListOldestStreamSeqs :many
+SELECT seq FROM heartbeats
+WHERE node_id = ?1 AND incarnation = ?2
+ORDER BY seq ASC
+LIMIT ?3
+`
+
+type ListOldestStreamSeqsParams struct {
+	NodeID      string
+	Incarnation string
+	RowLimit    int64
+}
+
+func (q *Queries) ListOldestStreamSeqs(ctx context.Context, arg ListOldestStreamSeqsParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listOldestStreamSeqs, arg.NodeID, arg.Incarnation, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var seq int64
+		if err := rows.Scan(&seq); err != nil {
+			return nil, err
+		}
+		items = append(items, seq)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -854,6 +922,51 @@ func (q *Queries) ListStreamSeqsAfter(ctx context.Context, arg ListStreamSeqsAft
 	return items, nil
 }
 
+const listStreamSeqsOlderThan = `-- name: ListStreamSeqsOlderThan :many
+SELECT seq FROM heartbeats
+WHERE node_id = ?1 AND incarnation = ?2
+  AND seq > ?3 AND ts_ms < ?4
+ORDER BY seq ASC
+LIMIT ?5
+`
+
+type ListStreamSeqsOlderThanParams struct {
+	NodeID      string
+	Incarnation string
+	AfterSeq    int64
+	BeforeMs    int64
+	RowLimit    int64
+}
+
+func (q *Queries) ListStreamSeqsOlderThan(ctx context.Context, arg ListStreamSeqsOlderThanParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listStreamSeqsOlderThan,
+		arg.NodeID,
+		arg.Incarnation,
+		arg.AfterSeq,
+		arg.BeforeMs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var seq int64
+		if err := rows.Scan(&seq); err != nil {
+			return nil, err
+		}
+		items = append(items, seq)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnreportedDegradedAlerts = `-- name: ListUnreportedDegradedAlerts :many
 SELECT id, tenant_id, monitor_id, channel_id, status, since_ms, sent_ms, outcome, reachable, total, reporters, reported FROM degraded_alerts WHERE reported = 0 ORDER BY id LIMIT ?1
 `
@@ -901,6 +1014,23 @@ UPDATE degraded_alerts SET reported = 1 WHERE id = ?
 func (q *Queries) MarkDegradedAlertReported(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, markDegradedAlertReported, id)
 	return err
+}
+
+const minSeq = `-- name: MinSeq :one
+SELECT CAST(COALESCE(MIN(seq), 0) AS INTEGER) AS min_seq
+FROM heartbeats WHERE node_id = ? AND incarnation = ?
+`
+
+type MinSeqParams struct {
+	NodeID      string
+	Incarnation string
+}
+
+func (q *Queries) MinSeq(ctx context.Context, arg MinSeqParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, minSeq, arg.NodeID, arg.Incarnation)
+	var min_seq int64
+	err := row.Scan(&min_seq)
+	return min_seq, err
 }
 
 const pruneDegradedAlerts = `-- name: PruneDegradedAlerts :execrows
@@ -1019,6 +1149,31 @@ func (q *Queries) PurgeSeriesOfTenant(ctx context.Context, arg PurgeSeriesOfTena
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const unackedStats = `-- name: UnackedStats :one
+SELECT COUNT(*) AS unacked_count,
+       CAST(COALESCE(MIN(ts_ms), 0) AS INTEGER) AS oldest_ts_ms
+FROM heartbeats
+WHERE node_id = ?1 AND incarnation = ?2 AND seq > ?3
+`
+
+type UnackedStatsParams struct {
+	NodeID      string
+	Incarnation string
+	AfterSeq    int64
+}
+
+type UnackedStatsRow struct {
+	UnackedCount int64
+	OldestTsMs   int64
+}
+
+func (q *Queries) UnackedStats(ctx context.Context, arg UnackedStatsParams) (UnackedStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, unackedStats, arg.NodeID, arg.Incarnation, arg.AfterSeq)
+	var i UnackedStatsRow
+	err := row.Scan(&i.UnackedCount, &i.OldestTsMs)
+	return i, err
 }
 
 const upsertMeta = `-- name: UpsertMeta :exec

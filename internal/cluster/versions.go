@@ -66,6 +66,8 @@ func minVersion(cmd *pb.Command) uint32 {
 		*pb.Command_PruneAudit,
 		*pb.Command_Batch:
 		return AuditCommandLevel
+	case *pb.Command_RegisterProbe:
+		return ProbeCommandLevel
 	}
 	return 0
 }

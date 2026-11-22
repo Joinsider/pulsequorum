@@ -853,6 +853,11 @@ type Node struct {
 	ID           string
 	Name         string
 	Role         string   // NodeRoleVoter or NodeRoleProbe
+	// OwnerTenantID is empty for voters and public probes, and the tenant ID for
+	// private probes (ADR 0034, ADR 0035).
+	OwnerTenantID string
+	// Incarnation is the metrics.db incarnation last reported by a probe.
+	Incarnation  string
 	Capabilities []string // sorted, e.g. "icmp" (FA-CHK-31)
 	Labels       map[string]string
 	Region       string

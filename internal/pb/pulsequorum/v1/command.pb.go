@@ -194,7 +194,7 @@ func (x NodeInfo_Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NodeInfo_Role.Descriptor instead.
 func (NodeInfo_Role) EnumDescriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{16, 0}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{17, 0}
 }
 
 // Command is the envelope of every Raft log entry (ADR 0005). The leader fills
@@ -252,6 +252,7 @@ type Command struct {
 	//	*Command_RevokeApiToken
 	//	*Command_PruneAudit
 	//	*Command_Batch
+	//	*Command_RegisterProbe
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -633,6 +634,15 @@ func (x *Command) GetBatch() *Batch {
 	return nil
 }
 
+func (x *Command) GetRegisterProbe() *RegisterProbe {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_RegisterProbe); ok {
+			return x.RegisterProbe
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -770,6 +780,10 @@ type Command_Batch struct {
 	Batch *Batch `protobuf:"bytes,44,opt,name=batch,proto3,oneof"`
 }
 
+type Command_RegisterProbe struct {
+	RegisterProbe *RegisterProbe `protobuf:"bytes,45,opt,name=register_probe,json=registerProbe,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -835,6 +849,8 @@ func (*Command_RevokeApiToken) isCommand_Payload() {}
 func (*Command_PruneAudit) isCommand_Payload() {}
 
 func (*Command_Batch) isCommand_Payload() {}
+
+func (*Command_RegisterProbe) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -1605,6 +1621,61 @@ func (x *RegisterNode) GetNode() *NodeInfo {
 	return nil
 }
 
+// RegisterProbe adds or updates a probe in the cluster registry (ADR 0034, ADR 0035).
+// Role, ID and owner_tenant_id are always taken from the verified certificate or
+// redeemed join token, never from the probe's self-reported request.
+type RegisterProbe struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Node          *NodeInfo              `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	OwnerTenantId string                 `protobuf:"bytes,2,opt,name=owner_tenant_id,json=ownerTenantId,proto3" json:"owner_tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterProbe) Reset() {
+	*x = RegisterProbe{}
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterProbe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterProbe) ProtoMessage() {}
+
+func (x *RegisterProbe) ProtoReflect() protoreflect.Message {
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterProbe.ProtoReflect.Descriptor instead.
+func (*RegisterProbe) Descriptor() ([]byte, []int) {
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RegisterProbe) GetNode() *NodeInfo {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+func (x *RegisterProbe) GetOwnerTenantId() string {
+	if x != nil {
+		return x.OwnerTenantId
+	}
+	return ""
+}
+
 // SetNodeHealth records a health change of a registered node (ADR 0017). Only
 // the leader proposes it, from its Raft contact with the node.
 type SetNodeHealth struct {
@@ -1617,7 +1688,7 @@ type SetNodeHealth struct {
 
 func (x *SetNodeHealth) Reset() {
 	*x = SetNodeHealth{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[12]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1629,7 +1700,7 @@ func (x *SetNodeHealth) String() string {
 func (*SetNodeHealth) ProtoMessage() {}
 
 func (x *SetNodeHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[12]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1642,7 +1713,7 @@ func (x *SetNodeHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetNodeHealth.ProtoReflect.Descriptor instead.
 func (*SetNodeHealth) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{12}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SetNodeHealth) GetNodeId() string {
@@ -1673,7 +1744,7 @@ type SetNodeConnectivity struct {
 
 func (x *SetNodeConnectivity) Reset() {
 	*x = SetNodeConnectivity{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[13]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1685,7 +1756,7 @@ func (x *SetNodeConnectivity) String() string {
 func (*SetNodeConnectivity) ProtoMessage() {}
 
 func (x *SetNodeConnectivity) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[13]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1698,7 +1769,7 @@ func (x *SetNodeConnectivity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetNodeConnectivity.ProtoReflect.Descriptor instead.
 func (*SetNodeConnectivity) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{13}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SetNodeConnectivity) GetNodeId() string {
@@ -1732,7 +1803,7 @@ type SetFeatureLevel struct {
 
 func (x *SetFeatureLevel) Reset() {
 	*x = SetFeatureLevel{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[14]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1744,7 +1815,7 @@ func (x *SetFeatureLevel) String() string {
 func (*SetFeatureLevel) ProtoMessage() {}
 
 func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[14]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1757,7 +1828,7 @@ func (x *SetFeatureLevel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFeatureLevel.ProtoReflect.Descriptor instead.
 func (*SetFeatureLevel) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{14}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SetFeatureLevel) GetLevel() uint32 {
@@ -1781,7 +1852,7 @@ type ClearMonitorFlapping struct {
 
 func (x *ClearMonitorFlapping) Reset() {
 	*x = ClearMonitorFlapping{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[15]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1793,7 +1864,7 @@ func (x *ClearMonitorFlapping) String() string {
 func (*ClearMonitorFlapping) ProtoMessage() {}
 
 func (x *ClearMonitorFlapping) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[15]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1806,7 +1877,7 @@ func (x *ClearMonitorFlapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearMonitorFlapping.ProtoReflect.Descriptor instead.
 func (*ClearMonitorFlapping) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{15}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ClearMonitorFlapping) GetMonitorId() string {
@@ -1847,7 +1918,7 @@ type NodeInfo struct {
 
 func (x *NodeInfo) Reset() {
 	*x = NodeInfo{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[16]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1859,7 +1930,7 @@ func (x *NodeInfo) String() string {
 func (*NodeInfo) ProtoMessage() {}
 
 func (x *NodeInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[16]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1872,7 +1943,7 @@ func (x *NodeInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeInfo.ProtoReflect.Descriptor instead.
 func (*NodeInfo) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{16}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *NodeInfo) GetId() string {
@@ -1969,7 +2040,7 @@ type RedeemJoinToken struct {
 
 func (x *RedeemJoinToken) Reset() {
 	*x = RedeemJoinToken{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[17]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2052,7 @@ func (x *RedeemJoinToken) String() string {
 func (*RedeemJoinToken) ProtoMessage() {}
 
 func (x *RedeemJoinToken) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[17]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2065,7 @@ func (x *RedeemJoinToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedeemJoinToken.ProtoReflect.Descriptor instead.
 func (*RedeemJoinToken) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{17}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RedeemJoinToken) GetTokenId() string {
@@ -2033,7 +2104,7 @@ type RevokeCertificate struct {
 
 func (x *RevokeCertificate) Reset() {
 	*x = RevokeCertificate{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[18]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2045,7 +2116,7 @@ func (x *RevokeCertificate) String() string {
 func (*RevokeCertificate) ProtoMessage() {}
 
 func (x *RevokeCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[18]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2058,7 +2129,7 @@ func (x *RevokeCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeCertificate.ProtoReflect.Descriptor instead.
 func (*RevokeCertificate) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{18}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RevokeCertificate) GetSerial() string {
@@ -2094,7 +2165,7 @@ type RevokeNode struct {
 
 func (x *RevokeNode) Reset() {
 	*x = RevokeNode{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[19]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2106,7 +2177,7 @@ func (x *RevokeNode) String() string {
 func (*RevokeNode) ProtoMessage() {}
 
 func (x *RevokeNode) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[19]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2119,7 +2190,7 @@ func (x *RevokeNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNode.ProtoReflect.Descriptor instead.
 func (*RevokeNode) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{19}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RevokeNode) GetNodeId() string {
@@ -2143,7 +2214,7 @@ type ReportDegradedAlerts struct {
 
 func (x *ReportDegradedAlerts) Reset() {
 	*x = ReportDegradedAlerts{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[20]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2155,7 +2226,7 @@ func (x *ReportDegradedAlerts) String() string {
 func (*ReportDegradedAlerts) ProtoMessage() {}
 
 func (x *ReportDegradedAlerts) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[20]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2168,7 +2239,7 @@ func (x *ReportDegradedAlerts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportDegradedAlerts.ProtoReflect.Descriptor instead.
 func (*ReportDegradedAlerts) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{20}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReportDegradedAlerts) GetNodeId() string {
@@ -2211,7 +2282,7 @@ type DegradedAlertEntry struct {
 
 func (x *DegradedAlertEntry) Reset() {
 	*x = DegradedAlertEntry{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[21]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2223,7 +2294,7 @@ func (x *DegradedAlertEntry) String() string {
 func (*DegradedAlertEntry) ProtoMessage() {}
 
 func (x *DegradedAlertEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[21]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2236,7 +2307,7 @@ func (x *DegradedAlertEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DegradedAlertEntry.ProtoReflect.Descriptor instead.
 func (*DegradedAlertEntry) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{21}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DegradedAlertEntry) GetLocalId() int64 {
@@ -2328,7 +2399,7 @@ type ResolveUnconfirmedAlerts struct {
 
 func (x *ResolveUnconfirmedAlerts) Reset() {
 	*x = ResolveUnconfirmedAlerts{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[22]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2340,7 +2411,7 @@ func (x *ResolveUnconfirmedAlerts) String() string {
 func (*ResolveUnconfirmedAlerts) ProtoMessage() {}
 
 func (x *ResolveUnconfirmedAlerts) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[22]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2424,7 @@ func (x *ResolveUnconfirmedAlerts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveUnconfirmedAlerts.ProtoReflect.Descriptor instead.
 func (*ResolveUnconfirmedAlerts) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{22}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ResolveUnconfirmedAlerts) GetVerdicts() []*UnconfirmedVerdict {
@@ -2379,7 +2450,7 @@ type UnconfirmedVerdict struct {
 
 func (x *UnconfirmedVerdict) Reset() {
 	*x = UnconfirmedVerdict{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[23]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2391,7 +2462,7 @@ func (x *UnconfirmedVerdict) String() string {
 func (*UnconfirmedVerdict) ProtoMessage() {}
 
 func (x *UnconfirmedVerdict) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[23]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2404,7 +2475,7 @@ func (x *UnconfirmedVerdict) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnconfirmedVerdict.ProtoReflect.Descriptor instead.
 func (*UnconfirmedVerdict) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{23}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UnconfirmedVerdict) GetNodeId() string {
@@ -2454,7 +2525,7 @@ type RecordMonitorHistory struct {
 
 func (x *RecordMonitorHistory) Reset() {
 	*x = RecordMonitorHistory{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[24]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2466,7 +2537,7 @@ func (x *RecordMonitorHistory) String() string {
 func (*RecordMonitorHistory) ProtoMessage() {}
 
 func (x *RecordMonitorHistory) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[24]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2479,7 +2550,7 @@ func (x *RecordMonitorHistory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordMonitorHistory.ProtoReflect.Descriptor instead.
 func (*RecordMonitorHistory) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{24}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RecordMonitorHistory) GetMonitorId() string {
@@ -2532,7 +2603,7 @@ type HistoryEntry struct {
 
 func (x *HistoryEntry) Reset() {
 	*x = HistoryEntry{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[25]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2544,7 +2615,7 @@ func (x *HistoryEntry) String() string {
 func (*HistoryEntry) ProtoMessage() {}
 
 func (x *HistoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[25]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2557,7 +2628,7 @@ func (x *HistoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryEntry.ProtoReflect.Descriptor instead.
 func (*HistoryEntry) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{25}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *HistoryEntry) GetSinceMs() int64 {
@@ -2617,7 +2688,7 @@ type SetSystemAlert struct {
 
 func (x *SetSystemAlert) Reset() {
 	*x = SetSystemAlert{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[26]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2629,7 +2700,7 @@ func (x *SetSystemAlert) String() string {
 func (*SetSystemAlert) ProtoMessage() {}
 
 func (x *SetSystemAlert) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[26]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2642,7 +2713,7 @@ func (x *SetSystemAlert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSystemAlert.ProtoReflect.Descriptor instead.
 func (*SetSystemAlert) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{26}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SetSystemAlert) GetKind() string {
@@ -2692,7 +2763,7 @@ type RecordIncarnation struct {
 
 func (x *RecordIncarnation) Reset() {
 	*x = RecordIncarnation{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[27]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2704,7 +2775,7 @@ func (x *RecordIncarnation) String() string {
 func (*RecordIncarnation) ProtoMessage() {}
 
 func (x *RecordIncarnation) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[27]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2717,7 +2788,7 @@ func (x *RecordIncarnation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordIncarnation.ProtoReflect.Descriptor instead.
 func (*RecordIncarnation) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{27}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RecordIncarnation) GetNodeId() string {
@@ -2745,7 +2816,7 @@ type Checkpoint struct {
 
 func (x *Checkpoint) Reset() {
 	*x = Checkpoint{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[28]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2757,7 +2828,7 @@ func (x *Checkpoint) String() string {
 func (*Checkpoint) ProtoMessage() {}
 
 func (x *Checkpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[28]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2770,7 +2841,7 @@ func (x *Checkpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Checkpoint.ProtoReflect.Descriptor instead.
 func (*Checkpoint) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{28}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{29}
 }
 
 // BindTenantOrg binds a tenant to an identity-provider organization (ADR 0027).
@@ -2786,7 +2857,7 @@ type BindTenantOrg struct {
 
 func (x *BindTenantOrg) Reset() {
 	*x = BindTenantOrg{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[29]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2798,7 +2869,7 @@ func (x *BindTenantOrg) String() string {
 func (*BindTenantOrg) ProtoMessage() {}
 
 func (x *BindTenantOrg) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[29]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2811,7 +2882,7 @@ func (x *BindTenantOrg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindTenantOrg.ProtoReflect.Descriptor instead.
 func (*BindTenantOrg) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{29}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *BindTenantOrg) GetTenantId() string {
@@ -2851,7 +2922,7 @@ type CreateTenant struct {
 
 func (x *CreateTenant) Reset() {
 	*x = CreateTenant{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[30]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2863,7 +2934,7 @@ func (x *CreateTenant) String() string {
 func (*CreateTenant) ProtoMessage() {}
 
 func (x *CreateTenant) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[30]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2876,7 +2947,7 @@ func (x *CreateTenant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTenant.ProtoReflect.Descriptor instead.
 func (*CreateTenant) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{30}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CreateTenant) GetTenantId() string {
@@ -2944,7 +3015,7 @@ type UpdateTenant struct {
 
 func (x *UpdateTenant) Reset() {
 	*x = UpdateTenant{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[31]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2956,7 +3027,7 @@ func (x *UpdateTenant) String() string {
 func (*UpdateTenant) ProtoMessage() {}
 
 func (x *UpdateTenant) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[31]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2969,7 +3040,7 @@ func (x *UpdateTenant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTenant.ProtoReflect.Descriptor instead.
 func (*UpdateTenant) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{31}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *UpdateTenant) GetTenantId() string {
@@ -3018,7 +3089,7 @@ type SetTenantSuspended struct {
 
 func (x *SetTenantSuspended) Reset() {
 	*x = SetTenantSuspended{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[32]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3030,7 +3101,7 @@ func (x *SetTenantSuspended) String() string {
 func (*SetTenantSuspended) ProtoMessage() {}
 
 func (x *SetTenantSuspended) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[32]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3043,7 +3114,7 @@ func (x *SetTenantSuspended) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTenantSuspended.ProtoReflect.Descriptor instead.
 func (*SetTenantSuspended) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{32}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SetTenantSuspended) GetTenantId() string {
@@ -3071,7 +3142,7 @@ type DeleteTenant struct {
 
 func (x *DeleteTenant) Reset() {
 	*x = DeleteTenant{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[33]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3083,7 +3154,7 @@ func (x *DeleteTenant) String() string {
 func (*DeleteTenant) ProtoMessage() {}
 
 func (x *DeleteTenant) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[33]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3096,7 +3167,7 @@ func (x *DeleteTenant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTenant.ProtoReflect.Descriptor instead.
 func (*DeleteTenant) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{33}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DeleteTenant) GetTenantId() string {
@@ -3118,7 +3189,7 @@ type PutPlan struct {
 
 func (x *PutPlan) Reset() {
 	*x = PutPlan{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[34]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3130,7 +3201,7 @@ func (x *PutPlan) String() string {
 func (*PutPlan) ProtoMessage() {}
 
 func (x *PutPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[34]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3143,7 +3214,7 @@ func (x *PutPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutPlan.ProtoReflect.Descriptor instead.
 func (*PutPlan) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{34}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PutPlan) GetPlanId() string {
@@ -3177,7 +3248,7 @@ type DeletePlan struct {
 
 func (x *DeletePlan) Reset() {
 	*x = DeletePlan{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[35]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3189,7 +3260,7 @@ func (x *DeletePlan) String() string {
 func (*DeletePlan) ProtoMessage() {}
 
 func (x *DeletePlan) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[35]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3202,7 +3273,7 @@ func (x *DeletePlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlan.ProtoReflect.Descriptor instead.
 func (*DeletePlan) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{35}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *DeletePlan) GetPlanId() string {
@@ -3231,7 +3302,7 @@ type CreateAPIToken struct {
 
 func (x *CreateAPIToken) Reset() {
 	*x = CreateAPIToken{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[36]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3243,7 +3314,7 @@ func (x *CreateAPIToken) String() string {
 func (*CreateAPIToken) ProtoMessage() {}
 
 func (x *CreateAPIToken) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[36]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3256,7 +3327,7 @@ func (x *CreateAPIToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAPIToken.ProtoReflect.Descriptor instead.
 func (*CreateAPIToken) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{36}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateAPIToken) GetId() string {
@@ -3311,7 +3382,7 @@ type RevokeAPIToken struct {
 
 func (x *RevokeAPIToken) Reset() {
 	*x = RevokeAPIToken{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[37]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3323,7 +3394,7 @@ func (x *RevokeAPIToken) String() string {
 func (*RevokeAPIToken) ProtoMessage() {}
 
 func (x *RevokeAPIToken) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[37]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3336,7 +3407,7 @@ func (x *RevokeAPIToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeAPIToken.ProtoReflect.Descriptor instead.
 func (*RevokeAPIToken) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{37}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *RevokeAPIToken) GetId() string {
@@ -3358,7 +3429,7 @@ type PruneAudit struct {
 
 func (x *PruneAudit) Reset() {
 	*x = PruneAudit{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[38]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3370,7 +3441,7 @@ func (x *PruneAudit) String() string {
 func (*PruneAudit) ProtoMessage() {}
 
 func (x *PruneAudit) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[38]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3383,7 +3454,7 @@ func (x *PruneAudit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneAudit.ProtoReflect.Descriptor instead.
 func (*PruneAudit) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{38}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PruneAudit) GetAuditBeforeMs() int64 {
@@ -3411,7 +3482,7 @@ type Batch struct {
 
 func (x *Batch) Reset() {
 	*x = Batch{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[39]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3423,7 +3494,7 @@ func (x *Batch) String() string {
 func (*Batch) ProtoMessage() {}
 
 func (x *Batch) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[39]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3436,7 +3507,7 @@ func (x *Batch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Batch.ProtoReflect.Descriptor instead.
 func (*Batch) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{39}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *Batch) GetOps() []*BatchOp {
@@ -3462,7 +3533,7 @@ type BatchOp struct {
 
 func (x *BatchOp) Reset() {
 	*x = BatchOp{}
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[40]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3474,7 +3545,7 @@ func (x *BatchOp) String() string {
 func (*BatchOp) ProtoMessage() {}
 
 func (x *BatchOp) ProtoReflect() protoreflect.Message {
-	mi := &file_pulsequorum_v1_command_proto_msgTypes[40]
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3487,7 +3558,7 @@ func (x *BatchOp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchOp.ProtoReflect.Descriptor instead.
 func (*BatchOp) Descriptor() ([]byte, []int) {
-	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{40}
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *BatchOp) GetOp() isBatchOp_Op {
@@ -3542,7 +3613,7 @@ var File_pulsequorum_v1_command_proto protoreflect.FileDescriptor
 
 const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1cpulsequorum/v1/command.proto\x12\x0epulsequorum.v1\x1a\x1epulsequorum/v1/heartbeat.proto\"\x91\x15\n" +
+	"\x1cpulsequorum/v1/command.proto\x12\x0epulsequorum.v1\x1a\x1epulsequorum/v1/heartbeat.proto\"\xd9\x15\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -3591,7 +3662,8 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\x10revoke_api_token\x18* \x01(\v2\x1e.pulsequorum.v1.RevokeAPITokenH\x00R\x0erevokeApiToken\x12=\n" +
 	"\vprune_audit\x18+ \x01(\v2\x1a.pulsequorum.v1.PruneAuditH\x00R\n" +
 	"pruneAudit\x12-\n" +
-	"\x05batch\x18, \x01(\v2\x15.pulsequorum.v1.BatchH\x00R\x05batchB\t\n" +
+	"\x05batch\x18, \x01(\v2\x15.pulsequorum.v1.BatchH\x00R\x05batch\x12F\n" +
+	"\x0eregister_probe\x18- \x01(\v2\x1d.pulsequorum.v1.RegisterProbeH\x00R\rregisterProbeB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\xad\x01\n" +
 	"\x05Actor\x12.\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1a.pulsequorum.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -3658,7 +3730,10 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\tfamily_id\x18\x01 \x01(\tR\bfamilyId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"<\n" +
 	"\fRegisterNode\x12,\n" +
-	"\x04node\x18\x01 \x01(\v2\x18.pulsequorum.v1.NodeInfoR\x04node\"B\n" +
+	"\x04node\x18\x01 \x01(\v2\x18.pulsequorum.v1.NodeInfoR\x04node\"e\n" +
+	"\rRegisterProbe\x12,\n" +
+	"\x04node\x18\x01 \x01(\v2\x18.pulsequorum.v1.NodeInfoR\x04node\x12&\n" +
+	"\x0fowner_tenant_id\x18\x02 \x01(\tR\rownerTenantId\"B\n" +
 	"\rSetNodeHealth\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\ahealthy\x18\x02 \x01(\bR\ahealthy\"b\n" +
@@ -3843,7 +3918,7 @@ func file_pulsequorum_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_pulsequorum_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_pulsequorum_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_pulsequorum_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_pulsequorum_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),                  // 0: pulsequorum.v1.EntityKind
 	(Actor_Kind)(0),                  // 1: pulsequorum.v1.Actor.Kind
@@ -3860,37 +3935,38 @@ var file_pulsequorum_v1_command_proto_goTypes = []any{
 	(*RotateSession)(nil),            // 12: pulsequorum.v1.RotateSession
 	(*RevokeSessions)(nil),           // 13: pulsequorum.v1.RevokeSessions
 	(*RegisterNode)(nil),             // 14: pulsequorum.v1.RegisterNode
-	(*SetNodeHealth)(nil),            // 15: pulsequorum.v1.SetNodeHealth
-	(*SetNodeConnectivity)(nil),      // 16: pulsequorum.v1.SetNodeConnectivity
-	(*SetFeatureLevel)(nil),          // 17: pulsequorum.v1.SetFeatureLevel
-	(*ClearMonitorFlapping)(nil),     // 18: pulsequorum.v1.ClearMonitorFlapping
-	(*NodeInfo)(nil),                 // 19: pulsequorum.v1.NodeInfo
-	(*RedeemJoinToken)(nil),          // 20: pulsequorum.v1.RedeemJoinToken
-	(*RevokeCertificate)(nil),        // 21: pulsequorum.v1.RevokeCertificate
-	(*RevokeNode)(nil),               // 22: pulsequorum.v1.RevokeNode
-	(*ReportDegradedAlerts)(nil),     // 23: pulsequorum.v1.ReportDegradedAlerts
-	(*DegradedAlertEntry)(nil),       // 24: pulsequorum.v1.DegradedAlertEntry
-	(*ResolveUnconfirmedAlerts)(nil), // 25: pulsequorum.v1.ResolveUnconfirmedAlerts
-	(*UnconfirmedVerdict)(nil),       // 26: pulsequorum.v1.UnconfirmedVerdict
-	(*RecordMonitorHistory)(nil),     // 27: pulsequorum.v1.RecordMonitorHistory
-	(*HistoryEntry)(nil),             // 28: pulsequorum.v1.HistoryEntry
-	(*SetSystemAlert)(nil),           // 29: pulsequorum.v1.SetSystemAlert
-	(*RecordIncarnation)(nil),        // 30: pulsequorum.v1.RecordIncarnation
-	(*Checkpoint)(nil),               // 31: pulsequorum.v1.Checkpoint
-	(*BindTenantOrg)(nil),            // 32: pulsequorum.v1.BindTenantOrg
-	(*CreateTenant)(nil),             // 33: pulsequorum.v1.CreateTenant
-	(*UpdateTenant)(nil),             // 34: pulsequorum.v1.UpdateTenant
-	(*SetTenantSuspended)(nil),       // 35: pulsequorum.v1.SetTenantSuspended
-	(*DeleteTenant)(nil),             // 36: pulsequorum.v1.DeleteTenant
-	(*PutPlan)(nil),                  // 37: pulsequorum.v1.PutPlan
-	(*DeletePlan)(nil),               // 38: pulsequorum.v1.DeletePlan
-	(*CreateAPIToken)(nil),           // 39: pulsequorum.v1.CreateAPIToken
-	(*RevokeAPIToken)(nil),           // 40: pulsequorum.v1.RevokeAPIToken
-	(*PruneAudit)(nil),               // 41: pulsequorum.v1.PruneAudit
-	(*Batch)(nil),                    // 42: pulsequorum.v1.Batch
-	(*BatchOp)(nil),                  // 43: pulsequorum.v1.BatchOp
-	nil,                              // 44: pulsequorum.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),                  // 45: pulsequorum.v1.ErrorClass
+	(*RegisterProbe)(nil),            // 15: pulsequorum.v1.RegisterProbe
+	(*SetNodeHealth)(nil),            // 16: pulsequorum.v1.SetNodeHealth
+	(*SetNodeConnectivity)(nil),      // 17: pulsequorum.v1.SetNodeConnectivity
+	(*SetFeatureLevel)(nil),          // 18: pulsequorum.v1.SetFeatureLevel
+	(*ClearMonitorFlapping)(nil),     // 19: pulsequorum.v1.ClearMonitorFlapping
+	(*NodeInfo)(nil),                 // 20: pulsequorum.v1.NodeInfo
+	(*RedeemJoinToken)(nil),          // 21: pulsequorum.v1.RedeemJoinToken
+	(*RevokeCertificate)(nil),        // 22: pulsequorum.v1.RevokeCertificate
+	(*RevokeNode)(nil),               // 23: pulsequorum.v1.RevokeNode
+	(*ReportDegradedAlerts)(nil),     // 24: pulsequorum.v1.ReportDegradedAlerts
+	(*DegradedAlertEntry)(nil),       // 25: pulsequorum.v1.DegradedAlertEntry
+	(*ResolveUnconfirmedAlerts)(nil), // 26: pulsequorum.v1.ResolveUnconfirmedAlerts
+	(*UnconfirmedVerdict)(nil),       // 27: pulsequorum.v1.UnconfirmedVerdict
+	(*RecordMonitorHistory)(nil),     // 28: pulsequorum.v1.RecordMonitorHistory
+	(*HistoryEntry)(nil),             // 29: pulsequorum.v1.HistoryEntry
+	(*SetSystemAlert)(nil),           // 30: pulsequorum.v1.SetSystemAlert
+	(*RecordIncarnation)(nil),        // 31: pulsequorum.v1.RecordIncarnation
+	(*Checkpoint)(nil),               // 32: pulsequorum.v1.Checkpoint
+	(*BindTenantOrg)(nil),            // 33: pulsequorum.v1.BindTenantOrg
+	(*CreateTenant)(nil),             // 34: pulsequorum.v1.CreateTenant
+	(*UpdateTenant)(nil),             // 35: pulsequorum.v1.UpdateTenant
+	(*SetTenantSuspended)(nil),       // 36: pulsequorum.v1.SetTenantSuspended
+	(*DeleteTenant)(nil),             // 37: pulsequorum.v1.DeleteTenant
+	(*PutPlan)(nil),                  // 38: pulsequorum.v1.PutPlan
+	(*DeletePlan)(nil),               // 39: pulsequorum.v1.DeletePlan
+	(*CreateAPIToken)(nil),           // 40: pulsequorum.v1.CreateAPIToken
+	(*RevokeAPIToken)(nil),           // 41: pulsequorum.v1.RevokeAPIToken
+	(*PruneAudit)(nil),               // 42: pulsequorum.v1.PruneAudit
+	(*Batch)(nil),                    // 43: pulsequorum.v1.Batch
+	(*BatchOp)(nil),                  // 44: pulsequorum.v1.BatchOp
+	nil,                              // 45: pulsequorum.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 46: pulsequorum.v1.ErrorClass
 }
 var file_pulsequorum_v1_command_proto_depIdxs = []int32{
 	4,  // 0: pulsequorum.v1.Command.actor:type_name -> pulsequorum.v1.Actor
@@ -3900,52 +3976,54 @@ var file_pulsequorum_v1_command_proto_depIdxs = []int32{
 	9,  // 4: pulsequorum.v1.Command.enqueue_alert:type_name -> pulsequorum.v1.EnqueueAlert
 	10, // 5: pulsequorum.v1.Command.ack_alert_delivery:type_name -> pulsequorum.v1.AckAlertDelivery
 	14, // 6: pulsequorum.v1.Command.register_node:type_name -> pulsequorum.v1.RegisterNode
-	17, // 7: pulsequorum.v1.Command.set_feature_level:type_name -> pulsequorum.v1.SetFeatureLevel
+	18, // 7: pulsequorum.v1.Command.set_feature_level:type_name -> pulsequorum.v1.SetFeatureLevel
 	11, // 8: pulsequorum.v1.Command.create_session:type_name -> pulsequorum.v1.CreateSession
 	12, // 9: pulsequorum.v1.Command.rotate_session:type_name -> pulsequorum.v1.RotateSession
 	13, // 10: pulsequorum.v1.Command.revoke_sessions:type_name -> pulsequorum.v1.RevokeSessions
-	20, // 11: pulsequorum.v1.Command.redeem_join_token:type_name -> pulsequorum.v1.RedeemJoinToken
-	21, // 12: pulsequorum.v1.Command.revoke_certificate:type_name -> pulsequorum.v1.RevokeCertificate
-	22, // 13: pulsequorum.v1.Command.revoke_node:type_name -> pulsequorum.v1.RevokeNode
-	15, // 14: pulsequorum.v1.Command.set_node_health:type_name -> pulsequorum.v1.SetNodeHealth
-	16, // 15: pulsequorum.v1.Command.set_node_connectivity:type_name -> pulsequorum.v1.SetNodeConnectivity
-	18, // 16: pulsequorum.v1.Command.clear_monitor_flapping:type_name -> pulsequorum.v1.ClearMonitorFlapping
-	23, // 17: pulsequorum.v1.Command.report_degraded_alerts:type_name -> pulsequorum.v1.ReportDegradedAlerts
-	25, // 18: pulsequorum.v1.Command.resolve_unconfirmed_alerts:type_name -> pulsequorum.v1.ResolveUnconfirmedAlerts
-	27, // 19: pulsequorum.v1.Command.record_monitor_history:type_name -> pulsequorum.v1.RecordMonitorHistory
-	29, // 20: pulsequorum.v1.Command.set_system_alert:type_name -> pulsequorum.v1.SetSystemAlert
-	30, // 21: pulsequorum.v1.Command.record_incarnation:type_name -> pulsequorum.v1.RecordIncarnation
-	31, // 22: pulsequorum.v1.Command.checkpoint:type_name -> pulsequorum.v1.Checkpoint
-	32, // 23: pulsequorum.v1.Command.bind_tenant_org:type_name -> pulsequorum.v1.BindTenantOrg
-	33, // 24: pulsequorum.v1.Command.create_tenant:type_name -> pulsequorum.v1.CreateTenant
-	34, // 25: pulsequorum.v1.Command.update_tenant:type_name -> pulsequorum.v1.UpdateTenant
-	35, // 26: pulsequorum.v1.Command.set_tenant_suspended:type_name -> pulsequorum.v1.SetTenantSuspended
-	36, // 27: pulsequorum.v1.Command.delete_tenant:type_name -> pulsequorum.v1.DeleteTenant
-	37, // 28: pulsequorum.v1.Command.put_plan:type_name -> pulsequorum.v1.PutPlan
-	38, // 29: pulsequorum.v1.Command.delete_plan:type_name -> pulsequorum.v1.DeletePlan
-	39, // 30: pulsequorum.v1.Command.create_api_token:type_name -> pulsequorum.v1.CreateAPIToken
-	40, // 31: pulsequorum.v1.Command.revoke_api_token:type_name -> pulsequorum.v1.RevokeAPIToken
-	41, // 32: pulsequorum.v1.Command.prune_audit:type_name -> pulsequorum.v1.PruneAudit
-	42, // 33: pulsequorum.v1.Command.batch:type_name -> pulsequorum.v1.Batch
-	1,  // 34: pulsequorum.v1.Actor.kind:type_name -> pulsequorum.v1.Actor.Kind
-	0,  // 35: pulsequorum.v1.PutEntity.kind:type_name -> pulsequorum.v1.EntityKind
-	0,  // 36: pulsequorum.v1.DeleteEntity.kind:type_name -> pulsequorum.v1.EntityKind
-	8,  // 37: pulsequorum.v1.SetMonitorState.incident:type_name -> pulsequorum.v1.IncidentStart
-	45, // 38: pulsequorum.v1.IncidentStart.error_class:type_name -> pulsequorum.v1.ErrorClass
-	19, // 39: pulsequorum.v1.RegisterNode.node:type_name -> pulsequorum.v1.NodeInfo
-	2,  // 40: pulsequorum.v1.NodeInfo.role:type_name -> pulsequorum.v1.NodeInfo.Role
-	44, // 41: pulsequorum.v1.NodeInfo.labels:type_name -> pulsequorum.v1.NodeInfo.LabelsEntry
-	24, // 42: pulsequorum.v1.ReportDegradedAlerts.entries:type_name -> pulsequorum.v1.DegradedAlertEntry
-	26, // 43: pulsequorum.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> pulsequorum.v1.UnconfirmedVerdict
-	28, // 44: pulsequorum.v1.RecordMonitorHistory.entries:type_name -> pulsequorum.v1.HistoryEntry
-	43, // 45: pulsequorum.v1.Batch.ops:type_name -> pulsequorum.v1.BatchOp
-	5,  // 46: pulsequorum.v1.BatchOp.put_entity:type_name -> pulsequorum.v1.PutEntity
-	6,  // 47: pulsequorum.v1.BatchOp.delete_entity:type_name -> pulsequorum.v1.DeleteEntity
-	48, // [48:48] is the sub-list for method output_type
-	48, // [48:48] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	21, // 11: pulsequorum.v1.Command.redeem_join_token:type_name -> pulsequorum.v1.RedeemJoinToken
+	22, // 12: pulsequorum.v1.Command.revoke_certificate:type_name -> pulsequorum.v1.RevokeCertificate
+	23, // 13: pulsequorum.v1.Command.revoke_node:type_name -> pulsequorum.v1.RevokeNode
+	16, // 14: pulsequorum.v1.Command.set_node_health:type_name -> pulsequorum.v1.SetNodeHealth
+	17, // 15: pulsequorum.v1.Command.set_node_connectivity:type_name -> pulsequorum.v1.SetNodeConnectivity
+	19, // 16: pulsequorum.v1.Command.clear_monitor_flapping:type_name -> pulsequorum.v1.ClearMonitorFlapping
+	24, // 17: pulsequorum.v1.Command.report_degraded_alerts:type_name -> pulsequorum.v1.ReportDegradedAlerts
+	26, // 18: pulsequorum.v1.Command.resolve_unconfirmed_alerts:type_name -> pulsequorum.v1.ResolveUnconfirmedAlerts
+	28, // 19: pulsequorum.v1.Command.record_monitor_history:type_name -> pulsequorum.v1.RecordMonitorHistory
+	30, // 20: pulsequorum.v1.Command.set_system_alert:type_name -> pulsequorum.v1.SetSystemAlert
+	31, // 21: pulsequorum.v1.Command.record_incarnation:type_name -> pulsequorum.v1.RecordIncarnation
+	32, // 22: pulsequorum.v1.Command.checkpoint:type_name -> pulsequorum.v1.Checkpoint
+	33, // 23: pulsequorum.v1.Command.bind_tenant_org:type_name -> pulsequorum.v1.BindTenantOrg
+	34, // 24: pulsequorum.v1.Command.create_tenant:type_name -> pulsequorum.v1.CreateTenant
+	35, // 25: pulsequorum.v1.Command.update_tenant:type_name -> pulsequorum.v1.UpdateTenant
+	36, // 26: pulsequorum.v1.Command.set_tenant_suspended:type_name -> pulsequorum.v1.SetTenantSuspended
+	37, // 27: pulsequorum.v1.Command.delete_tenant:type_name -> pulsequorum.v1.DeleteTenant
+	38, // 28: pulsequorum.v1.Command.put_plan:type_name -> pulsequorum.v1.PutPlan
+	39, // 29: pulsequorum.v1.Command.delete_plan:type_name -> pulsequorum.v1.DeletePlan
+	40, // 30: pulsequorum.v1.Command.create_api_token:type_name -> pulsequorum.v1.CreateAPIToken
+	41, // 31: pulsequorum.v1.Command.revoke_api_token:type_name -> pulsequorum.v1.RevokeAPIToken
+	42, // 32: pulsequorum.v1.Command.prune_audit:type_name -> pulsequorum.v1.PruneAudit
+	43, // 33: pulsequorum.v1.Command.batch:type_name -> pulsequorum.v1.Batch
+	15, // 34: pulsequorum.v1.Command.register_probe:type_name -> pulsequorum.v1.RegisterProbe
+	1,  // 35: pulsequorum.v1.Actor.kind:type_name -> pulsequorum.v1.Actor.Kind
+	0,  // 36: pulsequorum.v1.PutEntity.kind:type_name -> pulsequorum.v1.EntityKind
+	0,  // 37: pulsequorum.v1.DeleteEntity.kind:type_name -> pulsequorum.v1.EntityKind
+	8,  // 38: pulsequorum.v1.SetMonitorState.incident:type_name -> pulsequorum.v1.IncidentStart
+	46, // 39: pulsequorum.v1.IncidentStart.error_class:type_name -> pulsequorum.v1.ErrorClass
+	20, // 40: pulsequorum.v1.RegisterNode.node:type_name -> pulsequorum.v1.NodeInfo
+	20, // 41: pulsequorum.v1.RegisterProbe.node:type_name -> pulsequorum.v1.NodeInfo
+	2,  // 42: pulsequorum.v1.NodeInfo.role:type_name -> pulsequorum.v1.NodeInfo.Role
+	45, // 43: pulsequorum.v1.NodeInfo.labels:type_name -> pulsequorum.v1.NodeInfo.LabelsEntry
+	25, // 44: pulsequorum.v1.ReportDegradedAlerts.entries:type_name -> pulsequorum.v1.DegradedAlertEntry
+	27, // 45: pulsequorum.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> pulsequorum.v1.UnconfirmedVerdict
+	29, // 46: pulsequorum.v1.RecordMonitorHistory.entries:type_name -> pulsequorum.v1.HistoryEntry
+	44, // 47: pulsequorum.v1.Batch.ops:type_name -> pulsequorum.v1.BatchOp
+	5,  // 48: pulsequorum.v1.BatchOp.put_entity:type_name -> pulsequorum.v1.PutEntity
+	6,  // 49: pulsequorum.v1.BatchOp.delete_entity:type_name -> pulsequorum.v1.DeleteEntity
+	50, // [50:50] is the sub-list for method output_type
+	50, // [50:50] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_pulsequorum_v1_command_proto_init() }
@@ -3988,9 +4066,10 @@ func file_pulsequorum_v1_command_proto_init() {
 		(*Command_RevokeApiToken)(nil),
 		(*Command_PruneAudit)(nil),
 		(*Command_Batch)(nil),
+		(*Command_RegisterProbe)(nil),
 	}
-	file_pulsequorum_v1_command_proto_msgTypes[31].OneofWrappers = []any{}
-	file_pulsequorum_v1_command_proto_msgTypes[40].OneofWrappers = []any{
+	file_pulsequorum_v1_command_proto_msgTypes[32].OneofWrappers = []any{}
+	file_pulsequorum_v1_command_proto_msgTypes[41].OneofWrappers = []any{
 		(*BatchOp_PutEntity)(nil),
 		(*BatchOp_DeleteEntity)(nil),
 	}
@@ -4000,7 +4079,7 @@ func file_pulsequorum_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pulsequorum_v1_command_proto_rawDesc), len(file_pulsequorum_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   42,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
