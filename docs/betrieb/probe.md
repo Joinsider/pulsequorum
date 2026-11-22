@@ -77,4 +77,186 @@ Bei Verbindungsabbruch zum Cluster puffert die Probe alle Prüfergebnisse fortla
 
 - **`/healthz` & `/readyz`:** Lauschen auf `HTTP_ADDR` (Standard `:8080`). `/healthz` meldet den Prozesszustand (für Docker/Compose-`healthcheck`), `/readyz` liefert erst `200 OK`, wenn die Probe aktiv mit einem Voter verbunden ist und ihren ersten Konfigurations-Snapshot empfangen hat (sonst `503 Service Unavailable`).
 - **Prometheus `/metrics`:** Optional über `METRICS_ADDR` aktivierbar und optional mit `METRICS_TOKEN` / `METRICS_TOKEN_FILE` geschützt. Voter exportieren zudem `pulsequorum_probe_rejected_total{reason}` (u. a. `non_probe_role`, `revoked`, `unregistered`, `owner_mismatch`, `foreign_monitor`, `upload_identity`) für abgelehnte Probe-Zugriffe.
+- **Probe-Richtlinie `/metrics`:** Probes exportieren `pulsequorum_probe_policy_blocked_total{reason}` (`target`, `method`, `type`) für Checks, die durch die lokale Probe-Richtlinie (`PROBE_ALLOW_TARGETS`, `PROBE_ALLOW_HTTP_METHODS`, `PROBE_ALLOW_MONITOR_TYPES`) blockiert wurden.
 - **Speicherbedarf:** Durch den Verzicht auf Raft/UI/State-Store sowie den begrenzten SQLite-Reader-Pool (`1` Reader, `2 MiB` Cache) bleibt der Speicherbedarf im Regelbetrieb deutlich unter `64 MiB` RSS (NFA-PERF-02); im Compose-Beispiel kann ein enges Limit (z. B. `mem_limit: 128m`) gesetzt werden.
+
+## Lokale Richtlinie der Probe (ADR 0044)
+
+**Warum:** Die Probe führt aus, was der Cluster ihr schickt. Im Kundennetz ist der Cluster jedoch nicht vertrauenswürdig: Ein kompromittierter Voter oder ein gestohlenes Mandanten-Token kann Monitore anlegen, die die Probe im internen Netz ausführt. Deshalb legt der Kunde **lokal auf der Probe** fest, welche Ziele sie erreichen darf, welche HTTP-Methoden und Prüfarten sie ausführt und wie viele Ergebnisdetails sie meldet. Der Cluster kann diese Grenze weder lockern noch umgehen. Die Durchsetzung liegt vollständig in der Probe. Die Einträge verlassen die Probe nicht; der Cluster sieht nur, ob eine Richtlinie aktiv ist (Capability `target-policy`, Anzeige „Zielrichtlinie aktiv“ bzw. „Keine Zielrichtlinie“).
+
+### Variablen
+
+| Variable | Standard | Bedeutung |
+|----------|----------|-----------|
+| `PROBE_ALLOW_TARGETS` | ungesetzt; für private Probes **Pflicht** | Erlaubte Ziele als kommagetrennte IP- oder CIDR-Einträge, optional mit `:port` oder `:von-bis`. `any` hebt die Zielbeschränkung bewusst auf. |
+| `PROBE_ALLOW_HTTP_METHODS` | private Probes: `GET,HEAD`; öffentliche Probes: alle | Erlaubte HTTP-Methoden (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) oder `any`. |
+| `PROBE_ALLOW_MONITOR_TYPES` | alle (`http`, `tcp`, `icmp`, `dns`) | Erlaubte Monitor-Typen, kommagetrennt. |
+| `PROBE_RESULT_DETAIL` | `full` | `full` meldet alle Ergebnisdetails, `minimal` reduziert sie (siehe unten). |
+
+Ungültige Werte brechen den Start mit Exit-Code ≠ 0 und einer Meldung zum fehlerhaften Eintrag ab.
+
+### Syntax von `PROBE_ALLOW_TARGETS`
+
+- Einträge sind IPv4- oder IPv6-Adressen bzw. CIDR-Netze. Hostnamen sind nicht erlaubt, weil die Prüfung auf der tatsächlich verbundenen IP erfolgt.
+- Optional `:port` (einzelner Port) oder `:von-bis` (Portbereich). IPv6 mit Port steht in eckigen Klammern.
+- Ohne Portangabe erlaubt ein Eintrag alle Ports. ICMP prüft keinen Port: Jeder Eintrag, auch einer mit Port, erlaubt ICMP an die Adressen seines Netzes.
+- Der Sonderwert `any` ist nur allein zulässig. `any` schaltet die Zielbeschränkung ab, außer für die unten genannten immer gesperrten Bereiche.
+
+Beispiele:
+
+```bash
+# Interne Webdienste im Netz 10.20.0.0/16 nur auf HTTPS, ein Dienst mit Portbereich, IPv6 mit Port, DNS-Server
+PROBE_ALLOW_TARGETS=10.20.0.0/16:443,10.30.1.5:8000-8099,[2001:db8::/48]:443,10.0.0.53:53
+
+# Alle Ports im Netz 10.0.0.0/8 (einschließlich ICMP)
+PROBE_ALLOW_TARGETS=10.0.0.0/8
+
+# Bewusst ohne Zielbeschränkung (nur für Probes, die frei prüfen sollen)
+PROBE_ALLOW_TARGETS=any
+
+# Health-Endpunkte per POST prüfen und nur HTTP- und DNS-Monitore zulassen
+PROBE_ALLOW_HTTP_METHODS=GET,HEAD,POST
+PROBE_ALLOW_MONITOR_TYPES=http,dns
+
+# Nur reduzierte Ergebnisdetails melden
+PROBE_RESULT_DETAIL=minimal
+```
+
+**DNS-Server:** Die DNS-Server einer DNS-Prüfung müssen von `PROBE_ALLOW_TARGETS` erfasst sein. Enthält eine Antwort Adressen außerhalb der Richtlinie, schlägt die Prüfung mit `ssrf_blocked` fehl, ohne die Adressen zu melden.
+
+### Immer gesperrte Bereiche
+
+Die folgenden Bereiche öffnet nur ein Eintrag, der **vollständig** darin liegt (z. B. `169.254.169.254/32:80`). `any`, `0.0.0.0/0` und `::/0` öffnen sie nicht:
+
+| Bereich | Bedeutung |
+|---------|-----------|
+| `0.0.0.0/8`, `::/128` | nicht spezifizierte Adressen |
+| `127.0.0.0/8`, `::1/128` | Loopback |
+| `169.254.0.0/16`, `fe80::/10` | Link-Local, inklusive Cloud-Metadaten (`169.254.169.254`) |
+| `224.0.0.0/4`, `ff00::/8` | Multicast |
+| `255.255.255.255/32` | Broadcast |
+
+### Verhalten bei Verstoß
+
+- Das Ergebnis ist `DOWN` mit der Fehlerklasse `ssrf_blocked` und der Meldung `blocked by local probe policy: target`, `method` bzw. `type`. Auf privaten Probes erscheinen Ziel-IP und Port nicht in der Meldung.
+- Bei verbotener Methode oder verbotenem Typ startet die Prüfung gar nicht. Ein verbotenes Ziel wird beim Verbindungsaufbau abgewiesen, bevor eine Verbindung entsteht.
+- Der Zähler `pulsequorum_probe_policy_blocked_total{reason="target|method|type"}` zählt die Verstöße.
+- Beim Start protokolliert die Probe die wirksame Richtlinie lokal (`probe local policy`, Level `info`).
+- Monitore, die nach einer Richtlinienänderung nicht mehr erlaubt sind, schlagen auf dieser Probe fehl. Die Meldung nennt dann die lokale Richtlinie als Ursache. Richtlinie anpassen und Probe neu starten.
+
+### Start ohne Zielrichtlinie (private Probes)
+
+Hat eine private Probe ein Mandanten-Zertifikat, aber `PROBE_ALLOW_TARGETS` ist nicht gesetzt, beendet sie sich nach dem Beitritt mit einem Fehler, der auf diese Dokumentation verweist. Das Zertifikat bleibt erhalten. Nach dem Setzen der Variable (oder `any`, bewusst) genügt ein Neustart; ein erneuter Beitritt ist nicht nötig.
+
+### Minimaler Ergebnismodus (`PROBE_RESULT_DETAIL=minimal`)
+
+Die Probe meldet nur:
+
+- Status, Latenz, Fehlerklasse, Zeitangaben (Timings)
+- HTTP-Statuscode bzw. DNS-Rcode
+- Zeitpunkt des Zertifikatsablaufs
+- ICMP-Paket- und RTT-Statistik
+
+Nicht gemeldet werden gelesene Werte (JSON-Path), DNS-Antworten, Zertifikatsnamen, Adressen und freie Fehlertexte. Die Probe reduziert die Daten schon vor dem Puffer (`metrics.db`); was sie nicht speichert, kann sie nicht übertragen.
+
+**Trade-off:** Die Fehlersuche im UI wird schwieriger, weil die Ursache eines Fehlers nicht mehr im Text steht. Eine Keyword-Prüfung bleibt ein Ja/Nein-Orakel, weil der Status selbst die Information trägt. `minimal` ist vor allem für Kunden mit hohem Schutzbedarf gedacht.
+
+### Restrisiko
+
+- **Namensauflösung:** HTTP- und TCP-Ziele mit Hostnamen werden über den System-Resolver der Probe aufgelöst. Diese Auflösung läuft nicht über die Zielrichtlinie. Ein Angreifer kann daher erfahren, ob ein interner Name auflösbar ist, aber nicht dessen Adresse, und er erreicht damit keine Verbindung zum Ziel. Wer das ausschließen will, sperrt DNS für die Probe auf den internen Resolver oder nutzt IP-Adressen.
+- **Inhalte erlaubter Ziele:** Innerhalb der erlaubten Ziele kann der Modus `full` Inhalte über JSON-Path-Prüfungen, DNS-Antworten und Zertifikatsdaten sichtbar machen. Dagegen hilft `minimal`.
+- **`any`:** Mit `any` ist die Zielbeschränkung aufgehoben. Die Probe kann dann alle Ziele außerhalb der immer gesperrten Bereiche erreichen. Diese Einstellung gehört nur auf Probes, die bewusst frei prüfen sollen.
+
+### Container-Härtung im Compose-Beispiel
+
+[deploy/probe/compose.yaml](../../deploy/probe/compose.yaml) ist gehärtet:
+
+- `read_only: true`: Das Root-Dateisystem ist schreibgeschützt. Schreibbar bleiben `/data` (Volume `probe-data`, mit `node.id`, Zertifikaten, `voters.json` und `metrics.db`) und `/tmp` (`tmpfs`) für SQLite-Hilfsdateien.
+- `cap_drop: [ALL]`: Keine Linux-Capabilities. ICMP läuft über unprivilegierte Ping-Sockets (`net.ipv4.ping_group_range`, siehe [ICMP-Monitore im Container](icmp.md)).
+- `security_opt: [no-new-privileges:true]`: Prozesse können keine zusätzlichen Rechte erlangen.
+- `pids_limit: 128` und `mem_limit: 128m` begrenzen Prozesse und Speicher.
+- `PROBE_ALLOW_TARGETS` ist als Pflichtfeld mit Platzhalter gesetzt. `PROBE_ALLOW_HTTP_METHODS`, `PROBE_ALLOW_MONITOR_TYPES` und `PROBE_RESULT_DETAIL` stehen auskommentiert mit ihren Standardwerten.
+
+Mit `read_only` sollten Änderungen am Compose-Beispiel geprüft werden: Alle Schreibzugriffe der Probe müssen unter `/data` oder `/tmp` liegen.
+
+### Egress begrenzen
+
+Die Zielrichtlinie wirkt in der Probe. Zusätzlich sollte der Netzwerkausgang des Probe-Containers auf die tatsächlich nötigen Ziele beschränkt werden. Wird die Probe selbst kompromittiert, greift ihre lokale Richtlinie nicht mehr. Die Firewall bleibt dann als zweite Schicht.
+
+#### nftables (Docker-Host)
+
+Das Beispiel erlaubt ausgehenden Verkehr des Probe-Containers nur zu den Voter-Ports `9443` der angegebenen Voter und zu den erlaubten Zielnetzen. Alles andere wird verworfen. Adressen und Netze sind anzupassen.
+
+```nft
+table inet pulsequorum_probe {
+  set probe_addr { type ipv4_addr; elements = { 172.20.0.10 } }
+  set voters { type ipv4_addr; elements = { 203.0.113.10, 203.0.113.11 } }
+  set targets { type ipv4_addr; flags interval; elements = { 10.20.0.0/16, 10.0.0.53 } }
+
+  # Priority -10: these rules run before Docker's own forward rules.
+  chain egress {
+    type filter hook forward priority -10; policy accept;
+
+    ip saddr @probe_addr ip daddr @voters tcp dport 9443 accept
+    ip saddr @probe_addr ip daddr @targets accept
+    ip saddr @probe_addr drop
+  }
+}
+```
+
+Hinweise:
+
+- Die Netz-Regeln sind gröber als `PROBE_ALLOW_TARGETS` (alle Ports im Zielnetz). Die Probe prüft Ports und Methoden selbst; die Firewall ist die zweite Schicht.
+- Die Namensauflösung über den System-Resolver braucht Egress zum DNS-Server. Der Resolver muss deshalb in `targets` oder über eine eigene Regel erreichbar sein.
+- Die Regel gilt für die IP des Containers im Docker-Netz (`172.20.0.10` im Beispiel). Mit einer festen Adresse im eigenen Netz lässt sich das Set stabil halten.
+
+#### Kubernetes NetworkPolicy
+
+Die Policy erlaubt Egress zu den Voters auf Port `9443`, zu einem erlaubten Zielnetz auf Port `443` und DNS. Ingress wird nicht eingeschränkt, weil die Probe keine eingehenden Verbindungen annimmt. Namespace, Labels und CIDRs sind anzupassen.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pulsequorum-probe-egress
+  namespace: pulsequorum
+spec:
+  podSelector:
+    matchLabels:
+      app: pulsequorum-probe
+  policyTypes:
+    - Egress
+  egress:
+    # Voter-Gateway (gRPC/mTLS)
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.10/32
+        - ipBlock:
+            cidr: 203.0.113.11/32
+      ports:
+        - protocol: TCP
+          port: 9443
+    # Erlaubtes Zielnetz (Beispiel: HTTPS im Netz 10.20.0.0/16)
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS im Cluster (kube-dns / CoreDNS)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+```
+
+Hinweise:
+
+- NetworkPolicies unterscheiden nur TCP, UDP und SCTP. ICMP lässt sich damit nicht gezielt erlauben. Ein `to`-Eintrag ohne `ports` erlaubt für das CIDR alle Protokolle inklusive ICMP; die Einschränkung auf die Ziele übernimmt dann die Zielrichtlinie der Probe.
+- Die Policy wirkt nur, wenn das CNI NetworkPolicies unterstützt.

@@ -1,4 +1,4 @@
-# Pulsequorum Probe (Pflichtenheft FA-PRB-01 bis FA-PRB-07, ADR 0034).
+# Pulsequorum Probe (Pflichtenheft FA-PRB-01 bis FA-PRB-07, ADR 0034, hardening ADR 0044).
 # Start from the repository root:  docker compose -f deploy/probe/compose.yaml up -d
 # Guide: docs/betrieb/probe.md
 #
@@ -28,6 +28,17 @@ services:
       PROBE_ACK_RETAIN: 10m
       # Session idle timeout after missing voter ticks (keepalive = 30s, tick = 5s):
       PROBE_SESSION_TIMEOUT: 15s
+      # Local policy of the probe (ADR 0044, docs/betrieb/probe.md, section "Lokale Richtlinie der Probe").
+      # REQUIRED for private probes (probe joined with a tenant certificate): without this
+      # variable the probe exits with an error after joining and keeps its certificate.
+      # Comma-separated IP/CIDR entries, optional :port or :from-to, IPv6 with port in brackets.
+      # The value below is a PLACEHOLDER: replace it with the networks this probe may reach.
+      # "any" disables the target restriction on purpose. A public probe that should check
+      # public targets freely must not set this variable.
+      PROBE_ALLOW_TARGETS: "10.20.0.0/16:443"
+      # PROBE_ALLOW_HTTP_METHODS: "GET,HEAD"   # default for private probes: GET,HEAD; public probes: all; or "any"
+      # PROBE_ALLOW_MONITOR_TYPES: "http,tcp,icmp,dns"  # default: all monitor types
+      # PROBE_RESULT_DETAIL: full              # full (default) | minimal (fewer values and addresses reported)
       # Health/Metrics listener & logging:
       # HTTP_ADDR: ":8080"       # serves /healthz and /readyz only (no API/UI in probe role)
       # METRICS_ADDR: ":9090"    # optional Prometheus /metrics endpoint
@@ -36,6 +47,16 @@ services:
       LOG_FORMAT: json           # json | text
       # ICMP_MODE: auto          # auto | privileged | unprivileged | off (docs/betrieb/icmp.md)
       # SSRF_PROTECTION: auto    # auto | on | off
+    # Read-only root filesystem (ADR 0044). Writable paths: /data (volume below) and /tmp (tmpfs).
+    read_only: true
+    tmpfs:
+      - /tmp
+    # The probe needs no Linux capabilities: ICMP runs over unprivileged ping sockets (see sysctls).
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
     volumes:
       # Holds node.id, node.crt/key, ca-bundle.pem, voters.json, and metrics.db buffer.
       - probe-data:/data
