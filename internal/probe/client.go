@@ -36,8 +36,8 @@ const (
 	probeProtocolVersion        = 1
 	defaultSessionTimeout       = 15 * time.Second
 	defaultConnectTimeout       = 5 * time.Second
-	defaultBackoffMin           = 1 * time.Second
-	defaultBackoffMax           = 30 * time.Second
+	defaultMinBackoff           = 1 * time.Second
+	defaultMaxBackoff           = 30 * time.Second
 	defaultMaxUploadWindow      = 4
 	defaultUploadBatchSize      = 500
 	defaultRenewalCheckInterval = time.Hour
@@ -132,10 +132,10 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		opts.ConnectTimeout = defaultConnectTimeout
 	}
 	if opts.BackoffMin <= 0 {
-		opts.BackoffMin = defaultBackoffMin
+		opts.BackoffMin = defaultMinBackoff
 	}
 	if opts.BackoffMax <= 0 {
-		opts.BackoffMax = defaultBackoffMax
+		opts.BackoffMax = defaultMaxBackoff
 	}
 	if opts.MaxUploadWindow <= 0 {
 		opts.MaxUploadWindow = defaultMaxUploadWindow
@@ -255,8 +255,8 @@ func (c *Client) Run(ctx context.Context) error {
 		c.log.Warn("connecting to voter failed", "voter", addr, "err", err)
 
 		if roundAttempts >= len(candidates) {
-			if roundRejected >= len(candidates) {
-				c.log.Error("probe certificate rejected by all candidate voters; re-join required", "err", err)
+			if roundRejected > len(candidates)/2 {
+				c.log.Error("probe certificate rejected by a quorum of candidate voters; re-join required", "err", err)
 				return ErrCertRejected
 			}
 			roundAttempts = 0

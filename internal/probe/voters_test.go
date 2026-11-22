@@ -76,7 +76,7 @@ func TestVoterListDeduplicationUnionSeedsFirst(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(votersPath), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(votersPath, []byte(`{"voters":["v2:8443","v3:8443","v3:8443",""]}`), 0o640); err != nil {
+	if err := os.WriteFile(votersPath, []byte(`{"voters":["v2:8443","v3:8443","v3:8443",""]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,13 +102,13 @@ func TestVoterListStartupShuffleDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	seeds := []string{"v1:8443", "v2:8443", "v3:8443", "v4:8443"}
 
-	rng1 := rand.New(rand.NewPCG(42, 99))
+	rng1 := rand.New(rand.NewPCG(42, 99)) //nolint:gosec // G404: deterministic shuffle test
 	vl1, err := NewVoterList(dir, seeds, rng1.IntN)
 	if err != nil {
 		t.Fatalf("NewVoterList 1: %v", err)
 	}
 
-	rng2 := rand.New(rand.NewPCG(42, 99))
+	rng2 := rand.New(rand.NewPCG(42, 99)) //nolint:gosec // G404: deterministic shuffle test
 	vl2, err := NewVoterList(dir, seeds, rng2.IntN)
 	if err != nil {
 		t.Fatalf("NewVoterList 2: %v", err)
@@ -149,7 +149,7 @@ func TestVoterListPersistenceAndReload(t *testing.T) {
 	}
 
 	votersPath := filepath.Join(dir, "probe", "voters.json")
-	raw, err := os.ReadFile(votersPath)
+	raw, err := os.ReadFile(votersPath) //nolint:gosec // G304: test path under TempDir
 	if err != nil {
 		t.Fatalf("read voters.json: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestVoterListNoRewriteWhenUnchanged(t *testing.T) {
 func TestVoterListUpdatePreservesRotationAndDropsRemovedLearned(t *testing.T) {
 	dir := t.TempDir()
 	// Start with shuffled order [v2, v1]
-	vl, err := NewVoterList(dir, []string{"seed1:8443", "seed2:8443"}, func(n int) int { return 0 })
+	vl, err := NewVoterList(dir, []string{"seed1:8443", "seed2:8443"}, func(int) int { return 0 })
 	if err != nil {
 		t.Fatalf("NewVoterList: %v", err)
 	}

@@ -81,7 +81,7 @@ func TestProbeBufferLastSeqAndMinSeq(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats(node, inc, []uint64{1, 2, 3, 4, 5}, func(seq uint64) int64 {
-		return int64(seq * 1000)
+		return int64(min(seq, 1<<30)) * 1000
 	})
 	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)
@@ -173,7 +173,7 @@ func TestProbeBufferUnackedStats(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats(node, inc, []uint64{1, 2, 3, 4, 5}, func(seq uint64) int64 {
-		return int64(seq * 1000)
+		return int64(min(seq, 1<<30)) * 1000
 	})
 	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)
@@ -219,10 +219,10 @@ func TestProbeBufferDeleteStreamHeartbeatsUpTo(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats(node, inc, []uint64{1, 2, 3, 4, 5, 6}, func(seq uint64) int64 {
-		return int64(seq * 100)
+		return int64(min(seq, 1<<30)) * 100
 	})
 	otherHbs := makeProbeHeartbeats(otherNode, inc, []uint64{1, 2}, func(seq uint64) int64 {
-		return int64(seq * 100)
+		return int64(min(seq, 1<<30)) * 100
 	})
 	if _, err := m.InsertHeartbeats(ctx, append(hbs, otherHbs...)); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)
@@ -266,7 +266,7 @@ func TestProbeBufferDeleteStreamHeartbeatsOlderThan(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats(node, inc, []uint64{1, 2, 3, 4, 5, 6}, func(seq uint64) int64 {
-		return int64(seq * 100)
+		return int64(min(seq, 1<<30)) * 100
 	})
 	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)
@@ -317,7 +317,7 @@ func TestProbeBufferDeleteOldestStreamHeartbeats(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats(node, inc, []uint64{1, 2, 3, 4, 5, 6}, func(seq uint64) int64 {
-		return int64(seq * 100)
+		return int64(min(seq, 1<<30)) * 100
 	})
 	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)
@@ -376,7 +376,7 @@ func TestProbeBufferDBSizeBytesAndIncrementalVacuum(t *testing.T) {
 	}
 
 	hbs := makeProbeHeartbeats("node-vac", "inc-1", []uint64{1, 2, 3, 4, 5}, func(seq uint64) int64 {
-		return int64(seq * 100)
+		return int64(min(seq, 1<<30)) * 100
 	})
 	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
 		t.Fatalf("InsertHeartbeats: %v", err)

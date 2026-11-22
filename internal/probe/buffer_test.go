@@ -95,7 +95,7 @@ func TestBufferRule1AckRetain(t *testing.T) {
 	// Heartbeats created 2h ago (buffered while offline).
 	twoHoursAgo := clk.Now().Add(-2 * time.Hour)
 	insertTestHeartbeats(t, m, nodeID, []uint64{1, 2, 3}, func(seq uint64) int64 {
-		return twoHoursAgo.Add(time.Duration(seq) * time.Second).UnixMilli()
+		return twoHoursAgo.Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 
 	buf, err := NewBuffer(ctx, BufferOptions{
@@ -149,10 +149,10 @@ func TestBufferRule2MaxAge(t *testing.T) {
 
 	// seq 1, 2 are 25h old; seq 3, 4 are 1h old.
 	insertTestHeartbeats(t, m, nodeID, []uint64{1, 2}, func(seq uint64) int64 {
-		return clk.Now().Add(-25 * time.Hour).Add(time.Duration(seq) * time.Second).UnixMilli()
+		return clk.Now().Add(-25 * time.Hour).Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 	insertTestHeartbeats(t, m, nodeID, []uint64{3, 4}, func(seq uint64) int64 {
-		return clk.Now().Add(-1 * time.Hour).Add(time.Duration(seq) * time.Second).UnixMilli()
+		return clk.Now().Add(-1 * time.Hour).Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 
 	buf, err := NewBuffer(ctx, BufferOptions{
@@ -207,7 +207,7 @@ func (f *fakeSizeStore) DBSizeBytes(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	_ = lastSeq
-	return f.base + int64(count)*f.perRow, nil
+	return f.base + int64(min(count, 1<<30))*f.perRow, nil
 }
 
 func TestBufferRule3SizeLimit(t *testing.T) {
@@ -225,7 +225,7 @@ func TestBufferRule3SizeLimit(t *testing.T) {
 
 	// Insert 3 rows: seq 1, 2 (acked), seq 3 (unacked), all recent.
 	insertTestHeartbeats(t, m, nodeID, []uint64{1, 2, 3}, func(seq uint64) int64 {
-		return clk.Now().Add(time.Duration(seq) * time.Second).UnixMilli()
+		return clk.Now().Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 
 	// Set MaxBytes = 5000 first to record ack without triggering overflow, then test with small MaxBytes.
@@ -262,7 +262,7 @@ func TestBufferRule3SizeLimit(t *testing.T) {
 
 	// Case B: Unacked rows exist -> overflow deletes unacked rows, lost_below advances.
 	insertTestHeartbeats(t, m, nodeID, []uint64{4, 5, 6}, func(seq uint64) int64 {
-		return clk.Now().Add(time.Duration(seq) * time.Second).UnixMilli()
+		return clk.Now().Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 	if err := buf.Cleanup(ctx); err != nil {
 		t.Fatalf("Cleanup case B: %v", err)
@@ -378,7 +378,7 @@ func TestBufferStartAfterAndStatus(t *testing.T) {
 
 	// Buffer has seqs 10..12.
 	insertTestHeartbeats(t, m, nodeID, []uint64{10, 11, 12}, func(seq uint64) int64 {
-		return clk.Now().Add(time.Duration(seq) * time.Second).UnixMilli()
+		return clk.Now().Add(time.Duration(min(seq, 1<<30)) * time.Second).UnixMilli()
 	})
 
 	// voterPos=5 < minSeq-1=9 -> returns 9.

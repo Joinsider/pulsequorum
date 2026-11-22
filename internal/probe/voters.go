@@ -233,7 +233,7 @@ func extractSortedAddrs(voters []*pb.NodeInfo) []string {
 }
 
 func loadVotersFile(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is under configured DataDir/probe/voters.json
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil

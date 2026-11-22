@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -143,7 +144,7 @@ func (b *Buffer) RecordAck(ctx context.Context, seq uint64) error {
 	if seq <= b.ackedSeq {
 		return nil
 	}
-	if err := b.store.SetWatermark(ctx, watermarkAckedSeq, int64(seq)); err != nil {
+	if err := b.store.SetWatermark(ctx, watermarkAckedSeq, int64(min(seq, math.MaxInt64))); err != nil {
 		return fmt.Errorf("persist %s: %w", watermarkAckedSeq, err)
 	}
 	b.ackedSeq = seq
@@ -344,10 +345,10 @@ func (b *Buffer) recordUnackedDrop(ctx context.Context, count, maxSeq uint64, re
 	}
 	newDroppedTotal := b.droppedTotal + count
 
-	if err := b.store.SetWatermark(ctx, watermarkLostBelow, int64(newLostBelow)); err != nil {
+	if err := b.store.SetWatermark(ctx, watermarkLostBelow, int64(min(newLostBelow, math.MaxInt64))); err != nil {
 		return fmt.Errorf("persist %s: %w", watermarkLostBelow, err)
 	}
-	if err := b.store.SetWatermark(ctx, watermarkDroppedTotal, int64(newDroppedTotal)); err != nil {
+	if err := b.store.SetWatermark(ctx, watermarkDroppedTotal, int64(min(newDroppedTotal, math.MaxInt64))); err != nil {
 		return fmt.Errorf("persist %s: %w", watermarkDroppedTotal, err)
 	}
 

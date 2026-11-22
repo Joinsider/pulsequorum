@@ -554,7 +554,9 @@ func TestClientSnapshotSyncPreservesUnchangedRevisions(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("client.Run = %v", err)
+	}
 }
 
 func TestClientPostEstablishedDisconnectReconnectsWithoutBackoff(t *testing.T) {
@@ -636,7 +638,9 @@ func TestClientPostEstablishedDisconnectReconnectsWithoutBackoff(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("client.Run = %v", err)
+	}
 }
 
 func TestClientErrCertRejectedCleanExit(t *testing.T) {
@@ -686,6 +690,59 @@ func TestClientErrCertRejectedCleanExit(t *testing.T) {
 	}
 	if voterA.SubscribeCount() != 1 || voterB.SubscribeCount() != 1 {
 		t.Fatalf("expected 1 subscribe attempt per voter, got A=%d B=%d", voterA.SubscribeCount(), voterB.SubscribeCount())
+	}
+}
+
+func TestClientErrCertRejectedQuorumWithOfflineVoter(t *testing.T) {
+	const (
+		addrA = "voter-a:443"
+		addrB = "voter-b:443"
+		addrC = "voter-c:443"
+	)
+
+	reject := func(_ *pb.SubscribeRequest, _ grpc.ServerStreamingServer[pb.SubscribeResponse]) error {
+		return status.Error(codes.PermissionDenied, "certificate revoked")
+	}
+
+	voterA := newFakeProbeVoter(t)
+	voterA.onSubscribe = reject
+	voterB := newFakeProbeVoter(t)
+	voterB.onSubscribe = reject
+	votersDial := newBufconnDialer(map[string]*fakeProbeVoter{addrA: voterA, addrB: voterB})
+
+	ms, buf := newTestBuffer(t, "probe-5q")
+	client, err := NewClient(ClientOptions{
+		NodeID:         "probe-5q",
+		Cert:           newTestNodeCert(t, "probe-5q", ""),
+		Voters:         newTestVoterList(t, addrA, addrB, addrC),
+		Buffer:         buf,
+		Metrics:        ms,
+		BackoffMin:     5 * time.Second,
+		BackoffMax:     30 * time.Second,
+		ConnectTimeout: time.Second,
+		Dial: func(ctx context.Context, addr string) (*grpc.ClientConn, error) {
+			if addr == addrC {
+				return nil, errors.New("connect: connection refused")
+			}
+			return votersDial(ctx, addr)
+		},
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err = client.Run(ctx)
+	elapsed := time.Since(start)
+	if !errors.Is(err, ErrCertRejected) {
+		t.Fatalf("Run returned %v, want ErrCertRejected", err)
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("ErrCertRejected took %v, expected prompt exit", elapsed)
 	}
 }
 
@@ -740,7 +797,9 @@ func TestClientPrivateProbeD6TenantFilter(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("client.Run = %v", err)
+	}
 }
 
 func TestClientSecretHygieneADR0034(t *testing.T) {
@@ -847,14 +906,16 @@ func TestClientSecretHygieneADR0034(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("client.Run = %v", err)
+	}
 
 	if bytes.Contains(logBuf.Bytes(), []byte(secret)) {
 		t.Fatalf("secret leaked into slog output: %s", logBuf.Bytes())
 	}
 
 	for _, name := range []string{sqlite.MetricsFile, sqlite.MetricsFile + "-wal"} {
-		data, err := os.ReadFile(filepath.Join(dbDir, name))
+		data, err := os.ReadFile(filepath.Join(dbDir, name)) //nolint:gosec // G304: test path under TempDir
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
