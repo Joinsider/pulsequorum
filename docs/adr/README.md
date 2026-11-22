@@ -49,3 +49,4 @@ Nur der Projektinhaber setzt einen ADR auf **Accepted**.
 | [0041](0041-projektname-und-veroeffentlichung.md) | Projektname Pulsequorum und Veröffentlichung als öffentliches Repository | Accepted | 2026-11-20 |
 | [0042](0042-client-zertifikate-fuer-http-monitore.md) | Client-Zertifikate (mTLS) für HTTP-Monitore | Accepted | 2026-11-21 |
 | [0043](0043-eigenes-probe-image.md) | Eigenes schlankes Probe-Binary und -Image (`pulsequorum-probe`) | Proposed | 2026-11-22 |
+| [0044](0044-haertung-privater-probes.md) | Härtung privater Probes im Kundennetz (lokale Zielrichtlinie und Betriebsvorgaben) | Proposed | 2026-11-22 |
