@@ -297,18 +297,23 @@ func buildProbeClusterNode(n store.Node, sess ProbeSessionView) gen.ClusterNode 
 		v := sess.ConnectedVoterID
 		node.ConnectedVoterId = &v
 	}
-	if sess.Buffer != nil {
-		buf := gen.ProbeBufferStatus{
-			Bytes:        sess.Buffer.GetBytes(),
-			Unacked:      int64(min(sess.Buffer.GetUnacked(), math.MaxInt64)),
-			DroppedTotal: int64(min(sess.Buffer.GetDroppedTotal(), math.MaxInt64)),
-		}
-		if oldest := sess.Buffer.GetOldestUnackedMs(); oldest != 0 {
-			buf.OldestUnackedMs = &oldest
-		}
-		node.ProbeBuffer = &buf
-	}
+	node.ProbeBuffer = probeBufferStatus(sess.Buffer)
 	return node
+}
+
+func probeBufferStatus(raw *pb.ProbeBufferStatus) *gen.ProbeBufferStatus {
+	if raw == nil {
+		return nil
+	}
+	buf := &gen.ProbeBufferStatus{
+		Bytes:        raw.GetBytes(),
+		Unacked:      int64(min(raw.GetUnacked(), math.MaxInt64)),
+		DroppedTotal: int64(min(raw.GetDroppedTotal(), math.MaxInt64)),
+	}
+	if oldest := raw.GetOldestUnackedMs(); oldest != 0 {
+		buf.OldestUnackedMs = &oldest
+	}
+	return buf
 }
 
 func applyRegisteredNode(node *gen.ClusterNode, n store.Node) {
