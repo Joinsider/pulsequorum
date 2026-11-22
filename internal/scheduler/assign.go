@@ -27,16 +27,15 @@ func (a Assigner) Nodes(m store.Monitor, registry []store.Node) []string {
 	if len(registry) == 0 {
 		return nil
 	}
-	candidates := a.candidates(m, registry)
 
 	var ids []string
 	switch m.Assignment.Mode {
 	case "count":
-		ids = rendezvous(m.ID, usable(candidates), m.Assignment.Count)
+		ids = rendezvous(m.ID, usable(a.publicCandidates(m, registry)), m.Assignment.Count)
 	case "nodes":
-		ids = listed(m.Assignment.Nodes, candidates)
+		ids = listed(m.Assignment.Nodes, a.nodeCandidates(m, registry))
 	default: // "all", "" and unknown modes
-		for _, n := range candidates {
+		for _, n := range a.publicCandidates(m, registry) {
 			ids = append(ids, n.ID)
 		}
 	}
@@ -53,17 +52,35 @@ func (a Assigner) Runs(m store.Monitor, registry []store.Node, nodeID string) bo
 	return slices.Contains(a.Nodes(m, registry), nodeID)
 }
 
-// candidates returns the voters of the registry that have the capability the
-// monitor type requires. Probes join in P5 (ADR 0017).
-func (a Assigner) candidates(m store.Monitor, registry []store.Node) []store.Node {
+// publicCandidates returns voters and public probes (OwnerTenantID == "")
+// that have the capability the monitor type requires (ADR 0034 section 7, ADR 0035 D1).
+func (a Assigner) publicCandidates(m store.Monitor, registry []store.Node) []store.Node {
+	return a.filterCandidates(m, registry, false)
+}
+
+// nodeCandidates returns publicCandidates plus private probes owned by
+// m.TenantID that have the capability the monitor type requires.
+func (a Assigner) nodeCandidates(m store.Monitor, registry []store.Node) []store.Node {
+	return a.filterCandidates(m, registry, true)
+}
+
+func (a Assigner) filterCandidates(m store.Monitor, registry []store.Node, includePrivate bool) []store.Node {
 	capability := ""
 	if a.Capability != nil {
 		capability = a.Capability(m.Type)
 	}
 	var out []store.Node
 	for _, n := range registry {
-		if n.Role == store.NodeRoleVoter && n.HasCapability(capability) {
+		if !n.HasCapability(capability) {
+			continue
+		}
+		switch n.Role {
+		case store.NodeRoleVoter:
 			out = append(out, n)
+		case store.NodeRoleProbe:
+			if n.OwnerTenantID == "" || (includePrivate && n.OwnerTenantID == m.TenantID) {
+				out = append(out, n)
+			}
 		}
 	}
 	return out

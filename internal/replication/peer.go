@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/joinsider/pulsequorum/internal/backoff"
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/store"
 )
@@ -80,14 +80,14 @@ func (w *worker) run(ctx context.Context) {
 }
 
 func (w *worker) dial(ctx context.Context) (*grpc.ClientConn, bool) {
-	bo := newBackoff(w.r.opts.backoffMin, w.r.opts.backoffMax)
+	bo := backoff.HalfJitter(w.r.opts.backoffMin, w.r.opts.backoffMax)
 	for {
 		conn, err := w.r.opts.Dial(w.peer.Address)
 		if err == nil {
 			return conn, true
 		}
 		w.setErr(fmt.Errorf("dial: %w", err))
-		if !sleepCtx(ctx, bo.wait()) {
+		if !backoff.Sleep(ctx, bo.Wait()) {
 			return nil, false
 		}
 	}
@@ -141,18 +141,18 @@ func (w *worker) disconnect() {
 }
 
 func (w *worker) pushLoop(ctx context.Context, client pb.ReplicationServiceClient) {
-	bo := newBackoff(w.r.opts.backoffMin, w.r.opts.backoffMax)
+	bo := backoff.HalfJitter(w.r.opts.backoffMin, w.r.opts.backoffMax)
 	for {
 		healthy, err := w.pushStream(ctx, client)
 		if ctx.Err() != nil {
 			return
 		}
 		if healthy {
-			bo.reset()
+			bo.Reset()
 		}
 		w.setErr(err)
 		w.log.Debug("push stream ended", "err", err)
-		if !sleepCtx(ctx, bo.wait()) {
+		if !backoff.Sleep(ctx, bo.Wait()) {
 			return
 		}
 	}
@@ -378,36 +378,5 @@ func (w *worker) status() PeerStatus {
 		CaughtUpAt: w.caughtUpAt,
 		LastError:  w.lastErr,
 		Dropped:    w.dropped.Load(),
-	}
-}
-
-// backoff implements exponential reconnect delays with jitter (ADR 0006).
-type backoff struct {
-	min, max, cur time.Duration
-}
-
-func newBackoff(minD, maxD time.Duration) *backoff {
-	return &backoff{min: minD, max: maxD, cur: minD}
-}
-
-// wait returns a delay in [cur/2, cur) and doubles cur up to max.
-func (b *backoff) wait() time.Duration {
-	d := b.cur
-	b.cur = min(2*d, b.max)
-	half := d / 2
-	return half + rand.N(d-half) //nolint:gosec // G404: jitter, not a secret
-}
-
-func (b *backoff) reset() { b.cur = b.min }
-
-// sleepCtx sleeps for d and reports false if ctx ended first.
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
 	}
 }

@@ -49,6 +49,8 @@ var Access = map[string]clusternet.Access{
 	pb.ReplicationService_StreamHeartbeats_FullMethodName: clusternet.VoterOnly,
 	pb.ReplicationService_GetWatermarks_FullMethodName:    clusternet.VoterOnly,
 	pb.ReplicationService_FetchRange_FullMethodName:       clusternet.VoterOnly,
+	pb.ProbeService_Subscribe_FullMethodName:              clusternet.ProbeOnly,
+	pb.ProbeService_UploadHeartbeats_FullMethodName:       clusternet.ProbeOnly,
 }
 
 // Node is the part of cluster.Node the service uses.
@@ -110,6 +112,8 @@ type OwnSignals struct {
 	ReplicationLagMs func() int64
 	// Checkpoint returns the index and fingerprint of the last FSM checkpoint.
 	Checkpoint func() (index uint64, fingerprint string)
+	// ProbeSessions returns the active probe sessions connected to this voter (ADR 0034).
+	ProbeSessions func() []*pb.ProbeSession
 }
 
 var _ pb.ClusterServiceServer = (*Service)(nil)
@@ -148,6 +152,10 @@ func (s *Service) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespon
 	resp := &pb.JoinResponse{ClusterId: issued.Identity.ClusterID, CertificateChainDer: issued.ChainDER, CaBundleDer: issued.BundleDER}
 	if role == pki.RoleVoter {
 		if err := s.enrollVoter(ctx, info, resp); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.enrollProbe(ctx, info, issued, resp); err != nil {
 			return nil, err
 		}
 	}
@@ -209,13 +217,55 @@ func (s *Service) enrollVoter(ctx context.Context, info *pb.NodeInfo, resp *pb.J
 		resp.Kek = key
 	}
 	resp.KekFingerprint = s.KEKFingerprint
+	s.fillVoters(resp)
+	return nil
+}
+
+func (s *Service) fillVoters(resp *pb.JoinResponse) {
 	members, _, err := s.Node.Members()
-	if err == nil {
-		for _, m := range members {
-			if m.Voter {
-				resp.Voters = append(resp.Voters, &pb.NodeInfo{Id: m.ID, AdvertiseAddr: m.Address, Role: pb.NodeInfo_ROLE_VOTER})
-			}
+	if err != nil {
+		return
+	}
+	for _, m := range members {
+		if m.Voter {
+			resp.Voters = append(resp.Voters, &pb.NodeInfo{Id: m.ID, AdvertiseAddr: m.Address, Role: pb.NodeInfo_ROLE_VOTER})
 		}
+	}
+}
+
+func (s *Service) enrollProbe(ctx context.Context, info *pb.NodeInfo, issued clusterpki.Issued, resp *pb.JoinResponse) error {
+	s.fillVoters(resp)
+	stored, err := s.State.CommandLevel(ctx)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "read command level: %v", err)
+	}
+	if cluster.EffectiveCommandLevel(stored) < cluster.ProbeCommandLevel {
+		s.Log.Warn("probe joined before cluster command level reached 10; probe registration deferred", "node_id", issued.Identity.NodeID)
+		return nil
+	}
+	// Role, ID and owner tenant always come from the redeemed join token identity.
+	cmd := cluster.NewRegisterProbe(uuid.NewString(), store.Node{
+		ID:            issued.Identity.NodeID,
+		Name:          info.GetName(),
+		Role:          store.NodeRoleProbe,
+		OwnerTenantID: issued.Identity.TenantID,
+		Incarnation:   info.GetIncarnation(),
+		Region:        info.GetRegion(),
+		Labels:        info.GetLabels(),
+		Capabilities:  info.GetCapabilities(),
+		Version:       info.GetVersion(),
+	})
+	res, err := s.Node.Apply(ctx, cmd)
+	if err == nil && res.Err != nil {
+		err = res.Err
+	}
+	if err != nil {
+		var cmdErr *cluster.CommandError
+		if errors.As(err, &cmdErr) && cmdErr.Code == cluster.CodeNotEnabled {
+			s.Log.Warn("register probe not enabled yet", "node_id", issued.Identity.NodeID, "err", err)
+			return nil
+		}
+		return status.Errorf(codes.Unavailable, "register probe: %v", err)
 	}
 	return nil
 }
@@ -287,24 +337,63 @@ func (s *Service) forwardJoin(ctx context.Context, req *pb.JoinRequest) (*pb.Joi
 // RenewCertificate issues a new certificate with the caller's identity
 // (FA-PKI-03). It runs on the leader only and re-checks membership and
 // revocation against the state, because the TLS handshake used the cached
-// revocation list.
+// revocation list. Probe renewals sent to a follower are forwarded once to the
+// leader; voter callers receive FailedPrecondition so they dial the leader directly.
 func (s *Service) RenewCertificate(ctx context.Context, req *pb.RenewCertificateRequest) (*pb.RenewCertificateResponse, error) {
 	peer, ok := clusternet.Peer(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "client certificate required")
 	}
-	if !s.Node.IsLeader() {
+	target := peer
+	if fwdID := req.GetForwardNodeId(); fwdID != "" {
+		if peer.Role != pki.RoleVoter {
+			return nil, status.Error(codes.PermissionDenied, "only voters may forward certificate renewals")
+		}
+		if !s.Node.IsLeader() {
+			addr, _ := s.Node.Leader()
+			return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, addr)
+		}
+		target = pki.Identity{
+			ClusterID: peer.ClusterID,
+			Role:      pki.RoleProbe,
+			NodeID:    fwdID,
+			TenantID:  req.GetForwardTenantId(),
+		}
+	} else if !s.Node.IsLeader() {
+		if peer.Role == pki.RoleProbe {
+			return s.forwardRenew(ctx, peer, req)
+		}
 		addr, _ := s.Node.Leader()
 		return nil, status.Errorf(codes.FailedPrecondition, errNotLeaderFormat, addr)
 	}
-	if err := s.stillMember(ctx, peer); err != nil {
+	if err := s.stillMember(ctx, target); err != nil {
 		return nil, err
 	}
-	issued, err := s.Authority.Renew(ctx, peer, req.GetCsrDer())
+	issued, err := s.Authority.Renew(ctx, target, req.GetCsrDer())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	return &pb.RenewCertificateResponse{CertificateChainDer: issued.ChainDER, CaBundleDer: issued.BundleDER}, nil
+}
+
+func (s *Service) forwardRenew(ctx context.Context, peer pki.Identity, req *pb.RenewCertificateRequest) (*pb.RenewCertificateResponse, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(forwardedKey)) > 0 {
+		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+	}
+	addr, _ := s.Node.Leader()
+	if addr == "" || s.DialLeader == nil {
+		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+	}
+	client, done, err := s.DialLeader(addr)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "connect to leader: %v", err)
+	}
+	defer done()
+	return client.RenewCertificate(metadata.AppendToOutgoingContext(ctx, forwardedKey, "1"), &pb.RenewCertificateRequest{
+		CsrDer:          req.GetCsrDer(),
+		ForwardNodeId:   peer.NodeID,
+		ForwardTenantId: peer.TenantID,
+	})
 }
 
 func (s *Service) stillMember(ctx context.Context, peer pki.Identity) error {
@@ -317,8 +406,27 @@ func (s *Service) stillMember(ctx context.Context, peer pki.Identity) error {
 			return status.Error(codes.PermissionDenied, "node was removed from the cluster")
 		}
 	}
+	if peer.Role == pki.RoleProbe {
+		stored, err := s.State.CommandLevel(ctx)
+		if err != nil {
+			return status.Error(codes.Unavailable, err.Error())
+		}
+		if cluster.EffectiveCommandLevel(stored) < cluster.ProbeCommandLevel {
+			return nil
+		}
+		nodes, err := s.State.ListNodes(ctx)
+		if err != nil {
+			return status.Error(codes.Unavailable, err.Error())
+		}
+		for _, n := range nodes {
+			if n.ID == peer.NodeID && n.Role == store.NodeRoleProbe && n.OwnerTenantID == peer.TenantID {
+				return nil
+			}
+		}
+		return status.Error(codes.PermissionDenied, "probe is not registered in the cluster")
+	}
 	if peer.Role != pki.RoleVoter {
-		return nil // probes are not Raft members (P5)
+		return status.Error(codes.PermissionDenied, "unknown node role")
 	}
 	members, _, err := s.Node.Members()
 	if err != nil {
@@ -371,6 +479,9 @@ func (o OwnSignals) fill(out *pb.GetStatusResponse) {
 	}
 	if o.Checkpoint != nil {
 		out.FingerprintIndex, out.Fingerprint = o.Checkpoint()
+	}
+	if o.ProbeSessions != nil {
+		out.ProbeSessions = o.ProbeSessions()
 	}
 }
 
