@@ -1,9 +1,10 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
 
 MODULE    := github.com/joinsider/pulsequorum
 GO_PKGS   := ./cmd/... ./internal/... ./build/...
 BIN       := bin/pulsequorum
+BIN_PROBE := bin/pulsequorum-probe
 WEB_DIST  := web/dist/pulsequorum-web/browser
 EMBED_DIR := internal/webui/dist
 # Generated code only (internal/api/internal/stubgen is hand-written and excluded).
@@ -47,6 +48,9 @@ build: web-embed go-build ## Build the frontend and the binary with the embedded
 
 go-build: ## Build only the Go binary (embeds whatever is in internal/webui/dist)
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pulsequorum
+
+go-build-probe: ## Build only the slim probe binary bin/pulsequorum-probe (no web UI, ADR 0043)
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_PROBE) ./cmd/pulsequorum-probe
 
 web/node_modules: web/package.json web/package-lock.json
 	cd web && npm ci

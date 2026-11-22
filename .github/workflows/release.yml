@@ -23,6 +23,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/joinsider/pulsequorum
+  PROBE_IMAGE: ghcr.io/joinsider/pulsequorum-probe # ADR 0043
   GORELEASER_VERSION: v2.20.2
 
 jobs:
@@ -143,7 +144,7 @@ jobs:
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Resolve image digest
+      - name: Resolve image digests
         id: image
         env:
           VERSION: ${{ needs.verify-tag.outputs.version }}
@@ -151,7 +152,10 @@ jobs:
           set -euo pipefail
           digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          probe_digest="$(docker buildx imagetools inspect "$PROBE_IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$probe_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "probe_digest=$probe_digest" >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
@@ -160,10 +164,16 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.PROBE_IMAGE }}
+          subject-digest: ${{ steps.image.outputs.probe_digest }}
+          push-to-registry: true
       - name: Verify checksums, signatures and provenance
         env:
           VERSION: ${{ needs.verify-tag.outputs.version }}
           DIGEST: ${{ steps.image.outputs.digest }}
+          PROBE_DIGEST: ${{ steps.image.outputs.probe_digest }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -174,11 +184,14 @@ jobs:
           (cd dist && sha256sum --ignore-missing -c checksums.txt)
           cosign verify-blob --bundle dist/checksums.txt.sigstore.json \
             --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" dist/checksums.txt
-          cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$IMAGE@$DIGEST" > /dev/null
-          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$REPO"
+          for ref in "$IMAGE@$DIGEST" "$PROBE_IMAGE@$PROBE_DIGEST"; do
+            cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$ref" > /dev/null
+            gh attestation verify "oci://$ref" --repo "$REPO"
+          done
           {
             echo "### Draft release $TAG ready"
             echo "Image: \`$IMAGE:$VERSION\` (\`$DIGEST\`)"
+            echo "Probe image: \`$PROBE_IMAGE:$VERSION\` (\`$PROBE_DIGEST\`)"
             echo "Review and publish: https://github.com/$REPO/releases"
           } >> "$GITHUB_STEP_SUMMARY"
 

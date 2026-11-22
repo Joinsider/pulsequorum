@@ -4,7 +4,7 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | Pulsequorum (Arbeitstitel, E20) |
-| **Version** | 1.6 |
+| **Version** | 1.7 |
 | **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
 | **Datum** | 2026-11-17 |
 | **Grundlage** | [Konzept v0.3](../pulsequorum-konzept.md), Recherche zu Pitfalls (Kap. 12) |
@@ -22,6 +22,7 @@
 | 1.4 | 2026-11-17 | Externe Anmeldung über beliebige OIDC-Anbieter mit Profilen `generic` und `zitadel` gemäß ADR 0027 (FA-AUTH-05..09, FA-TEN-03, Produktumgebung) |
 | 1.5 | 2026-11-18 | SSRF-Schutz präzisiert gemäß ADR 0030: feste Bereichsliste, schaltbar über `SSRF_PROTECTION`, Prüfung beim Speichern, DNS-Antworten (FA-SEC-SSRF) |
 | 1.6 | 2026-11-22 | Lokale Richtlinie privater Probes gemäß ADR 0044 (FA-PRB-08..10) |
+| 1.7 | 2026-11-22 | Optionales Probe-Image `pulsequorum-probe` gemäß ADR 0043 (Z-M-04, FA-NODE-01) |
 
 ---
 
@@ -94,7 +95,7 @@ Die Entscheidungen E1–E21 des Konzepts gelten als fachliche Vorgaben. Wo diese
 | Z-M-01 | Überwachung von HTTP(S)-, TCP-, ICMP- und DNS-Zielen mit konfigurierbaren Erwartungen, Intervall ab 20 s | Z1, E3, E5 |
 | Z-M-02 | Uptime (24 h / 7 d / 30 d / 365 d), Antwortzeiten und Incidents je Monitor und je Messstandort | Z2 |
 | Z-M-03 | Betrieb als Cluster aus 1, 3 oder 5 Votern; Ausfall von ⌊(n−1)/2⌋ Votern ohne Funktionsverlust bei Checks, Alerts und Lesezugriff | Z3, E12 |
-| Z-M-04 | Ein Image/Binary für alle Rollen; Wachstum von 1 auf n Voter ohne Datenmigration | Z4 |
+| Z-M-04 | Ein Binary/Image (`pulsequorum`) für alle Rollen; zusätzlich ein schlankes, optionales Probe-Image (`pulsequorum-probe`, ADR 0043); Wachstum von 1 auf n Voter ohne Datenmigration | Z4 |
 | Z-M-05 | Benachrichtigung über Shoutrrr-URLs und generische Webhooks, genau ein Alert pro Statuswechsel (at-least-once, dedupliziert) | E7, Kap. 9 |
 | Z-M-06 | Mandantenfähigkeit mit strikter Datentrennung; Identitäten lokal oder über Zitadel | Z6, E13 |
 | Z-M-07 | Angular-SPA eingebettet in jeden Voter, mit Client-Failover zwischen Votern | Z7, E15 |
@@ -230,7 +231,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 
 | ID | Anforderung | P | Ph | Abnahmekriterium |
 |----|-------------|---|----|------------------|
-| FA-NODE-01 | Ein einziges Binary startet abhängig von `NODE_ROLE` (`voter`\|`probe`) die jeweilige Rolle. | M | P0 | Start mit beiden Werten erfolgreich; ungültiger Wert → Exit-Code ≠ 0 mit verständlicher Meldung. |
+| FA-NODE-01 | Ein einziges Binary (`pulsequorum`) startet abhängig von `NODE_ROLE` (`voter`\|`probe`) die jeweilige Rolle. Das Probe-Binary `pulsequorum-probe` (ADR 0043) startet bei leerem `NODE_ROLE` oder `probe` die Probe. | M | P0 | Start mit beiden Werten erfolgreich; ungültiger Wert → Exit-Code ≠ 0 mit verständlicher Meldung. `pulsequorum-probe` mit einem anderen Wert als `probe` → Exit-Code ≠ 0 mit verständlicher Meldung. |
 | FA-NODE-02 | Konfiguration ausschließlich über Umgebungsvariablen (optional zusätzlich Datei); alle Optionen dokumentiert mit Default. Ungültige Konfiguration bricht den Start ab. | M | P0 | Tabelle aller Variablen in der Doku; Test für Validierung. |
 | FA-NODE-03 **[neu]** | Beim ersten Start erzeugt jeder Node eine **zufällige, persistente Node-ID** im Datenverzeichnis und eine **Inkarnations-ID**, die in der Heartbeat-Datenbank (`metrics.db`) selbst gespeichert wird. Fehlt `metrics.db`, entsteht immer eine neue Inkarnation, auch wenn die Node-ID erhalten bleibt (ADR 0012 B4). Die Node-ID wird nie aus IP oder Hostname abgeleitet. | M | P1 | Neustart behält ID und Inkarnation; Löschen von `metrics.db` oder des Datenverzeichnisses erzeugt eine neue Inkarnation. (PF-03, PF-07, PF-12) |
 | FA-NODE-04 | Graceful Shutdown: laufende Checks und Schreibvorgänge werden innerhalb von 10 s beendet bzw. abgeschlossen; ein Leader gibt die Führung vorher ab (Leadership Transfer). | M | P2 | SIGTERM-Test: keine abgebrochenen Transaktionen, neuer Leader < 5 s. |

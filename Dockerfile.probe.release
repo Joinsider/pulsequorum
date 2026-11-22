@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+
+# Probe release image packaged by GoReleaser (dockers_v2 id pulsequorum-probe,
+# see .goreleaser.yaml, ADR 0043). GoReleaser cross-compiles the probe binary
+# and places it in $TARGETPLATFORM/ of the build context, so this file only
+# packages the prebuilt artifact. Local builds use Dockerfile.probe instead.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/pulsequorum-probe /pulsequorum-probe
+COPY LICENSE THIRD_PARTY_NOTICES.md /licenses/
+# Empty data dir owned by nonroot, so a fresh named volume is writable. Distroless
+# has no shell; its empty /home/nonroot serves as the source directory.
+COPY --from=gcr.io/distroless/static-debian12:nonroot --chown=65532:65532 /home/nonroot /data
+ENV DATA_DIR=/data
+ENV NODE_ROLE=probe
+# Health only; a probe opens no cluster port (it dials voters outbound).
+EXPOSE 8080
+USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/pulsequorum-probe", "healthcheck"]
+ENTRYPOINT ["/pulsequorum-probe"]

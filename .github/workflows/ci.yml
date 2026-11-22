@@ -165,4 +165,12 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: make build
+      - name: Probe binary within size budget (ADR 0043, measured 21.6 MB)
+        run: |
+          set -euo pipefail
+          make go-build-probe
+          size="$(stat -c %s bin/pulsequorum-probe)"
+          echo "pulsequorum-probe: $size bytes"
+          [[ "$size" -lt 25000000 ]] || { echo "::error::bin/pulsequorum-probe is $size bytes, budget is 25000000"; exit 1; }
       - run: docker build -t pulsequorum:ci .
+      - run: docker build -f Dockerfile.probe -t pulsequorum-probe:ci .
