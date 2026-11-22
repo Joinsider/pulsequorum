@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
@@ -404,5 +405,240 @@ func TestRegisterNodeKeepsConnectivity(t *testing.T) {
 	}
 	if !n.ConnectivityImpaired || n.ConnectivityReason != "reference" || n.ConnectivityChangedMs != 2_000 {
 		t.Errorf("registration reset the connectivity: %+v", n)
+	}
+}
+
+func TestRegisterProbePublicAndPrivate(t *testing.T) {
+	f := newNodeFSM(t)
+	putTenantCmd, err := NewPutTenant("", "t1", TenantDocument{Name: "t1", Plan: "default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := f.apply(putTenantCmd, 500); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	if r := f.apply(NewRegisterProbe("", store.Node{
+		ID:                "probe-pub",
+		Name:              "pub",
+		Region:            "eu",
+		Labels:            map[string]string{"env": "prod"},
+		Capabilities:      []string{"http", "icmp"},
+		Version:           "1.0.0",
+		MaxCommandVersion: ProbeCommandLevel,
+		Incarnation:       "inc-pub",
+	}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	pub, ok := f.node("probe-pub")
+	if !ok {
+		t.Fatal("probe-pub missing")
+	}
+	if pub.Role != store.NodeRoleProbe || !pub.Healthy || pub.HealthChangedMs != 1_000 ||
+		pub.RegisteredMs != 1_000 || pub.UpdatedMs != 1_000 ||
+		pub.OwnerTenantID != "" || pub.Incarnation != "inc-pub" {
+		t.Errorf("public probe = %+v", pub)
+	}
+
+	if r := f.apply(NewRegisterProbe("", store.Node{
+		ID:            "probe-priv",
+		Name:          "priv",
+		OwnerTenantID: "t1",
+		Incarnation:   "inc-priv",
+	}), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	priv, ok := f.node("probe-priv")
+	if !ok {
+		t.Fatal("probe-priv missing")
+	}
+	if priv.Role != store.NodeRoleProbe || !priv.Healthy || priv.HealthChangedMs != 2_000 ||
+		priv.RegisteredMs != 2_000 || priv.UpdatedMs != 2_000 ||
+		priv.OwnerTenantID != "t1" || priv.Incarnation != "inc-priv" {
+		t.Errorf("private probe = %+v", priv)
+	}
+}
+
+func TestRegisterProbeUpdatePreservesHealthAndConnectivity(t *testing.T) {
+	f := newNodeFSM(t)
+	if r := f.apply(NewRegisterProbe("", store.Node{
+		ID:          "probe-1",
+		Name:        "one",
+		Version:     "1.0.0",
+		Incarnation: "inc-1",
+	}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewSetNodeHealth("", "probe-1", false), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewSetNodeConnectivity("probe-1", true, ConnectivityReasonReference), 3_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewRegisterProbe("", store.Node{
+		ID:          "probe-1",
+		Name:        "renamed",
+		Version:     "1.1.0",
+		Incarnation: "inc-2",
+	}), 4_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	n, ok := f.node("probe-1")
+	if !ok {
+		t.Fatal("probe-1 missing")
+	}
+	if n.Name != "renamed" || n.Version != "1.1.0" || n.Incarnation != "inc-2" || n.UpdatedMs != 4_000 {
+		t.Errorf("updated metadata = %+v", n)
+	}
+	if n.Healthy || n.HealthChangedMs != 2_000 {
+		t.Errorf("health not preserved: %+v", n)
+	}
+	if !n.ConnectivityImpaired || n.ConnectivityReason != ConnectivityReasonReference || n.ConnectivityChangedMs != 3_000 {
+		t.Errorf("connectivity not preserved: %+v", n)
+	}
+	if n.RegisteredMs != 1_000 {
+		t.Errorf("RegisteredMs = %d, want 1000", n.RegisteredMs)
+	}
+}
+
+func TestRegisterProbeRejections(t *testing.T) {
+	f := newNodeFSM(t)
+	if r := f.apply(NewSetFeatureLevel("", TenantAdminCommandLevel), 100); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	for _, id := range []string{"t1", "t2", "t-del"} {
+		cmd, err := NewPutTenant("", id, TenantDocument{Name: id, Plan: "default"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r := f.apply(cmd, 200); r.Err != nil {
+			t.Fatal(r.Err)
+		}
+	}
+	if r := f.apply(adminCommand("", pb.Actor_KIND_SYSTEM, &pb.SetTenantSuspended{TenantId: "t-del", Suspended: true}), 300); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(adminCommand("", pb.Actor_KIND_SYSTEM, &pb.DeleteTenant{TenantId: "t-del"}), 400); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	if r := f.apply(NewRegisterProbe("", store.Node{ID: "probe-revoked"}), 500); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewRevokeNode("", "probe-revoked"), 600); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	if r := f.apply(NewRegisterProbe("", store.Node{ID: "probe-owned", OwnerTenantID: "t1"}), 700); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "voter-1", Role: store.NodeRoleVoter}), 800); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	tests := []struct {
+		name     string
+		cmd      *pb.Command
+		wantCode string
+	}{
+		{
+			name: "non-probe role",
+			cmd: stamp(&pb.Command{Payload: &pb.Command_RegisterProbe{RegisterProbe: &pb.RegisterProbe{
+				Node: &pb.NodeInfo{Id: "probe-voter", Role: pb.NodeInfo_ROLE_VOTER},
+			}}}),
+			wantCode: CodeInvalid,
+		},
+		{
+			name:     "incarnation too long",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-inc", Incarnation: strings.Repeat("a", maxNodeIncarnationLen+1)}),
+			wantCode: CodeInvalid,
+		},
+		{
+			name:     "revoked node",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-revoked"}),
+			wantCode: CodeConflict,
+		},
+		{
+			name:     "unknown owner tenant",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-unknown", OwnerTenantID: "no-such-tenant"}),
+			wantCode: CodeInvalid,
+		},
+		{
+			name:     "deleted owner tenant",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-del", OwnerTenantID: "t-del"}),
+			wantCode: CodeInvalid,
+		},
+		{
+			name:     "system owner tenant",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-sys", OwnerTenantID: store.SystemTenantID}),
+			wantCode: CodeInvalid,
+		},
+		{
+			name:     "change owner tenant to another tenant",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-owned", OwnerTenantID: "t2"}),
+			wantCode: CodeConflict,
+		},
+		{
+			name:     "change owner tenant to public",
+			cmd:      NewRegisterProbe("", store.Node{ID: "probe-owned", OwnerTenantID: ""}),
+			wantCode: CodeConflict,
+		},
+		{
+			name:     "existing voter id",
+			cmd:      NewRegisterProbe("", store.Node{ID: "voter-1"}),
+			wantCode: CodeConflict,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := f.apply(tt.cmd, 1_000)
+			checkCode(t, r.Err, tt.wantCode)
+		})
+	}
+}
+
+func TestSubscribeChanges(t *testing.T) {
+	f := newNodeFSM(t)
+	ch1, unsub1 := f.fsm.SubscribeChanges()
+	ch2, unsub2 := f.fsm.SubscribeChanges()
+	defer unsub2()
+
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "n1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "n2", Role: store.NodeRoleVoter}), 2_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	for name, ch := range map[string]<-chan struct{}{"sub1": ch1, "sub2": ch2} {
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not receive change notification", name)
+		}
+		select {
+		case <-ch:
+			t.Fatalf("%s received uncoalesced extra notification", name)
+		default:
+		}
+	}
+
+	unsub1()
+	if r := f.apply(NewRegisterNode("", store.Node{ID: "n3", Role: store.NodeRoleVoter}), 3_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+
+	select {
+	case <-ch2:
+	case <-time.After(time.Second):
+		t.Fatal("sub2 did not receive change notification after sub1 unsubscribed")
+	}
+	select {
+	case <-ch1:
+		t.Fatal("sub1 received notification after unsubscribe")
+	default:
 	}
 }

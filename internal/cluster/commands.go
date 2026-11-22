@@ -27,8 +27,12 @@ import (
 // version 6 the system alerts, incarnation records and checkpoints (ADR 0025),
 // version 7 BindTenantOrg (ADR 0027), version 8 the tenant and plan commands and
 // limit enforcement (ADR 0029), version 9 API tokens, the audit log and Batch
-// (ADR 0031).
-const CommandVersion = 9
+// (ADR 0031), version 10 RegisterProbe and the probe registry columns (ADR 0034, 0035).
+const CommandVersion = 10
+
+// ProbeCommandLevel is the command level of RegisterProbe and the probe
+// registry columns (ADR 0034, ADR 0035).
+const ProbeCommandLevel = 10
 
 // BaseCommandLevel is the command level of a cluster that never stored one:
 // the first release with the feature gate (ADR 0018). Commands up to this

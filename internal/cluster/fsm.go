@@ -72,6 +72,9 @@ type FSM struct {
 	// changes signals (coalesced) that state.db changed; it is a notification
 	// outside the replicated state and does not affect determinism.
 	changes chan struct{}
+	subMu   sync.Mutex
+	subNext uint64
+	subs    map[uint64]chan struct{}
 	// observer receives the StateEvents of committed transactions (see OnStateChange).
 	observer atomic.Pointer[func(StateEvent)]
 	// checkpoint is the last fingerprint this FSM computed; it is not replicated (ADR 0025).
@@ -111,11 +114,39 @@ func NewFSM(ctx context.Context, state StateStore, log *slog.Logger, onFatal fun
 // changes may be coalesced into one signal.
 func (f *FSM) Changes() <-chan struct{} { return f.changes }
 
+// SubscribeChanges returns a dedicated coalesced change channel and an
+// unsubscribe function, so multiple consumers (scheduler, probe gateway) do
+// not steal signals from each other.
+func (f *FSM) SubscribeChanges() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	f.subMu.Lock()
+	if f.subs == nil {
+		f.subs = make(map[uint64]chan struct{})
+	}
+	id := f.subNext
+	f.subNext++
+	f.subs[id] = ch
+	f.subMu.Unlock()
+	return ch, func() {
+		f.subMu.Lock()
+		delete(f.subs, id)
+		f.subMu.Unlock()
+	}
+}
+
 func (f *FSM) notify() {
 	select {
 	case f.changes <- struct{}{}:
 	default:
 	}
+	f.subMu.Lock()
+	for _, ch := range f.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	f.subMu.Unlock()
 }
 
 // AppliedIndex returns the last log index reflected in state.db.
@@ -305,6 +336,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRevokeNode(ctx, tx, cmd, p.RevokeNode)
 	case *pb.Command_RegisterNode:
 		return applyRegisterNode(ctx, tx, cmd, p.RegisterNode)
+	case *pb.Command_RegisterProbe:
+		return applyRegisterProbe(ctx, tx, cmd, p.RegisterProbe)
 	case *pb.Command_SetNodeHealth:
 		return applySetNodeHealth(ctx, tx, cmd, p.SetNodeHealth)
 	case *pb.Command_SetNodeConnectivity:

@@ -94,6 +94,8 @@ const (
 	AnyNode
 	// VoterOnly requires a voter certificate (Apply, GetStatus, replication).
 	VoterOnly
+	// ProbeOnly requires a probe certificate (ProbeService RPCs).
+	ProbeOnly
 )
 
 // Authorize returns a unary interceptor that enforces the access level of
@@ -133,6 +135,9 @@ func authorize(ctx context.Context, levels map[string]Access, method string) err
 	if level == VoterOnly && id.Role != pki.RoleVoter {
 		return status.Error(codes.PermissionDenied, "voter certificate required")
 	}
+	if level == ProbeOnly && id.Role != pki.RoleProbe {
+		return status.Error(codes.PermissionDenied, "probe certificate required")
+	}
 	return nil
 }
 
@@ -144,4 +149,17 @@ func DialVoter(address string, sec Security) (*grpc.ClientConn, error) {
 		grpc.WithTransportCredentials(credentials.NewTLS(cfg)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 15 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true}),
 	)
+}
+
+// DialProbe opens a gRPC connection from a probe to a voter using the probe
+// keepalive parameters from ADR 0034 (30 s ping, 10 s timeout, permit without stream).
+func DialProbe(address string, sec Security, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	cfg := pki.ClientConfig(sec.Holder, sec.Verifier, "", pki.OnlyVoters, ALPNGRPC)
+	dialOpts := make([]grpc.DialOption, 0, 2+len(opts))
+	dialOpts = append(dialOpts,
+		grpc.WithTransportCredentials(credentials.NewTLS(cfg)),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true}),
+	)
+	dialOpts = append(dialOpts, opts...)
+	return grpc.NewClient(address, dialOpts...)
 }

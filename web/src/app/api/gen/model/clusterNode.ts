@@ -11,6 +11,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ClusterNodeConnectivityReason } from './clusterNodeConnectivityReason';
+import type { ClusterNodeRole } from './clusterNodeRole';
+import type { ProbeBufferStatus } from './probeBufferStatus';
 
 export interface ClusterNode {
   id: string;
@@ -49,4 +51,13 @@ export interface ClusterNode {
   connectivityReason?: ClusterNodeConnectivityReason;
   /** Whether SSRF protection is on for the node's checks and notifications (ADR 0030); absent while the node has not answered recently or is older than ADR 0030. */
   ssrfProtection?: boolean;
+  /** Role of the node in the cluster (ADR 0034); defaults to voter. */
+  role?: ClusterNodeRole;
+  /** Optional region label of the node. */
+  region?: string;
+  /** Owning tenant ID for private probes; absent for voters and public probes (ADR 0035). */
+  ownerTenantId?: string;
+  /** ID of the voter the probe currently has a live session on (ADR 0034). */
+  connectedVoterId?: string;
+  probeBuffer?: ProbeBufferStatus;
 }

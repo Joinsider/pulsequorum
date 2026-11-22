@@ -32,9 +32,11 @@ func TestFingerprintLevelGates(t *testing.T) {
 			'user', 'usr-1')`, 9},
 		{"audit entry", `INSERT INTO audit_log (raft_index, sub, at_ms, tenant_id, actor_kind, action)
 			VALUES (7, 0, 1, 't1', 'user', 'monitor.create')`, 9},
+		{"node owner_tenant_id", `UPDATE nodes SET owner_tenant_id = 't1' WHERE id = 'p1'`, 10},
+		{"node incarnation", `UPDATE nodes SET incarnation = 'inc-1' WHERE id = 'p1'`, 10},
 		{"tenant name (control, always hashed)", `UPDATE tenants SET name = 'Other' WHERE id = 't1'`, 0},
 	}
-	for _, level := range []uint32{7, 8, 9} {
+	for _, level := range []uint32{7, 8, 9, 10} {
 		for _, c := range changes {
 			t.Run(fmt.Sprintf("level %d: %s", level, c.name), func(t *testing.T) {
 				ctx := context.Background()
@@ -43,7 +45,10 @@ func TestFingerprintLevelGates(t *testing.T) {
 					if err := tx.SetCommandLevel(ctx, level); err != nil {
 						return err
 					}
-					return tx.PutTenant(ctx, store.Tenant{ID: "t1", Name: "T1", Plan: "default", Source: "admin", CreatedMs: 1, UpdatedMs: 1})
+					if err := tx.PutTenant(ctx, store.Tenant{ID: "t1", Name: "T1", Plan: "default", Source: "admin", CreatedMs: 1, UpdatedMs: 1}); err != nil {
+						return err
+					}
+					return tx.PutNode(ctx, store.Node{ID: "p1", Name: "probe1", Role: store.NodeRoleProbe, Healthy: true, HealthChangedMs: 1, RegisteredMs: 1, UpdatedMs: 1})
 				})
 				if err != nil {
 					t.Fatal(err)

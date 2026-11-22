@@ -171,6 +171,8 @@ type Node struct {
 	ConnectivityImpaired  int64
 	ConnectivityReason    string
 	ConnectivityChangedMs int64
+	OwnerTenantID         string
+	Incarnation           string
 }
 
 type NodeIncarnation struct {

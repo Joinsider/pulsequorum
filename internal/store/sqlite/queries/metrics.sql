@@ -19,8 +19,42 @@ INSERT INTO heartbeats (
 ON CONFLICT (node_id, incarnation, seq) DO NOTHING;
 
 -- name: LastSeq :one
-SELECT CAST(COALESCE(MAX(seq), 0) AS INTEGER) AS last_seq
+SELECT CAST(MAX(
+    COALESCE((SELECT MAX(h.seq) FROM heartbeats AS h WHERE h.node_id = sqlc.arg(node_id) AND h.incarnation = sqlc.arg(incarnation)), 0),
+    COALESCE((SELECT sp.seq FROM stream_positions AS sp WHERE sp.node_id = sqlc.arg(node_id) AND sp.incarnation = sqlc.arg(incarnation)), 0)
+) AS INTEGER) AS last_seq;
+
+-- name: MinSeq :one
+SELECT CAST(COALESCE(MIN(seq), 0) AS INTEGER) AS min_seq
 FROM heartbeats WHERE node_id = ? AND incarnation = ?;
+
+-- name: UnackedStats :one
+SELECT COUNT(*) AS unacked_count,
+       CAST(COALESCE(MIN(ts_ms), 0) AS INTEGER) AS oldest_ts_ms
+FROM heartbeats
+WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation) AND seq > sqlc.arg(after_seq);
+
+-- name: DeleteStreamHeartbeatsUpTo :execrows
+DELETE FROM heartbeats
+WHERE rowid IN (
+    SELECT h.rowid FROM heartbeats AS h
+    WHERE h.node_id = sqlc.arg(node_id) AND h.incarnation = sqlc.arg(incarnation) AND h.seq <= sqlc.arg(max_seq)
+    ORDER BY h.seq ASC
+    LIMIT sqlc.arg(row_limit)
+);
+
+-- name: ListStreamSeqsOlderThan :many
+SELECT seq FROM heartbeats
+WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation)
+  AND seq > sqlc.arg(after_seq) AND ts_ms < sqlc.arg(before_ms)
+ORDER BY seq ASC
+LIMIT sqlc.arg(row_limit);
+
+-- name: ListOldestStreamSeqs :many
+SELECT seq FROM heartbeats
+WHERE node_id = sqlc.arg(node_id) AND incarnation = sqlc.arg(incarnation)
+ORDER BY seq ASC
+LIMIT sqlc.arg(row_limit);
 
 -- name: ListHeartbeats :many
 -- Keyset pagination ordered by (ts_ms, node_id, incarnation, seq).

@@ -62,6 +62,7 @@ var auditPolicies = map[reflect.Type]auditPolicy{
 	reflect.TypeFor[*pb.Command_RevokeCertificate]():  auditAlways,
 	reflect.TypeFor[*pb.Command_RevokeNode]():         auditAlways,
 	reflect.TypeFor[*pb.Command_RegisterNode]():       auditAlways,
+	reflect.TypeFor[*pb.Command_RegisterProbe]():      auditAlways,
 	reflect.TypeFor[*pb.Command_SetFeatureLevel]():    auditAlways,
 
 	// Operational commands: state, alert delivery, sessions, health, history,
@@ -289,6 +290,12 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 		return []auditRecord{systemRecord("node.revoke", "node", p.RevokeNode.GetNodeId())}
 	case *pb.Command_RegisterNode:
 		return []auditRecord{systemRecord("node.register", "node", p.RegisterNode.GetNode().GetId())}
+	case *pb.Command_RegisterProbe:
+		t := p.RegisterProbe.GetOwnerTenantId()
+		if t == "" {
+			t = store.SystemTenantID
+		}
+		return []auditRecord{{tenantID: t, action: "probe.register", objectKind: "node", objectID: p.RegisterProbe.GetNode().GetId()}}
 	case *pb.Command_SetFeatureLevel:
 		return []auditRecord{systemRecord("cluster.set_feature_level", "cluster", strconv.FormatUint(uint64(p.SetFeatureLevel.GetLevel()), 10))}
 	}

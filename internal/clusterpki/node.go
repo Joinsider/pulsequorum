@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,9 +94,10 @@ func (r *Revocations) Run(ctx context.Context, state store.State, interval time.
 
 // File names in DATA_DIR/tls. The key never leaves this node (FA-PKI-01).
 const (
-	tlsDir   = "tls"
-	keyFile  = "node-key.pem"
-	certFile = "node-cert.pem"
+	tlsDir     = "tls"
+	keyFile    = "node-key.pem"
+	certFile   = "node-cert.pem"
+	bundleFile = "ca-bundle.pem"
 )
 
 // NodeCert manages this node's key and certificate and serves them through
@@ -108,12 +110,13 @@ type NodeCert struct {
 	// set it to simulate clock skew between nodes (ADR 0020).
 	Now func() time.Time
 
-	// mu guards key, leaf and ca: handshakes read them while renewal
+	// mu guards key, leaf, ca and bundle: handshakes read them while renewal
 	// replaces them.
-	mu   sync.RWMutex
-	key  *ecdsa.PrivateKey
-	leaf *x509.Certificate
-	ca   *x509.Certificate
+	mu     sync.RWMutex
+	key    *ecdsa.PrivateKey
+	leaf   *x509.Certificate
+	ca     *x509.Certificate
+	bundle []*x509.Certificate
 }
 
 // Load reads the stored key and certificate, if any. A certificate whose key
@@ -151,7 +154,17 @@ func (n *NodeCert) Load() error {
 	if id.NodeID != n.NodeID {
 		return fmt.Errorf("node certificate belongs to node %s, not %s", id.NodeID, n.NodeID)
 	}
-	n.set(key, chain)
+	var bundle []*x509.Certificate
+	if bundlePEM, err := os.ReadFile(filepath.Join(n.DataDir, tlsDir, bundleFile)); err == nil {
+		b, berr := parseBundle(bundlePEM)
+		if berr != nil {
+			return berr
+		}
+		bundle = b
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read CA bundle: %w", err)
+	}
+	n.set(key, chain, bundle)
 	return nil
 }
 
@@ -169,6 +182,43 @@ func (n *NodeCert) CA() *x509.Certificate {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return n.ca
+}
+
+// Bundle returns the trusted CA bundle from ca-bundle.pem, falling back to the
+// issuing CA if no bundle was stored yet (ADR 0034, ADR 0039).
+func (n *NodeCert) Bundle() []*x509.Certificate {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if len(n.bundle) > 0 {
+		return slices.Clone(n.bundle)
+	}
+	if n.ca != nil {
+		return []*x509.Certificate{n.ca}
+	}
+	return nil
+}
+
+// IssuerFingerprint returns the SHA-256 fingerprint of the issuing CA, or "".
+func (n *NodeCert) IssuerFingerprint() string {
+	ca := n.CA()
+	if ca == nil {
+		return ""
+	}
+	return pki.Fingerprint(ca)
+}
+
+// BundleFingerprints returns the sorted SHA-256 fingerprints of the trusted CA bundle.
+func (n *NodeCert) BundleFingerprints() []string {
+	bundle := n.Bundle()
+	if len(bundle) == 0 {
+		return nil
+	}
+	fps := make([]string, 0, len(bundle))
+	for _, c := range bundle {
+		fps = append(fps, pki.Fingerprint(c))
+	}
+	slices.Sort(fps)
+	return slices.Compact(fps)
 }
 
 // NeedsRenewal reports whether there is no certificate or it reached its
@@ -216,6 +266,19 @@ func (n *NodeCert) Install(key *ecdsa.PrivateKey, issued Issued) error {
 	for _, c := range chain {
 		certPEM = append(certPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
 	}
+	var bundle []*x509.Certificate
+	var bundlePEM []byte
+	for _, der := range issued.BundleDER {
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			return fmt.Errorf("issued CA bundle certificate: %w", err)
+		}
+		if !c.IsCA {
+			return errors.New("issued CA bundle contains non-CA certificate")
+		}
+		bundle = append(bundle, c)
+		bundlePEM = append(bundlePEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+	}
 	dir := filepath.Join(n.DataDir, tlsDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
@@ -228,15 +291,49 @@ func (n *NodeCert) Install(key *ecdsa.PrivateKey, issued Issued) error {
 	if err := writeAtomic(filepath.Join(dir, certFile), certPEM, 0o644); err != nil {
 		return err
 	}
-	n.set(key, chain)
+	if len(bundlePEM) > 0 {
+		if err := writeAtomic(filepath.Join(dir, bundleFile), bundlePEM, 0o644); err != nil {
+			return err
+		}
+	}
+	n.set(key, chain, bundle)
 	return nil
 }
 
-func (n *NodeCert) set(key *ecdsa.PrivateKey, chain []*x509.Certificate) {
+func (n *NodeCert) set(key *ecdsa.PrivateKey, chain, bundle []*x509.Certificate) {
+	if len(bundle) == 0 {
+		bundle = []*x509.Certificate{chain[1]}
+	}
 	n.mu.Lock()
-	n.key, n.leaf, n.ca = key, chain[0], chain[1]
+	n.key, n.leaf, n.ca, n.bundle = key, chain[0], chain[1], bundle
 	n.mu.Unlock()
 	n.Holder.Set(pki.Leaf(chain[0], key, chain[1]))
+}
+
+func parseBundle(data []byte) ([]*x509.Certificate, error) {
+	var bundle []*x509.Certificate
+	for {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("ca bundle certificate: %w", err)
+		}
+		if !c.IsCA {
+			return nil, errors.New("ca bundle contains non-CA certificate")
+		}
+		bundle = append(bundle, c)
+	}
+	if len(bundle) == 0 {
+		return nil, errors.New("ca bundle: no certificates found")
+	}
+	return bundle, nil
 }
 
 func writeAtomic(path string, data []byte, perm os.FileMode) error {

@@ -16,14 +16,15 @@ import (
 
 // Limits of the node registry (ADR 0017). Lengths are counted in bytes.
 const (
-	maxNodeNameLen      = 200
-	maxNodeRegionLen    = 64
-	maxNodeVersionLen   = 64
-	maxNodeCapabilities = 32
-	maxCapabilityLen    = 32
-	maxNodeLabels       = 32
-	maxLabelKeyLen      = 64
-	maxLabelValueLen    = 256
+	maxNodeNameLen        = 200
+	maxNodeRegionLen      = 64
+	maxNodeVersionLen     = 64
+	maxNodeIncarnationLen = 64
+	maxNodeCapabilities   = 32
+	maxCapabilityLen      = 32
+	maxNodeLabels         = 32
+	maxLabelKeyLen        = 64
+	maxLabelValueLen      = 256
 )
 
 const errInvalidNodeID = "node ID must be 1 to 128 characters of [A-Za-z0-9_-]"
@@ -48,6 +49,23 @@ func NewRegisterNode(requestID string, n store.Node) *pb.Command {
 	return stamp(&pb.Command{
 		RequestId: requestID,
 		Payload:   &pb.Command_RegisterNode{RegisterNode: &pb.RegisterNode{Node: nodeInfoFrom(n)}},
+	})
+}
+
+// NewRegisterProbe builds the command that registers a probe or updates its
+// metadata in the registry (ADR 0034, ADR 0035). Only a voter proposes it.
+func NewRegisterProbe(requestID string, n store.Node) *pb.Command {
+	info := nodeInfoFrom(n)
+	info.Role = pb.NodeInfo_ROLE_PROBE
+	info.Incarnation = n.Incarnation
+	info.OwnerTenantId = n.OwnerTenantID
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		Actor:     &pb.Actor{Kind: pb.Actor_KIND_SYSTEM},
+		Payload: &pb.Command_RegisterProbe{RegisterProbe: &pb.RegisterProbe{
+			Node:          info,
+			OwnerTenantId: n.OwnerTenantID,
+		}},
 	})
 }
 
@@ -197,6 +215,81 @@ func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r
 	default:
 		return nil, err
 	}
+	n.UpdatedMs = now
+	if err := tx.PutNode(ctx, n); err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(nodeResult(n))
+}
+
+// applyRegisterProbe upserts a probe registry entry (ADR 0034, ADR 0035).
+// Role must be probe; owner_tenant_id must match any existing registration and
+// refer to an existing non-deleted tenant when non-empty. Health, connectivity
+// and RegisteredMs are preserved on updates.
+func applyRegisterProbe(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *pb.RegisterProbe) (json.RawMessage, error) {
+	n, err := nodeFromInfo(r.GetNode())
+	if err != nil {
+		return nil, err
+	}
+	if n.Role != store.NodeRoleProbe {
+		return nil, invalid("register_probe is only allowed for probes")
+	}
+	incarnation := r.GetNode().GetIncarnation()
+	if len(incarnation) > maxNodeIncarnationLen {
+		return nil, invalid("probe incarnation must not exceed %d bytes", maxNodeIncarnationLen)
+	}
+	_, err = tx.GetRevokedNode(ctx, n.ID)
+	switch {
+	case err == nil:
+		return nil, &CommandError{Code: CodeConflict, Message: "node " + n.ID + " is revoked"}
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, err
+	}
+	owner := r.GetOwnerTenantId()
+	if owner != "" {
+		if owner == store.SystemTenantID {
+			return nil, invalid("probes cannot belong to the system tenant")
+		}
+		if _, err := tx.GetTenant(ctx, owner); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, invalid("unknown owner tenant %q", owner)
+			}
+			return nil, err
+		}
+		deleted, err := tx.IsTenantDeleted(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		if deleted {
+			return nil, invalid("owner tenant %q is deleted", owner)
+		}
+	}
+
+	now := cmd.GetIssuedAtMs()
+	existing, err := tx.GetNode(ctx, n.ID)
+	switch {
+	case err == nil:
+		if existing.Role != store.NodeRoleProbe {
+			return nil, &CommandError{Code: CodeConflict, Message: "node " + n.ID + " is not a probe"}
+		}
+		if existing.OwnerTenantID != owner {
+			return nil, &CommandError{Code: CodeConflict, Message: "probe " + n.ID + " belongs to another tenant"}
+		}
+		n.Healthy = existing.Healthy
+		n.HealthChangedMs = existing.HealthChangedMs
+		n.ConnectivityImpaired = existing.ConnectivityImpaired
+		n.ConnectivityReason = existing.ConnectivityReason
+		n.ConnectivityChangedMs = existing.ConnectivityChangedMs
+		n.RegisteredMs = existing.RegisteredMs
+	case errors.Is(err, store.ErrNotFound):
+		n.Healthy = true
+		n.HealthChangedMs = now
+		n.RegisteredMs = now
+	default:
+		return nil, err
+	}
+	n.OwnerTenantID = owner
+	n.Incarnation = incarnation
 	n.UpdatedMs = now
 	if err := tx.PutNode(ctx, n); err != nil {
 		return nil, storeError(err)

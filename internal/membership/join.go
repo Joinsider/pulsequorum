@@ -28,12 +28,17 @@ import (
 
 // JoinOptions describe a node joining an existing cluster.
 type JoinOptions struct {
-	Seeds   []string
-	Token   string
-	NodeID  string
-	Name    string
-	Address string
-	Version string
+	Seeds        []string
+	Token        string
+	NodeID       string
+	Name         string
+	Role         pki.Role // defaults to RoleVoter
+	Address      string
+	Region       string
+	Labels       map[string]string
+	Capabilities []string
+	Version      string
+	Incarnation  string
 	// MaxCommandVersion is announced to the cluster at join (ADR 0018). Zero
 	// means cluster.CommandVersion; tests override it.
 	MaxCommandVersion uint32
@@ -47,9 +52,11 @@ type JoinOptions struct {
 type Joined struct {
 	ClusterID string
 	// KEK is the cluster's generated master key, if it uses one (ADR 0011
-	// option B); empty if the cluster uses an external key.
+	// option B); empty if the cluster uses an external key or for probes.
 	KEK            []byte
 	KEKFingerprint string
+	// Voters holds the advertise addresses of current cluster voters.
+	Voters []string
 }
 
 // Permanent join errors: retrying with the same token cannot succeed.
@@ -62,6 +69,14 @@ var (
 // retries with backoff and jitter until ctx ends; a rejected token or an
 // address conflict ends it at once.
 func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
+	wantRole := opts.Role
+	if wantRole == "" {
+		wantRole = pki.RoleVoter
+	}
+	pbRole := pb.NodeInfo_ROLE_VOTER
+	if wantRole == pki.RoleProbe {
+		pbRole = pb.NodeInfo_ROLE_PROBE
+	}
 	tok, err := pki.ParseJoinToken(opts.Token)
 	if err != nil {
 		return Joined{}, fmt.Errorf("%w: %w", ErrJoinRejected, err)
@@ -77,8 +92,9 @@ func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
 	req := &pb.JoinRequest{
 		TokenId: tok.ID, TokenSecret: tok.Secret, CsrDer: csr,
 		Node: &pb.NodeInfo{
-			Id: opts.NodeID, Name: opts.Name, Role: pb.NodeInfo_ROLE_VOTER, AdvertiseAddr: opts.Address, Version: opts.Version,
-			MaxCommandVersion: maxVersion,
+			Id: opts.NodeID, Name: opts.Name, Role: pbRole, AdvertiseAddr: opts.Address,
+			Region: opts.Region, Labels: opts.Labels, Capabilities: opts.Capabilities,
+			Version: opts.Version, Incarnation: opts.Incarnation, MaxCommandVersion: maxVersion,
 		},
 	}
 	backoff := time.Second
@@ -86,10 +102,21 @@ func Join(ctx context.Context, opts JoinOptions) (Joined, error) {
 		seed := opts.Seeds[attempt%len(opts.Seeds)]
 		resp, pinned, err := joinOnce(ctx, seed, tok.Fingerprint, req)
 		if err == nil {
-			if err := install(opts, key, resp, pinned); err != nil {
+			if err := install(opts, wantRole, key, resp, pinned); err != nil {
 				return Joined{}, err
 			}
-			return Joined{ClusterID: resp.GetClusterId(), KEK: resp.GetKek(), KEKFingerprint: resp.GetKekFingerprint()}, nil
+			var voters []string
+			for _, v := range resp.GetVoters() {
+				if addr := v.GetAdvertiseAddr(); addr != "" {
+					voters = append(voters, addr)
+				}
+			}
+			return Joined{
+				ClusterID:      resp.GetClusterId(),
+				KEK:            resp.GetKek(),
+				KEKFingerprint: resp.GetKekFingerprint(),
+				Voters:         voters,
+			}, nil
 		}
 		if permanentJoinError(err) {
 			return Joined{}, fmt.Errorf("%w by %s: %s", ErrJoinRejected, seed, status.Convert(err).Message())
@@ -135,8 +162,8 @@ func joinOnce(ctx context.Context, seed, fingerprint string, req *pb.JoinRequest
 }
 
 // install checks what the cluster sent before storing it: the chain must end
-// in the pinned CA and carry this node's identity as voter.
-func install(opts JoinOptions, key *ecdsa.PrivateKey, resp *pb.JoinResponse, pinned *x509.Certificate) error {
+// in the pinned CA and carry this node's identity and expected role.
+func install(opts JoinOptions, wantRole pki.Role, key *ecdsa.PrivateKey, resp *pb.JoinResponse, pinned *x509.Certificate) error {
 	if pinned == nil || len(resp.GetCertificateChainDer()) < 2 {
 		return errors.New("join: incomplete certificate from the cluster")
 	}
@@ -153,8 +180,8 @@ func install(opts JoinOptions, key *ecdsa.PrivateKey, resp *pb.JoinResponse, pin
 	if err != nil {
 		return fmt.Errorf("join: %w", err)
 	}
-	if id.NodeID != opts.NodeID || id.Role != pki.RoleVoter {
-		return fmt.Errorf("join: certificate is for %s/%s, not this voter", id.Role, id.NodeID)
+	if id.NodeID != opts.NodeID || id.Role != wantRole {
+		return fmt.Errorf("join: certificate is for %s/%s, not this %s", id.Role, id.NodeID, wantRole)
 	}
 	// Install also checks that the certificate belongs to this node's key.
 	return opts.Cert.Install(key, clusterpki.Issued{

@@ -31,6 +31,7 @@
     "summary": {
       "label": "Cluster-Übersicht",
       "voters": "Voter",
+      "probes": "Probes",
       "quorum": "Quorum",
       "tolerates": "Ausfallsicher gegen",
       "leader": "Leader",
@@ -44,8 +45,17 @@
       "voter": "Voter",
       "nonVoter": "Nicht-Voter",
       "catchingUp": "holt auf",
+      "probe": "Probe",
+      "privateProbe": "Privat",
+      "publicProbe": "Öffentlich",
       "leaderBadge": "Leader",
       "selfBadge": "Dieser Node",
+      "region": "Region",
+      "scope": "Mandant",
+      "connectedVoter": "Verbundener Voter",
+      "probeBuffer": "Puffer",
+      "probeBufferValue": "{{ unacked }} unbestätigt, {{ bytes }}, {{ dropped }} verworfen",
+      "probeBufferOldest": "ältester {{ oldest }}",
       "healthLabel": "Zustand",
       "connectivity": {
         "impaired": "Konnektivität gestört",
@@ -91,6 +101,11 @@
       "title": "Node entfernen",
       "text": "„{{ name }}“ aus dem Cluster entfernen? Er nimmt dann nicht mehr an der Raft-Gruppe teil und erhält keine replizierten Daten mehr.",
       "confirm": "Node entfernen"
+    },
+    "removeProbe": {
+      "title": "Probe entfernen",
+      "text": "Probe „{{ name }}“ aus dem Cluster entfernen? Sie wird getrennt und muss sich für einen erneuten Beitritt wieder registrieren.",
+      "confirm": "Probe entfernen"
     },
     "replace": {
       "title": "Node ersetzen",

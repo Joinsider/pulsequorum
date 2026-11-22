@@ -1,0 +1,66 @@
+# Pulsequorum Probe (Pflichtenheft FA-PRB-01 bis FA-PRB-07, ADR 0034).
+# Start from the repository root:  docker compose -f deploy/probe/compose.yaml up -d
+# Guide: docs/betrieb/probe.md
+#
+# All variables below are read by internal/config/config.go. Unset variables
+# use the defaults documented there; the commented ones are optional.
+services:
+  probe:
+    image: ghcr.io/joinsider/pulsequorum:0.0
+    build:
+      context: ../..
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: probe
+      NODE_NAME: probe-eu-1
+      NODE_REGION: eu-central
+      # Optional key=value labels (comma-separated):
+      # NODE_LABELS: provider=hetzner,tier=edge
+      # Address(es) of cluster voter gRPC ports (comma-separated host:port or https://host:port):
+      CLUSTER_SEEDS: voter1.example.com:9443,voter2.example.com:9443
+      # Preferred: pass the one-time probe join token via a Compose secret file.
+      # For quick tests you can also set CLUSTER_JOIN_TOKEN (or JOIN_TOKEN) instead of JOIN_TOKEN_FILE.
+      JOIN_TOKEN_FILE: /run/secrets/join_token
+      # CLUSTER_JOIN_TOKEN: ""
+      # Local SQLite heartbeat buffer settings (ADR 0034):
+      PROBE_BUFFER_MAX_AGE: 24h
+      PROBE_BUFFER_MAX_BYTES: 100MiB
+      PROBE_ACK_RETAIN: 10m
+      # Session idle timeout after missing voter ticks (keepalive = 30s, tick = 5s):
+      PROBE_SESSION_TIMEOUT: 15s
+      # Health/Metrics listener & logging:
+      # HTTP_ADDR: ":8080"       # serves /healthz and /readyz only (no API/UI in probe role)
+      # METRICS_ADDR: ":9090"    # optional Prometheus /metrics endpoint
+      # METRICS_TOKEN_FILE: /run/secrets/metrics_token
+      # LOG_LEVEL: info          # debug | info | warn | error
+      LOG_FORMAT: json           # json | text
+      # ICMP_MODE: auto          # auto | privileged | unprivileged | off (docs/betrieb/icmp.md)
+      # SSRF_PROTECTION: auto    # auto | on | off
+    volumes:
+      # Holds node.id, node.crt/key, ca-bundle.pem, voters.json, and metrics.db buffer.
+      - probe-data:/data
+    secrets:
+      - join_token
+    # A probe initiates all connections outbound to voters; no inbound cluster or UI ports needed.
+    # Minimal resource footprint target (NFA-PERF-02: < 64 MiB RSS):
+    mem_limit: 128m
+    # ICMP without extra capabilities: allow unprivileged ping sockets for uid/gid 65532.
+    sysctls:
+      net.ipv4.ping_group_range: "65532 65532"
+    healthcheck:
+      test: ["CMD", "/pulsequorum", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+# Generate a join token with role "probe" via Admin API:
+#   POST /api/v1/admin/join-tokens  {"role":"probe"}
+# Store it once before first start:
+#   mkdir -p secrets && printf '%s\n' '<TOKEN>' > secrets/join_token && chmod 600 secrets/join_token
+secrets:
+  join_token:
+    file: ./secrets/join_token
+
+volumes:
+  probe-data:

@@ -24,8 +24,12 @@ func voter(id string, healthy bool, caps ...string) store.Node {
 	return store.Node{ID: id, Role: store.NodeRoleVoter, Healthy: healthy, Capabilities: caps}
 }
 
-func probe(id string, healthy bool) store.Node {
-	return store.Node{ID: id, Role: store.NodeRoleProbe, Healthy: healthy}
+func probe(id string, healthy bool, caps ...string) store.Node {
+	return store.Node{ID: id, Role: store.NodeRoleProbe, Healthy: healthy, Capabilities: caps}
+}
+
+func privateProbe(id, tenantID string, healthy bool, caps ...string) store.Node {
+	return store.Node{ID: id, Role: store.NodeRoleProbe, OwnerTenantID: tenantID, Healthy: healthy, Capabilities: caps}
 }
 
 // impaired returns a healthy voter whose connectivity the leader decided as impaired (ADR 0022).
@@ -37,6 +41,10 @@ func impaired(id string) store.Node {
 
 func monitorWith(id, monitorType string, a store.Assignment) store.Monitor {
 	return store.Monitor{ID: id, Type: monitorType, Assignment: a}
+}
+
+func monitorForTenant(id, tenantID, monitorType string, a store.Assignment) store.Monitor {
+	return store.Monitor{ID: id, TenantID: tenantID, Type: monitorType, Assignment: a}
 }
 
 // ADR 0022: count assignments skip impaired nodes like unhealthy ones; all and
@@ -96,10 +104,16 @@ func TestAssignerNodes(t *testing.T) {
 			want:     ids("v1", "v2"),
 		},
 		{
-			name:     "all skips probes until P5",
+			name:     "all includes public probes",
 			monitor:  monitorWith("m", "http", store.Assignment{Mode: "all"}),
 			registry: []store.Node{voter("v1", true), probe("p1", true)},
-			want:     ids("v1"),
+			want:     ids("p1", "v1"),
+		},
+		{
+			name:     "all excludes private probes even for own tenant",
+			monitor:  monitorForTenant("m", "t1", "http", store.Assignment{Mode: "all"}),
+			registry: []store.Node{voter("v1", true), probe("p1", true), privateProbe("pp1", "t1", true)},
+			want:     ids("p1", "v1"),
 		},
 		{
 			name:     "all filters by capability",
@@ -144,10 +158,34 @@ func TestAssignerNodes(t *testing.T) {
 			want:     ids("v1"),
 		},
 		{
-			name:     "nodes lists only known voters, each once",
+			name:     "count includes public probes and excludes private probes even for own tenant",
+			monitor:  monitorForTenant("m", "t1", "http", store.Assignment{Mode: "count", Count: 5}),
+			registry: []store.Node{voter("v1", true), probe("p1", true), probe("p2", false), privateProbe("pp1", "t1", true)},
+			want:     ids("p1", "v1"),
+		},
+		{
+			name:     "nodes lists known voters and public probes, each once",
 			monitor:  monitorWith("m", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v3", "v1", "v1", "ghost", "p1"}}),
 			registry: []store.Node{voter("v1", true), voter("v2", true), voter("v3", false), probe("p1", true)},
-			want:     ids("v1", "v3"),
+			want:     ids("p1", "v1", "v3"),
+		},
+		{
+			name:     "nodes includes own private probes and excludes other tenants",
+			monitor:  monitorForTenant("m", "t1", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v1", "p1", "pp-own", "pp-other"}}),
+			registry: []store.Node{voter("v1", true), probe("p1", true), privateProbe("pp-own", "t1", true), privateProbe("pp-other", "t2", true)},
+			want:     ids("p1", "pp-own", "v1"),
+		},
+		{
+			name:     "nodes with empty tenant excludes private probes",
+			monitor:  monitorWith("m", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v1", "pp1"}}),
+			registry: []store.Node{voter("v1", true), privateProbe("pp1", "t1", true)},
+			want:     ids("v1"),
+		},
+		{
+			name:     "nodes filters private probes by capability",
+			monitor:  monitorForTenant("m", "t1", "icmp", store.Assignment{Mode: "nodes", Nodes: []string{"pp-cap", "pp-nocap"}}),
+			registry: []store.Node{privateProbe("pp-cap", "t1", true, "icmp"), privateProbe("pp-nocap", "t1", true)},
+			want:     ids("pp-cap"),
 		},
 		{
 			name:     "nodes ignores health",
@@ -253,12 +291,15 @@ func TestAssignerRunsEmptyRegistry(t *testing.T) {
 
 func TestAssignerRunsAgreesWithNodes(t *testing.T) {
 	a := Assigner{Capability: assignCapability}
-	registry := []store.Node{voter("v1", true, "icmp"), voter("v2", false), voter("v3", true), probe("p1", true)}
+	registry := []store.Node{
+		voter("v1", true, "icmp"), voter("v2", false), voter("v3", true),
+		probe("p1", true), privateProbe("pp1", "t1", true), privateProbe("pp2", "t2", true),
+	}
 	monitors := []store.Monitor{
-		monitorWith("m1", "http", store.Assignment{Mode: "all"}),
+		monitorForTenant("m1", "t1", "http", store.Assignment{Mode: "all"}),
 		monitorWith("m2", "icmp", store.Assignment{Mode: "count", Count: 1}),
-		monitorWith("m3", "http", store.Assignment{Mode: "count", Count: 2}),
-		monitorWith("m4", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v2", "p1", "v3"}}),
+		monitorForTenant("m3", "t1", "http", store.Assignment{Mode: "count", Count: 2}),
+		monitorForTenant("m4", "t1", "http", store.Assignment{Mode: "nodes", Nodes: []string{"v2", "p1", "pp1", "pp2", "v3"}}),
 	}
 	for _, m := range monitors {
 		nodes := a.Nodes(m, registry)
@@ -275,6 +316,7 @@ func TestAssignerDeterministicAcrossRegistryOrder(t *testing.T) {
 	base := []store.Node{
 		voter("v1", true, "icmp"), voter("v2", true), voter("v3", false),
 		voter("v4", true, "icmp"), voter("v5", true), probe("p1", true),
+		privateProbe("pp1", "t1", true), privateProbe("pp2", "t2", true),
 	}
 	rng := rand.New(rand.NewSource(1)) //nolint:gosec // G404: reproducible shuffle in a test
 

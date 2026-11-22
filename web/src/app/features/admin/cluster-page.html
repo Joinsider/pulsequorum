@@ -62,6 +62,10 @@
           <dd>{{ s.voters }}</dd>
         </div>
         <div>
+          <dt>{{ t('admin.cluster.summary.probes') }}</dt>
+          <dd>{{ s.probes }}</dd>
+        </div>
+        <div>
           <dt>{{ t('admin.cluster.summary.quorum') }}</dt>
           <dd>{{ s.quorum }}</dd>
         </div>
@@ -92,7 +96,14 @@
                 <code class="node__id">{{ row.node.id }}</code>
               </div>
               <div class="badges">
-                @if (row.node.voter) {
+                @if (row.isProbe) {
+                  <span class="chip chip--probe">{{ t('admin.cluster.node.probe') }}</span>
+                  @if (row.node.ownerTenantId) {
+                    <span class="badge badge--private">{{
+                      t('admin.cluster.node.privateProbe')
+                    }}</span>
+                  }
+                } @else if (row.node.voter) {
                   <span class="chip chip--voter">{{ t('admin.cluster.node.voter') }}</span>
                 } @else {
                   <span class="chip">
@@ -111,10 +122,27 @@
             </div>
 
             <dl class="facts">
-              <div>
-                <dt>{{ t('admin.cluster.node.address') }}</dt>
-                <dd class="wrap">{{ row.node.address }}</dd>
-              </div>
+              @if (row.isProbe) {
+                <div>
+                  <dt>{{ t('admin.cluster.node.region') }}</dt>
+                  <dd class="wrap">{{ row.node.region || '–' }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('admin.cluster.node.scope') }}</dt>
+                  <dd class="wrap">
+                    {{ row.node.ownerTenantId ?? t('admin.cluster.node.publicProbe') }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('admin.cluster.node.connectedVoter') }}</dt>
+                  <dd class="wrap">{{ row.connectedVoterLabel ?? '–' }}</dd>
+                </div>
+              } @else {
+                <div>
+                  <dt>{{ t('admin.cluster.node.address') }}</dt>
+                  <dd class="wrap">{{ row.node.address }}</dd>
+                </div>
+              }
               <div>
                 <dt>{{ t('admin.cluster.node.healthLabel') }}</dt>
                 <dd [class]="'health health--' + row.health">
@@ -141,26 +169,48 @@
                 <dt>{{ t('admin.cluster.node.capabilities') }}</dt>
                 <dd class="wrap">{{ row.node.capabilities?.join(', ') || '–' }}</dd>
               </div>
-              <div>
-                <dt>{{ t('admin.cluster.node.replicationLag') }}</dt>
-                <dd [class]="'lag lag--' + row.lagSeverity">
-                  {{ row.lagText ?? '–' }}
-                  @if (row.node.replicationError; as error) {
-                    <span class="wrap error-text">
-                      {{ t('admin.cluster.node.replicationError', { error }) }}
-                    </span>
-                  }
-                </dd>
-              </div>
-              <div>
-                <dt>{{ t('admin.cluster.node.clockOffset') }}</dt>
-                <dd [class]="'clock clock--' + row.clockSeverity">
-                  {{ row.clockText ?? '–' }}
-                  @if (row.clockSeverity === 'warn') {
-                    <span class="wrap">{{ t('admin.cluster.node.clockWarning') }}</span>
-                  }
-                </dd>
-              </div>
+              @if (row.isProbe) {
+                <div>
+                  <dt>{{ t('admin.cluster.node.probeBuffer') }}</dt>
+                  <dd class="wrap">
+                    @if (row.bufferMetrics; as buf) {
+                      {{
+                        t('admin.cluster.node.probeBufferValue', {
+                          unacked: buf.unacked,
+                          bytes: buf.bytesText,
+                          dropped: buf.droppedTotal,
+                        })
+                      }}
+                      @if (buf.oldestText; as oldest) {
+                        ({{ t('admin.cluster.node.probeBufferOldest', { oldest }) }})
+                      }
+                    } @else {
+                      –
+                    }
+                  </dd>
+                </div>
+              } @else {
+                <div>
+                  <dt>{{ t('admin.cluster.node.replicationLag') }}</dt>
+                  <dd [class]="'lag lag--' + row.lagSeverity">
+                    {{ row.lagText ?? '–' }}
+                    @if (row.node.replicationError; as error) {
+                      <span class="wrap error-text">
+                        {{ t('admin.cluster.node.replicationError', { error }) }}
+                      </span>
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('admin.cluster.node.clockOffset') }}</dt>
+                  <dd [class]="'clock clock--' + row.clockSeverity">
+                    {{ row.clockText ?? '–' }}
+                    @if (row.clockSeverity === 'warn') {
+                      <span class="wrap">{{ t('admin.cluster.node.clockWarning') }}</span>
+                    }
+                  </dd>
+                </div>
+              }
               <div>
                 <dt>{{ t('admin.cluster.node.ssrfProtection') }}</dt>
                 <dd>
@@ -188,18 +238,20 @@
                   {{ t('admin.cluster.actions.remove') }}
                 </button>
               </span>
-              <span [matTooltip]="row.impact.blockedKey ? t(row.impact.blockedKey) : ''">
-                <button
-                  mat-stroked-button
-                  type="button"
-                  [disabled]="!!row.impact.blockedKey || busy()"
-                  [attr.aria-label]="t('admin.cluster.actions.replace') + ': ' + row.name"
-                  (click)="replace(row)"
-                >
-                  <app-icon name="refresh" size="1.125rem" />
-                  {{ t('admin.cluster.actions.replace') }}
-                </button>
-              </span>
+              @if (!row.isProbe) {
+                <span [matTooltip]="row.impact.blockedKey ? t(row.impact.blockedKey) : ''">
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    [disabled]="!!row.impact.blockedKey || busy()"
+                    [attr.aria-label]="t('admin.cluster.actions.replace') + ': ' + row.name"
+                    (click)="replace(row)"
+                  >
+                    <app-icon name="refresh" size="1.125rem" />
+                    {{ t('admin.cluster.actions.replace') }}
+                  </button>
+                </span>
+              }
             </div>
           </li>
         }

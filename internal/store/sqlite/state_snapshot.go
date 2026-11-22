@@ -36,6 +36,10 @@ const tenantAdminLevel = 8
 // write neither, so a rolling update does not look like divergence.
 const auditLevel = 9
 
+// probeCommandLevel is the command level of ADR 0034 / ADR 0035. Below it
+// nodes.owner_tenant_id and nodes.incarnation are left out of the fingerprint.
+const probeCommandLevel = 10
+
 const orderByTenantID = "tenant_id, id"
 
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
@@ -252,8 +256,11 @@ func fingerprint(ctx context.Context, tx *sql.Tx) (string, error) {
 			continue
 		}
 		var skip map[string]bool
-		if t.name == "tenants" && level < tenantAdminLevel {
+		switch {
+		case t.name == "tenants" && level < tenantAdminLevel:
 			skip = map[string]bool{"source": true}
+		case t.name == "nodes" && level < probeCommandLevel:
+			skip = map[string]bool{"owner_tenant_id": true, "incarnation": true}
 		}
 		if err := hashTable(ctx, tx, h, t.name, t.orderBy, skip); err != nil {
 			return "", fmt.Errorf("fingerprint %s: %w", t.name, err)

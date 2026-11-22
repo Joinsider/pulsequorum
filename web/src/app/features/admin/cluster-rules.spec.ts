@@ -8,9 +8,11 @@ import {
   clockSeverity,
   clusterErrorKey,
   faultTolerance,
+  formatBytes,
   formatDuration,
   formatOffset,
   healthOf,
+  isProbe,
   lagSeverity,
   nodeLabel,
   quorumOf,
@@ -80,6 +82,16 @@ describe('sortNodes', () => {
   it('falls back to the id when a node has no name', () => {
     const sorted = sortNodes([node('zz'), node('aa'), node('mm')]);
     expect(sorted.map((n) => n.id)).toEqual(['aa', 'mm', 'zz']);
+  });
+
+  it('puts probes after voters and non-voters, sorted by name', () => {
+    const sorted = sortNodes([
+      node('p2', { name: 'probe-z', voter: false, role: 'probe' }),
+      node('l1', { name: 'learner-1', voter: false }),
+      node('p1', { name: 'probe-a', voter: false, role: 'probe' }),
+      node('v1', { name: 'voter-1', leader: true }),
+    ]);
+    expect(sorted.map((n) => n.id)).toEqual(['v1', 'l1', 'p1', 'p2']);
   });
 
   it('does not modify the input array', () => {
@@ -166,6 +178,25 @@ describe('removalImpact', () => {
     const nodes = cluster(2);
     expect(removalImpact(nodes, nodes[1]).blockedKey).toBeNull();
   });
+
+  it('removing a probe has no quorum impact or risk warning even with two voters', () => {
+    const probe = node('p1', { voter: false, role: 'probe' });
+    const nodes = [...cluster(2), probe];
+    expect(removalImpact(nodes, probe)).toEqual({
+      blockedKey: null,
+      votersLeft: 2,
+      toleratesAfter: 0,
+      riskKey: null,
+    });
+  });
+});
+
+describe('isProbe', () => {
+  it('returns true only when role is probe', () => {
+    expect(isProbe(node('p1', { role: 'probe', voter: false }))).toBe(true);
+    expect(isProbe(node('v1', { role: 'voter' }))).toBe(false);
+    expect(isProbe(node('v2'))).toBe(false);
+  });
 });
 
 describe('healthOf', () => {
@@ -207,6 +238,19 @@ describe('formatDuration', () => {
     [7_200_000, '2 h'],
   ])('%s ms reads as "%s"', (ms, text) => {
     expect(formatDuration(ms)).toBe(text);
+  });
+  it.each([
+    [0, '0 B'],
+    [512, '512 B'],
+    [1023, '1023 B'],
+    [1024, '1 KB'],
+    [1536, '1.5 KB'],
+    [1024 * 1024, '1 MB'],
+    [1.25 * 1024 * 1024, '1.3 MB'],
+    [1024 * 1024 * 1024, '1 GB'],
+    [2.5 * 1024 * 1024 * 1024, '2.5 GB'],
+  ])('formatBytes(%s) reads as "%s"', (bytes, text) => {
+    expect(formatBytes(bytes)).toBe(text);
   });
 });
 

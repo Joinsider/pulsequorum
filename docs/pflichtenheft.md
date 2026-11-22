@@ -436,7 +436,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-PRB-01 | Probe verbindet sich ausgehend per gRPC/mTLS mit einem Voter aus `CLUSTER_SEEDS`; Failover über die Voter-Liste mit Backoff + Jitter. | M | P5 | Test: Voter-Ausfall → Probe wechselt < 30 s. |
 | FA-PRB-02 | Probe abonniert die ihr zugewiesenen Monitore (Stream) und erhält Änderungen innerhalb von 5 s. | M | P5 | Test. |
 | FA-PRB-03 | Heartbeats werden hochgeladen; bei Verbindungsverlust lokal gepuffert (begrenzt, Standard 24 h bzw. 100 MB) und nachgeliefert. | M | P5 | Test: 1 h offline → vollständige Nachlieferung. |
-| FA-PRB-04 **[neu]** | gRPC-Keepalive für NAT-Pfade: Client-Ping 30–60 s; Server erlaubt Pings ohne aktive Calls und mit passender Mindestrate; maximale Verbindungsdauer begrenzt. | M | P5 | Langzeittest hinter NAT (24 h). (PF-30) |
+| FA-PRB-04 **[neu]** | gRPC-Keepalive und Tick-Überwachung für NAT-Pfade: Client-Ping 30–60 s; Server erlaubt Pings ohne aktive Calls und mit passender Mindestrate; Anwendungs-Tick spätestens alle 5 s und automatisches Failover nach `PROBE_SESSION_TIMEOUT` (Standard 15 s); maximale Verbindungsdauer begrenzt. | M | P5 | Langzeittest hinter NAT (24 h). (PF-30) |
 | FA-PRB-05 | Private Probes (`owner_tenant_id`) prüfen nur Monitore ihres Mandanten; Registrierung durch `tenant-admin` über Join-Token mit Mandantenbindung. | M | P5 | Test. |
 | FA-PRB-06 | Probe-Offline wird als Systemalert (Plattform) bzw. Mandanten-Alert (private Probe) gemeldet. | M | P5 | Test. |
 | FA-PRB-07 | Probes sind keine Raft-Mitglieder und beeinflussen das Quorum nicht. | M | P5 | Test. |
@@ -632,14 +632,20 @@ Protobuf-Definitionen in `proto/`:
 |----------|---------|-----------|
 | `NODE_NAME` | Hostname | Anzeigename |
 | `NODE_ROLE` | `voter` | `voter` \| `probe` |
+| `NODE_REGION` | leer | Optionale Regionsbezeichnung (max. 64 Bytes, ADR 0034) |
+| `NODE_LABELS` | leer | Optionale Labels `key=value,key2=value2` (max. 32 Paare, ADR 0034) |
 | `DATA_DIR` | `/data` | Datenverzeichnis |
-| `HTTP_ADDR` | `:8080` | API/UI |
+| `HTTP_ADDR` | `:8080` | API/UI (Probe: nur `/healthz` und `/readyz`) |
 | `CLUSTER_ADDR` | `:9443` | Cluster-Port |
 | `PUBLIC_URL` | – | Öffentliche URL des Voters |
 | `CLUSTER_ADVERTISE` | `<NODE_NAME>:<Cluster-Port>` | Stabile Cluster-Adresse (DNS:Port) |
 | `RAFT_TIMEOUT` | `1s` | Raft-Heartbeat- und Election-Timeout (ADR 0012 A6) |
 | `CLUSTER_JOIN` / `CLUSTER_SEEDS` | – | Beitritt (Voter) / Seeds (Probe) |
-| `CLUSTER_JOIN_TOKEN` | – | Join-Token |
+| `CLUSTER_JOIN_TOKEN` / `JOIN_TOKEN` / `JOIN_TOKEN_FILE` | – | Einmaliges Join-Token (Datei bevorzugt) |
+| `PROBE_BUFFER_MAX_AGE` | `24h` | Maximale Pufferdauer unbestätigter Probe-Heartbeats (ADR 0034) |
+| `PROBE_BUFFER_MAX_BYTES` | `100MiB` | Maximale Puffergröße von `metrics.db` auf einer Probe (ADR 0034) |
+| `PROBE_ACK_RETAIN` | `10m` | Aufbewahrung bestätigter Probe-Heartbeats vor Löschung (ADR 0034) |
+| `PROBE_SESSION_TIMEOUT` | `15s` | Ausbleiben von Voter-Ticks bis zum automatischen Failover (ADR 0034) |
 | `AUTH_MODE` | `local` | `local` \| `zitadel` |
 | `AUTH_COOKIE_DOMAIN` | – | Domain des Refresh-Cookies (leer = nur dieser Host, ADR 0008) |
 | `ZITADEL_ISSUER` / `ZITADEL_AUDIENCE` | – | OIDC |
@@ -721,6 +727,7 @@ Ergebnis der Recherche (Okt. 2026). Jede Zeile nennt Problem, Bedeutung für Pul
 | PF-09 | Gemischte Versionen während Rolling Updates (neue Raft-Befehle, die alte Nodes nicht kennen). | FSM-Fehler auf alten Nodes. | FA-CLU-12 (Feature-Gates), NFA-MNT-04 |
 | PF-10 | Join ohne CA-Pinning = Trust-on-first-use; abgefangene Tokens. | Fremder Node im Cluster. | FA-PKI-02 (CA-Fingerprint im Token, einmalig, TTL, gehasht) |
 | PF-11 | Zertifikatsrotation wirkt nur bei neuen Handshakes; Clock-Skew macht gültige Zertifikate „noch nicht gültig“. | Verbindungsabbrüche, Ausfall nach Ablauf. | FA-PKI-03 (Callbacks, Max-Connection-Age, Backdating), FA-NODE-06 |
+| PF-30 | NAT-Gateways und Firewalls trennen langlebige gRPC-Streams ohne TCP-RST/FIN stillschweigend nach Inaktivität. | Stille hängende Probe-Streams ohne Konfig-Updates oder Messwert-Upload. | FA-PRB-04 (gRPC-Keepalive 30 s, 5-s-Anwendungs-Tick, `PROBE_SESSION_TIMEOUT` 15 s, automatisches Voter-Failover) |
 
 ### 12.2 Replikation und Zeit
 

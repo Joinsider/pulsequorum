@@ -21,6 +21,7 @@ import (
 
 	"github.com/joinsider/pulsequorum/internal/cluster"
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/store"
 )
 
 // Timings of the promotion (FA-CLU-03).
@@ -77,6 +78,7 @@ type StatusFunc func(ctx context.Context, address string) (*pb.GetStatusResponse
 // the new leader continues them idempotently (ADR 0012 A4).
 type Manager struct {
 	Raft   Raft
+	State  store.State
 	Status StatusFunc
 	// DialLeader returns a client for the leader at address (mTLS as voter).
 	// The caller closes the connection with the returned func.
@@ -367,6 +369,21 @@ func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, erro
 		}
 	}
 	if target == nil {
+		if m.State != nil {
+			if isProbe, err := m.isRegisteredProbe(ctx, nodeID); err != nil {
+				return Removal{}, err
+			} else if isProbe {
+				res, err := m.Raft.Apply(ctx, cluster.NewRevokeNode(uuid.NewString(), nodeID))
+				if err == nil {
+					err = res.Err
+				}
+				if err != nil {
+					return Removal{}, fmt.Errorf("revoking probe %s failed: %w", nodeID, err)
+				}
+				m.Log.Warn("probe removed from the cluster", "node_id", nodeID)
+				return Removal{VotersLeft: voters}, nil
+			}
+		}
 		return Removal{}, ErrUnknownNode
 	}
 	left := voters
@@ -397,4 +414,17 @@ func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, erro
 		out.Warning = fmt.Sprintf("%d voters: an even number tolerates no more failures than %d", left, left-1)
 	}
 	return out, nil
+}
+
+func (m *Manager) isRegisteredProbe(ctx context.Context, nodeID string) (bool, error) {
+	nodes, err := m.State.ListNodes(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, n := range nodes {
+		if n.ID == nodeID && n.Role == store.NodeRoleProbe {
+			return true, nil
+		}
+	}
+	return false, nil
 }

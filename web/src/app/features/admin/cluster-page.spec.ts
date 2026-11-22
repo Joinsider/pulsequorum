@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MatDialog } from '@angular/material/dialog';
+import { MatDialog, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { of, throwError } from 'rxjs';
@@ -190,7 +190,7 @@ describe('ClusterPage', () => {
     await render();
 
     const values = [...root().querySelectorAll('.summary dd')].map((el) => el.textContent?.trim());
-    expect(values).toEqual(['3', '2', '1', 'frankfurt-1', '–']);
+    expect(values).toEqual(['3', '0', '2', '1', 'frankfurt-1', '–']);
     expect(root().querySelector('.summary')).not.toBeNull();
   });
 
@@ -381,5 +381,159 @@ describe('ClusterPage', () => {
     await render();
 
     expect(root().textContent).not.toContain('admin.cluster.ssrfMismatch');
+  });
+
+  it('counts probes in summary without affecting voter or quorum metrics', async () => {
+    const publicProbe: ClusterNode = {
+      id: 'p-public-4444444444',
+      address: '',
+      voter: false,
+      leader: false,
+      self: false,
+      role: 'probe',
+      name: 'probe-eu-1',
+      region: 'eu-central',
+      connectedVoterId: 'n-leader-0000000000',
+      healthy: true,
+    };
+    api.listClusterNodes.mockReturnValue(of(listOf([...NODES, publicProbe])));
+    await render();
+
+    const values = [...root().querySelectorAll('.summary dd')].map((el) => el.textContent?.trim());
+    expect(values).toEqual(['3', '1', '2', '1', 'frankfurt-1', '–']);
+  });
+
+  it('renders probe cards with probe-specific facts and hides replace', async () => {
+    const publicProbe: ClusterNode = {
+      id: 'p-public-4444444444',
+      address: '',
+      voter: false,
+      leader: false,
+      self: false,
+      role: 'probe',
+      name: 'probe-eu-1',
+      region: 'eu-central',
+      connectedVoterId: 'n-leader-0000000000',
+      healthy: true,
+      version: '1.4.0',
+      maxCommandVersion: 2,
+      capabilities: ['icmp', 'http'],
+      ssrfProtection: true,
+      probeBuffer: {
+        unacked: 3,
+        bytes: 2048,
+        oldestUnackedMs: 12_000,
+        droppedTotal: 1,
+      },
+    };
+    const privateProbe: ClusterNode = {
+      id: 'p-priv-55555555555',
+      address: '',
+      voter: false,
+      leader: false,
+      self: false,
+      role: 'probe',
+      name: 'probe-tenant-1',
+      ownerTenantId: 'tenant-acme',
+      connectedVoterId: 'n-unknown-999999999',
+      healthy: true,
+    };
+    api.listClusterNodes.mockReturnValue(of(listOf([...NODES, publicProbe, privateProbe])));
+    await render();
+
+    const pubCard = cardFor('probe-eu-1');
+    expect(pubCard.querySelector('.chip--probe')?.textContent).toContain(
+      'admin.cluster.node.probe',
+    );
+    expect(pubCard.querySelector('.badge--private')).toBeNull();
+    expect(pubCard.textContent).toContain('eu-central');
+    expect(pubCard.textContent).toContain('admin.cluster.node.publicProbe');
+    expect(pubCard.textContent).toContain('frankfurt-1');
+    expect(pubCard.textContent).toContain('admin.cluster.node.probeBufferValue');
+    expect(pubCard.textContent).toContain('admin.cluster.node.probeBufferOldest');
+    // Voter-only facts are omitted on probes.
+    expect(pubCard.textContent).not.toContain('admin.cluster.node.address');
+    expect(pubCard.textContent).not.toContain('admin.cluster.node.replicationLag');
+    expect(pubCard.textContent).not.toContain('admin.cluster.node.clockOffset');
+    // Replace is hidden for probes; Remove is enabled.
+    expect(actionButton('probe-eu-1', 'remove').disabled).toBe(false);
+    expect(
+      pubCard.querySelector('button[aria-label="admin.cluster.actions.replace: probe-eu-1"]'),
+    ).toBeNull();
+
+    const privCard = cardFor('probe-tenant-1');
+    expect(privCard.querySelector('.badge--private')?.textContent).toContain(
+      'admin.cluster.node.privateProbe',
+    );
+    expect(privCard.textContent).toContain('tenant-acme');
+    // Unknown connectedVoterId falls back to shortId (first 8 chars).
+    expect(privCard.textContent).toContain('n-unknow');
+  });
+
+  it('removes a probe using isProbe dialog data', async () => {
+    const probe: ClusterNode = {
+      id: 'p-public-4444444444',
+      address: '',
+      voter: false,
+      leader: false,
+      self: false,
+      role: 'probe',
+      name: 'probe-eu-1',
+    };
+    api.listClusterNodes.mockReturnValue(of(listOf([...NODES, probe])));
+    dialogAnswers.push(true);
+    await render();
+
+    actionButton('probe-eu-1', 'remove').click();
+    await page().whenStable();
+
+    expect(dialog.open).toHaveBeenCalledWith(
+      RemoveNodeDialog,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          mode: 'remove',
+          nodeName: 'probe-eu-1',
+          isProbe: true,
+        }),
+      }),
+    );
+    expect(api.removeClusterNode).toHaveBeenCalledWith('p-public-4444444444');
+  });
+});
+
+describe('RemoveNodeDialog', () => {
+  it('uses probe removal copy and hides quorum impact when isProbe is true', async () => {
+    TestBed.configureTestingModule({
+      imports: [
+        RemoveNodeDialog,
+        TranslocoTestingModule.forRoot({
+          langs: { en: {} },
+          translocoConfig: { availableLangs: ['en'], defaultLang: 'en' },
+        }),
+      ],
+      providers: [
+        {
+          provide: MAT_DIALOG_DATA,
+          useValue: {
+            mode: 'remove',
+            nodeName: 'probe-eu-1',
+            isProbe: true,
+            votersLeft: 3,
+            toleratesAfter: 1,
+            riskKey: null,
+          },
+        },
+      ],
+    });
+    const dialogFixture = TestBed.createComponent(RemoveNodeDialog);
+    dialogFixture.detectChanges();
+    await dialogFixture.whenStable();
+
+    const el = dialogFixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('admin.cluster.removeProbe.title');
+    expect(el.textContent).toContain('admin.cluster.removeProbe.text');
+    expect(el.textContent).toContain('admin.cluster.removeProbe.confirm');
+    expect(el.querySelector('.impact')).toBeNull();
+    dialogFixture.destroy();
   });
 });

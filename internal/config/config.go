@@ -130,10 +130,29 @@ type Config struct {
 	// node with existing Raft state ignores it; without state and without
 	// ClusterJoin it bootstraps a new cluster (FA-CLU-02).
 	ClusterJoin []string
+	// ClusterSeeds lists host:port of voter API endpoints for probes to
+	// connect to (ADR 0034).
+	ClusterSeeds []string
 	// JoinToken or JoinTokenFile holds the one-time join token (FA-PKI-02).
 	// Never log it.
 	JoinToken     string
 	JoinTokenFile string
+	// NodeRegion is the optional region label of the node (NODE_REGION, ADR 0034).
+	NodeRegion string
+	// NodeLabels are optional key=value labels of the node (NODE_LABELS, ADR 0034).
+	NodeLabels map[string]string
+	// ProbeBufferMaxAge is how long unacknowledged probe results are kept
+	// in the local buffer (PROBE_BUFFER_MAX_AGE, ADR 0034).
+	ProbeBufferMaxAge time.Duration
+	// ProbeBufferMaxBytes is the maximum size of the local probe result
+	// buffer in bytes (PROBE_BUFFER_MAX_BYTES, ADR 0034).
+	ProbeBufferMaxBytes int64
+	// ProbeAckRetain is how long acknowledged probe results are retained
+	// before pruning (PROBE_ACK_RETAIN, ADR 0034).
+	ProbeAckRetain time.Duration
+	// ProbeSessionTimeout is how long a probe stream session may be idle
+	// before timing out (PROBE_SESSION_TIMEOUT, ADR 0034).
+	ProbeSessionTimeout time.Duration
 	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
 	RaftTimeout time.Duration
 	PublicURL   string
@@ -238,6 +257,7 @@ func Load(getenv func(string) string) (Config, error) {
 	errs = append(errs, loadSelfHealthAndDegraded(get, getenv, &cfg)...)
 	errs = append(errs, loadMetricsConfig(get, getenv, &cfg)...)
 	errs = append(errs, loadSystemAlertThresholds(get, getenv, &cfg)...)
+	errs = append(errs, loadProbe(get, getenv, &cfg)...)
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
@@ -377,9 +397,12 @@ func loadCluster(get func(string, string) string, getenv func(string) string, cf
 	errs = append(errs, joinErrs...)
 
 	cfg.JoinToken = getenv("JOIN_TOKEN")
+	if cfg.JoinToken == "" {
+		cfg.JoinToken = getenv("CLUSTER_JOIN_TOKEN")
+	}
 	cfg.JoinTokenFile = getenv("JOIN_TOKEN_FILE")
 	if cfg.JoinToken != "" && cfg.JoinTokenFile != "" {
-		errs = append(errs, errors.New("set either JOIN_TOKEN or JOIN_TOKEN_FILE, not both"))
+		errs = append(errs, errors.New("set either JOIN_TOKEN/CLUSTER_JOIN_TOKEN or JOIN_TOKEN_FILE, not both"))
 	}
 
 	raftTimeout, err := time.ParseDuration(get("RAFT_TIMEOUT", "1s"))
@@ -534,6 +557,112 @@ func loadSystemAlertThresholds(get func(string, string) string, getenv func(stri
 	return errs
 }
 
+func loadProbe(get func(string, string) string, getenv func(string) string, cfg *Config) []error {
+	var errs []error
+
+	seeds, seedErrs := parseClusterSeeds(getenv("CLUSTER_SEEDS"))
+	cfg.ClusterSeeds = seeds
+	errs = append(errs, seedErrs...)
+
+	cfg.NodeRegion = get("NODE_REGION", "")
+	if len(cfg.NodeRegion) > 64 {
+		errs = append(errs, fmt.Errorf("NODE_REGION: must be at most 64 bytes, got %d", len(cfg.NodeRegion)))
+	}
+
+	labels, err := parseNodeLabels(getenv("NODE_LABELS"))
+	if err != nil {
+		errs = append(errs, err)
+	}
+	cfg.NodeLabels = labels
+
+	cfg.ProbeBufferMaxAge, err = durationAbove(get("PROBE_BUFFER_MAX_AGE", "24h"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("PROBE_BUFFER_MAX_AGE: must be a duration above 0, got %q", getenv("PROBE_BUFFER_MAX_AGE")))
+	}
+
+	bufRaw := get("PROBE_BUFFER_MAX_BYTES", "100MiB")
+	bufBytes, err := parseByteSize(bufRaw)
+	if err != nil || bufBytes <= 0 {
+		errs = append(errs, fmt.Errorf("PROBE_BUFFER_MAX_BYTES: must be a size above 0 such as 100MiB or 100MB, got %q", bufRaw))
+	}
+	cfg.ProbeBufferMaxBytes = bufBytes
+
+	ackRaw := get("PROBE_ACK_RETAIN", "10m")
+	ackRetain, err := time.ParseDuration(ackRaw)
+	if err != nil || ackRetain < 0 {
+		errs = append(errs, fmt.Errorf("PROBE_ACK_RETAIN: must be a duration of 0 or more, got %q", ackRaw))
+	}
+	cfg.ProbeAckRetain = ackRetain
+
+	sessRaw := get("PROBE_SESSION_TIMEOUT", "15s")
+	sessTimeout, err := time.ParseDuration(sessRaw)
+	if err != nil || sessTimeout < time.Second {
+		errs = append(errs, fmt.Errorf("PROBE_SESSION_TIMEOUT: must be a duration of at least 1s, got %q", sessRaw))
+	}
+	cfg.ProbeSessionTimeout = sessTimeout
+
+	return errs
+}
+
+func parseClusterSeeds(raw string) ([]string, []error) {
+	var seeds []string
+	var errs []error
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.HasPrefix(entry, "http://") {
+			errs = append(errs, fmt.Errorf("CLUSTER_SEEDS: http:// is not allowed, got %q", entry))
+			continue
+		}
+		addr := strings.TrimPrefix(entry, "https://")
+		if strings.Contains(addr, "://") || strings.ContainsAny(addr, "/?#") {
+			errs = append(errs, fmt.Errorf("CLUSTER_SEEDS: entries must be host:port or https://host:port without path or query, got %q", entry))
+			continue
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil || host == "" || port == "" {
+			errs = append(errs, fmt.Errorf("CLUSTER_SEEDS: entries must be host:port or https://host:port, got %q", entry))
+			continue
+		}
+		seeds = append(seeds, addr)
+	}
+	return seeds, errs
+}
+
+func parseNodeLabels(raw string) (map[string]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	m := make(map[string]string)
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(entry, "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("NODE_LABELS: entries must be key=value with a non-empty key, got %q", entry)
+		}
+		if len(k) > 64 {
+			return nil, fmt.Errorf("NODE_LABELS: key %q must be at most 64 bytes", k)
+		}
+		if len(v) > 256 {
+			return nil, fmt.Errorf("NODE_LABELS: value for key %q must be at most 256 bytes", k)
+		}
+		if _, exists := m[k]; !exists && len(m) >= 32 {
+			return nil, fmt.Errorf("NODE_LABELS: at most 32 labels are allowed")
+		}
+		m[k] = v
+	}
+	if len(m) == 0 {
+		return nil, nil
+	}
+	return m, nil
+}
+
 // durationAbove parses a duration that must be greater than floor.
 func durationAbove(raw string, floor time.Duration) (time.Duration, error) {
 	d, err := time.ParseDuration(raw)
@@ -546,8 +675,8 @@ func durationAbove(raw string, floor time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
-// byteUnits are the suffixes of parseByteSize, longest first so that "MiB" is
-// not read as "B".
+// byteUnits are the suffixes of parseByteSize, longest first so that "MiB"
+// and "MB" are not read as "B".
 var byteUnits = []struct {
 	suffix string
 	factor int64
@@ -555,6 +684,9 @@ var byteUnits = []struct {
 	{"GiB", 1 << 30},
 	{"MiB", 1 << 20},
 	{"KiB", 1 << 10},
+	{"GB", 1_000_000_000},
+	{"MB", 1_000_000},
+	{"KB", 1_000},
 	{"B", 1},
 }
 

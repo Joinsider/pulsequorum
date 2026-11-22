@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/joinsider/pulsequorum/internal/degraded"
+	"github.com/joinsider/pulsequorum/internal/membership"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/replication"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
 	"github.com/joinsider/pulsequorum/internal/sysalert"
@@ -293,10 +295,54 @@ func (h *Host) measurePeer(ctx context.Context, p replication.Peer) {
 		ReceivedAt: t1,
 		Age:        time.Duration(st.GetWallClockUnixMs()-st.GetSelfCheckAtMs()) * time.Millisecond,
 	})
+	h.probeSessions.record(p.ID, st.GetProbeSessions(), t1)
 	offset, ok := estimateOffset(t0, t1, time.UnixMilli(st.GetWallClockUnixMs()))
 	if !ok {
 		h.log.Debug("clock sample discarded: round trip too long", "peer", p.ID, "rtt", t1.Sub(t0))
 		return
 	}
 	h.clocks.record(p.ID, clockSample{offset: offset, at: t1})
+}
+
+type peerProbeSessions struct {
+	sessions   []*pb.ProbeSession
+	answeredAt time.Time
+}
+
+type probeSessionTracker struct {
+	mu      sync.Mutex
+	byVoter map[string]peerProbeSessions
+}
+
+func (t *probeSessionTracker) record(voterID string, sessions []*pb.ProbeSession, at time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.byVoter == nil {
+		t.byVoter = map[string]peerProbeSessions{}
+	}
+	t.byVoter[voterID] = peerProbeSessions{sessions: sessions, answeredAt: at}
+}
+
+func (t *probeSessionTracker) snapshot(now time.Time) map[string]membership.ProbeSessionInfo {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]membership.ProbeSessionInfo)
+	for voterID, entry := range t.byVoter {
+		if now.Sub(entry.answeredAt) > clockMaxAge {
+			delete(t.byVoter, voterID)
+			continue
+		}
+		for _, s := range entry.sessions {
+			info := membership.ProbeSessionInfo{
+				NodeID:           s.GetNodeId(),
+				ConnectedVoterID: voterID,
+				ConnectedSinceMs: s.GetConnectedSinceMs(),
+				LastMessageMs:    s.GetLastMessageMs(),
+			}
+			if cur, ok := out[info.NodeID]; !ok || info.LastMessageMs > cur.LastMessageMs {
+				out[info.NodeID] = info
+			}
+		}
+	}
+	return out
 }

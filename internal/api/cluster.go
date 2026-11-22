@@ -181,6 +181,10 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 	if h.deps.SSRFProtectionByNode != nil {
 		ssrf = h.deps.SSRFProtectionByNode()
 	}
+	var probeSessions map[string]ProbeSessionView
+	if h.deps.ProbeSessions != nil {
+		probeSessions = h.deps.ProbeSessions()
+	}
 	view := clusterNodeView{
 		leaderID:   leaderID,
 		self:       self,
@@ -191,11 +195,13 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 		now:        h.deps.Now(),
 	}
 	nodes := make([]gen.ClusterNode, 0, len(members))
+	memberSet := make(map[string]bool, len(members))
 	voters := 0
 	// Command versions of the registered voters decide whether a rolling
 	// update is in progress (ADR 0018, section 7).
 	var voterVersions []uint32
 	for _, m := range members {
+		memberSet[m.ID] = true
 		if m.Voter {
 			voters++
 		}
@@ -204,6 +210,12 @@ func (h *Handlers) ListClusterNodes(ctx context.Context, _ gen.ListClusterNodesR
 			voterVersions = append(voterVersions, maxCmd)
 		}
 		nodes = append(nodes, node)
+	}
+	for _, n := range registry {
+		if n.Role != store.NodeRoleProbe || memberSet[n.ID] {
+			continue
+		}
+		nodes = append(nodes, buildProbeClusterNode(n, probeSessions[n.ID]))
 	}
 	warnings := clusterWarnings(voters)
 	level := int32(min(cluster.EffectiveCommandLevel(commandLevel), math.MaxInt32))
@@ -232,8 +244,10 @@ func registeredNodesByID(registry []store.Node) map[string]store.Node {
 }
 
 func buildClusterNode(m cluster.Member, view clusterNodeView) (gen.ClusterNode, uint32, bool) {
+	role := gen.ClusterNodeRoleVoter
 	node := gen.ClusterNode{
 		Id: m.ID, Address: m.Address, Voter: m.Voter, Leader: m.ID == view.leaderID, Self: m.ID == view.self,
+		Role: &role,
 	}
 	var maxCmd uint32
 	var hasVoterVersion bool
@@ -254,6 +268,39 @@ func buildClusterNode(m cluster.Member, view clusterNodeView) (gen.ClusterNode, 
 		applyPeerStatus(&node, ps, view.now)
 	}
 	return node, maxCmd, hasVoterVersion
+}
+
+func buildProbeClusterNode(n store.Node, sess ProbeSessionView) gen.ClusterNode {
+	role := gen.ClusterNodeRoleProbe
+	node := gen.ClusterNode{
+		Id:   n.ID,
+		Role: &role,
+	}
+	applyRegisteredNode(&node, n)
+	if n.Region != "" {
+		r := n.Region
+		node.Region = &r
+	}
+	if n.OwnerTenantID != "" {
+		o := n.OwnerTenantID
+		node.OwnerTenantId = &o
+	}
+	if sess.ConnectedVoterID != "" {
+		v := sess.ConnectedVoterID
+		node.ConnectedVoterId = &v
+	}
+	if sess.Buffer != nil {
+		buf := gen.ProbeBufferStatus{
+			Bytes:        sess.Buffer.GetBytes(),
+			Unacked:      int64(min(sess.Buffer.GetUnacked(), math.MaxInt64)),
+			DroppedTotal: int64(min(sess.Buffer.GetDroppedTotal(), math.MaxInt64)),
+		}
+		if oldest := sess.Buffer.GetOldestUnackedMs(); oldest != 0 {
+			buf.OldestUnackedMs = &oldest
+		}
+		node.ProbeBuffer = &buf
+	}
+	return node
 }
 
 func applyRegisteredNode(node *gen.ClusterNode, n store.Node) {

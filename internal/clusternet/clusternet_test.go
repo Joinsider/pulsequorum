@@ -145,6 +145,14 @@ func (stubCluster) GetStatus(context.Context, *pb.GetStatusRequest) (*pb.GetStat
 	return &pb.GetStatusResponse{NodeId: "srv"}, nil
 }
 
+type stubProbe struct {
+	pb.UnimplementedProbeServiceServer
+}
+
+func (stubProbe) Subscribe(_ *pb.SubscribeRequest, s grpc.ServerStreamingServer[pb.SubscribeResponse]) error {
+	return s.Send(&pb.SubscribeResponse{FullSnapshot: true})
+}
+
 func TestGRPCAuthorization(t *testing.T) {
 	f := newFixture(t)
 	m := f.listen(t, f.holder(t, "srv", pki.RoleVoter))
@@ -153,9 +161,11 @@ func TestGRPCAuthorization(t *testing.T) {
 		pb.ClusterService_RenewCertificate_FullMethodName:     AnyNode,
 		pb.ClusterService_GetStatus_FullMethodName:            VoterOnly,
 		pb.ReplicationService_StreamHeartbeats_FullMethodName: VoterOnly,
+		pb.ProbeService_Subscribe_FullMethodName:              ProbeOnly,
 	})...)
 	pb.RegisterClusterServiceServer(srv, stubCluster{})
 	pb.RegisterReplicationServiceServer(srv, stubReplication{})
+	pb.RegisterProbeServiceServer(srv, stubProbe{})
 	go func() { _ = srv.Serve(m.GRPCListener()) }()
 	t.Cleanup(srv.Stop)
 
@@ -230,6 +240,24 @@ func TestGRPCAuthorization(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	_, err = pb.NewClusterServiceClient(conn).GetStatus(ctx, &pb.GetStatusRequest{})
 	expect("voter client to probe server", err, codes.Unavailable)
+
+	// ProbeOnly admits probe certificates and denies voters and anonymous callers.
+	subErr := func(cfg *tls.Config) error {
+		c, err := grpc.NewClient(m.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = c.Close() }()
+		st, err := pb.NewProbeServiceClient(c).Subscribe(ctx, &pb.SubscribeRequest{})
+		if err != nil {
+			return err
+		}
+		_, err = st.Recv()
+		return err
+	}
+	expect("anonymous ProbeService.Subscribe", subErr(noClientCert(f, ALPNGRPC)), codes.Unauthenticated)
+	expect("voter ProbeService.Subscribe", subErr(voterCfg), codes.PermissionDenied)
+	expect("probe ProbeService.Subscribe", subErr(probeCfg), codes.OK)
 }
 
 var _ net.Listener = (*chanListener)(nil)

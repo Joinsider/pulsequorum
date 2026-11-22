@@ -286,6 +286,54 @@ func TestNodeCertificateLifecycle(t *testing.T) {
 	}
 }
 
+func TestNodeCertBundlePersistence(t *testing.T) {
+	dir := t.TempDir()
+	ca1, err := pki.NewCA("c1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca2, err := pki.NewCA("c1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := &NodeCert{DataDir: dir, NodeID: "p1"}
+	key, csrDER, err := nc.NewCSR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := ca1.Issue(csrDER, pki.Identity{ClusterID: "c1", NodeID: "p1", Role: pki.RoleProbe}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued := Issued{
+		ChainDER:  [][]byte{leaf.Raw, ca1.Cert.Raw},
+		BundleDER: [][]byte{ca1.Cert.Raw, ca2.Cert.Raw},
+	}
+	if err := nc.Install(key, issued); err != nil {
+		t.Fatal(err)
+	}
+	if got := nc.IssuerFingerprint(); got != pki.Fingerprint(ca1.Cert) {
+		t.Errorf("IssuerFingerprint = %q, want %q", got, pki.Fingerprint(ca1.Cert))
+	}
+	if got := len(nc.Bundle()); got != 2 {
+		t.Fatalf("Bundle len = %d, want 2", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, tlsDir, bundleFile)); err != nil {
+		t.Fatalf("ca-bundle.pem missing: %v", err)
+	}
+
+	reloaded := &NodeCert{DataDir: dir, NodeID: "p1"}
+	if err := reloaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Bundle()) != 2 {
+		t.Fatalf("reloaded Bundle len = %d, want 2", len(reloaded.Bundle()))
+	}
+	if len(reloaded.BundleFingerprints()) != 2 {
+		t.Fatalf("reloaded BundleFingerprints = %v", reloaded.BundleFingerprints())
+	}
+}
+
 func handshake(t *testing.T, server, client *tls.Config) (srvErr, cliErr error) {
 	t.Helper()
 	a, b := net.Pipe()
