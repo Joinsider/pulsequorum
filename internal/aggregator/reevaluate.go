@@ -35,9 +35,10 @@ type Change struct {
 // ReevaluateGap; heartbeats of other monitors or tenants are ignored.
 //
 // Slots inside a maintenance window (maintenance may be nil) reset the streaks
-// and are skipped, as in the live evaluation. PAUSED and MAINTENANCE are never
-// produced. The result holds the changes in slot order. A non-positive interval
-// yields none.
+// and are skipped, as in the live evaluation; the first slot after such a window
+// starts from PENDING, as the maintenance controller sets it when the window
+// ends. PAUSED and MAINTENANCE are never produced. The result holds the changes
+// in slot order. A non-positive interval yields none.
 //
 // Incident IDs are derived from the monitor and the start of the DOWN episode,
 // so the same input gives the same result (see incidentID).
@@ -66,11 +67,18 @@ func Reevaluate(m store.Monitor, from store.MonitorStatus, fromMs, toMs int64, h
 		k++
 	}
 	var out []Change
+	afterMaintenance := false
 	for ; w.start(k) < toMs; k++ {
 		startMs := w.start(k)
 		if maintenance != nil && maintenance(time.UnixMilli(startMs)) {
 			t.resetStreaks()
+			afterMaintenance = true
 			continue
+		}
+		if afterMaintenance {
+			// The controller moved the monitor from MAINTENANCE to PENDING.
+			t.status = store.StatusPending
+			afterMaintenance = false
 		}
 		reports := w.reporters(k, ids)
 		to, since, change := decide(t, m, startMs, reports)

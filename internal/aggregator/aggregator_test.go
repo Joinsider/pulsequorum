@@ -365,6 +365,42 @@ func TestMaintenanceRoundsResetStreaks(t *testing.T) {
 	r.wantCommands(1)
 }
 
+// TestMaintenanceEndRecoversToUp checks that a monitor whose maintenance window
+// ended recovers to UP with the first UP round. The controller moves the
+// replicated status to MAINTENANCE and back to PENDING (FA-MNT-02); the
+// aggregator must follow it, or its stale UP tracker would swallow the UP round.
+func TestMaintenanceEndRecoversToUp(t *testing.T) {
+	r := newRig(t, doc(0, 1, false))
+	r.a.opts.Maintenance = func(_ store.Monitor, at time.Time) bool {
+		return at.UnixMilli() >= r.slot(1) && at.UnixMilli() < r.slot(3)
+	}
+	// setState applies a status change as the maintenance controller does.
+	setState := func(from, to store.MonitorStatus, sinceMs int64) {
+		t.Helper()
+		cmd := cluster.NewSetMonitorState(cluster.StateChange{TenantID: cluster.DefaultTenantID, MonitorID: "m1",
+			From: from, To: to, SinceMs: sinceMs, SenderNodeID: nodeID})
+		if _, err := r.f.node.Apply(r.f.ctx, cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.deliver(r.slot(0)+100, r.hb(nodeID, 0, 100, store.CheckUp))
+	r.f.expect(store.StatusUp, r.slot(0))
+
+	setState(store.StatusUp, store.StatusMaintenance, r.slot(1))
+	r.tick(r.slot(1) + 15000)
+	r.tick(r.slot(2) + 15000)
+
+	// The window ends: the controller sets PENDING, then slot 3 reports UP.
+	setState(store.StatusMaintenance, store.StatusPending, r.slot(3))
+	// The aggregator drops the watch at the first round after the window; it
+	// reloads the status once the round is due, at its deadline.
+	r.deliver(r.slot(3)+100, r.hb(nodeID, 3, 100, store.CheckUp))
+	r.tick(r.slot(3) + 15000)
+	r.f.expect(store.StatusUp, r.slot(3))
+	r.wantCommands(2)
+}
+
 // TestTenantBoundary checks that a heartbeat of another tenant with the same
 // monitor ID is ignored (FA-TEN, ADR 0005).
 func TestTenantBoundary(t *testing.T) {
