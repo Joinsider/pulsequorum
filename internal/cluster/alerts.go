@@ -216,6 +216,10 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 			if level < FlappingCommandLevel {
 				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
 			}
+		case store.EventProbeOffline:
+			if tenantID == store.SystemTenantID || level < ProbeCommandLevel {
+				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
+			}
 		case store.EventSystem:
 			if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
 				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)

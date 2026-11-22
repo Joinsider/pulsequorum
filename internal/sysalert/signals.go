@@ -28,6 +28,7 @@ const (
 	KindIncarnation    = "incarnation_changed"
 	KindFingerprint    = "fingerprint_mismatch"
 	KindMixedVersions  = "mixed_versions"
+	KindProbeOffline   = "probe_offline"
 	KindQuorum         = "quorum"
 )
 
@@ -35,7 +36,7 @@ const (
 // without an active alert.
 var Kinds = []string{
 	KindVoterOffline, KindNodeImpaired, KindReplicationLag, KindClockSkew, KindDiskLow, KindWALLarge,
-	KindRaftStale, KindCertExpiry, KindIncarnation, KindFingerprint, KindMixedVersions, KindQuorum,
+	KindRaftStale, KindCertExpiry, KindIncarnation, KindFingerprint, KindMixedVersions, KindProbeOffline, KindQuorum,
 }
 
 // Subjects that are not node IDs.

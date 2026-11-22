@@ -613,6 +613,10 @@ func (h *Handlers) viewTenant(ctx context.Context, tn store.Tenant) (tenantView,
 	if err != nil {
 		return tenantView{}, fmt.Errorf("usage of tenant %s: %w", tn.ID, err)
 	}
+	usage.PrivateProbes, err = h.privateProbeCount(ctx, tn.ID)
+	if err != nil {
+		return tenantView{}, fmt.Errorf("private probes of tenant %s: %w", tn.ID, err)
+	}
 	eff := tenant.Effective(planLimits, overrides)
 	return tenantView{tn: tn, overrides: overrides, effective: eff, usage: usage, exceeded: exceededLimits(eff, usage)}, nil
 }
@@ -629,6 +633,9 @@ func exceededLimits(eff tenant.Limits, u store.TenantUsage) []gen.LimitExcess {
 	}
 	if eff.MaxChannels != nil && u.Channels > *eff.MaxChannels {
 		out = append(out, gen.LimitExcess{Limit: gen.MaxChannels, Allowed: *eff.MaxChannels, Actual: u.Channels})
+	}
+	if eff.MaxPrivateProbes != nil && u.PrivateProbes > *eff.MaxPrivateProbes {
+		out = append(out, gen.LimitExcess{Limit: gen.MaxPrivateProbes, Allowed: *eff.MaxPrivateProbes, Actual: u.PrivateProbes})
 	}
 	return out
 }
@@ -691,7 +698,8 @@ func apiLimits(l tenant.Limits) gen.Limits {
 }
 
 func apiUsage(u store.TenantUsage) gen.TenantUsage {
-	out := gen.TenantUsage{Monitors: u.Monitors, Channels: u.Channels}
+	pp := u.PrivateProbes
+	out := gen.TenantUsage{Monitors: u.Monitors, Channels: u.Channels, PrivateProbes: &pp}
 	if u.MinIntervalSeconds > 0 {
 		m := u.MinIntervalSeconds
 		out.MinIntervalSeconds = &m

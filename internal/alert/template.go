@@ -31,6 +31,7 @@ var Variables = []string{
 	"flapping", "changeCount", "channel.id", "channel.name", "channel.error",
 	"verdict", "sender.nodeId", "sender.reachableVoters", "sender.totalVoters",
 	"system.kind", "system.subject", "system.active", "system.level",
+	"probe.id", "probe.name", "probe.active",
 }
 
 // flappingWindow names the window of the flapping rule (ADR 0023, FA-ALR-06).
@@ -67,6 +68,9 @@ func values(p cluster.AlertPayload) map[string]any {
 		"system.subject":         systemOf(p).Subject,
 		"system.active":          systemOf(p).Active,
 		"system.level":           systemOf(p).Level,
+		"probe.id":               probeOf(p).ID,
+		"probe.name":             probeOf(p).Name,
+		"probe.active":           probeOf(p).Active,
 	}
 }
 
@@ -76,6 +80,14 @@ func systemOf(p cluster.AlertPayload) cluster.SystemAlertInfo {
 		return cluster.SystemAlertInfo{}
 	}
 	return *p.System
+}
+
+// probeOf returns the probe alert of p, or the zero value for other events (ADR 0035).
+func probeOf(p cluster.AlertPayload) cluster.ProbeAlertInfo {
+	if p.Probe == nil {
+		return cluster.ProbeAlertInfo{}
+	}
+	return *p.Probe
 }
 
 // senderOf returns the sender view of p, or the zero view if p has none.
@@ -97,6 +109,7 @@ const DefaultTemplate = `{"alertId":"{{alertId}}","event":"{{event}}","status":"
 	`"channel":{"id":"{{channel.id}}","name":"{{channel.name}}","error":"{{channel.error}}"},` +
 	`"system":{"kind":"{{system.kind}}","subject":"{{system.subject}}","active":"{{system.active}}",` +
 	`"level":"{{system.level}}"},` +
+	`"probe":{"id":"{{probe.id}}","name":"{{probe.name}}","active":"{{probe.active}}"},` +
 	`"message":"{{message}}"}`
 
 // ValidateTemplate checks that a template is JSON and uses known placeholders
@@ -215,6 +228,8 @@ func Text(p cluster.AlertPayload) string {
 		return channelFailedText(p)
 	case store.EventSystem:
 		return systemText(p)
+	case store.EventProbeOffline:
+		return probeOfflineText(p)
 	}
 	if s, ok := verdictSentence(p); ok {
 		if p.Verdict == store.VerdictFalseAlarm {
@@ -325,6 +340,35 @@ func systemText(p cluster.AlertPayload) string {
 	}
 }
 
+func probeDisplayName(p cluster.AlertPayload) string {
+	pr := probeOf(p)
+	if pr.Name != "" {
+		return pr.Name
+	}
+	if pr.ID != "" {
+		return pr.ID
+	}
+	return "probe"
+}
+
+// probeOfflineText renders a private probe offline/online alert (FA-PRB-06,
+// ADR 0035): probe name, status, timestamp, and optional sender line. Never
+// includes addresses or error texts.
+func probeOfflineText(p cluster.AlertPayload) string {
+	name := probeDisplayName(p)
+	var b strings.Builder
+	if probeOf(p).Active {
+		fmt.Fprintf(&b, "🔴 Probe offline: %s", name)
+	} else {
+		fmt.Fprintf(&b, "🟢 Probe online: %s", name)
+	}
+	fmt.Fprintf(&b, "\nSince %s", sinceText(p.SinceMs))
+	if p.Sender != nil {
+		b.WriteString("\n" + senderLine(p.Sender))
+	}
+	return b.String()
+}
+
 // title is the Shoutrrr title of a single alert.
 func title(p cluster.AlertPayload) string {
 	switch p.Event {
@@ -337,6 +381,11 @@ func title(p cluster.AlertPayload) string {
 		return "Channel failed: " + p.ChannelName
 	case store.EventSystem:
 		return systemText(p)
+	case store.EventProbeOffline:
+		if probeOf(p).Active {
+			return "Probe offline: " + probeDisplayName(p)
+		}
+		return "Probe online: " + probeDisplayName(p)
 	}
 	if s, ok := verdictSentence(p); ok {
 		return s
@@ -380,6 +429,12 @@ func bundleLine(p cluster.AlertPayload) string {
 		return fmt.Sprintf("channel %s failed: %s", p.ChannelName, p.ChannelError)
 	case store.EventSystem:
 		return systemText(p)
+	case store.EventProbeOffline:
+		state := "online"
+		if probeOf(p).Active {
+			state = "offline"
+		}
+		return fmt.Sprintf("probe %s: %s at %s", probeDisplayName(p), state, sinceText(p.SinceMs))
 	}
 	if s, ok := verdictSentence(p); ok {
 		return s

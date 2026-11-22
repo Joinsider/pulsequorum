@@ -143,6 +143,7 @@
       "incarnation_changed": "Inkarnationswechsel",
       "fingerprint_mismatch": "FSM-Fingerprint weicht ab",
       "mixed_versions": "Gemischte Versionen",
+      "probe_offline": "Probe offline",
       "quorum": "Quorum",
       "test": "Testalarm"
     }
@@ -192,12 +193,14 @@
     "usage": {
       "monitors": "{{ used }} / {{ limit }} Monitore",
       "channels": "{{ used }} / {{ limit }} Kanäle",
+      "privateProbes": "{{ used }} / {{ limit }} private Probes",
       "interval": "Kürzestes Intervall {{ used }} (mindestens {{ limit }})"
     },
     "exceededTitle": "Limits überschritten: Bestehendes läuft weiter, Neues wird abgelehnt.",
     "exceeded": {
       "maxMonitors": "{{ actual }} Monitore, erlaubt sind {{ allowed }}",
       "maxChannels": "{{ actual }} Kanäle, erlaubt sind {{ allowed }}",
+      "maxPrivateProbes": "{{ actual }} private Probes, erlaubt sind {{ allowed }}",
       "minIntervalSeconds": "Kürzestes Intervall {{ actual }} s, mindestens {{ allowed }} s"
     },
     "suspend": "Sperren",

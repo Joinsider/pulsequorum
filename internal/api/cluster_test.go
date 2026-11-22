@@ -32,6 +32,7 @@ type fakeClusterAdmin struct {
 	gotRole   pki.Role
 	gotTenant string
 	gotTTL    time.Duration
+	gotActor  *pb.Actor
 	tokenCall int
 
 	removal    membership.Removal
@@ -46,9 +47,9 @@ type fakeClusterAdmin struct {
 	selfID     string
 }
 
-func (f *fakeClusterAdmin) CreateJoinToken(_ context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error) {
+func (f *fakeClusterAdmin) CreateJoinToken(_ context.Context, role pki.Role, tenantID string, ttl time.Duration, actor *pb.Actor) (string, time.Time, error) {
 	f.tokenCall++
-	f.gotRole, f.gotTenant, f.gotTTL = role, tenantID, ttl
+	f.gotRole, f.gotTenant, f.gotTTL, f.gotActor = role, tenantID, ttl, actor
 	return f.token, f.expires, f.tokenErr
 }
 

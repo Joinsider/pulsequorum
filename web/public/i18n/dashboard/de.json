@@ -69,6 +69,7 @@
     "rows": {
       "monitors": "Monitore",
       "channels": "Kanäle",
+      "privateProbes": "Private Probes",
       "interval": "Kürzestes Intervall"
     },
     "count": "{{ used }} / {{ limit }}",
@@ -79,11 +80,13 @@
     "hints": {
       "reached": {
         "monitors": "Limit für Monitore erreicht. Lösche einen Monitor oder bitte einen Administrator um einen größeren Plan.",
-        "channels": "Limit für Kanäle erreicht. Lösche einen Kanal oder bitte einen Administrator um einen größeren Plan."
+        "channels": "Limit für Kanäle erreicht. Lösche einen Kanal oder bitte einen Administrator um einen größeren Plan.",
+        "privateProbes": "Limit für private Probes erreicht. Entferne eine Probe oder bitte einen Administrator um einen größeren Plan."
       },
       "exceeded": {
         "monitors": "Mehr Monitore als der Plan erlaubt. Bestehende laufen weiter, neue werden abgelehnt.",
         "channels": "Mehr Kanäle als der Plan erlaubt. Bestehende laufen weiter, neue werden abgelehnt.",
+        "privateProbes": "Mehr private Probes als der Plan erlaubt. Bestehende laufen weiter, neue Join-Tokens werden abgelehnt.",
         "interval": "Manche Monitore prüfen häufiger, als der Plan erlaubt. Sie laufen weiter; neue oder kürzere Intervalle werden abgelehnt."
       }
     }

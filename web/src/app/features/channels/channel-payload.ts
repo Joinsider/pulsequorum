@@ -75,6 +75,7 @@ export const EVENT_ORDER: readonly TenantEvent[] = [
   NotificationEvent.partial,
   NotificationEvent.flapping,
   NotificationEvent.channel_failed,
+  NotificationEvent.probe_offline,
 ];
 
 /** Selected events in API order. */
@@ -91,5 +92,6 @@ export function eventFlags(events: readonly NotificationEvent[]): Record<TenantE
     partial: events.includes(NotificationEvent.partial),
     flapping: events.includes(NotificationEvent.flapping),
     channel_failed: events.includes(NotificationEvent.channel_failed),
+    probe_offline: events.includes(NotificationEvent.probe_offline),
   };
 }

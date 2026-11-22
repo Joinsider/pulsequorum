@@ -1,0 +1,54 @@
+{
+  "title": "Private probes",
+  "refresh": "Refresh",
+  "createToken": "Create join token",
+  "listLabel": "Private probes",
+  "quota": "{{ used }} / {{ limit }} private probes used (including open tokens)",
+  "unlimited": "unlimited",
+  "limitReached": "Limit reached.",
+  "empty": "No private probes registered yet.",
+  "emptyHint": "Create a join token and start a probe inside your private network to monitor internal targets.",
+  "loadError": "The private probes could not be loaded.",
+  "removed": "Private probe removed and revoked.",
+  "node": {
+    "healthy": "Healthy",
+    "unhealthy": "Unhealthy",
+    "offlineAlert": "Offline alert active",
+    "region": "Region",
+    "version": "Version",
+    "capabilities": "Capabilities",
+    "lastContact": "Last contact",
+    "buffer": "Buffer",
+    "bufferValue": "{{ unacked }} unacked, {{ bytes }}, {{ dropped }} dropped",
+    "bufferOldest": "oldest {{ oldest }}"
+  },
+  "actions": {
+    "remove": "Remove"
+  },
+  "remove": {
+    "title": "Remove private probe?",
+    "text": "The probe will be disconnected immediately and its client certificate revoked. It cannot rejoin without a new token.",
+    "confirm": "Remove probe"
+  },
+  "tokenDialog": {
+    "title": "Create private probe token",
+    "intro": "Issues a one-time join token bound to your tenant. The token is shown once and expires after the chosen lifetime.",
+    "ttl": "Valid for (minutes)",
+    "ttlHint": "{{ min }} to {{ max }} minutes",
+    "create": "Create token",
+    "token": "Join token",
+    "onceOnly": "Copy this token now. It is shown only once and cannot be retrieved later.",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "expires": "Expires {{ when }}",
+    "howTo": "Write the token to /run/secrets/join-token on the probe host and start with:",
+    "fileHint": "Private probes ignore voter SSRF policies by default (SSRF_PROTECTION=auto resolves to off) so internal targets can be monitored when assigned explicitly.",
+    "done": "Done",
+    "error": {
+      "forbidden": "You cannot create a private probe join token.",
+      "invalid": "The server rejected the token request.",
+      "unavailable": "The cluster is currently unavailable. Try again shortly.",
+      "generic": "The token could not be created."
+    }
+  }
+}

@@ -49,6 +49,8 @@ tags:
     description: API tokens of the tenant (interactive logins only, ADR 0031)
   - name: audit
     description: Audit log of the tenant (ADR 0031)
+  - name: probes
+    description: Private probes of the tenant (interactive logins only, ADR 0035)
 
 paths:
   /health:
@@ -235,6 +237,25 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   # --- Monitors ----------------------------------------------------------------
+  /nodes:
+    get:
+      tags: [monitors]
+      operationId: listAssignableNodes
+      summary: List nodes available for monitor assignment
+      description: |
+        Every tenant role. Lists voters, public probes, and private probes owned
+        by the caller's tenant. Foreign private probes and cluster addresses are
+        never exposed (ADR 0035).
+      responses:
+        "200":
+          description: Assignable nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AssignableNode" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /monitor-types:
     get:
       tags: [monitors]
@@ -814,6 +835,74 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StreamTicket" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # --- Private probes (ADR 0035, FA-PRB-05) ----------------------------------
+  /probes/join-tokens:
+    post:
+      tags: [probes]
+      operationId: createPrivateProbeJoinToken
+      summary: Create a one-time join token for a private probe
+      description: |
+        Tenant admins only (interactive logins, never API tokens). Issues a
+        one-time token bound to the caller's tenant from the principal. Enforces
+        the tenant's `maxPrivateProbes` limit (counting registered private
+        probes and open tokens).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrivateProbeJoinTokenRequest" }
+      responses:
+        "201":
+          description: Join token (sent with Cache-Control no-store)
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JoinToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /probes:
+    get:
+      tags: [probes]
+      operationId: listPrivateProbes
+      summary: List private probes of the caller's tenant
+      description: |
+        Tenant admins only. Returns private probes owned by the caller's tenant
+        with health and buffer status, without exposing other nodes' addresses.
+      responses:
+        "200":
+          description: Private probes of the tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PrivateProbe" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /probes/{probeId}:
+    parameters:
+      - name: probeId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [probes]
+      operationId: removePrivateProbe
+      summary: Remove a private probe of the caller's tenant and revoke its certificates
+      description: |
+        Tenant admins only. Only private probes owned by the caller's tenant
+        can be removed; foreign private probes, public probes, and voters
+        answer 404.
+      responses:
+        "204": { description: Probe removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   # --- Cluster administration (FA-CLU-08, FA-PKI-02) ----------------------------
   /admin/join-tokens:
@@ -1763,10 +1852,11 @@ components:
       enum: [shoutrrr, webhook]
     NotificationEvent:
       type: string
-      enum: [down, up, degraded, partial, flapping, channel_failed, system]
+      enum: [down, up, degraded, partial, flapping, channel_failed, probe_offline, system]
       description: |
         `system` is reserved for the system channels (ADR 0025); tenant channels
-        answer 400 when they request it.
+        answer 400 when they request it. `probe_offline` is for tenant channels
+        only (ADR 0035).
     WebhookConfig:
       type: object
       required: [url]
@@ -2175,13 +2265,53 @@ components:
         votersLeft: { type: integer, minimum: 0 }
         warning: { type: string }
 
+    # --- Private probes (ADR 0035) --------------------------------------------
+    PrivateProbeJoinTokenRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 60
+    PrivateProbe:
+      type: object
+      required: [id, name, version, capabilities, healthy, healthChangedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        version: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+        healthy: { type: boolean }
+        healthChangedAt: { type: string, format: date-time }
+        lastContactAt: { type: string, format: date-time }
+        probeBuffer:
+          $ref: "#/components/schemas/ProbeBufferStatus"
+        offlineAlert: { type: boolean }
+    AssignableNode:
+      type: object
+      required: [id, name, role, capabilities, healthy, private]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [voter, probe] }
+        region: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+        healthy: { type: boolean }
+        private: { type: boolean }
+
     # --- Tenants and plans (ADR 0029) ---------------------------------------
     Limits:
       type: object
       description: |
         Tenant limits (FA-TEN-04). A missing or null field is unlimited.
-        `maxStatusPages` and `maxPrivateProbes` are stored now and enforced
-        once the features exist.
+        `maxStatusPages` is stored now and enforced once the feature exists.
       additionalProperties: false
       properties:
         maxMonitors: { type: integer, nullable: true, minimum: 0, maximum: 1000000 }
@@ -2216,6 +2346,7 @@ components:
       properties:
         monitors: { type: integer, minimum: 0 }
         channels: { type: integer, minimum: 0 }
+        privateProbes: { type: integer, minimum: 0 }
         minIntervalSeconds:
           type: integer
           minimum: 1
@@ -2225,7 +2356,7 @@ components:
       description: A limit the current stock exceeds, e.g. after a smaller plan (ADR 0029).
       required: [limit, allowed, actual]
       properties:
-        limit: { type: string, enum: [maxMonitors, minIntervalSeconds, maxChannels] }
+        limit: { type: string, enum: [maxMonitors, minIntervalSeconds, maxChannels, maxPrivateProbes] }
         allowed: { type: integer }
         actual: { type: integer }
     Tenant:

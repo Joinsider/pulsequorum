@@ -31,6 +31,8 @@ const (
 	DefaultDiskFree = 0.15
 	// DefaultWALSize is WAL_SIZE_ALERT, 512 MiB.
 	DefaultWALSize int64 = 512 << 20
+	// DefaultProbeOffline is PROBE_OFFLINE_ALERT.
+	DefaultProbeOffline = 5 * time.Minute
 
 	// mixedAfter is how long the command versions of the voters may differ
 	// before mixed_versions is raised.
@@ -51,6 +53,7 @@ type Thresholds struct {
 	ClockSkew      time.Duration
 	DiskFree       float64
 	WALSize        int64
+	ProbeOffline   time.Duration
 }
 
 // Applier proposes Raft commands. *cluster.Node satisfies it.
@@ -62,6 +65,7 @@ type Applier interface {
 type State interface {
 	ListNodes(ctx context.Context) ([]store.Node, error)
 	ListSystemAlerts(ctx context.Context, activeOnly bool) ([]store.SystemAlert, error)
+	ListAllProbeAlerts(ctx context.Context, activeOnly bool) ([]store.ProbeAlert, error)
 	ListNodeIncarnations(ctx context.Context) ([]store.NodeIncarnation, error)
 	ListClusterCAs(ctx context.Context) ([]store.ClusterCA, error)
 }
@@ -123,6 +127,7 @@ type verdict struct {
 type round struct {
 	now     time.Time
 	voters  []store.Node
+	probes  []store.Node
 	signals map[string]Signals // fresh signals only; the own node is always fresh
 	offsets map[string]int64
 	// leaderCommit is the commit index of this node, the reference of raft_stale.
@@ -138,8 +143,10 @@ type Collector struct {
 	leaderSince time.Time
 	// current is the stored state of the alerts. Without a command level that
 	// stores it, it is the collector's own record.
-	current map[key]alertState
-	streaks map[key]streak
+	current      map[key]alertState
+	streaks      map[key]streak
+	probeCurrent map[string]bool
+	probeStreaks map[string]streak
 	// incs is the last known incarnation of each node; incRetry holds the
 	// level of an incarnation alert whose write failed.
 	incs     map[string]string
@@ -176,13 +183,18 @@ func New(opts Options) *Collector {
 	if th.WALSize <= 0 {
 		th.WALSize = DefaultWALSize
 	}
+	if th.ProbeOffline <= 0 {
+		th.ProbeOffline = DefaultProbeOffline
+	}
 	return &Collector{
 		opts: opts, th: th,
-		current:  map[key]alertState{},
-		streaks:  map[key]streak{},
-		incs:     map[string]string{},
-		incRetry: map[string]int{},
-		never:    map[string]time.Time{},
+		current:      map[key]alertState{},
+		streaks:      map[key]streak{},
+		probeCurrent: map[string]bool{},
+		probeStreaks: map[string]streak{},
+		incs:         map[string]string{},
+		incRetry:     map[string]int{},
+		never:        map[string]time.Time{},
 	}
 }
 
@@ -227,7 +239,7 @@ func (c *Collector) Tick(ctx context.Context) {
 		return
 	}
 	if persist {
-		if err := c.loadState(ctx); err != nil {
+		if err := c.loadState(ctx, level); err != nil {
 			c.opts.Logger.Warn("system alerts: read stored state", "err", err)
 			return
 		}
@@ -238,9 +250,17 @@ func (c *Collector) Tick(ctx context.Context) {
 	for _, n := range r.voters {
 		verdicts = append(verdicts, c.nodeVerdicts(r, n)...)
 	}
+	for _, n := range r.probes {
+		if n.OwnerTenantID == "" {
+			if v, ok := c.publicProbeVerdict(now, n); ok {
+				verdicts = append(verdicts, v)
+			}
+		}
+	}
 	verdicts = append(verdicts, c.caVerdict(ctx, now)...)
 	verdicts = append(verdicts, c.mixedVerdict(now, r.voters)...)
 	c.reconcile(ctx, persist, verdicts)
+	c.reconcilePrivateProbes(ctx, level, now, r.probes)
 	c.incarnations(ctx, persist, r)
 	c.fingerprints(ctx, persist, r)
 }
@@ -253,6 +273,7 @@ func (c *Collector) stepDown() {
 	}
 	c.leaderSince = time.Time{}
 	c.streaks = map[key]streak{}
+	c.probeStreaks = map[string]streak{}
 	c.never = map[string]time.Time{}
 	c.mixedSince = time.Time{}
 	c.incRetry = map[string]int{}
@@ -261,7 +282,7 @@ func (c *Collector) stepDown() {
 
 // loadState replaces the stored alert state and the incarnations with the
 // replicated ones.
-func (c *Collector) loadState(ctx context.Context) error {
+func (c *Collector) loadState(ctx context.Context, level uint32) error {
 	alerts, err := c.opts.State.ListSystemAlerts(ctx, false)
 	if err != nil {
 		return err
@@ -269,6 +290,16 @@ func (c *Collector) loadState(ctx context.Context) error {
 	incs, err := c.opts.State.ListNodeIncarnations(ctx)
 	if err != nil {
 		return err
+	}
+	if level >= cluster.ProbeCommandLevel {
+		probeAlerts, err := c.opts.State.ListAllProbeAlerts(ctx, false)
+		if err != nil {
+			return err
+		}
+		c.probeCurrent = make(map[string]bool, len(probeAlerts))
+		for _, pa := range probeAlerts {
+			c.probeCurrent[pa.ProbeID] = pa.Active
+		}
 	}
 	c.current = make(map[key]alertState, len(alerts))
 	for _, a := range alerts {
@@ -290,8 +321,11 @@ func (c *Collector) loadState(ctx context.Context) error {
 func (c *Collector) snapshot(now time.Time, nodes []store.Node) round {
 	r := round{now: now, signals: map[string]Signals{}, offsets: map[string]int64{}}
 	for _, n := range nodes {
-		if n.Role == store.NodeRoleVoter {
+		switch n.Role {
+		case store.NodeRoleVoter:
 			r.voters = append(r.voters, n)
+		case store.NodeRoleProbe:
+			r.probes = append(r.probes, n)
 		}
 	}
 	if c.opts.Self != nil {
@@ -533,6 +567,89 @@ func (c *Collector) write(ctx context.Context, persist bool, v verdict) error {
 		c.opts.Logger.Info("system alert cleared", "kind", v.kind, "subject", v.subject, "persisted", persist)
 	}
 	return nil
+}
+
+// probeOfflineDesired evaluates whether probe n should have an offline alert.
+// Short disconnects below c.th.ProbeOffline are ignored (ready=false) so an
+// already-active alert does not clear prematurely and no new alert is raised.
+func (c *Collector) probeOfflineDesired(now time.Time, n store.Node) (active bool, confirm int, offlineSeconds int64, ready bool) {
+	if n.Healthy {
+		return false, confirmRounds, 0, true
+	}
+	if n.HealthChangedMs <= 0 {
+		return false, 0, 0, false
+	}
+	elapsed := now.Sub(time.UnixMilli(n.HealthChangedMs))
+	if elapsed < c.th.ProbeOffline {
+		return false, 0, 0, false
+	}
+	return true, confirmNow, int64(elapsed / time.Second), true
+}
+
+func (c *Collector) publicProbeVerdict(now time.Time, n store.Node) (verdict, bool) {
+	active, confirm, offlineSeconds, ready := c.probeOfflineDesired(now, n)
+	if !ready {
+		return verdict{}, false
+	}
+	var details map[string]any
+	if active {
+		details = map[string]any{"offlineSeconds": offlineSeconds}
+	}
+	return verdict{
+		key:     key{KindProbeOffline, n.ID},
+		active:  active,
+		details: details,
+		confirm: confirm,
+	}, true
+}
+
+// reconcilePrivateProbes evaluates private probes and emits SetProbeAlert
+// commands scoped to the owning tenant (FA-PRB-06, ADR 0035). Private probes
+// never create system_alerts entries.
+func (c *Collector) reconcilePrivateProbes(ctx context.Context, level uint32, now time.Time, probes []store.Node) {
+	if level < cluster.ProbeCommandLevel {
+		return
+	}
+	for _, n := range probes {
+		if n.OwnerTenantID == "" {
+			continue
+		}
+		active, confirm, _, ready := c.probeOfflineDesired(now, n)
+		if !ready {
+			delete(c.probeStreaks, n.ID)
+			continue
+		}
+		want := alertState{active: active}
+		cur := alertState{active: c.probeCurrent[n.ID]}
+		if cur == want {
+			delete(c.probeStreaks, n.ID)
+			continue
+		}
+		s := c.probeStreaks[n.ID]
+		if s.want != want {
+			s = streak{want: want}
+		}
+		s.n++
+		if s.n < confirm {
+			c.probeStreaks[n.ID] = s
+			continue
+		}
+		delete(c.probeStreaks, n.ID)
+		callCtx, cancel := context.WithTimeout(ctx, applyTimeout)
+		_, err := c.opts.Cluster.Apply(callCtx, cluster.NewSetProbeAlert(n.OwnerTenantID, n.ID, active, c.opts.NodeID))
+		cancel()
+		if err != nil {
+			c.probeStreaks[n.ID] = streak{want: want, n: confirm}
+			c.opts.Logger.Warn("probe alert not recorded, retrying", "probe_id", n.ID, "active", active, "err", err)
+			continue
+		}
+		c.probeCurrent[n.ID] = active
+		if active {
+			c.opts.Logger.Warn("private probe offline", "probe_id", n.ID, "tenant_id", n.OwnerTenantID)
+		} else {
+			c.opts.Logger.Info("private probe back online", "probe_id", n.ID, "tenant_id", n.OwnerTenantID)
+		}
+	}
 }
 
 // incarnations records the incarnation of every voter that reports one. A new

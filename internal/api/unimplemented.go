@@ -280,6 +280,11 @@ func (Unimplemented) GetUptime(context.Context, gen.GetUptimeRequestObject) (gen
 	return nil, ErrNotImplemented
 }
 
+// ListAssignableNodes is not implemented yet.
+func (Unimplemented) ListAssignableNodes(context.Context, gen.ListAssignableNodesRequestObject) (gen.ListAssignableNodesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListNotificationChannels is not implemented yet.
 func (Unimplemented) ListNotificationChannels(context.Context, gen.ListNotificationChannelsRequestObject) (gen.ListNotificationChannelsResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -307,6 +312,21 @@ func (Unimplemented) UpdateNotificationChannel(context.Context, gen.UpdateNotifi
 
 // TestNotificationChannel is not implemented yet.
 func (Unimplemented) TestNotificationChannel(context.Context, gen.TestNotificationChannelRequestObject) (gen.TestNotificationChannelResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListPrivateProbes is not implemented yet.
+func (Unimplemented) ListPrivateProbes(context.Context, gen.ListPrivateProbesRequestObject) (gen.ListPrivateProbesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreatePrivateProbeJoinToken is not implemented yet.
+func (Unimplemented) CreatePrivateProbeJoinToken(context.Context, gen.CreatePrivateProbeJoinTokenRequestObject) (gen.CreatePrivateProbeJoinTokenResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RemovePrivateProbe is not implemented yet.
+func (Unimplemented) RemovePrivateProbe(context.Context, gen.RemovePrivateProbeRequestObject) (gen.RemovePrivateProbeResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

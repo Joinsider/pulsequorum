@@ -518,7 +518,7 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 	validateMonitorIdentity(in, &doc, add)
 	validateMonitorTiming(in, &doc, add)
 
-	assignment, err := h.validateMonitorAssignment(ctx, in.Assignment, add)
+	assignment, err := h.validateMonitorAssignment(ctx, tenantID, in.Assignment, add)
 	if err != nil {
 		return cluster.MonitorDocument{}, err
 	}
@@ -532,7 +532,7 @@ func (h *Handlers) monitorDocument(ctx context.Context, tenantID string, in *gen
 	}
 	doc.NotificationChannelIDs = channels
 
-	cfg, err := h.validateMonitorConfig(ctx, in.Type, in.Config, add)
+	cfg, err := h.validateMonitorConfig(ctx, tenantID, in.Type, in.Config, assignment, add)
 	if err != nil {
 		return cluster.MonitorDocument{}, err
 	}
@@ -588,7 +588,7 @@ func checkOptionalRange(val *int, dst *int, lo, hi int, field, msg string, add f
 	}
 }
 
-func (h *Handlers) validateMonitorAssignment(ctx context.Context, in *gen.Assignment, add func(string, string)) (store.Assignment, error) {
+func (h *Handlers) validateMonitorAssignment(ctx context.Context, tenantID string, in *gen.Assignment, add func(string, string)) (store.Assignment, error) {
 	a := store.Assignment{Mode: string(gen.AssignmentModeAll)}
 	if in == nil {
 		return a, nil
@@ -608,17 +608,19 @@ func (h *Handlers) validateMonitorAssignment(ctx context.Context, in *gen.Assign
 	case a.Mode == string(gen.AssignmentModeNodes) && len(a.Nodes) == 0:
 		add("/assignment/nodes", "required for mode nodes")
 	case a.Mode == string(gen.AssignmentModeNodes):
-		if err := h.validateAssignedNodes(ctx, a.Nodes, add); err != nil {
+		if err := h.validateAssignedNodes(ctx, tenantID, a.Nodes, add); err != nil {
 			return store.Assignment{}, err
 		}
 	}
 	return a, nil
 }
 
-// validateAssignedNodes checks node IDs against the cluster registry. Without
-// a registry (single voter before its first registration) any node ID is
+// validateAssignedNodes checks node IDs against the cluster registry (D2, ADR 0035).
+// Only voters, public probes, and private probes owned by tenantID are admitted;
+// foreign private probes return the same "unknown node" error as nonexistent IDs.
+// Without a registry (single voter before its first registration) any node ID is
 // accepted (ADR 0017).
-func (h *Handlers) validateAssignedNodes(ctx context.Context, nodeIDs []string, add func(string, string)) error {
+func (h *Handlers) validateAssignedNodes(ctx context.Context, tenantID string, nodeIDs []string, add func(string, string)) error {
 	registry, err := h.deps.State.ListNodes(ctx)
 	if err != nil {
 		return err
@@ -628,7 +630,9 @@ func (h *Handlers) validateAssignedNodes(ctx context.Context, nodeIDs []string, 
 	}
 	known := make(map[string]bool, len(registry))
 	for _, n := range registry {
-		known[n.ID] = true
+		if n.Role == store.NodeRoleVoter || n.OwnerTenantID == "" || n.OwnerTenantID == tenantID {
+			known[n.ID] = true
+		}
 	}
 	for i, id := range nodeIDs {
 		if !known[id] {
@@ -636,6 +640,32 @@ func (h *Handlers) validateAssignedNodes(ctx context.Context, nodeIDs []string, 
 		}
 	}
 	return nil
+}
+
+// assignedOnlyOwnPrivateProbes reports whether the assignment explicitly targets
+// only private probes owned by tenantID (ADR 0035, section 4 SSRF relaxation).
+func (h *Handlers) assignedOnlyOwnPrivateProbes(ctx context.Context, tenantID string, a store.Assignment) (bool, error) {
+	if a.Mode != string(gen.AssignmentModeNodes) || len(a.Nodes) == 0 {
+		return false, nil
+	}
+	registry, err := h.deps.State.ListNodes(ctx)
+	if err != nil {
+		return false, err
+	}
+	if len(registry) == 0 {
+		return false, nil
+	}
+	byID := make(map[string]store.Node, len(registry))
+	for _, n := range registry {
+		byID[n.ID] = n
+	}
+	for _, id := range a.Nodes {
+		n, ok := byID[id]
+		if !ok || n.Role != store.NodeRoleProbe || n.OwnerTenantID != tenantID {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func validateMonitorPolicyAndTags(in *gen.MonitorInput, doc *cluster.MonitorDocument, add func(string, string)) {
@@ -666,7 +696,7 @@ func validateMonitorTags(tags *[]string, doc *cluster.MonitorDocument, add func(
 	}
 }
 
-func (h *Handlers) validateMonitorConfig(ctx context.Context, monType string, rawCfg map[string]any, add func(string, string)) (json.RawMessage, error) {
+func (h *Handlers) validateMonitorConfig(ctx context.Context, tenantID, monType string, rawCfg map[string]any, assignment store.Assignment, add func(string, string)) (json.RawMessage, error) {
 	cfg, err := json.Marshal(rawCfg)
 	if err != nil {
 		return nil, err
@@ -682,11 +712,18 @@ func (h *Handlers) validateMonitorConfig(ctx context.Context, monType string, ra
 		return nil, err
 	}
 	// The destination hosts are checked against the node's address policy
-	// once the configuration itself is valid (ADR 0030).
+	// once the configuration itself is valid (ADR 0030), unless the monitor runs
+	// exclusively on own private probes (ADR 0035).
 	if h.deps.SSRFPolicy != nil {
-		if err := h.deps.Registry.ValidateTargets(monType, cfg, h.deps.SSRFPolicy); err != nil {
-			if err := appendValidationFields(err, add); err != nil {
-				return nil, err
+		privateOnly, err := h.assignedOnlyOwnPrivateProbes(ctx, tenantID, assignment)
+		if err != nil {
+			return nil, err
+		}
+		if !privateOnly {
+			if err := h.deps.Registry.ValidateTargets(monType, cfg, h.deps.SSRFPolicy); err != nil {
+				if err := appendValidationFields(err, add); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

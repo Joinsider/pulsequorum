@@ -44,8 +44,12 @@ func (h *Handlers) channelEvents(ctx context.Context, tenantID string, requested
 		if err != nil {
 			return nil, fmt.Errorf("read command level: %w", err)
 		}
-		if cluster.EffectiveCommandLevel(level) >= cluster.FlappingCommandLevel {
+		eff := cluster.EffectiveCommandLevel(level)
+		if eff >= cluster.FlappingCommandLevel {
 			events = append(events, store.EventFlapping, store.EventChannelFailed)
+		}
+		if eff >= cluster.ProbeCommandLevel {
+			events = append(events, store.EventProbeOffline)
 		}
 		return events, nil
 	}
@@ -57,6 +61,9 @@ func (h *Handlers) channelEvents(ctx context.Context, tenantID string, requested
 		case e == gen.System && !system:
 			return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request",
 				Detail: "the event system is reserved for system channels"}
+		case e == gen.ProbeOffline && system:
+			return nil, &Problem{Status: http.StatusBadRequest, Title: "Bad Request",
+				Detail: "the event probe_offline is not valid for system channels"}
 		}
 		events = append(events, string(e))
 	}

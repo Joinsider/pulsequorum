@@ -118,6 +118,9 @@ DELETE FROM api_tokens WHERE tenant_id = ?;
 -- name: DeleteTenantAudit :exec
 DELETE FROM audit_log WHERE tenant_id = ?;
 
+-- name: DeleteTenantProbeAlerts :exec
+DELETE FROM probe_alerts WHERE tenant_id = ?;
+
 -- name: DeleteTenantRow :execrows
 DELETE FROM tenants WHERE id = ?;
 
@@ -684,3 +687,35 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: PruneAudit :exec
 DELETE FROM audit_log WHERE at_ms < ?;
+
+-- name: GetProbeAlert :one
+SELECT * FROM probe_alerts WHERE tenant_id = ? AND probe_id = ?;
+
+-- name: UpsertProbeAlert :exec
+INSERT INTO probe_alerts (tenant_id, probe_id, active, since_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (tenant_id, probe_id) DO UPDATE SET
+    active     = excluded.active,
+    since_ms   = excluded.since_ms,
+    updated_ms = excluded.updated_ms;
+
+-- name: ListTenantProbeAlerts :many
+SELECT * FROM probe_alerts WHERE tenant_id = ? ORDER BY probe_id;
+
+-- name: ListActiveTenantProbeAlerts :many
+SELECT * FROM probe_alerts WHERE tenant_id = ? AND active = 1 ORDER BY probe_id;
+
+-- name: ListAllProbeAlerts :many
+SELECT * FROM probe_alerts ORDER BY tenant_id, probe_id;
+
+-- name: ListAllActiveProbeAlerts :many
+SELECT * FROM probe_alerts WHERE active = 1 ORDER BY tenant_id, probe_id;
+
+-- name: DeleteProbeAlertsByProbe :exec
+DELETE FROM probe_alerts WHERE probe_id = ?;
+
+-- name: CountTenantPrivateProbes :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM nodes WHERE role = 'probe' AND owner_tenant_id = ?;
+
+-- name: CountOpenTenantJoinTokens :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM join_tokens WHERE tenant_id = ? AND role = 'probe' AND used_ms IS NULL AND expires_ms > ?;

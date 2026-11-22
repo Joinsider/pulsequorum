@@ -43,6 +43,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/membership"
 	ucmetrics "github.com/joinsider/pulsequorum/internal/metrics"
 	"github.com/joinsider/pulsequorum/internal/node"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/secrets"
@@ -152,6 +153,7 @@ type voterRuntimeDeps struct {
 	local          *auth.Local
 	aggPtr         *atomic.Pointer[aggregator.Aggregator]
 	degradedAggPtr *atomic.Pointer[aggregator.Aggregator]
+	metricsPtr     *atomic.Pointer[ucmetrics.Metrics]
 	startLastSeen  int64
 }
 
@@ -183,10 +185,11 @@ func runVoter(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	keyring := secrets.NewKeyring(creds.kek, state.ListSecretKeys)
 	var aggPtr, degradedAggPtr atomic.Pointer[aggregator.Aggregator]
+	var metricsPtr atomic.Pointer[ucmetrics.Metrics]
 	deps := voterRuntimeDeps{
 		cfg: cfg, log: log, clock: clock, state: state, metrics: metrics, ingest: ingest, tombstones: tombstones,
 		creds: creds, prober: prober, keyring: keyring,
-		aggPtr: &aggPtr, degradedAggPtr: &degradedAggPtr, startLastSeen: startLastIssued,
+		aggPtr: &aggPtr, degradedAggPtr: &degradedAggPtr, metricsPtr: &metricsPtr, startLastSeen: startLastIssued,
 	}
 	host, err := startVoterHost(ctx, deps, stop)
 	if err != nil {
@@ -364,6 +367,11 @@ func startVoterHost(ctx context.Context, deps voterRuntimeDeps, stop context.Can
 		ProbeBufferMaxAge: cfg.ProbeBufferMaxAge,
 		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
 			observeHeartbeats(deps.aggPtr, deps.degradedAggPtr, hbs)
+		},
+		OnProbeRejected: func(reason string) {
+			if m := deps.metricsPtr.Load(); m != nil {
+				m.ProbeRejected(reason)
+			}
 		},
 	})
 }
@@ -561,6 +569,7 @@ func startMonitoringPipeline(ctx context.Context, bg *sync.WaitGroup, deps voter
 		Thresholds: sysalert.Thresholds{
 			ReplicationLag: deps.cfg.ReplicationLagAlert, ClockSkew: deps.cfg.ClockSkewAlert,
 			DiskFree: deps.cfg.DiskFreeAlert, WALSize: deps.cfg.WALSizeAlert,
+			ProbeOffline: deps.cfg.ProbeOfflineAlert,
 		},
 		Now: deps.clock, Logger: deps.log,
 	})
@@ -574,6 +583,7 @@ func startMonitoringPipeline(ctx context.Context, bg *sync.WaitGroup, deps voter
 	})
 	sink := scheduler.Sinks{heartbeats, &stream.HeartbeatSink{Hub: deps.hub, NodeID: deps.creds.nodeID}}
 	nodeMetrics = buildNodeMetrics(deps, detector)
+	deps.metricsPtr.Store(nodeMetrics)
 	sched := scheduler.New(scheduler.Options{
 		Registry: checker.Default, Env: checkEnv, Sink: sink, Logger: deps.log, Now: deps.clock,
 		Observer: nodeMetrics,
@@ -681,7 +691,7 @@ func buildAPIDeps(deps voterRuntimeDeps, checkEnv *checker.Env, sender *alert.Se
 			raw := deps.host.ProbeSessionViews()
 			out := make(map[string]api.ProbeSessionView, len(raw))
 			for id, v := range raw {
-				out[id] = api.ProbeSessionView{ConnectedVoterID: v.ConnectedVoterID, Buffer: v.Buffer}
+				out[id] = api.ProbeSessionView{ConnectedVoterID: v.ConnectedVoterID, LastMessageMs: v.LastMessageMs, Buffer: v.Buffer}
 			}
 			return out
 		},
@@ -965,8 +975,8 @@ type clusterAdmin struct {
 	host *clusterhost.Host
 }
 
-func (a clusterAdmin) CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error) {
-	return a.host.Authority.CreateJoinToken(ctx, role, tenantID, ttl)
+func (a clusterAdmin) CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration, actor *pb.Actor) (string, time.Time, error) {
+	return a.host.Authority.CreateJoinTokenFor(ctx, role, tenantID, ttl, actor)
 }
 
 func (a clusterAdmin) Remove(ctx context.Context, nodeID, requestedBy string) (membership.Removal, error) {

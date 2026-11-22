@@ -25,6 +25,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/clusternet"
 	"github.com/joinsider/pulsequorum/internal/clusterpki"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/probe"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
@@ -52,6 +53,8 @@ type testProbe struct {
 type testProbeOptions struct {
 	name           string
 	region         string
+	tenantID       string
+	localSSRF      bool
 	unit           time.Duration
 	ackRetain      time.Duration
 	maxAge         time.Duration
@@ -131,7 +134,11 @@ func startThreeVotersForProbes(ctx context.Context, t *testing.T, replInterval t
 func startTestProbe(ctx context.Context, t *testing.T, leader *testNode, opts testProbeOptions) *testProbe {
 	t.Helper()
 
-	tok, _, err := leader.host.Authority.CreateJoinToken(ctx, pki.RoleProbe, "", 0)
+	var actor *pb.Actor
+	if opts.tenantID != "" {
+		actor = &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Admin"}
+	}
+	tok, _, err := leader.host.Authority.CreateJoinTokenFor(ctx, pki.RoleProbe, opts.tenantID, 0, actor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +173,7 @@ func startTestProbe(ctx context.Context, t *testing.T, leader *testNode, opts te
 		t.Fatal(err)
 	}
 
-	policy := probe.NewPolicy(false, false)
+	policy := probe.NewPolicy(opts.localSSRF, opts.tenantID != "")
 	checkEnv := &checker.Env{
 		Dialer:    &checker.Dialer{Policy: policy},
 		UserAgent: "Pulsequorum-Test/1.0",

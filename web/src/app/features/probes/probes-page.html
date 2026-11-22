@@ -1,0 +1,135 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<div *transloco="let t">
+  <app-page-header [title]="t('probes.title')">
+    <button mat-stroked-button type="button" (click)="load()">
+      <app-icon name="refresh" size="1.125rem" />
+      {{ t('probes.refresh') }}
+    </button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="busy() || quota()?.reached === true"
+      (click)="createToken()"
+    >
+      <app-icon name="add" size="1.125rem" />
+      {{ t('probes.createToken') }}
+    </button>
+  </app-page-header>
+
+  @if (quota(); as q) {
+    <p class="banner" [class.banner--warn]="q.reached" role="status" data-testid="probes-quota">
+      {{
+        t('probes.quota', {
+          used: q.used,
+          limit: q.max ?? t('probes.unlimited'),
+        })
+      }}
+      @if (q.reached) {
+        <span>— {{ t('probes.limitReached') }}</span>
+      }
+    </p>
+  }
+
+  @if (actionError(); as err) {
+    <p class="state state--error" role="alert">{{ err }}</p>
+  }
+
+  @if (loading() && probes() === null) {
+    <p class="state" role="status">{{ t('common.loading') }}</p>
+  } @else if (loadError()) {
+    <div class="state state--error" role="alert">
+      <p>{{ t('probes.loadError') }}</p>
+      <button mat-button type="button" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (rows().length === 0) {
+    <div class="empty">
+      <p>{{ t('probes.empty') }}</p>
+      <p class="hint">{{ t('probes.emptyHint') }}</p>
+    </div>
+  } @else {
+    <ul class="probes" [attr.aria-label]="t('probes.listLabel')">
+      @for (row of rows(); track row.probe.id) {
+        <li class="probe" data-testid="private-probe-row">
+          <div class="probe__head">
+            <div class="probe__title">
+              <span class="probe__name">{{ row.probe.name || row.probe.id }}</span>
+              <code class="probe__id">{{ row.probe.id }}</code>
+            </div>
+            <div class="badges">
+              <span
+                class="badge"
+                [class.badge--healthy]="row.probe.healthy"
+                [class.badge--unhealthy]="!row.probe.healthy"
+              >
+                {{ row.probe.healthy ? t('probes.node.healthy') : t('probes.node.unhealthy') }}
+              </span>
+              @if (row.probe.offlineAlert) {
+                <span class="badge badge--alert" data-testid="probe-offline-badge">
+                  {{ t('probes.node.offlineAlert') }}
+                </span>
+              }
+            </div>
+          </div>
+
+          <dl class="facts">
+            @if (row.probe.region) {
+              <div>
+                <dt>{{ t('probes.node.region') }}</dt>
+                <dd>{{ row.probe.region }}</dd>
+              </div>
+            }
+            @if (row.probe.version) {
+              <div>
+                <dt>{{ t('probes.node.version') }}</dt>
+                <dd>{{ row.probe.version }}</dd>
+              </div>
+            }
+            <div>
+              <dt>{{ t('probes.node.capabilities') }}</dt>
+              <dd>{{ row.probe.capabilities.length ? row.probe.capabilities.join(', ') : '–' }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('probes.node.lastContact') }}</dt>
+              <dd>
+                @if (row.probe.lastContactAt; as contact) {
+                  {{ contact | relativeTime }}
+                } @else {
+                  –
+                }
+              </dd>
+            </div>
+            @if (row.bufferMetrics; as buf) {
+              <div>
+                <dt>{{ t('probes.node.buffer') }}</dt>
+                <dd>
+                  {{
+                    t('probes.node.bufferValue', {
+                      unacked: buf.unacked,
+                      bytes: buf.bytesText,
+                      dropped: buf.droppedTotal,
+                    })
+                  }}
+                  @if (buf.oldestText; as oldest) {
+                    ({{ t('probes.node.bufferOldest', { oldest }) }})
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+
+          <div class="probe__actions">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="busy()"
+              (click)="remove(row.probe)"
+            >
+              <app-icon name="delete" size="1.125rem" />
+              {{ t('probes.actions.remove') }}
+            </button>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>

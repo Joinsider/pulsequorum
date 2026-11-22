@@ -178,14 +178,24 @@ func notifyChannelFailed(ctx context.Context, tx store.StateTx, cmd *pb.Command,
 	if len(targets) == 0 {
 		return nil
 	}
-	m, err := tx.GetMonitor(ctx, tenantID, failed.MonitorID)
-	if err != nil {
-		return err
-	}
-	p := AlertPayload{
-		AlertID: fmt.Sprintf("channel:%s:%s:%d", ch.ID, ch.State, issuedAt), TenantID: tenantID,
-		MonitorID: m.ID, MonitorName: m.Name, MonitorType: m.Type, Event: store.EventChannelFailed,
-		ChannelID: ch.ID, ChannelName: ch.Name, ChannelError: ch.LastError, Confirmed: true,
+	var p AlertPayload
+	var monitorID string
+	if failed.MonitorID != "" {
+		m, err := tx.GetMonitor(ctx, tenantID, failed.MonitorID)
+		if err != nil {
+			return err
+		}
+		monitorID = m.ID
+		p = AlertPayload{
+			AlertID: fmt.Sprintf("channel:%s:%s:%d", ch.ID, ch.State, issuedAt), TenantID: tenantID,
+			MonitorID: m.ID, MonitorName: m.Name, MonitorType: m.Type, Event: store.EventChannelFailed,
+			ChannelID: ch.ID, ChannelName: ch.Name, ChannelError: ch.LastError, Confirmed: true,
+		}
+	} else {
+		p = AlertPayload{
+			AlertID: fmt.Sprintf("channel:%s:%s:%d", ch.ID, ch.State, issuedAt), TenantID: tenantID,
+			Event: store.EventChannelFailed, ChannelID: ch.ID, ChannelName: ch.Name, ChannelError: ch.LastError, Confirmed: true,
+		}
 	}
 	payload, err := json.Marshal(p)
 	if err != nil {
@@ -193,7 +203,7 @@ func notifyChannelFailed(ctx context.Context, tx store.StateTx, cmd *pb.Command,
 	}
 	for _, o := range targets {
 		err := tx.EnqueueAlert(ctx, store.AlertDelivery{
-			TenantID: tenantID, AlertKey: p.AlertID, ChannelID: o.ID, MonitorID: m.ID, Payload: payload,
+			TenantID: tenantID, AlertKey: p.AlertID, ChannelID: o.ID, MonitorID: monitorID, Payload: payload,
 			NextAttemptMs: issuedAt, State: store.AlertPending, CreatedMs: issuedAt, UpdatedMs: issuedAt,
 		})
 		if err != nil {

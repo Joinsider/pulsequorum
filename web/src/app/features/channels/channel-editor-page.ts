@@ -424,6 +424,7 @@ export class ChannelEditorPage implements OnInit {
     NotificationEvent.partial,
     NotificationEvent.flapping,
     NotificationEvent.channel_failed,
+    NotificationEvent.probe_offline,
   ];
 
   protected readonly loading = signal(false);
@@ -445,6 +446,7 @@ export class ChannelEditorPage implements OnInit {
       partial: this.fb.control(false),
       flapping: this.fb.control(true),
       channel_failed: this.fb.control(true),
+      probe_offline: this.fb.control(true),
     }),
     isDefault: this.fb.control(false),
     webhook: this.fb.group({

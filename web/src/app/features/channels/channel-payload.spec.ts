@@ -86,15 +86,21 @@ describe('event flags', () => {
       partial: false,
       flapping: false,
       channel_failed: false,
+      probe_offline: false,
     });
     expect(selectedEvents(flags)).toEqual([NotificationEvent.down, NotificationEvent.up]);
   });
 
-  it('selects the flapping and channel-failed events in API order', () => {
-    const flags = eventFlags([NotificationEvent.channel_failed, NotificationEvent.flapping]);
+  it('selects the flapping, channel-failed and probe_offline events in API order', () => {
+    const flags = eventFlags([
+      NotificationEvent.probe_offline,
+      NotificationEvent.channel_failed,
+      NotificationEvent.flapping,
+    ]);
     expect(selectedEvents(flags)).toEqual([
       NotificationEvent.flapping,
       NotificationEvent.channel_failed,
+      NotificationEvent.probe_offline,
     ]);
   });
 

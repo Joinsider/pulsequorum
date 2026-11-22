@@ -429,20 +429,20 @@ func TestSystemAlertThresholds(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.ReplicationLagAlert != 5*time.Minute || cfg.ClockSkewAlert != 2*time.Second ||
-		cfg.DiskFreeAlert != 0.15 || cfg.WALSizeAlert != 512<<20 {
-		t.Errorf("defaults = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+		cfg.DiskFreeAlert != 0.15 || cfg.WALSizeAlert != 512<<20 || cfg.ProbeOfflineAlert != 5*time.Minute {
+		t.Errorf("defaults = %v %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert, cfg.ProbeOfflineAlert)
 	}
 
 	cfg, err = Load(env(map[string]string{
 		"NODE_NAME": "n1", "REPLICATION_LAG_ALERT": "90s", "CLOCK_SKEW_ALERT": "500ms",
-		"DISK_FREE_ALERT": "0.5", "WAL_SIZE_ALERT": "1GiB",
+		"DISK_FREE_ALERT": "0.5", "WAL_SIZE_ALERT": "1GiB", "PROBE_OFFLINE_ALERT": "2m",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.ReplicationLagAlert != 90*time.Second || cfg.ClockSkewAlert != 500*time.Millisecond ||
-		cfg.DiskFreeAlert != 0.5 || cfg.WALSizeAlert != 1<<30 {
-		t.Errorf("overrides = %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert)
+		cfg.DiskFreeAlert != 0.5 || cfg.WALSizeAlert != 1<<30 || cfg.ProbeOfflineAlert != 2*time.Minute {
+		t.Errorf("overrides = %v %v %v %v %v", cfg.ReplicationLagAlert, cfg.ClockSkewAlert, cfg.DiskFreeAlert, cfg.WALSizeAlert, cfg.ProbeOfflineAlert)
 	}
 
 	invalid := map[string]string{
@@ -450,6 +450,7 @@ func TestSystemAlertThresholds(t *testing.T) {
 		"CLOCK_SKEW_ALERT":      "-1s",
 		"DISK_FREE_ALERT":       "1",
 		"WAL_SIZE_ALERT":        "512M",
+		"PROBE_OFFLINE_ALERT":   "0s",
 	}
 	for key, value := range invalid {
 		_, err := Load(env(map[string]string{"NODE_NAME": "n1", key: value}))

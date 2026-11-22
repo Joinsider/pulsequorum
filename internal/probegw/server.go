@@ -56,6 +56,7 @@ type Options struct {
 	SSRFProtection   bool
 	OnStored         func([]store.Heartbeat)
 	Publish          func([]store.Heartbeat)
+	OnRejected       func(reason string)
 	Clock            func() time.Time
 	TickInterval     time.Duration
 	DebounceInterval time.Duration
@@ -204,6 +205,12 @@ func (s *Server) now() time.Time {
 	return s.opts.Clock()
 }
 
+func (s *Server) rejected(reason string) {
+	if s.opts.OnRejected != nil {
+		s.opts.OnRejected(reason)
+	}
+}
+
 func (s *Server) effectiveLevel(ctx context.Context) (uint32, error) {
 	if s.opts.Cluster != nil {
 		stored, err := s.opts.Cluster.CommandLevel(ctx)
@@ -227,6 +234,7 @@ func (s *Server) verifyProbe(ctx context.Context) (pki.Identity, uint32, error) 
 		return pki.Identity{}, 0, status.Error(codes.Unauthenticated, "client certificate required")
 	}
 	if id.Role != pki.RoleProbe || id.NodeID == "" {
+		s.rejected("non_probe_role")
 		s.log.Warn("probe gateway rejected non-probe caller", "node_id", id.NodeID, "role", id.Role)
 		return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe certificate required")
 	}
@@ -236,6 +244,7 @@ func (s *Server) verifyProbe(ctx context.Context) (pki.Identity, uint32, error) 
 	}
 	for _, r := range revoked {
 		if r.NodeID == id.NodeID {
+			s.rejected("revoked")
 			s.log.Warn("probe rejected: node is revoked", "node_id", id.NodeID, "tenant_id", id.TenantID)
 			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe was removed from the cluster")
 		}
@@ -257,10 +266,12 @@ func (s *Server) verifyProbe(ctx context.Context) (pki.Identity, uint32, error) 
 			}
 		}
 		if reg == nil {
+			s.rejected("unregistered")
 			s.log.Warn("probe rejected: not in node registry", "node_id", id.NodeID, "tenant_id", id.TenantID)
 			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe is not registered")
 		}
 		if reg.Role != store.NodeRoleProbe || reg.OwnerTenantID != id.TenantID {
+			s.rejected("owner_mismatch")
 			s.log.Warn("probe rejected: registry owner mismatch", "node_id", id.NodeID, "cert_tenant", id.TenantID, "reg_tenant", reg.OwnerTenantID, "reg_role", reg.Role)
 			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe identity does not match cluster registry")
 		}

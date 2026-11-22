@@ -34,8 +34,9 @@
     "consensus": "Consensus policy",
     "assignment": "Run checks on",
     "assignmentCount": "Number of nodes",
-    "assignmentNodes": "Node IDs",
-    "assignmentNodesHint": "Comma-separated node IDs.",
+    "assignmentNodes": "Nodes",
+    "assignmentNodesHint": "Select one or more voters or probes.",
+    "privateProbeTargetsHint": "Private probes only: internal and private-network targets are permitted (SSRF checks are relaxed for this monitor).",
     "enable": "Configure",
     "none": "None",
     "key": "Key",
@@ -63,6 +64,13 @@
     "count": "A number of nodes",
     "nodes": "Selected nodes"
   },
+  "nodeKind": {
+    "voter": "Voter",
+    "publicProbe": "Public probe",
+    "privateProbe": "Private probe",
+    "unhealthy": "unhealthy",
+    "unknown": "unknown node"
+  },
   "saving": "Saving …",
   "errors": {
     "load": "The monitor could not be loaded.",
@@ -89,7 +97,7 @@
     "tagCount": "Use at most {{ max }} tags.",
     "tagLength": "Each tag can be at most {{ max }} characters long.",
     "countRequired": "Enter the number of nodes.",
-    "nodesRequired": "Enter at least one node ID."
+    "nodesRequired": "Select at least one node."
   },
   "pem": {
     "loadFile": "Load file…",

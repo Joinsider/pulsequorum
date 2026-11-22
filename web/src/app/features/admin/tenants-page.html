@@ -117,6 +117,20 @@
                 })
               }}
             </li>
+            @if (
+              row.tenant.effectiveLimits.maxPrivateProbes != null ||
+              (row.tenant.usage.privateProbes ?? 0) > 0
+            ) {
+              <li>
+                {{
+                  t('admin.tenants.usage.privateProbes', {
+                    used: row.tenant.usage.privateProbes ?? 0,
+                    limit:
+                      row.tenant.effectiveLimits.maxPrivateProbes ?? t('admin.limits.unlimited'),
+                  })
+                }}
+              </li>
+            }
             <li>
               {{
                 t('admin.tenants.usage.interval', {

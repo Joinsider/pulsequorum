@@ -142,3 +142,70 @@ func TestBundleTextRendering(t *testing.T) {
 		}
 	}
 }
+
+func probeOfflinePayload(active bool) cluster.AlertPayload {
+	status := "UP"
+	if active {
+		status = "DOWN"
+	}
+	return cluster.AlertPayload{
+		AlertID: "probe:p1:1", TenantID: "t1", Event: store.EventProbeOffline,
+		Status: status, SinceMs: 1_700_000_000_000, Confirmed: true,
+		Probe:  &cluster.ProbeAlertInfo{ID: "p1", Name: "edge-eu-1", Active: active},
+		Sender: &cluster.AlertSender{NodeID: "v1", ReachableVoters: 3, TotalVoters: 3},
+	}
+}
+
+func TestProbeOfflineTemplates(t *testing.T) {
+	if err := ValidateTemplate(`{"id":"{{probe.id}}","name":"{{probe.name}}","active":"{{probe.active}}"}`); err != nil {
+		t.Fatalf("ValidateTemplate(probe placeholders) = %v", err)
+	}
+
+	off := probeOfflinePayload(true)
+	if got := title(off); got != "Probe offline: edge-eu-1" {
+		t.Errorf("offline title = %q", got)
+	}
+	offText := Text(off)
+	for _, want := range []string{"Probe offline: edge-eu-1", "Since ", "View: v1 · 3/3 voters"} {
+		if !strings.Contains(offText, want) {
+			t.Errorf("offline Text = %q, missing %q", offText, want)
+		}
+	}
+
+	on := probeOfflinePayload(false)
+	on.Probe.Name = "" // falls back to ID
+	if got := title(on); got != "Probe online: p1" {
+		t.Errorf("online title = %q", got)
+	}
+	onText := Text(on)
+	if !strings.Contains(onText, "Probe online: p1") {
+		t.Errorf("online Text = %q", onText)
+	}
+
+	out, err := Render(DefaultTemplate, off)
+	if err != nil {
+		t.Fatalf("Render(DefaultTemplate) = %v", err)
+	}
+	var got struct {
+		Event string `json:"event"`
+		Probe struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Active bool   `json:"active"`
+		} `json:"probe"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal rendered: %v\n%s", err, out)
+	}
+	if got.Event != store.EventProbeOffline || got.Probe.ID != "p1" || got.Probe.Name != "edge-eu-1" || !got.Probe.Active {
+		t.Errorf("rendered = %+v", got)
+	}
+
+	bundle := BundleText([]cluster.AlertPayload{off, on})
+	for _, want := range []string{"2 alerts", "- probe edge-eu-1: offline at", "- probe p1: online at"} {
+		if !strings.Contains(bundle, want) {
+			t.Errorf("BundleText = %q, missing %q", bundle, want)
+		}
+	}
+}

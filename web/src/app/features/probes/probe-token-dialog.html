@@ -1,0 +1,98 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<ng-container *transloco="let t">
+  <h2 mat-dialog-title>{{ t('probes.tokenDialog.title') }}</h2>
+
+  <mat-dialog-content class="form-stack">
+    @if (errorKey(); as key) {
+      <p class="error" role="alert">
+        {{ t(key) }}
+        @if (errorDetail(); as detail) {
+          <span class="detail">{{ detail }}</span>
+        }
+      </p>
+    }
+
+    @if (token(); as tok) {
+      <p class="warning" role="alert">{{ t('probes.tokenDialog.onceOnly') }}</p>
+      <mat-form-field appearance="outline">
+        <mat-label>{{ t('probes.tokenDialog.token') }}</mat-label>
+        <textarea
+          matInput
+          class="token"
+          readonly
+          rows="3"
+          autocomplete="off"
+          spellcheck="false"
+          data-testid="probe-join-token"
+          [value]="tok"
+        ></textarea>
+      </mat-form-field>
+      <div class="copy-row">
+        <button
+          mat-stroked-button
+          type="button"
+          [cdkCopyToClipboard]="tok"
+          (cdkCopyToClipboardCopied)="onCopied($event)"
+        >
+          <app-icon name="contentCopy" size="1.125rem" />
+          {{ t('probes.tokenDialog.copy') }}
+        </button>
+        @if (copied()) {
+          <span class="copied" role="status">{{ t('probes.tokenDialog.copied') }}</span>
+        }
+      </div>
+      @if (expiresAt(); as exp) {
+        <p class="hint">{{ t('probes.tokenDialog.expires', { when: (exp | date: 'medium') }) }}</p>
+      }
+      <p class="hint">{{ t('probes.tokenDialog.howTo') }}</p>
+      <pre class="env" data-testid="probe-compose-snippet">
+services:
+  pulsequorum-probe:
+    image: ghcr.io/joinsider/pulsequorum:latest
+    environment:
+      NODE_ROLE: probe
+      NODE_NAME: private-probe-1
+      CLUSTER_SEEDS: &lt;host:port&gt;
+      JOIN_TOKEN_FILE: /run/secrets/join-token
+    volumes:
+      - probe-data:/data
+    secrets:
+      - join-token</pre>
+      <p class="hint">{{ t('probes.tokenDialog.fileHint') }}</p>
+    } @else {
+      <p class="hint">{{ t('probes.tokenDialog.intro') }}</p>
+      <form [formGroup]="form" (ngSubmit)="create()" novalidate>
+        <mat-form-field appearance="outline">
+          <mat-label>{{ t('probes.tokenDialog.ttl') }}</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="ttlMinutes"
+            [min]="ttlMin"
+            [max]="ttlMax"
+            required
+          />
+          <mat-hint>{{ t('probes.tokenDialog.ttlHint', { min: ttlMin, max: ttlMax }) }}</mat-hint>
+          @if (form.controls.ttlMinutes.invalid) {
+            <mat-error>{{
+              t('probes.tokenDialog.ttlHint', { min: ttlMin, max: ttlMax })
+            }}</mat-error>
+          }
+        </mat-form-field>
+      </form>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    @if (token()) {
+      <button mat-flat-button type="button" (click)="close()">
+        {{ t('probes.tokenDialog.done') }}
+      </button>
+    } @else {
+      <button mat-button type="button" (click)="close()">{{ t('common.cancel') }}</button>
+      <button mat-flat-button type="button" [disabled]="busy() || form.invalid" (click)="create()">
+        {{ t('probes.tokenDialog.create') }}
+      </button>
+    }
+  </mat-dialog-actions>
+</ng-container>

@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/joinsider/pulsequorum/internal/api/gen"
+	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/store"
 )
@@ -414,6 +415,21 @@ func TestDefaultChannelEventsFollowCommandLevel(t *testing.T) {
 	for _, w := range want {
 		if !slices.Contains(created.Events, w) {
 			t.Errorf("events at level 4 = %v, missing %s", created.Events, w)
+		}
+	}
+
+	if err := e.state.Update(ctx, func(tx store.StateTx) error { return tx.SetCommandLevel(ctx, cluster.ProbeCommandLevel) }); err != nil {
+		t.Fatal(err)
+	}
+	body["name"] = "ops-level-10"
+	created = createChannel(t, e, admin, body)
+	want10 := append(want, gen.NotificationEvent(store.EventProbeOffline))
+	if len(created.Events) != len(want10) {
+		t.Fatalf("events at level 10 = %v, want %v", created.Events, want10)
+	}
+	for _, w := range want10 {
+		if !slices.Contains(created.Events, w) {
+			t.Errorf("events at level 10 = %v, missing %s", created.Events, w)
 		}
 	}
 }

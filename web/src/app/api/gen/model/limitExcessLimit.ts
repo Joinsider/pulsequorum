@@ -18,4 +18,5 @@ export const LimitExcessLimit = {
   maxMonitors: 'maxMonitors',
   minIntervalSeconds: 'minIntervalSeconds',
   maxChannels: 'maxChannels',
+  maxPrivateProbes: 'maxPrivateProbes',
 } as const;

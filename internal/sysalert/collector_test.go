@@ -29,11 +29,12 @@ const testInterval = 30 * time.Second
 // fakeState is the replicated state the collector reads. The fake applier
 // writes the commands into it, as the FSM would.
 type fakeState struct {
-	nodes   []store.Node
-	alerts  map[key]store.SystemAlert
-	incs    map[string]string
-	cas     []store.ClusterCA
-	tenants map[string]bool
+	nodes       []store.Node
+	alerts      map[key]store.SystemAlert
+	probeAlerts map[string]store.ProbeAlert
+	incs        map[string]string
+	cas         []store.ClusterCA
+	tenants     map[string]bool
 }
 
 func (s *fakeState) ListNodes(context.Context) ([]store.Node, error) {
@@ -43,6 +44,17 @@ func (s *fakeState) ListNodes(context.Context) ([]store.Node, error) {
 func (s *fakeState) ListSystemAlerts(_ context.Context, activeOnly bool) ([]store.SystemAlert, error) {
 	var out []store.SystemAlert
 	for _, a := range s.alerts {
+		if activeOnly && !a.Active {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func (s *fakeState) ListAllProbeAlerts(_ context.Context, activeOnly bool) ([]store.ProbeAlert, error) {
+	var out []store.ProbeAlert
+	for _, a := range s.probeAlerts {
 		if activeOnly && !a.Active {
 			continue
 		}
@@ -83,6 +95,14 @@ func (a *fakeApplier) Apply(_ context.Context, cmd *pb.Command) (cluster.ApplyRe
 		s := p.SetSystemAlert
 		a.state.alerts[key{s.GetKind(), s.GetSubject()}] = store.SystemAlert{
 			Kind: s.GetKind(), Subject: s.GetSubject(), Active: s.GetActive(), Level: int(s.GetLevel()),
+		}
+	case *pb.Command_SetProbeAlert:
+		s := p.SetProbeAlert
+		if a.state.probeAlerts == nil {
+			a.state.probeAlerts = map[string]store.ProbeAlert{}
+		}
+		a.state.probeAlerts[s.GetProbeId()] = store.ProbeAlert{
+			TenantID: cmd.GetTenantId(), ProbeID: s.GetProbeId(), Active: s.GetActive(),
 		}
 	case *pb.Command_RecordIncarnation:
 		a.state.incs[p.RecordIncarnation.GetNodeId()] = p.RecordIncarnation.GetIncarnation()
@@ -132,9 +152,10 @@ func newWorld(t *testing.T) *world {
 			{ID: "n3", Role: store.NodeRoleVoter, Healthy: true, MaxCommandVersion: 6},
 			{ID: "p1", Role: store.NodeRoleProbe, Healthy: false},
 		},
-		alerts:  map[key]store.SystemAlert{},
-		incs:    map[string]string{},
-		tenants: map[string]bool{},
+		alerts:      map[key]store.SystemAlert{},
+		probeAlerts: map[string]store.ProbeAlert{},
+		incs:        map[string]string{},
+		tenants:     map[string]bool{},
 	}
 	w := &world{
 		t: t, now: time.Date(2030, 6, 1, 12, 0, 0, 0, time.UTC), state: st,
@@ -561,4 +582,73 @@ func caCert(t *testing.T, notAfter time.Time) []byte {
 		t.Fatal(err)
 	}
 	return der
+}
+
+func TestPublicProbeOfflineAlert(t *testing.T) {
+	w := newWorld(t)
+	w.state.nodes[3] = store.Node{
+		ID: "p1", Role: store.NodeRoleProbe, Healthy: false,
+		HealthChangedMs: w.now.Add(-2 * time.Minute).UnixMilli(),
+	}
+	w.lead()
+
+	// Still below DefaultProbeOffline (5m): no alert yet.
+	w.steps(1)
+	w.expectAlert(KindProbeOffline, "p1", false, 0)
+
+	// Crossing 5m triggers probe_offline system alert immediately (confirmNow = 1).
+	w.now = w.now.Add(4 * time.Minute)
+	w.steps(1)
+	w.expectAlert(KindProbeOffline, "p1", true, 0)
+
+	// Recovery requires confirmRounds (2) evaluations before clearing.
+	w.state.nodes[3] = store.Node{ID: "p1", Role: store.NodeRoleProbe, Healthy: true, HealthChangedMs: w.now.UnixMilli()}
+	w.steps(1)
+	w.expectAlert(KindProbeOffline, "p1", true, 0)
+	w.steps(1)
+	w.expectAlert(KindProbeOffline, "p1", false, 0)
+}
+
+func TestPrivateProbeOfflineAlertScopedToTenant(t *testing.T) {
+	w := newWorld(t)
+	w.state.nodes[3] = store.Node{
+		ID: "p1", Role: store.NodeRoleProbe, OwnerTenantID: "t-alpha", Healthy: false,
+		HealthChangedMs: w.now.UnixMilli(),
+	}
+	w.lead()
+
+	// Below ProbeCommandLevel (10), SetProbeAlert is never proposed and no system alert is raised.
+	w.now = w.now.Add(6 * time.Minute)
+	w.steps(1)
+	if n := w.applier.countKind(KindProbeOffline); n != 0 {
+		t.Fatalf("public probe_offline alerts = %d, want 0 for private probe", n)
+	}
+	if _, exists := w.state.probeAlerts["p1"]; exists {
+		t.Fatalf("SetProbeAlert proposed below ProbeCommandLevel")
+	}
+
+	// Upgrade command level to ProbeCommandLevel: private probe alert fires for owning tenant only.
+	w.level = cluster.ProbeCommandLevel
+	w.steps(1)
+	if n := w.applier.countKind(KindProbeOffline); n != 0 {
+		t.Fatalf("public probe_offline alerts = %d, want 0 for private probe", n)
+	}
+	pa, exists := w.state.probeAlerts["p1"]
+	if !exists || !pa.Active || pa.TenantID != "t-alpha" {
+		t.Fatalf("probe alert = %+v (exists=%v), want active for t-alpha", pa, exists)
+	}
+
+	// Recovery clears after confirmRounds (2).
+	w.state.nodes[3] = store.Node{
+		ID: "p1", Role: store.NodeRoleProbe, OwnerTenantID: "t-alpha", Healthy: true,
+		HealthChangedMs: w.now.UnixMilli(),
+	}
+	w.steps(1)
+	if !w.state.probeAlerts["p1"].Active {
+		t.Fatal("probe alert cleared on first healthy evaluation, want hysteresis of 2")
+	}
+	w.steps(1)
+	if w.state.probeAlerts["p1"].Active {
+		t.Fatal("probe alert still active after two healthy evaluations")
+	}
 }

@@ -8,7 +8,7 @@ import { OwnTenant } from '../../api/gen/model';
  * limits that are enforced today are shown: monitors, channels and the shortest interval.
  */
 
-export type UsageKey = 'monitors' | 'channels' | 'interval';
+export type UsageKey = 'monitors' | 'channels' | 'privateProbes' | 'interval';
 
 /**
  * ok: below the limit. reached: at the limit, so one more object is refused.
@@ -30,12 +30,14 @@ export function usageRows(tenant: OwnTenant): UsageRow[] {
   const exceeded = new Set<string>(tenant.exceeded.map((e) => e.limit));
   const limits = tenant.effectiveLimits;
   const counted = (
-    key: 'monitors' | 'channels',
+    key: 'monitors' | 'channels' | 'privateProbes',
     used: number,
     limit: number | null | undefined,
   ) => {
     const max = limit ?? null;
-    const exceededHere = exceeded.has(key === 'monitors' ? 'maxMonitors' : 'maxChannels');
+    const limitName =
+      key === 'monitors' ? 'maxMonitors' : key === 'channels' ? 'maxChannels' : 'maxPrivateProbes';
+    const exceededHere = exceeded.has(limitName);
     return {
       key,
       used,
@@ -43,16 +45,21 @@ export function usageRows(tenant: OwnTenant): UsageRow[] {
       state: exceededHere ? 'exceeded' : max !== null && used >= max ? 'reached' : 'ok',
     } satisfies UsageRow;
   };
-  return [
+  const rows: UsageRow[] = [
     counted('monitors', tenant.usage.monitors, limits.maxMonitors),
     counted('channels', tenant.usage.channels, limits.maxChannels),
-    {
-      key: 'interval',
-      used: tenant.usage.minIntervalSeconds ?? null,
-      limit: limits.minIntervalSeconds ?? null,
-      state: exceeded.has('minIntervalSeconds') ? 'exceeded' : 'ok',
-    },
   ];
+  const privateProbesUsed = tenant.usage.privateProbes ?? 0;
+  if (limits.maxPrivateProbes != null || privateProbesUsed > 0) {
+    rows.push(counted('privateProbes', privateProbesUsed, limits.maxPrivateProbes));
+  }
+  rows.push({
+    key: 'interval',
+    used: tenant.usage.minIntervalSeconds ?? null,
+    limit: limits.minIntervalSeconds ?? null,
+    state: exceeded.has('minIntervalSeconds') ? 'exceeded' : 'ok',
+  });
+  return rows;
 }
 
 /** Translation key of the hint for a row that is at or above its limit, or null. */

@@ -96,6 +96,13 @@ export const routes: Routes = [
         loadChildren: () => import('./features/users/users.routes').then((m) => m.routes),
       },
       {
+        // Interactive logins only; the server answers 403 for API tokens (ADR 0035).
+        path: 'probes',
+        canActivate: [adminGuard],
+        providers: [provideTranslocoScope('probes')],
+        loadChildren: () => import('./features/probes/probes.routes').then((m) => m.routes),
+      },
+      {
         // Interactive logins only; the server answers 403 for API tokens (ADR 0031).
         path: 'api-tokens',
         canActivate: [adminGuard],

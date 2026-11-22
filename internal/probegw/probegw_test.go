@@ -975,3 +975,102 @@ func TestSecretResolution(t *testing.T) {
 
 // Keep errors import used if needed.
 var _ = errors.Is
+
+func TestOnRejectedCallbacks(t *testing.T) {
+	ctx := context.Background()
+	var mu sync.Mutex
+	var reasons []string
+
+	env := newTestEnv(t, envConfig{tickInterval: 5 * time.Second, debounceInterval: 50 * time.Millisecond})
+	env.srv.opts.OnRejected = func(reason string) {
+		mu.Lock()
+		reasons = append(reasons, reason)
+		mu.Unlock()
+	}
+
+	env.seedTenant("t1")
+	env.seedTenant("t2")
+	env.seedProbe("p-revoked", "")
+	if err := env.state.Update(ctx, func(tx store.StateTx) error {
+		return tx.PutRevokedNode(ctx, store.RevokedNode{NodeID: "p-revoked", RevokedMs: 1})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	env.seedProbe("p-priv", "t1")
+
+	// 1. Non-probe role -> "non_probe_role"
+	voterCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(mdNodeID, "v1", mdRole, string(pki.RoleVoter)))
+	stream, err := env.client.Subscribe(voterCtx, &pb.SubscribeRequest{ProtocolVersion: 1, Incarnation: "i", Name: "v1"})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("non-probe code = %v, want PermissionDenied", status.Code(err))
+	}
+
+	// 2. Revoked probe -> "revoked"
+	revStream, err := env.client.Subscribe(env.probeCtx(ctx, "p-revoked", ""), &pb.SubscribeRequest{ProtocolVersion: 1, Incarnation: "i", Name: "p-revoked"})
+	if err == nil {
+		_, err = revStream.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked code = %v, want PermissionDenied", status.Code(err))
+	}
+
+	// 3. Unregistered probe -> "unregistered"
+	unregStream, err := env.client.Subscribe(env.probeCtx(ctx, "p-unknown", ""), &pb.SubscribeRequest{ProtocolVersion: 1, Incarnation: "i", Name: "p-unknown"})
+	if err == nil {
+		_, err = unregStream.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unregistered code = %v, want PermissionDenied", status.Code(err))
+	}
+
+	// 4. Owner mismatch -> "owner_mismatch"
+	mismatchStream, err := env.client.Subscribe(env.probeCtx(ctx, "p-priv", "t2"), &pb.SubscribeRequest{ProtocolVersion: 1, Incarnation: "i", Name: "p-priv"})
+	if err == nil {
+		_, err = mismatchStream.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("mismatch code = %v, want PermissionDenied", status.Code(err))
+	}
+
+	// 5. D3 foreign_monitor in collectTenantMonitors
+	out := snapshot{monitors: map[string]resolvedMonitor{}}
+	env.seedMonitor(store.Monitor{TenantID: "t2", ID: "m-foreign", Name: "Foreign", Type: "http", IntervalSeconds: 30, Config: json.RawMessage(`{"url":"https://example.com"}`)})
+	if err := env.srv.collectTenantMonitors(ctx, pki.Identity{NodeID: "p-priv", Role: pki.RoleProbe, TenantID: "t1"}, "t2", nil, &out); err != nil {
+		t.Fatalf("collectTenantMonitors: %v", err)
+	}
+	if len(out.monitors) != 0 {
+		t.Fatalf("expected foreign monitor to be dropped, got %d", len(out.monitors))
+	}
+
+	// 6. D4 upload_identity
+	up, err := env.client.UploadHeartbeats(env.probeCtx(ctx, "p-priv", "t1"))
+	if err != nil {
+		t.Fatalf("UploadHeartbeats: %v", err)
+	}
+	_ = up.Send(&pb.UploadHeartbeatsRequest{
+		Heartbeats: []*pb.Heartbeat{{
+			NodeId: "p-priv", Incarnation: "i", Seq: 1, TenantId: "t2", MonitorId: "m1", TsMs: time.Now().UnixMilli(),
+		}},
+	})
+	if _, err := up.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("foreign upload code = %v, want PermissionDenied", status.Code(err))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{"non_probe_role", "revoked", "unregistered", "owner_mismatch", "foreign_monitor", "upload_identity"} {
+		found := false
+		for _, r := range reasons {
+			if r == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing rejection reason %q in %v", want, reasons)
+		}
+	}
+}

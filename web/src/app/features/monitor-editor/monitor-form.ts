@@ -67,7 +67,10 @@ export function createMonitorForm(): FormGroup {
       Validators.min(1),
       countRequired,
     ]),
-    assignmentNodes: new FormControl('', { nonNullable: true, validators: [nodesRequired] }),
+    assignmentNodes: new FormControl<string[]>([], {
+      nonNullable: true,
+      validators: [nodesRequired],
+    }),
     consensusPolicy: new FormControl<ConsensusPolicy>('majority', { nonNullable: true }),
     config: new FormGroup({}),
   });
@@ -107,7 +110,7 @@ export function monitorFormValue(input: Partial<MonitorInput>): Record<string, u
     notificationChannelIds: input.notificationChannelIds ?? [],
     assignmentMode: assignment.mode,
     assignmentCount: assignment.count ?? null,
-    assignmentNodes: (assignment.nodes ?? []).join(', '),
+    assignmentNodes: [...(assignment.nodes ?? [])],
     consensusPolicy: input.consensusPolicy ?? 'majority',
   };
 }
@@ -164,7 +167,7 @@ function assignmentOf(v: Record<string, unknown>): Assignment {
     return { mode, count: Number(v['assignmentCount']) };
   }
   if (mode === 'nodes') {
-    return { mode, nodes: parseList(String(v['assignmentNodes'] ?? '')) };
+    return { mode, nodes: [...((v['assignmentNodes'] as string[] | null) ?? [])] };
   }
   return { mode: 'all' };
 }
@@ -210,7 +213,6 @@ const countRequired: ValidatorFn = (c) => {
 
 const nodesRequired: ValidatorFn = (c) => {
   const mode = c.parent?.get('assignmentMode')?.value as AssignmentMode | undefined;
-  return mode === 'nodes' && parseList(String(c.value ?? '')).length === 0
-    ? { nodesRequired: true }
-    : null;
+  const list = Array.isArray(c.value) ? c.value : parseList(String(c.value ?? ''));
+  return mode === 'nodes' && list.length === 0 ? { nodesRequired: true } : null;
 };

@@ -61,6 +61,7 @@ func TestMetricNamesAreExported(t *testing.T) {
 	m.CheckStarted("http")
 	m.CheckFinished("http", "up", 40*time.Millisecond)
 	m.AlertDelivered("system", "sent")
+	m.ProbeRejected("owner_mismatch")
 	body := scrape(t, m.Handler())
 
 	want := []string{
@@ -69,6 +70,7 @@ func TestMetricNamesAreExported(t *testing.T) {
 		`pulsequorum_check_duration_seconds_count{type="http"} 1`,
 		`pulsequorum_checks_running 0`,
 		`pulsequorum_alert_deliveries_total{kind="system",outcome="sent"} 1`,
+		`pulsequorum_probe_rejected_total{reason="owner_mismatch"} 1`,
 		`pulsequorum_raft_state{state="Leader"} 1`,
 		`pulsequorum_raft_state{state="Follower"} 0`,
 		`pulsequorum_raft_applied_index 42`,
@@ -143,10 +145,11 @@ func TestNoTenantOrMonitorLabels(t *testing.T) {
 	m.CheckStarted("http")
 	m.CheckFinished("http", "down", time.Millisecond)
 	m.AlertDelivered("sys", "sent")
+	m.ProbeRejected("revoked")
 	body := scrape(t, m.Handler())
 
 	allowed := map[string]bool{
-		"type": true, "result": true, "kind": true, "outcome": true,
+		"type": true, "result": true, "kind": true, "outcome": true, "reason": true,
 		"state": true, "peer": true, "db": true, "version": true, "le": true,
 	}
 	labelRe := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)="`)

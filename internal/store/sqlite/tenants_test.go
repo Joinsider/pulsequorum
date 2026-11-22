@@ -58,7 +58,7 @@ func countWhere(t *testing.T, db *sql.DB, table, column string, value any) int {
 var stateTenantTables = []string{
 	"alert_outbox", "api_tokens", "audit_log", "incidents", "join_tokens", "maintenance_windows", "monitor_channels",
 	"monitor_states", "monitor_status_history", "monitor_tags", "monitors", "notification_channels",
-	"refresh_sessions", "unconfirmed_alerts", "users",
+	"probe_alerts", "refresh_sessions", "unconfirmed_alerts", "users",
 }
 
 // populateStateTenant writes one row of every kind of tenant data with the
@@ -123,6 +123,9 @@ func populateStateTenant(t *testing.T, s *StateStore, tid string, auditIndex uin
 		}
 		if err := tx.InsertAudit(ctx, []store.AuditEntry{{Index: auditIndex, TenantID: tid, AtMs: 1, ActorKind: "user",
 			ActorID: "usr" + x, Action: "monitor.create", ObjectKind: "monitor", ObjectID: "mon" + x}}); err != nil {
+			return err
+		}
+		if err := tx.PutProbeAlert(ctx, store.ProbeAlert{TenantID: tid, ProbeID: "prb" + x, Active: true, SinceMs: 1, UpdatedMs: 2}); err != nil {
 			return err
 		}
 		return tx.InsertUnconfirmedAlerts(ctx, []store.UnconfirmedAlert{{NodeID: "node" + x, LocalID: 1, TenantID: tid,

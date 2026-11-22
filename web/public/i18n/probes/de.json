@@ -1,0 +1,54 @@
+{
+  "title": "Private Probes",
+  "refresh": "Aktualisieren",
+  "createToken": "Join-Token erzeugen",
+  "listLabel": "Private Probes",
+  "quota": "{{ used }} / {{ limit }} private Probes belegt (inkl. offener Tokens)",
+  "unlimited": "unbegrenzt",
+  "limitReached": "Limit erreicht.",
+  "empty": "Noch keine privaten Probes registriert.",
+  "emptyHint": "Erzeuge ein Join-Token und starte eine Probe in deinem internen Netz, um interne Ziele zu überwachen.",
+  "loadError": "Die privaten Probes konnten nicht geladen werden.",
+  "removed": "Private Probe entfernt und widerrufen.",
+  "node": {
+    "healthy": "Gesund",
+    "unhealthy": "Nicht gesund",
+    "offlineAlert": "Offline-Alarm aktiv",
+    "region": "Region",
+    "version": "Version",
+    "capabilities": "Fähigkeiten",
+    "lastContact": "Letzter Kontakt",
+    "buffer": "Puffer",
+    "bufferValue": "{{ unacked }} unbestätigt, {{ bytes }}, {{ dropped }} verworfen",
+    "bufferOldest": "ältester {{ oldest }}"
+  },
+  "actions": {
+    "remove": "Entfernen"
+  },
+  "remove": {
+    "title": "Private Probe entfernen?",
+    "text": "Die Probe wird sofort getrennt und ihr Client-Zertifikat widerrufen. Ein erneuter Beitritt erfordert ein neues Token.",
+    "confirm": "Probe entfernen"
+  },
+  "tokenDialog": {
+    "title": "Token für private Probe erzeugen",
+    "intro": "Erzeugt ein einmaliges Join-Token, das fest an deinen Mandanten gebunden ist. Es wird nur einmal angezeigt.",
+    "ttl": "Gültig für (Minuten)",
+    "ttlHint": "{{ min }} bis {{ max }} Minuten",
+    "create": "Token erzeugen",
+    "token": "Join-Token",
+    "onceOnly": "Kopiere dieses Token jetzt. Es wird nicht noch einmal angezeigt und später nirgends gespeichert.",
+    "copy": "Kopieren",
+    "copied": "In die Zwischenablage kopiert",
+    "expires": "Läuft ab: {{ when }}",
+    "howTo": "Speichere das Token auf dem Probe-Host als /run/secrets/join-token und starte mit:",
+    "fileHint": "Bei privaten Probes ist SSRF_PROTECTION=auto standardmäßig deaktiviert, damit explizit zugewiesene interne Ziele geprüft werden können.",
+    "done": "Fertig",
+    "error": {
+      "forbidden": "Es kann kein Join-Token für eine private Probe erstellt werden.",
+      "invalid": "Der Server hat die Token-Anfrage abgelehnt.",
+      "unavailable": "Der Cluster ist gerade nicht verfügbar. Bitte gleich erneut versuchen.",
+      "generic": "Das Token konnte nicht erzeugt werden."
+    }
+  }
+}

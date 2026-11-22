@@ -16,6 +16,8 @@ export interface TenantUsage {
   monitors: number;
   /** @minimum 0 */
   channels: number;
+  /** @minimum 0 */
+  privateProbes?: number;
   /**
      * Shortest monitor interval; absent without monitors
      * @minimum 1
