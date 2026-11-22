@@ -324,6 +324,15 @@ func (a *Aggregator) process(ctx context.Context, w *watch, nowMs int64, registr
 		if a.opts.Maintenance != nil && a.opts.Maintenance(w.m, time.UnixMilli(w.start(k))) {
 			if w.ready {
 				w.t.resetStreaks()
+				// The controller sets MAINTENANCE meanwhile; marking it here makes
+				// the first round after the window drop the watch, so the rebuild
+				// reloads the replicated status (PENDING once the controller has
+				// left maintenance). A rebuild in this call replays old windows
+				// instead: it keeps the replicated status, or the watch would be
+				// dropped again and the replay would loop.
+				if !rebuilt {
+					w.t.status = store.StatusMaintenance
+				}
 			}
 			w.next = k + 1
 			continue
