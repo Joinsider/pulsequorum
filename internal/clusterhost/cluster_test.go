@@ -159,10 +159,10 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		OnFatal: func(err error) { t.Errorf("node halted: %v", err) },
 		Name:    "n", Version: "test", Capabilities: n.caps,
 		MaxCommandVersion: n.maxVersion, Clock: n.clock, ClockInterval: n.clockInterval,
-		OnHeartbeatsStored: n.onStored,
-		SSRFProtection:     n.ssrfProtection,
+		OnHeartbeatsStored:  n.onStored,
+		SSRFProtection:      n.ssrfProtection,
 		ProbeHealthInterval: n.probeHealthInterval,
-		OnProbeRejected:    n.onProbeRejected,
+		OnProbeRejected:     n.onProbeRejected,
 	})
 	if err != nil {
 		// The state is not registered for cleanup yet; close it here.

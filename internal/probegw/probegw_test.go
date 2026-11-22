@@ -973,7 +973,7 @@ func TestSecretResolution(t *testing.T) {
 	}
 }
 
-	// Keep errors import used if needed.
+// Keep errors import used if needed.
 var _ = errors.Is
 
 func TestOnRejectedCallbacks(t *testing.T) {

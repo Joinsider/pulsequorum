@@ -646,6 +646,7 @@ Protobuf-Definitionen in `proto/`:
 | `PROBE_BUFFER_MAX_BYTES` | `100MiB` | Maximale Puffergröße von `metrics.db` auf einer Probe (ADR 0034) |
 | `PROBE_ACK_RETAIN` | `10m` | Aufbewahrung bestätigter Probe-Heartbeats vor Löschung (ADR 0034) |
 | `PROBE_SESSION_TIMEOUT` | `15s` | Ausbleiben von Voter-Ticks bis zum automatischen Failover (ADR 0034) |
+| `PROBE_OFFLINE_ALERT` | `5m` | Verzögerung bis zum System-/Mandanten-Alert bei offline gegangener Probe (`0` = aus, ADR 0035) |
 | `AUTH_MODE` | `local` | `local` \| `zitadel` |
 | `AUTH_COOKIE_DOMAIN` | – | Domain des Refresh-Cookies (leer = nur dieser Host, ADR 0008) |
 | `ZITADEL_ISSUER` / `ZITADEL_AUDIENCE` | – | OIDC |

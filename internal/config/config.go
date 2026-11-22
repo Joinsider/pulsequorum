@@ -223,8 +223,8 @@ type Config struct {
 	// offline alert is raised (PROBE_OFFLINE_ALERT, FA-PRB-06, ADR 0035).
 	ProbeOfflineAlert time.Duration
 	LogLevel          slog.Level
-	LogFormat       string
-	ShutdownTimeout time.Duration
+	LogFormat         string
+	ShutdownTimeout   time.Duration
 }
 
 func envOrDefault(getenv func(string) string, key, def string) string {

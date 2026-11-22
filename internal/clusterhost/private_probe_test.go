@@ -81,7 +81,7 @@ func putTenantHTTPMonitor(ctx context.Context, t *testing.T, leader *testNode, t
 	}
 }
 
-func dialRawProbeService(ctx context.Context, t *testing.T, addr string, p *testProbe) pb.ProbeServiceClient {
+func dialRawProbeService(t *testing.T, addr string, p *testProbe) pb.ProbeServiceClient {
 	t.Helper()
 	verifier := &pki.Verifier{
 		ClusterIDFunc: func() string {
@@ -208,7 +208,7 @@ func TestPrivateProbeTenantIsolation(t *testing.T) {
 
 	// D4: probe-a forging tenant-b heartbeat receives PermissionDenied + OnRejected("upload_identity")
 	// without persisting heartbeats or advancing stream position; lost_below stays scoped to probe-a.
-	cli := dialRawProbeService(ctx, t, n1.addr, probeA)
+	cli := dialRawProbeService(t, n1.addr, probeA)
 	up, err := cli.UploadHeartbeats(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -379,7 +379,7 @@ func TestPrivateProbeDeleteTenantRevocation(t *testing.T) {
 	}
 
 	// Direct gRPC Subscribe attempt with probeA cert is rejected.
-	cli := dialRawProbeService(ctx, t, leader.addr, probeA)
+	cli := dialRawProbeService(t, leader.addr, probeA)
 	sub, err := cli.Subscribe(ctx, &pb.SubscribeRequest{ProtocolVersion: 1, Incarnation: probeA.incarnation, Name: "probe-a"})
 	if err == nil {
 		_, err = sub.Recv()
