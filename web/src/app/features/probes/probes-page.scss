@@ -95,9 +95,14 @@
 }
 
 .badge--unhealthy,
-.badge--alert {
+.badge--alert,
+.badge--warn {
   color: var(--danger);
   border-color: currentColor;
+}
+
+.badge--policy {
+  color: var(--muted);
 }
 
 .facts {

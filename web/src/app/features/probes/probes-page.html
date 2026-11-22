@@ -68,6 +68,20 @@
                   {{ t('probes.node.offlineAlert') }}
                 </span>
               }
+              <span
+                class="badge"
+                [class.badge--policy]="row.targetPolicy"
+                [class.badge--warn]="!row.targetPolicy"
+                [matTooltip]="t('probes.node.targetPolicyHint')"
+                data-testid="probe-target-policy-badge"
+                [attr.data-policy]="row.targetPolicy ? 'active' : 'none'"
+              >
+                {{
+                  row.targetPolicy
+                    ? t('probes.node.targetPolicyActive')
+                    : t('probes.node.targetPolicyMissing')
+                }}
+              </span>
             </div>
           </div>
 

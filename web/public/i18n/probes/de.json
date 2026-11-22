@@ -20,7 +20,10 @@
     "lastContact": "Letzter Kontakt",
     "buffer": "Puffer",
     "bufferValue": "{{ unacked }} unbestätigt, {{ bytes }}, {{ dropped }} verworfen",
-    "bufferOldest": "ältester {{ oldest }}"
+    "bufferOldest": "ältester {{ oldest }}",
+    "targetPolicyActive": "Zielrichtlinie aktiv",
+    "targetPolicyMissing": "Keine Zielrichtlinie",
+    "targetPolicyHint": "Die Probe begrenzt lokal, welche Ziele sie erreichen darf (PROBE_ALLOW_TARGETS)."
   },
   "actions": {
     "remove": "Entfernen"
