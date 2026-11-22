@@ -101,8 +101,10 @@ func run(args []string) int {
 			return 1
 		}
 	case config.RoleProbe:
-		log.Warn("probe role is not implemented yet (phase 5); idling until shutdown")
-		<-ctx.Done()
+		if err := runProbe(ctx, cfg, log); err != nil {
+			log.Error("probe stopped with error", "err", err)
+			return 1
+		}
 	}
 
 	log.Info("stopped")
@@ -356,7 +358,10 @@ func startVoterHost(ctx context.Context, deps voterRuntimeDeps, stop context.Can
 		Clock:     deps.clock,
 		SelfCheck: deps.prober.selfProber.Status,
 		// The SSRF setting of this node, reported in GetStatus (ADR 0030).
-		SSRFProtection: cfg.SSRFProtectionEnabled(),
+		SSRFProtection:    cfg.SSRFProtectionEnabled(),
+		ProbeAssigner:     scheduler.Assigner{Capability: scheduler.Capabilities(checker.Default)},
+		ProbeKeyring:      deps.keyring,
+		ProbeBufferMaxAge: cfg.ProbeBufferMaxAge,
 		OnHeartbeatsStored: func(hbs []store.Heartbeat) {
 			observeHeartbeats(deps.aggPtr, deps.degradedAggPtr, hbs)
 		},
@@ -672,6 +677,14 @@ func buildAPIDeps(deps voterRuntimeDeps, checkEnv *checker.Env, sender *alert.Se
 		SSRFPolicy:   deps.prober.policy,
 		// The SSRF setting of each node in the cluster view (ADR 0030).
 		SSRFProtectionByNode: deps.host.SSRFProtectionByNode,
+		ProbeSessions: func() map[string]api.ProbeSessionView {
+			raw := deps.host.ProbeSessionViews()
+			out := make(map[string]api.ProbeSessionView, len(raw))
+			for id, v := range raw {
+				out[id] = api.ProbeSessionView{ConnectedVoterID: v.ConnectedVoterID, Buffer: v.Buffer}
+			}
+			return out
+		},
 	}
 }
 

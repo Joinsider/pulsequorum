@@ -31,6 +31,7 @@
     "summary": {
       "label": "Cluster summary",
       "voters": "Voters",
+      "probes": "Probes",
       "quorum": "Quorum",
       "tolerates": "Tolerated failures",
       "leader": "Leader",
@@ -44,8 +45,17 @@
       "voter": "Voter",
       "nonVoter": "Non-voter",
       "catchingUp": "catching up",
+      "probe": "Probe",
+      "privateProbe": "Private",
+      "publicProbe": "Public",
       "leaderBadge": "Leader",
       "selfBadge": "This node",
+      "region": "Region",
+      "scope": "Tenant",
+      "connectedVoter": "Connected voter",
+      "probeBuffer": "Buffer",
+      "probeBufferValue": "{{ unacked }} unacked, {{ bytes }}, {{ dropped }} dropped",
+      "probeBufferOldest": "oldest {{ oldest }}",
       "healthLabel": "Health",
       "connectivity": {
         "impaired": "Connectivity impaired",
@@ -91,6 +101,11 @@
       "title": "Remove node",
       "text": "Remove “{{ name }}” from the cluster? It stops taking part in the Raft group and no longer receives replicated data.",
       "confirm": "Remove node"
+    },
+    "removeProbe": {
+      "title": "Remove probe",
+      "text": "Remove probe “{{ name }}” from the cluster? It will be disconnected and must re-register to rejoin.",
+      "confirm": "Remove probe"
     },
     "replace": {
       "title": "Replace node",

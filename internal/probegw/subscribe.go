@@ -305,7 +305,7 @@ func (s *Server) collectTenantMonitors(ctx context.Context, caller pki.Identity,
 				TenantId:        m.TenantID,
 				Type:            m.Type,
 				ConfigJson:      cfg,
-				IntervalSeconds: uint32(m.IntervalSeconds),   //nolint:gosec // G115: validated positive
+				IntervalSeconds: uint32(m.IntervalSeconds),        //nolint:gosec // G115: validated positive
 				TimeoutSeconds:  uint32(max(m.TimeoutSeconds, 0)), //nolint:gosec // G115: clamped non-negative
 				SsrfProtection:  s.opts.SSRFProtection,
 			}

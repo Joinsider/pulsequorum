@@ -2118,6 +2118,37 @@ components:
         ssrfProtection:
           type: boolean
           description: "Whether SSRF protection is on for the node's checks and notifications (ADR 0030); absent while the node has not answered recently or is older than ADR 0030."
+        role:
+          type: string
+          enum: [voter, probe]
+          description: "Role of the node in the cluster (ADR 0034); defaults to voter."
+        region:
+          type: string
+          description: "Optional region label of the node."
+        ownerTenantId:
+          type: string
+          description: "Owning tenant ID for private probes; absent for voters and public probes (ADR 0035)."
+        connectedVoterId:
+          type: string
+          description: "ID of the voter the probe currently has a live session on (ADR 0034)."
+        probeBuffer:
+          $ref: "#/components/schemas/ProbeBufferStatus"
+    ProbeBufferStatus:
+      type: object
+      required: [bytes, unacked, droppedTotal]
+      properties:
+        bytes:
+          type: integer
+          format: int64
+        unacked:
+          type: integer
+          format: int64
+        oldestUnackedMs:
+          type: integer
+          format: int64
+        droppedTotal:
+          type: integer
+          format: int64
     ClusterNodeList:
       type: object
       required: [nodes, leaderId, warnings]

@@ -18,6 +18,8 @@ export interface RemoveNodeDialogData {
   mode: 'remove' | 'replace';
   /** Display name of the node (a name or the short id). */
   nodeName: string;
+  /** True when the target node is a probe (no voter quorum impact). */
+  isProbe?: boolean;
   votersLeft: number;
   toleratesAfter: number;
   /** Translation key of a quorum risk, or null. */
@@ -30,17 +32,19 @@ export interface RemoveNodeDialogData {
   imports: [MatDialogModule, MatButtonModule, TranslocoDirective],
   template: `
     <ng-container *transloco="let t">
-      <h2 mat-dialog-title>{{ t('admin.cluster.' + data.mode + '.title') }}</h2>
+      <h2 mat-dialog-title>{{ t(keyPrefix + '.title') }}</h2>
       <mat-dialog-content class="form-stack">
-        <p>{{ t('admin.cluster.' + data.mode + '.text', { name: data.nodeName }) }}</p>
-        @if (data.mode === 'replace') {
+        <p>{{ t(keyPrefix + '.text', { name: data.nodeName }) }}</p>
+        @if (data.mode === 'replace' && !data.isProbe) {
           <p>{{ t('admin.cluster.replace.warnReserve') }}</p>
           <p>{{ t('admin.cluster.replace.warnData') }}</p>
         }
-        <ul class="impact">
-          <li>{{ t('admin.cluster.impact.votersLeft', { count: data.votersLeft }) }}</li>
-          <li>{{ t('admin.cluster.impact.tolerates', { count: data.toleratesAfter }) }}</li>
-        </ul>
+        @if (!data.isProbe) {
+          <ul class="impact">
+            <li>{{ t('admin.cluster.impact.votersLeft', { count: data.votersLeft }) }}</li>
+            <li>{{ t('admin.cluster.impact.tolerates', { count: data.toleratesAfter }) }}</li>
+          </ul>
+        }
         @if (data.riskKey; as key) {
           <p class="risk" role="note">{{ t(key) }}</p>
         }
@@ -56,7 +60,7 @@ export interface RemoveNodeDialogData {
           cdkFocusInitial
           [mat-dialog-close]="true"
         >
-          {{ t('admin.cluster.' + data.mode + '.confirm') }}
+          {{ t(keyPrefix + '.confirm') }}
         </button>
       </mat-dialog-actions>
     </ng-container>
@@ -78,6 +82,10 @@ export interface RemoveNodeDialogData {
 })
 export class RemoveNodeDialog {
   protected readonly data = inject<RemoveNodeDialogData>(MAT_DIALOG_DATA);
+
+  protected get keyPrefix(): string {
+    return this.data.isProbe ? 'admin.cluster.removeProbe' : `admin.cluster.${this.data.mode}`;
+  }
 }
 
 /**

@@ -22,10 +22,13 @@ import (
 	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/clusternet"
 	"github.com/joinsider/pulsequorum/internal/clusterpki"
+	"github.com/joinsider/pulsequorum/internal/configsecret"
 	"github.com/joinsider/pulsequorum/internal/membership"
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/probegw"
 	"github.com/joinsider/pulsequorum/internal/replication"
+	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
 	"github.com/joinsider/pulsequorum/internal/store"
@@ -179,6 +182,13 @@ type Options struct {
 	// SSRFProtection is whether SSRF protection is on for this node (ADR 0030);
 	// it is reported in GetStatus and shown per node in the cluster view.
 	SSRFProtection bool
+	// ProbeAssigner, ProbeKeyring and probe timings configure the voter's ProbeService gateway (ADR 0034).
+	ProbeAssigner         scheduler.Assigner
+	ProbeKeyring          configsecret.Keyring
+	ProbeBufferMaxAge     time.Duration
+	ProbeTickInterval     time.Duration
+	ProbeDebounceInterval time.Duration
+	ProbeHealthInterval   time.Duration
 }
 
 // Host is the running cluster side of a voter.
@@ -196,6 +206,10 @@ type Host struct {
 	// Level raises the cluster command level once all voters support it
 	// (ADR 0018).
 	Level *membership.LevelWatcher
+	// ProbeGW serves connected probes over gRPC/mTLS (ADR 0034).
+	ProbeGW *probegw.Server
+	// ProbeHealth updates probe health in the registry from merged voter sessions (ADR 0034).
+	ProbeHealth *membership.ProbeHealthWatcher
 
 	state store.State
 	self  store.Node
@@ -208,6 +222,7 @@ type Host struct {
 	ssrfProtection bool
 	peerViews      peerViewTracker
 	signals        signalTracker
+	probeSessions  probeSessionTracker
 	// service answers GetStatus; SelfSignals asks it for this node's signals.
 	service       *membership.Service
 	clockInterval time.Duration
@@ -285,7 +300,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	}
 	h.Node = node
 	h.Authority.Cluster = node
-	h.Manager = &membership.Manager{Raft: node, Status: h.status, DialLeader: h.dial, Log: opts.Log}
+	h.Manager = &membership.Manager{Raft: node, State: opts.State, Status: h.status, DialLeader: h.dial, Log: opts.Log}
 	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log, Now: clock}
 	h.Level = &membership.LevelWatcher{Node: node, State: opts.State, Log: opts.Log}
 	node.OnHeartbeat(h.Health.Observe)
@@ -304,16 +319,45 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	// observations; their push streams reconnect instead.
 	node.OnPeerResumed(h.Replication.Trigger)
 
+	h.ProbeGW = probegw.New(probegw.Options{
+		NodeID:           opts.NodeID,
+		State:            opts.State,
+		Metrics:          opts.Metrics,
+		Cluster:          node,
+		SubscribeChanges: node.FSM().SubscribeChanges,
+		Bundle:           h.Authority.Bundle,
+		Assigner:         opts.ProbeAssigner,
+		Keyring:          opts.ProbeKeyring,
+		SSRFProtection:   opts.SSRFProtection,
+		OnStored:         opts.OnHeartbeatsStored,
+		Publish:          h.Replication.Publish,
+		Clock:            clock,
+		TickInterval:     opts.ProbeTickInterval,
+		DebounceInterval: opts.ProbeDebounceInterval,
+		BufferMaxAge:     opts.ProbeBufferMaxAge,
+		Log:              opts.Log,
+	})
+	h.ProbeHealth = &membership.ProbeHealthWatcher{
+		Node:     node,
+		State:    opts.State,
+		Sessions: h.ProbeSessions,
+		Log:      opts.Log,
+		Now:      clock,
+		Interval: opts.ProbeHealthInterval,
+	}
+
 	h.grpc = grpc.NewServer(clusternet.ServerOptions(membership.Access)...)
 	h.service = &membership.Service{
 		Node: node, State: opts.State, Authority: h.Authority, Manager: h.Manager,
 		KEK: opts.KEK, KEKFingerprint: opts.KEK.Fingerprint, DialLeader: h.dial, Log: opts.Log, Clock: clock,
 		SelfCheck: opts.SelfCheck, Own: h.ownSignals(opts), SSRFProtection: opts.SSRFProtection,
 	}
+	h.service.Own.ProbeSessions = h.ProbeGW.Sessions
 	pb.RegisterClusterServiceServer(h.grpc, h.service)
 	pb.RegisterReplicationServiceServer(h.grpc, &replication.Server{
 		NodeID: opts.NodeID, Metrics: opts.Metrics, Triggers: h.Replication, OnStored: opts.OnHeartbeatsStored, Log: opts.Log,
 	})
+	pb.RegisterProbeServiceServer(h.grpc, h.ProbeGW)
 	h.wg.Go(func() {
 		if err := mux.Serve(); err != nil {
 			opts.Log.Error("cluster port stopped", "err", err)
@@ -358,7 +402,63 @@ func (h *Host) Run(ctx context.Context) {
 	wg.Go(func() { h.Level.Run(ctx) })
 	wg.Go(func() { h.watchClocks(ctx) })
 	wg.Go(func() { h.revokeRecovered(ctx) })
+	wg.Go(func() { h.ProbeGW.Run(ctx) })
+	wg.Go(func() { h.ProbeHealth.Run(ctx) })
 	wg.Wait()
+}
+
+// ProbeSessionView describes a live probe session with optional buffer fill
+// status when connected to this voter.
+type ProbeSessionView struct {
+	ConnectedVoterID string
+	ConnectedSinceMs int64
+	LastMessageMs    int64
+	Buffer           *pb.ProbeBufferStatus
+}
+
+// ProbeSessions returns merged active probe sessions across this voter and its
+// peers (ADR 0034 section 7).
+func (h *Host) ProbeSessions() map[string]membership.ProbeSessionInfo {
+	out := h.probeSessions.snapshot(h.clock())
+	if h.ProbeGW == nil {
+		return out
+	}
+	selfID := h.Node.ID()
+	for _, s := range h.ProbeGW.Sessions() {
+		info := membership.ProbeSessionInfo{
+			NodeID:           s.GetNodeId(),
+			ConnectedVoterID: selfID,
+			ConnectedSinceMs: s.GetConnectedSinceMs(),
+			LastMessageMs:    s.GetLastMessageMs(),
+		}
+		if cur, ok := out[info.NodeID]; !ok || info.LastMessageMs > cur.LastMessageMs {
+			out[info.NodeID] = info
+		}
+	}
+	return out
+}
+
+// ProbeSessionViews returns merged active probe sessions including local
+// buffer statistics when the probe is connected to this voter.
+func (h *Host) ProbeSessionViews() map[string]ProbeSessionView {
+	merged := h.ProbeSessions()
+	var localDetails map[string]probegw.SessionDetail
+	if h.ProbeGW != nil {
+		localDetails = h.ProbeGW.SessionDetails()
+	}
+	out := make(map[string]ProbeSessionView, len(merged))
+	for id, info := range merged {
+		view := ProbeSessionView{
+			ConnectedVoterID: info.ConnectedVoterID,
+			ConnectedSinceMs: info.ConnectedSinceMs,
+			LastMessageMs:    info.LastMessageMs,
+		}
+		if d, ok := localDetails[id]; ok && info.ConnectedVoterID == h.Node.ID() {
+			view.Buffer = d.Buffer
+		}
+		out[id] = view
+	}
+	return out
 }
 
 // replicationPeers returns the current Raft voters except this node. A

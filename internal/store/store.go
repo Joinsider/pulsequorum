@@ -850,9 +850,9 @@ const (
 // node registers itself; Healthy is set by the leader from its contact with
 // the node.
 type Node struct {
-	ID           string
-	Name         string
-	Role         string   // NodeRoleVoter or NodeRoleProbe
+	ID   string
+	Name string
+	Role string // NodeRoleVoter or NodeRoleProbe
 	// OwnerTenantID is empty for voters and public probes, and the tenant ID for
 	// private probes (ADR 0034, ADR 0035).
 	OwnerTenantID string

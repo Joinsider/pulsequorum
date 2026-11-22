@@ -44,6 +44,12 @@ type Applier interface {
 	Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
 }
 
+// ProbeSessionView describes a live probe session for the cluster listing (ADR 0034).
+type ProbeSessionView struct {
+	ConnectedVoterID string
+	Buffer           *pb.ProbeBufferStatus
+}
+
 // Deps are the services the handlers use. Fields may be nil in tests that do
 // not exercise the corresponding endpoints.
 type Deps struct {
@@ -63,7 +69,9 @@ type Deps struct {
 	// SSRFProtectionByNode returns whether SSRF protection is on for each node
 	// that answered recently, including this node (ADR 0030). Nil means unknown.
 	SSRFProtectionByNode func() map[string]bool
-	Registry             *checker.Registry
+	// ProbeSessions returns merged active probe sessions by probe ID (ADR 0034).
+	ProbeSessions func() map[string]ProbeSessionView
+	Registry      *checker.Registry
 	// SSRFPolicy checks the destination hosts of saved monitors; nil when
 	// SSRF protection is off (ADR 0030).
 	SSRFPolicy checker.AddressPolicy

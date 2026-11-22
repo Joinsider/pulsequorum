@@ -19,7 +19,12 @@ export function faultTolerance(voters: number): number {
   return Math.max(0, voters - quorumOf(voters));
 }
 
-/** Leader first, then voters, then non-voters; inside each group by name (fallback: id). */
+/** True when the node has the `probe` role (ADR 0034). */
+export function isProbe(node: ClusterNode): boolean {
+  return node.role === 'probe';
+}
+
+/** Leader first, then voters, then non-voters, then probes; inside each group by name (fallback: id). */
 export function sortNodes(nodes: readonly ClusterNode[]): ClusterNode[] {
   return [...nodes].sort(
     (a, b) => roleRank(a) - roleRank(b) || nodeLabel(a).localeCompare(nodeLabel(b)),
@@ -27,6 +32,9 @@ export function sortNodes(nodes: readonly ClusterNode[]): ClusterNode[] {
 }
 
 function roleRank(node: ClusterNode): number {
+  if (isProbe(node)) {
+    return 3;
+  }
   if (node.leader) {
     return 0;
   }
@@ -57,6 +65,14 @@ export interface RemovalImpact {
  */
 export function removalImpact(nodes: readonly ClusterNode[], target: ClusterNode): RemovalImpact {
   const voters = nodes.filter((n) => n.voter).length;
+  if (isProbe(target)) {
+    return {
+      blockedKey: null,
+      votersLeft: voters,
+      toleratesAfter: faultTolerance(voters),
+      riskKey: null,
+    };
+  }
   const votersLeft = target.voter ? voters - 1 : voters;
 
   let blockedKey: string | null = null;
@@ -142,6 +158,22 @@ export function formatDuration(ms: number): string {
     return `${Math.floor(ms / 60_000)} min`;
   }
   return `${Math.floor(ms / 3_600_000)} h`;
+}
+
+/** Human-readable byte count using 1024-based units (B, KB, MB, GB). */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`;
+  }
+  const units = ['KB', 'MB', 'GB'] as const;
+  let value = bytes / 1024;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx++;
+  }
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded} ${units[idx]}`;
 }
 
 /**

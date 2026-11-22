@@ -27,8 +27,10 @@ import { SystemAlertsSection } from './system-alerts-section';
 import {
   clusterErrorKey,
   faultTolerance,
+  formatBytes,
   formatDuration,
   healthOf,
+  isProbe,
   LagSeverity,
   ClockSeverity,
   clockSeverity,
@@ -50,6 +52,7 @@ export const POLL_INTERVAL_MS = 10_000;
 export interface NodeRow {
   readonly node: ClusterNode;
   readonly name: string;
+  readonly isProbe: boolean;
   readonly impact: RemovalImpact;
   readonly health: NodeHealth;
   readonly lagSeverity: LagSeverity;
@@ -58,11 +61,21 @@ export interface NodeRow {
   readonly clockSeverity: ClockSeverity;
   /** Signed clock offset, or null while no fresh measurement exists ("–"). */
   readonly clockText: string | null;
+  /** Display name or short id of the voter a probe is connected to. */
+  readonly connectedVoterLabel: string | null;
+  /** Formatted probe buffer status, or null when absent. */
+  readonly bufferMetrics: {
+    readonly unacked: number;
+    readonly bytesText: string;
+    readonly oldestText: string | null;
+    readonly droppedTotal: number;
+  } | null;
 }
 
 /** Summary figures above the node list. */
 export interface ClusterSummary {
   readonly voters: number;
+  readonly probes: number;
   readonly quorum: number;
   readonly tolerates: number;
   /** Leader name or id; null while no leader is known. */
@@ -128,17 +141,36 @@ export class ClusterPage implements OnInit {
     if (!data) {
       return [];
     }
+    const nodeById = new Map(data.nodes.map((n) => [n.id, n]));
     return sortNodes(data.nodes).map((node) => {
       const lagMs = node.replicationLagMs;
+      let connectedVoterLabel: string | null = null;
+      if (node.connectedVoterId) {
+        const voter = nodeById.get(node.connectedVoterId);
+        connectedVoterLabel = voter ? displayName(voter) : shortId(node.connectedVoterId);
+      }
+      const buf = node.probeBuffer;
+      const bufferMetrics = buf
+        ? {
+            unacked: buf.unacked,
+            bytesText: formatBytes(buf.bytes),
+            oldestText:
+              buf.oldestUnackedMs !== undefined ? formatDuration(buf.oldestUnackedMs) : null,
+            droppedTotal: buf.droppedTotal,
+          }
+        : null;
       return {
         node,
         name: displayName(node),
+        isProbe: isProbe(node),
         impact: removalImpact(data.nodes, node),
         health: healthOf(node),
         lagSeverity: lagSeverity(lagMs),
         lagText: lagMs === undefined ? null : formatDuration(lagMs),
         clockSeverity: clockSeverity(node.clockOffsetMs),
         clockText: node.clockOffsetMs === undefined ? null : formatOffset(node.clockOffsetMs),
+        connectedVoterLabel,
+        bufferMetrics,
       };
     });
   });
@@ -155,9 +187,11 @@ export class ClusterPage implements OnInit {
       return null;
     }
     const voters = data.nodes.filter((n) => n.voter).length;
+    const probes = data.nodes.filter(isProbe).length;
     const leader = data.nodes.find((n) => n.leader);
     return {
       voters,
+      probes,
       quorum: quorumOf(voters),
       tolerates: faultTolerance(voters),
       leaderLabel: data.leaderId ? (leader ? displayName(leader) : data.leaderId) : null,
@@ -269,6 +303,7 @@ export class ClusterPage implements OnInit {
     return {
       mode,
       nodeName: row.name,
+      isProbe: row.isProbe,
       votersLeft: row.impact.votersLeft,
       toleratesAfter: row.impact.toleratesAfter,
       riskKey: row.impact.riskKey,
