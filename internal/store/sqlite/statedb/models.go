@@ -207,6 +207,14 @@ type Plan struct {
 	UpdatedMs  int64
 }
 
+type ProbeAlert struct {
+	TenantID  string
+	ProbeID   string
+	Active    int64
+	SinceMs   int64
+	UpdatedMs int64
+}
+
 type RefreshSession struct {
 	TokenHash string
 	FamilyID  string

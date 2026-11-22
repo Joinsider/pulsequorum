@@ -56,6 +56,22 @@ func (q *Queries) CountEnabledUsersWithRole(ctx context.Context, arg CountEnable
 	return column_1, err
 }
 
+const countOpenTenantJoinTokens = `-- name: CountOpenTenantJoinTokens :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM join_tokens WHERE tenant_id = ? AND role = 'probe' AND used_ms IS NULL AND expires_ms > ?
+`
+
+type CountOpenTenantJoinTokensParams struct {
+	TenantID  string
+	ExpiresMs int64
+}
+
+func (q *Queries) CountOpenTenantJoinTokens(ctx context.Context, arg CountOpenTenantJoinTokensParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenTenantJoinTokens, arg.TenantID, arg.ExpiresMs)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingAlerts = `-- name: CountPendingAlerts :one
 SELECT COUNT(*) FROM alert_outbox WHERE state = 'pending'
 `
@@ -84,6 +100,17 @@ SELECT CAST(COUNT(*) AS INTEGER) FROM monitors WHERE tenant_id = ?
 
 func (q *Queries) CountTenantMonitors(ctx context.Context, tenantID string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countTenantMonitors, tenantID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countTenantPrivateProbes = `-- name: CountTenantPrivateProbes :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM nodes WHERE role = 'probe' AND owner_tenant_id = ?
+`
+
+func (q *Queries) CountTenantPrivateProbes(ctx context.Context, ownerTenantID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTenantPrivateProbes, ownerTenantID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -254,6 +281,15 @@ func (q *Queries) DeletePlan(ctx context.Context, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
+const deleteProbeAlertsByProbe = `-- name: DeleteProbeAlertsByProbe :exec
+DELETE FROM probe_alerts WHERE probe_id = ?
+`
+
+func (q *Queries) DeleteProbeAlertsByProbe(ctx context.Context, probeID string) error {
+	_, err := q.db.ExecContext(ctx, deleteProbeAlertsByProbe, probeID)
+	return err
+}
+
 const deleteStatusHistoryBetween = `-- name: DeleteStatusHistoryBetween :exec
 DELETE FROM monitor_status_history
 WHERE tenant_id = ?1 AND monitor_id = ?2
@@ -378,6 +414,15 @@ DELETE FROM monitors WHERE tenant_id = ?
 
 func (q *Queries) DeleteTenantMonitors(ctx context.Context, tenantID string) error {
 	_, err := q.db.ExecContext(ctx, deleteTenantMonitors, tenantID)
+	return err
+}
+
+const deleteTenantProbeAlerts = `-- name: DeleteTenantProbeAlerts :exec
+DELETE FROM probe_alerts WHERE tenant_id = ?
+`
+
+func (q *Queries) DeleteTenantProbeAlerts(ctx context.Context, tenantID string) error {
+	_, err := q.db.ExecContext(ctx, deleteTenantProbeAlerts, tenantID)
 	return err
 }
 
@@ -853,6 +898,28 @@ func (q *Queries) GetPlan(ctx context.Context, id string) (Plan, error) {
 		&i.Name,
 		&i.LimitsJson,
 		&i.CreatedMs,
+		&i.UpdatedMs,
+	)
+	return i, err
+}
+
+const getProbeAlert = `-- name: GetProbeAlert :one
+SELECT tenant_id, probe_id, active, since_ms, updated_ms FROM probe_alerts WHERE tenant_id = ? AND probe_id = ?
+`
+
+type GetProbeAlertParams struct {
+	TenantID string
+	ProbeID  string
+}
+
+func (q *Queries) GetProbeAlert(ctx context.Context, arg GetProbeAlertParams) (ProbeAlert, error) {
+	row := q.db.QueryRowContext(ctx, getProbeAlert, arg.TenantID, arg.ProbeID)
+	var i ProbeAlert
+	err := row.Scan(
+		&i.TenantID,
+		&i.ProbeID,
+		&i.Active,
+		&i.SinceMs,
 		&i.UpdatedMs,
 	)
 	return i, err
@@ -1632,6 +1699,72 @@ func (q *Queries) ListActiveSystemAlerts(ctx context.Context) ([]SystemAlert, er
 	return items, nil
 }
 
+const listActiveTenantProbeAlerts = `-- name: ListActiveTenantProbeAlerts :many
+SELECT tenant_id, probe_id, active, since_ms, updated_ms FROM probe_alerts WHERE tenant_id = ? AND active = 1 ORDER BY probe_id
+`
+
+func (q *Queries) ListActiveTenantProbeAlerts(ctx context.Context, tenantID string) ([]ProbeAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveTenantProbeAlerts, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeAlert{}
+	for rows.Next() {
+		var i ProbeAlert
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ProbeID,
+			&i.Active,
+			&i.SinceMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllActiveProbeAlerts = `-- name: ListAllActiveProbeAlerts :many
+SELECT tenant_id, probe_id, active, since_ms, updated_ms FROM probe_alerts WHERE active = 1 ORDER BY tenant_id, probe_id
+`
+
+func (q *Queries) ListAllActiveProbeAlerts(ctx context.Context) ([]ProbeAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listAllActiveProbeAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeAlert{}
+	for rows.Next() {
+		var i ProbeAlert
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ProbeID,
+			&i.Active,
+			&i.SinceMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllMaintenanceWindows = `-- name: ListAllMaintenanceWindows :many
 SELECT tenant_id, id, name, description, monitor_ids_json, schedule_json, active, revision, created_ms, updated_ms FROM maintenance_windows ORDER BY tenant_id, id
 `
@@ -1655,6 +1788,39 @@ func (q *Queries) ListAllMaintenanceWindows(ctx context.Context) ([]MaintenanceW
 			&i.Active,
 			&i.Revision,
 			&i.CreatedMs,
+			&i.UpdatedMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllProbeAlerts = `-- name: ListAllProbeAlerts :many
+SELECT tenant_id, probe_id, active, since_ms, updated_ms FROM probe_alerts ORDER BY tenant_id, probe_id
+`
+
+func (q *Queries) ListAllProbeAlerts(ctx context.Context) ([]ProbeAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listAllProbeAlerts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeAlert{}
+	for rows.Next() {
+		var i ProbeAlert
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ProbeID,
+			&i.Active,
+			&i.SinceMs,
 			&i.UpdatedMs,
 		); err != nil {
 			return nil, err
@@ -2390,6 +2556,39 @@ func (q *Queries) ListSystemAlerts(ctx context.Context) ([]SystemAlert, error) {
 			&i.SinceMs,
 			&i.UpdatedMs,
 			&i.DetailsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantProbeAlerts = `-- name: ListTenantProbeAlerts :many
+SELECT tenant_id, probe_id, active, since_ms, updated_ms FROM probe_alerts WHERE tenant_id = ? ORDER BY probe_id
+`
+
+func (q *Queries) ListTenantProbeAlerts(ctx context.Context, tenantID string) ([]ProbeAlert, error) {
+	rows, err := q.db.QueryContext(ctx, listTenantProbeAlerts, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProbeAlert{}
+	for rows.Next() {
+		var i ProbeAlert
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.ProbeID,
+			&i.Active,
+			&i.SinceMs,
+			&i.UpdatedMs,
 		); err != nil {
 			return nil, err
 		}
@@ -3460,6 +3659,34 @@ func (q *Queries) UpsertPlan(ctx context.Context, arg UpsertPlanParams) error {
 		arg.Name,
 		arg.LimitsJson,
 		arg.CreatedMs,
+		arg.UpdatedMs,
+	)
+	return err
+}
+
+const upsertProbeAlert = `-- name: UpsertProbeAlert :exec
+INSERT INTO probe_alerts (tenant_id, probe_id, active, since_ms, updated_ms)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (tenant_id, probe_id) DO UPDATE SET
+    active     = excluded.active,
+    since_ms   = excluded.since_ms,
+    updated_ms = excluded.updated_ms
+`
+
+type UpsertProbeAlertParams struct {
+	TenantID  string
+	ProbeID   string
+	Active    int64
+	SinceMs   int64
+	UpdatedMs int64
+}
+
+func (q *Queries) UpsertProbeAlert(ctx context.Context, arg UpsertProbeAlertParams) error {
+	_, err := q.db.ExecContext(ctx, upsertProbeAlert,
+		arg.TenantID,
+		arg.ProbeID,
+		arg.Active,
+		arg.SinceMs,
 		arg.UpdatedMs,
 	)
 	return err

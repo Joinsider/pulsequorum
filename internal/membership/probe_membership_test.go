@@ -106,7 +106,7 @@ func TestProbeJoinRenewAndRemove(t *testing.T) {
 	e := newProbeJoinEnv(t)
 
 	// Issue a probe join token bound to default tenant.
-	rawTok, _, err := e.auth.CreateJoinToken(e.ctx, pki.RoleProbe, cluster.DefaultTenantID, time.Hour)
+	rawTok, _, err := e.auth.CreateJoinTokenFor(e.ctx, pki.RoleProbe, cluster.DefaultTenantID, time.Hour, &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Admin"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
@@ -59,9 +60,10 @@ func NewPutClusterCA(requestID, fingerprint string, doc CADocument) (*pb.Command
 	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_CLUSTER_CA, fingerprint, doc, 0)
 }
 
-// NewPutJoinToken builds a platform-level command that creates a join token.
+// NewPutJoinToken builds a command that creates a join token. Tenant-bound
+// probe tokens carry the tenant ID on the command envelope for audit scoping.
 func NewPutJoinToken(requestID, tokenID string, doc JoinTokenDocument) (*pb.Command, error) {
-	return newPut(requestID, "", pb.EntityKind_ENTITY_KIND_JOIN_TOKEN, tokenID, doc, 0)
+	return newPut(requestID, doc.TenantID, pb.EntityKind_ENTITY_KIND_JOIN_TOKEN, tokenID, doc, 0)
 }
 
 // NewDeleteJoinToken builds a platform-level command that deletes a join token.
@@ -98,6 +100,16 @@ func NewRevokeCertificate(requestID, serial, nodeID string, notAfterMs int64) *p
 func NewRevokeNode(requestID, nodeID string) *pb.Command {
 	return stamp(&pb.Command{
 		RequestId: requestID,
+		Payload:   &pb.Command_RevokeNode{RevokeNode: &pb.RevokeNode{NodeId: nodeID}},
+	})
+}
+
+// NewRevokeTenantProbe builds a tenant-scoped command that revokes a private
+// probe owned by tenantID (ADR 0035). The FSM verifies ownership and USER actor.
+func NewRevokeTenantProbe(requestID, tenantID, nodeID string) *pb.Command {
+	return stamp(&pb.Command{
+		RequestId: requestID,
+		TenantId:  tenantID,
 		Payload:   &pb.Command_RevokeNode{RevokeNode: &pb.RevokeNode{NodeId: nodeID}},
 	})
 }
@@ -181,11 +193,50 @@ func applyPutJoinToken(ctx context.Context, tx store.StateTx, cmd *pb.Command, p
 	// A private probe must belong to an existing tenant; otherwise the token
 	// could enroll a probe for a tenant created later with that ID.
 	if doc.TenantID != "" {
-		if _, err := tx.GetTenant(ctx, doc.TenantID); err != nil {
+		if doc.TenantID == store.SystemTenantID {
+			return nil, invalid("probes cannot belong to the system tenant")
+		}
+		if cmd.GetTenantId() != "" && cmd.GetTenantId() != doc.TenantID {
+			return nil, invalid("join token tenant does not match command tenant")
+		}
+		tn, err := tx.GetTenant(ctx, doc.TenantID)
+		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return nil, invalid("join token for unknown tenant %q", doc.TenantID)
 			}
 			return nil, err
+		}
+		level, err := currentCommandLevel(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		if level >= ProbeCommandLevel {
+			if err := requireUserActor(cmd, "private probe join tokens"); err != nil {
+				return nil, err
+			}
+			if tn.Suspended {
+				return nil, &CommandError{Code: CodeConflict, Message: "tenant is suspended"}
+			}
+			lim, err := tenantLimits(ctx, tx, tn)
+			if err != nil {
+				return nil, err
+			}
+			if lim.MaxPrivateProbes != nil {
+				probes, err := tx.CountTenantPrivateProbes(ctx, doc.TenantID)
+				if err != nil {
+					return nil, storeError(err)
+				}
+				openTokens, err := tx.CountOpenTenantJoinTokens(ctx, doc.TenantID, issuedAt)
+				if err != nil {
+					return nil, storeError(err)
+				}
+				if probes+openTokens >= *lim.MaxPrivateProbes {
+					return nil, &CommandError{
+						Code:    CodeLimitExceeded,
+						Message: fmt.Sprintf("private probe limit reached: plan %q allows %d private probes", tn.Plan, *lim.MaxPrivateProbes),
+					}
+				}
+			}
 		}
 	}
 
@@ -277,6 +328,22 @@ func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *
 	if !isNodeID(id) {
 		return nil, invalid("node ID must be 1 to 128 characters of [A-Za-z0-9_-]")
 	}
+	level, err := currentCommandLevel(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	existing, nodeErr := tx.GetNode(ctx, id)
+	if nodeErr != nil && !errors.Is(nodeErr, store.ErrNotFound) {
+		return nil, nodeErr
+	}
+	if level >= ProbeCommandLevel && cmd.GetTenantId() != "" {
+		if err := requireUserActor(cmd, "revoking probes"); err != nil {
+			return nil, err
+		}
+		if errors.Is(nodeErr, store.ErrNotFound) || existing.Role != store.NodeRoleProbe || existing.OwnerTenantID != cmd.GetTenantId() {
+			return nil, &CommandError{Code: CodeNotFound, Message: "probe not found"}
+		}
+	}
 	now := cmd.GetIssuedAtMs()
 	if err := tx.PutRevokedNode(ctx, store.RevokedNode{NodeID: id, RevokedMs: now}); err != nil {
 		return nil, storeError(err)
@@ -284,6 +351,24 @@ func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *
 	// The registry entry goes with the node (ADR 0017).
 	if err := tx.DeleteNode(ctx, id); err != nil {
 		return nil, storeError(err)
+	}
+	if level >= ProbeCommandLevel {
+		// Silently clear any open probe offline alerts without notification (ADR 0035 section 5).
+		if err := tx.DeleteProbeAlertsByProbe(ctx, id); err != nil {
+			return nil, storeError(err)
+		}
+		if nodeErr == nil && existing.Role == store.NodeRoleProbe && existing.OwnerTenantID == "" {
+			sa, err := tx.GetSystemAlert(ctx, "probe_offline", id)
+			if err == nil && sa.Active {
+				sa.Active = false
+				sa.UpdatedMs = now
+				if err := tx.PutSystemAlert(ctx, sa); err != nil {
+					return nil, storeError(err)
+				}
+			} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return nil, err
+			}
+		}
 	}
 	return json.Marshal(RevokeNodeResult{RevokedMs: now})
 }

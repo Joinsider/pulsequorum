@@ -56,6 +56,9 @@ type Plan struct {
 type TenantUsage struct {
 	Monitors int
 	Channels int
+	// PrivateProbes counts registered private probes plus open join tokens when
+	// populated for API/limit views (ADR 0035).
+	PrivateProbes int
 	// MinIntervalSeconds is the shortest monitor interval, 0 without monitors.
 	MinIntervalSeconds int
 }
@@ -165,6 +168,9 @@ const (
 	// EventChannelFailed reports another channel of the tenant that failed
 	// permanently or gave up (FA-ALR-05, ADR 0023).
 	EventChannelFailed = "channel_failed"
+	// EventProbeOffline reports that a private probe of the tenant went offline
+	// or recovered (FA-PRB-06, ADR 0035).
+	EventProbeOffline = "probe_offline"
 	// EventSystem reports a system alert (FA-OBS-01, ADR 0025). Only channels
 	// of the system tenant subscribe to it.
 	EventSystem = "system"
@@ -568,6 +574,18 @@ type State interface {
 	// ListSystemAlerts returns the system alerts ordered by kind and subject;
 	// with activeOnly only the active ones (ADR 0025).
 	ListSystemAlerts(ctx context.Context, activeOnly bool) ([]SystemAlert, error)
+	// ListProbeAlerts returns the private probe alerts of tenantID ordered by
+	// probe ID; with activeOnly only the active ones (ADR 0035).
+	ListProbeAlerts(ctx context.Context, tenantID string, activeOnly bool) ([]ProbeAlert, error)
+	// ListAllProbeAlerts returns all private probe alerts ordered by tenant ID
+	// and probe ID; with activeOnly only the active ones (ADR 0035).
+	ListAllProbeAlerts(ctx context.Context, activeOnly bool) ([]ProbeAlert, error)
+	// CountTenantPrivateProbes returns the number of registered private probes
+	// owned by tenantID (ADR 0035).
+	CountTenantPrivateProbes(ctx context.Context, tenantID string) (int, error)
+	// CountOpenTenantJoinTokens returns the number of unused, unexpired probe
+	// join tokens bound to tenantID at nowMs (ADR 0035).
+	CountOpenTenantJoinTokens(ctx context.Context, tenantID string, nowMs int64) (int, error)
 	// ListNodeIncarnations returns the last known incarnations ordered by node ID (ADR 0025).
 	ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, error)
 
@@ -794,6 +812,18 @@ type StateTx interface {
 	GetSystemAlert(ctx context.Context, kind, subject string) (SystemAlert, error)
 	// PutSystemAlert creates or replaces the system alert with its kind and subject.
 	PutSystemAlert(ctx context.Context, a SystemAlert) error
+	// GetProbeAlert returns the stored private probe alert or ErrNotFound (ADR 0035).
+	GetProbeAlert(ctx context.Context, tenantID, probeID string) (ProbeAlert, error)
+	// PutProbeAlert creates or replaces the private probe alert (ADR 0035).
+	PutProbeAlert(ctx context.Context, a ProbeAlert) error
+	// DeleteProbeAlertsByProbe deletes any probe alert for probeID (ADR 0035).
+	DeleteProbeAlertsByProbe(ctx context.Context, probeID string) error
+	// CountTenantPrivateProbes returns the number of registered private probes
+	// owned by tenantID (ADR 0035).
+	CountTenantPrivateProbes(ctx context.Context, tenantID string) (int, error)
+	// CountOpenTenantJoinTokens returns the number of unused, unexpired probe
+	// join tokens bound to tenantID at nowMs (ADR 0035).
+	CountOpenTenantJoinTokens(ctx context.Context, tenantID string, nowMs int64) (int, error)
 	// PutNodeIncarnation creates or replaces the last known incarnation of a node (ADR 0025).
 	PutNodeIncarnation(ctx context.Context, n NodeIncarnation) error
 	// Fingerprint hashes the replicated state inside this transaction, as
@@ -902,6 +932,16 @@ type SystemAlert struct {
 	SinceMs     int64
 	UpdatedMs   int64
 	DetailsJSON json.RawMessage
+}
+
+// ProbeAlert is the replicated offline alert state of one private probe
+// (FA-PRB-06, ADR 0035), scoped to its owning tenant.
+type ProbeAlert struct {
+	TenantID  string
+	ProbeID   string
+	Active    bool
+	SinceMs   int64
+	UpdatedMs int64
 }
 
 // NodeIncarnation is the last incarnation a node reported (FA-REP-06, ADR 0025).

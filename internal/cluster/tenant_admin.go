@@ -285,7 +285,30 @@ func applyDeleteTenant(ctx context.Context, tx store.StateTx, cmd *pb.Command, d
 	if !tn.Suspended {
 		return nil, &CommandError{Code: CodeConflict, Message: "suspend the tenant before deleting it"}
 	}
-	if err := tx.DeleteTenant(ctx, id, cmd.GetIssuedAtMs()); err != nil {
+	level, err := currentCommandLevel(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	now := cmd.GetIssuedAtMs()
+	if level >= ProbeCommandLevel {
+		// Revoke and unregister every private probe owned by the tenant in the
+		// same FSM step (ADR 0035 D8); join_tokens and probe_alerts go with DeleteTenant.
+		nodes, err := tx.ListNodes(ctx)
+		if err != nil {
+			return nil, storeError(err)
+		}
+		for _, n := range nodes {
+			if n.Role == store.NodeRoleProbe && n.OwnerTenantID == id {
+				if err := tx.PutRevokedNode(ctx, store.RevokedNode{NodeID: n.ID, RevokedMs: now}); err != nil {
+					return nil, storeError(err)
+				}
+				if err := tx.DeleteNode(ctx, n.ID); err != nil {
+					return nil, storeError(err)
+				}
+			}
+		}
+	}
+	if err := tx.DeleteTenant(ctx, id, now); err != nil {
 		return nil, storeError(err)
 	}
 	return json.Marshal(TenantResult{TenantID: id})

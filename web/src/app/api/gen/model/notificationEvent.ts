@@ -13,7 +13,8 @@
 
 /**
  * `system` is reserved for the system channels (ADR 0025); tenant channels
- * answer 400 when they request it.
+ * answer 400 when they request it. `probe_offline` is for tenant channels
+ * only (ADR 0035).
  */
 export type NotificationEvent = typeof NotificationEvent[keyof typeof NotificationEvent];
 
@@ -25,5 +26,6 @@ export const NotificationEvent = {
   partial: 'partial',
   flapping: 'flapping',
   channel_failed: 'channel_failed',
+  probe_offline: 'probe_offline',
   system: 'system',
 } as const;

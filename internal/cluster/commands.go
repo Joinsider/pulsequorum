@@ -193,6 +193,16 @@ type AlertPayload struct {
 	// System describes a system alert, Event "system" (FA-OBS-01, ADR 0025).
 	// Such an alert has no monitor and goes to the system tenant only.
 	System *SystemAlertInfo `json:"system,omitempty"`
+	// Probe describes a private probe alert, Event "probe_offline" (FA-PRB-06,
+	// ADR 0035). Such an alert has no monitor and goes to the owning tenant.
+	Probe *ProbeAlertInfo `json:"probe,omitempty"`
+}
+
+// ProbeAlertInfo is the probe part of an AlertPayload (FA-PRB-06, ADR 0035).
+type ProbeAlertInfo struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
 }
 
 // AlertSender describes which part of the cluster the sending node saw when it

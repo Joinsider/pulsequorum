@@ -29,6 +29,7 @@ import type {
 } from 'rxjs';
 
 import type {
+  AssignableNode,
   BulkMonitorsInput,
   BulkMonitorsResult,
   CheckResult,
@@ -167,6 +168,42 @@ function filterParams(
 @Injectable({ providedIn: 'root' })
 export class MonitorsService {
   private readonly http = inject(HttpClient);
+/**
+ * Every tenant role. Lists voters, public probes, and private probes owned
+ * by the caller's tenant. Foreign private probes and cluster addresses are
+ * never exposed (ADR 0035).
+ * @summary List nodes available for monitor assignment
+ */
+ listAssignableNodes<TData = AssignableNode[]>( options?: HttpClientBodyOptions): Observable<TData>;
+ listAssignableNodes<TData = AssignableNode[]>( options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listAssignableNodes<TData = AssignableNode[]>( options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listAssignableNodes<TData = AssignableNode[]>(
+     options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/api/v1/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/api/v1/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/api/v1/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 /**
  * @summary Available checker plugins with their JSON schema
  */
@@ -645,6 +682,7 @@ export class MonitorsService {
   }
 };
 
+export type ListAssignableNodesClientResult = NonNullable<AssignableNode[]>
 export type ListMonitorTypesClientResult = NonNullable<MonitorType[]>
 export type ListMonitorsClientResult = NonNullable<MonitorPage>
 export type CreateMonitorClientResult = NonNullable<Monitor>

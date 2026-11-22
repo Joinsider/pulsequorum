@@ -69,6 +69,7 @@ message Command {
     PruneAudit prune_audit = 43;
     Batch batch = 44;
     RegisterProbe register_probe = 45;
+    SetProbeAlert set_probe_alert = 46;
   }
 }
 
@@ -500,4 +501,13 @@ message BatchOp {
   }
   // Optional refinement of the audit action of this operation (ADR 0031).
   string audit_action = 3;
+}
+
+// SetProbeAlert records a change of an offline alert for a private probe (FA-PRB-06, ADR 0035).
+// Command.tenant_id must match the owning tenant of probe_id. Only the leader proposes it.
+message SetProbeAlert {
+  string probe_id = 1;
+  bool active = 2;
+  // Node that proposed the change, for the alert's sender view (ADR 0024).
+  string sender_node_id = 3;
 }

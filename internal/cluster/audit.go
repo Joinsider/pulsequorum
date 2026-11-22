@@ -83,6 +83,7 @@ var auditPolicies = map[reflect.Type]auditPolicy{
 	reflect.TypeFor[*pb.Command_RecordIncarnation]():        auditNever,
 	reflect.TypeFor[*pb.Command_Checkpoint]():               auditNever,
 	reflect.TypeFor[*pb.Command_PruneAudit]():               auditNever,
+	reflect.TypeFor[*pb.Command_SetProbeAlert]():            auditNever,
 }
 
 // auditHints are the values of audit_action that refine the verb of a monitor
@@ -242,6 +243,9 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 	switch p := cmd.GetPayload().(type) {
 	case *pb.Command_PutEntity:
 		put := p.PutEntity
+		if put.GetKind() == pb.EntityKind_ENTITY_KIND_JOIN_TOKEN && tenantID != "" {
+			return []auditRecord{{tenantID: tenantID, action: "probe.token.create", objectKind: "join_token", objectID: put.GetId()}}
+		}
 		return []auditRecord{entityRecord(tenantID, put.GetKind(), put.GetId(), putVerb(cmd.GetAuditAction(), put.GetExpectedRevision()))}
 	case *pb.Command_DeleteEntity:
 		del := p.DeleteEntity
@@ -287,6 +291,9 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 	case *pb.Command_RevokeCertificate:
 		return []auditRecord{systemRecord("certificate.revoke", "certificate", p.RevokeCertificate.GetSerial())}
 	case *pb.Command_RevokeNode:
+		if tenantID != "" {
+			return []auditRecord{{tenantID: tenantID, action: "probe.revoke", objectKind: "node", objectID: p.RevokeNode.GetNodeId()}}
+		}
 		return []auditRecord{systemRecord("node.revoke", "node", p.RevokeNode.GetNodeId())}
 	case *pb.Command_RegisterNode:
 		return []auditRecord{systemRecord("node.register", "node", p.RegisterNode.GetNode().GetId())}

@@ -77,6 +77,7 @@ var fingerprintTables = []struct {
 	{"node_incarnations", "node_id", 0},
 	{"api_tokens", orderByTenantID, auditLevel},
 	{"audit_log", "raft_index, sub", auditLevel},
+	{"probe_alerts", "tenant_id, probe_id", probeCommandLevel},
 }
 
 // AppliedIndex returns the last applied Raft index stored in state.db.

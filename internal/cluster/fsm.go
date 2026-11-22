@@ -338,6 +338,8 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRegisterNode(ctx, tx, cmd, p.RegisterNode)
 	case *pb.Command_RegisterProbe:
 		return applyRegisterProbe(ctx, tx, cmd, p.RegisterProbe)
+	case *pb.Command_SetProbeAlert:
+		return applySetProbeAlert(ctx, tx, cmd, p.SetProbeAlert)
 	case *pb.Command_SetNodeHealth:
 		return applySetNodeHealth(ctx, tx, cmd, p.SetNodeHealth)
 	case *pb.Command_SetNodeConnectivity:

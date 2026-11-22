@@ -131,6 +131,7 @@ var tenantDeletes = []func(q *statedb.Queries, ctx context.Context, tenantID str
 	(*statedb.Queries).DeleteTenantJoinTokens,
 	(*statedb.Queries).DeleteTenantAPITokens,
 	(*statedb.Queries).DeleteTenantAudit,
+	(*statedb.Queries).DeleteTenantProbeAlerts,
 }
 
 // DeleteTenant removes the tenant and every row of it in state.db and records

@@ -34,6 +34,7 @@ func TestFingerprintLevelGates(t *testing.T) {
 			VALUES (7, 0, 1, 't1', 'user', 'monitor.create')`, 9},
 		{"node owner_tenant_id", `UPDATE nodes SET owner_tenant_id = 't1' WHERE id = 'p1'`, 10},
 		{"node incarnation", `UPDATE nodes SET incarnation = 'inc-1' WHERE id = 'p1'`, 10},
+		{"probe alert", `INSERT INTO probe_alerts (tenant_id, probe_id, active, since_ms, updated_ms) VALUES ('t1', 'p1', 1, 10, 20)`, 10},
 		{"tenant name (control, always hashed)", `UPDATE tenants SET name = 'Other' WHERE id = 't1'`, 0},
 	}
 	for _, level := range []uint32{7, 8, 9, 10} {

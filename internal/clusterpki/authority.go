@@ -213,6 +213,12 @@ func (a *Authority) IssueSelf(ctx context.Context, nodeID string, csrDER []byte)
 // operator; the secret itself is never stored (FA-PKI-02). ttl 0 means
 // DefaultTokenTTL.
 func (a *Authority) CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error) {
+	return a.CreateJoinTokenFor(ctx, role, tenantID, ttl, nil)
+}
+
+// CreateJoinTokenFor stores a new one-time join token on behalf of actor.
+// Tenant-bound probe tokens at command level 10+ require a KIND_USER actor (ADR 0035).
+func (a *Authority) CreateJoinTokenFor(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration, actor *pb.Actor) (string, time.Time, error) {
 	if ttl == 0 {
 		ttl = DefaultTokenTTL
 	}
@@ -239,6 +245,7 @@ func (a *Authority) CreateJoinToken(ctx context.Context, role pki.Role, tenantID
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	cmd.Actor = actor
 	res, err := a.Cluster.Apply(ctx, cmd)
 	if err == nil {
 		err = res.Err

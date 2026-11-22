@@ -13,8 +13,7 @@
 
 /**
  * Tenant limits (FA-TEN-04). A missing or null field is unlimited.
- * `maxStatusPages` and `maxPrivateProbes` are stored now and enforced
- * once the features exist.
+ * `maxStatusPages` is stored now and enforced once the feature exists.
  */
 export interface Limits {
   /**

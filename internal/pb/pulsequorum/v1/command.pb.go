@@ -253,6 +253,7 @@ type Command struct {
 	//	*Command_PruneAudit
 	//	*Command_Batch
 	//	*Command_RegisterProbe
+	//	*Command_SetProbeAlert
 	Payload       isCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -643,6 +644,15 @@ func (x *Command) GetRegisterProbe() *RegisterProbe {
 	return nil
 }
 
+func (x *Command) GetSetProbeAlert() *SetProbeAlert {
+	if x != nil {
+		if x, ok := x.Payload.(*Command_SetProbeAlert); ok {
+			return x.SetProbeAlert
+		}
+	}
+	return nil
+}
+
 type isCommand_Payload interface {
 	isCommand_Payload()
 }
@@ -784,6 +794,10 @@ type Command_RegisterProbe struct {
 	RegisterProbe *RegisterProbe `protobuf:"bytes,45,opt,name=register_probe,json=registerProbe,proto3,oneof"`
 }
 
+type Command_SetProbeAlert struct {
+	SetProbeAlert *SetProbeAlert `protobuf:"bytes,46,opt,name=set_probe_alert,json=setProbeAlert,proto3,oneof"`
+}
+
 func (*Command_PutEntity) isCommand_Payload() {}
 
 func (*Command_DeleteEntity) isCommand_Payload() {}
@@ -851,6 +865,8 @@ func (*Command_PruneAudit) isCommand_Payload() {}
 func (*Command_Batch) isCommand_Payload() {}
 
 func (*Command_RegisterProbe) isCommand_Payload() {}
+
+func (*Command_SetProbeAlert) isCommand_Payload() {}
 
 // Actor is who caused a command (audit log, FA-DAT-01).
 type Actor struct {
@@ -3609,11 +3625,74 @@ func (*BatchOp_PutEntity) isBatchOp_Op() {}
 
 func (*BatchOp_DeleteEntity) isBatchOp_Op() {}
 
+// SetProbeAlert records a change of an offline alert for a private probe (FA-PRB-06, ADR 0035).
+// Command.tenant_id must match the owning tenant of probe_id. Only the leader proposes it.
+type SetProbeAlert struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	ProbeId string                 `protobuf:"bytes,1,opt,name=probe_id,json=probeId,proto3" json:"probe_id,omitempty"`
+	Active  bool                   `protobuf:"varint,2,opt,name=active,proto3" json:"active,omitempty"`
+	// Node that proposed the change, for the alert's sender view (ADR 0024).
+	SenderNodeId  string `protobuf:"bytes,3,opt,name=sender_node_id,json=senderNodeId,proto3" json:"sender_node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetProbeAlert) Reset() {
+	*x = SetProbeAlert{}
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProbeAlert) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProbeAlert) ProtoMessage() {}
+
+func (x *SetProbeAlert) ProtoReflect() protoreflect.Message {
+	mi := &file_pulsequorum_v1_command_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProbeAlert.ProtoReflect.Descriptor instead.
+func (*SetProbeAlert) Descriptor() ([]byte, []int) {
+	return file_pulsequorum_v1_command_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SetProbeAlert) GetProbeId() string {
+	if x != nil {
+		return x.ProbeId
+	}
+	return ""
+}
+
+func (x *SetProbeAlert) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *SetProbeAlert) GetSenderNodeId() string {
+	if x != nil {
+		return x.SenderNodeId
+	}
+	return ""
+}
+
 var File_pulsequorum_v1_command_proto protoreflect.FileDescriptor
 
 const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1cpulsequorum/v1/command.proto\x12\x0epulsequorum.v1\x1a\x1epulsequorum/v1/heartbeat.proto\"\xd9\x15\n" +
+	"\x1cpulsequorum/v1/command.proto\x12\x0epulsequorum.v1\x1a\x1epulsequorum/v1/heartbeat.proto\"\xa2\x16\n" +
 	"\aCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -3663,7 +3742,8 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\vprune_audit\x18+ \x01(\v2\x1a.pulsequorum.v1.PruneAuditH\x00R\n" +
 	"pruneAudit\x12-\n" +
 	"\x05batch\x18, \x01(\v2\x15.pulsequorum.v1.BatchH\x00R\x05batch\x12F\n" +
-	"\x0eregister_probe\x18- \x01(\v2\x1d.pulsequorum.v1.RegisterProbeH\x00R\rregisterProbeB\t\n" +
+	"\x0eregister_probe\x18- \x01(\v2\x1d.pulsequorum.v1.RegisterProbeH\x00R\rregisterProbe\x12G\n" +
+	"\x0fset_probe_alert\x18. \x01(\v2\x1d.pulsequorum.v1.SetProbeAlertH\x00R\rsetProbeAlertB\t\n" +
 	"\apayloadJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0f\"\xad\x01\n" +
 	"\x05Actor\x12.\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1a.pulsequorum.v1.Actor.KindR\x04kind\x12\x0e\n" +
@@ -3891,7 +3971,11 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"put_entity\x18\x01 \x01(\v2\x19.pulsequorum.v1.PutEntityH\x00R\tputEntity\x12C\n" +
 	"\rdelete_entity\x18\x02 \x01(\v2\x1c.pulsequorum.v1.DeleteEntityH\x00R\fdeleteEntity\x12!\n" +
 	"\faudit_action\x18\x03 \x01(\tR\vauditActionB\x04\n" +
-	"\x02op*\xab\x02\n" +
+	"\x02op\"h\n" +
+	"\rSetProbeAlert\x12\x19\n" +
+	"\bprobe_id\x18\x01 \x01(\tR\aprobeId\x12\x16\n" +
+	"\x06active\x18\x02 \x01(\bR\x06active\x12$\n" +
+	"\x0esender_node_id\x18\x03 \x01(\tR\fsenderNodeId*\xab\x02\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -3918,7 +4002,7 @@ func file_pulsequorum_v1_command_proto_rawDescGZIP() []byte {
 }
 
 var file_pulsequorum_v1_command_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_pulsequorum_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_pulsequorum_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_pulsequorum_v1_command_proto_goTypes = []any{
 	(EntityKind)(0),                  // 0: pulsequorum.v1.EntityKind
 	(Actor_Kind)(0),                  // 1: pulsequorum.v1.Actor.Kind
@@ -3965,8 +4049,9 @@ var file_pulsequorum_v1_command_proto_goTypes = []any{
 	(*PruneAudit)(nil),               // 42: pulsequorum.v1.PruneAudit
 	(*Batch)(nil),                    // 43: pulsequorum.v1.Batch
 	(*BatchOp)(nil),                  // 44: pulsequorum.v1.BatchOp
-	nil,                              // 45: pulsequorum.v1.NodeInfo.LabelsEntry
-	(ErrorClass)(0),                  // 46: pulsequorum.v1.ErrorClass
+	(*SetProbeAlert)(nil),            // 45: pulsequorum.v1.SetProbeAlert
+	nil,                              // 46: pulsequorum.v1.NodeInfo.LabelsEntry
+	(ErrorClass)(0),                  // 47: pulsequorum.v1.ErrorClass
 }
 var file_pulsequorum_v1_command_proto_depIdxs = []int32{
 	4,  // 0: pulsequorum.v1.Command.actor:type_name -> pulsequorum.v1.Actor
@@ -4004,26 +4089,27 @@ var file_pulsequorum_v1_command_proto_depIdxs = []int32{
 	42, // 32: pulsequorum.v1.Command.prune_audit:type_name -> pulsequorum.v1.PruneAudit
 	43, // 33: pulsequorum.v1.Command.batch:type_name -> pulsequorum.v1.Batch
 	15, // 34: pulsequorum.v1.Command.register_probe:type_name -> pulsequorum.v1.RegisterProbe
-	1,  // 35: pulsequorum.v1.Actor.kind:type_name -> pulsequorum.v1.Actor.Kind
-	0,  // 36: pulsequorum.v1.PutEntity.kind:type_name -> pulsequorum.v1.EntityKind
-	0,  // 37: pulsequorum.v1.DeleteEntity.kind:type_name -> pulsequorum.v1.EntityKind
-	8,  // 38: pulsequorum.v1.SetMonitorState.incident:type_name -> pulsequorum.v1.IncidentStart
-	46, // 39: pulsequorum.v1.IncidentStart.error_class:type_name -> pulsequorum.v1.ErrorClass
-	20, // 40: pulsequorum.v1.RegisterNode.node:type_name -> pulsequorum.v1.NodeInfo
-	20, // 41: pulsequorum.v1.RegisterProbe.node:type_name -> pulsequorum.v1.NodeInfo
-	2,  // 42: pulsequorum.v1.NodeInfo.role:type_name -> pulsequorum.v1.NodeInfo.Role
-	45, // 43: pulsequorum.v1.NodeInfo.labels:type_name -> pulsequorum.v1.NodeInfo.LabelsEntry
-	25, // 44: pulsequorum.v1.ReportDegradedAlerts.entries:type_name -> pulsequorum.v1.DegradedAlertEntry
-	27, // 45: pulsequorum.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> pulsequorum.v1.UnconfirmedVerdict
-	29, // 46: pulsequorum.v1.RecordMonitorHistory.entries:type_name -> pulsequorum.v1.HistoryEntry
-	44, // 47: pulsequorum.v1.Batch.ops:type_name -> pulsequorum.v1.BatchOp
-	5,  // 48: pulsequorum.v1.BatchOp.put_entity:type_name -> pulsequorum.v1.PutEntity
-	6,  // 49: pulsequorum.v1.BatchOp.delete_entity:type_name -> pulsequorum.v1.DeleteEntity
-	50, // [50:50] is the sub-list for method output_type
-	50, // [50:50] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	45, // 35: pulsequorum.v1.Command.set_probe_alert:type_name -> pulsequorum.v1.SetProbeAlert
+	1,  // 36: pulsequorum.v1.Actor.kind:type_name -> pulsequorum.v1.Actor.Kind
+	0,  // 37: pulsequorum.v1.PutEntity.kind:type_name -> pulsequorum.v1.EntityKind
+	0,  // 38: pulsequorum.v1.DeleteEntity.kind:type_name -> pulsequorum.v1.EntityKind
+	8,  // 39: pulsequorum.v1.SetMonitorState.incident:type_name -> pulsequorum.v1.IncidentStart
+	47, // 40: pulsequorum.v1.IncidentStart.error_class:type_name -> pulsequorum.v1.ErrorClass
+	20, // 41: pulsequorum.v1.RegisterNode.node:type_name -> pulsequorum.v1.NodeInfo
+	20, // 42: pulsequorum.v1.RegisterProbe.node:type_name -> pulsequorum.v1.NodeInfo
+	2,  // 43: pulsequorum.v1.NodeInfo.role:type_name -> pulsequorum.v1.NodeInfo.Role
+	46, // 44: pulsequorum.v1.NodeInfo.labels:type_name -> pulsequorum.v1.NodeInfo.LabelsEntry
+	25, // 45: pulsequorum.v1.ReportDegradedAlerts.entries:type_name -> pulsequorum.v1.DegradedAlertEntry
+	27, // 46: pulsequorum.v1.ResolveUnconfirmedAlerts.verdicts:type_name -> pulsequorum.v1.UnconfirmedVerdict
+	29, // 47: pulsequorum.v1.RecordMonitorHistory.entries:type_name -> pulsequorum.v1.HistoryEntry
+	44, // 48: pulsequorum.v1.Batch.ops:type_name -> pulsequorum.v1.BatchOp
+	5,  // 49: pulsequorum.v1.BatchOp.put_entity:type_name -> pulsequorum.v1.PutEntity
+	6,  // 50: pulsequorum.v1.BatchOp.delete_entity:type_name -> pulsequorum.v1.DeleteEntity
+	51, // [51:51] is the sub-list for method output_type
+	51, // [51:51] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_pulsequorum_v1_command_proto_init() }
@@ -4067,6 +4153,7 @@ func file_pulsequorum_v1_command_proto_init() {
 		(*Command_PruneAudit)(nil),
 		(*Command_Batch)(nil),
 		(*Command_RegisterProbe)(nil),
+		(*Command_SetProbeAlert)(nil),
 	}
 	file_pulsequorum_v1_command_proto_msgTypes[32].OneofWrappers = []any{}
 	file_pulsequorum_v1_command_proto_msgTypes[41].OneofWrappers = []any{
@@ -4079,7 +4166,7 @@ func file_pulsequorum_v1_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pulsequorum_v1_command_proto_rawDesc), len(file_pulsequorum_v1_command_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   43,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
