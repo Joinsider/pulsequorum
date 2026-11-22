@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-package main
+// Package proberun runs the probe role of a Pulsequorum node. It is shared by
+// the pulsequorum and pulsequorum-probe binaries and must not import voter-only
+// packages (ADR 0043).
+package proberun
 
 import (
 	"context"
@@ -17,6 +20,7 @@ import (
 	"time"
 
 	"github.com/joinsider/pulsequorum/internal/checker"
+	_ "github.com/joinsider/pulsequorum/internal/checker/builtin" // registers all monitor types
 	"github.com/joinsider/pulsequorum/internal/checker/httpcheck"
 	"github.com/joinsider/pulsequorum/internal/checker/icmpcheck"
 	"github.com/joinsider/pulsequorum/internal/config"
@@ -31,7 +35,8 @@ import (
 	"github.com/joinsider/pulsequorum/internal/version"
 )
 
-func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+// Run starts the probe role and blocks until ctx is done or the probe fails.
+func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
@@ -58,7 +63,7 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// Display only: the cluster neither relaxes nor tightens anything on it (ADR 0044, section 5).
 		capabilities = append(capabilities, probe.TargetPolicyCapability)
 	}
-	joinToken, err := readJoinToken(cfg)
+	joinToken, err := ReadJoinToken(cfg)
 	if err != nil {
 		return err
 	}
@@ -105,7 +110,7 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	nodeMetrics := ucmetrics.New(ucmetrics.Sources{
 		DBSizes: func() map[string]struct{ Size, WAL int64 } {
 			return map[string]struct{ Size, WAL int64 }{
-				"metrics": dbFileSizes(metrics.DB()),
+				"metrics": DBFileSizes(metrics.DB()),
 			}
 		},
 		DiskFree: func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
@@ -198,7 +203,7 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		bg.Wait()
 	}()
 
-	bg.Go(func() { metrics.DB().RunCheckpointer(ctx, checkpointInterval, log) })
+	bg.Go(func() { metrics.DB().RunCheckpointer(ctx, CheckpointInterval, log) })
 	bg.Go(func() { heartbeats.Run(ctx) })
 	bg.Go(func() { sched.Run(ctx) })
 	bg.Go(func() { buf.RunCleanup(ctx, time.Minute) })
