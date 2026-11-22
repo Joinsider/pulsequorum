@@ -2,7 +2,7 @@
 
 |                 |                                                             |
 |-----------------|-------------------------------------------------------------|
-| **Status**      | Proposed                                                    |
+| **Status**      | Accepted                                                    |
 | **Datum**       | 2026-11-22                                                  |
 | **Entscheider** | Projektinhaber                                              |
 | **Bezug**       | FA-PRB-01..07, FA-SEC-SSRF, FA-CHK-04, FA-CHK-13, PF-29a, ADR 0030, ADR 0034, ADR 0035, ADR 0040, ADR 0042, ADR 0043 |
@@ -231,3 +231,4 @@ lockern noch umgehen. Die Durchsetzung liegt vollständig in der Probe.
 | Datum      | Status   | Durch  | Anmerkung |
 |------------|----------|--------|-----------|
 | 2026-11-22 | Proposed | Claude | Wartet auf Review durch Projektinhaber |
+| 2026-11-22 | Accepted | Projektinhaber | im Chat bestätigt |

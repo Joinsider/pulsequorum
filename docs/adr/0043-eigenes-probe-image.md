@@ -2,7 +2,7 @@
 
 |                 |                                                             |
 |-----------------|-------------------------------------------------------------|
-| **Status**      | Proposed                                                    |
+| **Status**      | Accepted                                                    |
 | **Datum**       | 2026-11-22                                                  |
 | **Entscheider** | Projektinhaber                                              |
 | **Bezug**       | Z-M-04, FA-NODE-01, FA-PRB-01..07, FA-SEC-SSRF, NFA-PERF-02, NFA-PERF-07, NFA-PORT-01, ADR 0001, ADR 0009, ADR 0030, ADR 0034, ADR 0035, ADR 0036, ADR 0040 |
@@ -197,3 +197,4 @@ stehen unter Folgearbeiten und sind vorrangig.
 |------------|----------|--------|-----------|
 | 2026-11-22 | Proposed | Claude | Wartet auf Review durch Projektinhaber |
 | 2026-11-22 | Proposed | Claude | Überarbeitet: Abhängigkeiten gemessen, Option B (Entkopplung) ergänzt und zurückgestellt, Z-M-04-Abweichung, Lizenzen, Tag im UI, sicherheitliche Einordnung |
+| 2026-11-22 | Accepted | Projektinhaber | im Chat bestätigt |
