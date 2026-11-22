@@ -1,0 +1,39 @@
+# SonarCloud analysis of code quality and security hotspots, run as CI analysis
+# (instead of SonarCloud's automatic analysis) so Go coverage is included.
+# Settings: sonar-project.properties. Hardening as in ci.yml (ADR 0040): no
+# workflow-level permissions, read-only job, credentials never persisted, every
+# action pinned to a full commit SHA.
+name: SonarCloud
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sonarcloud:
+    # SONAR_TOKEN is not available to pull requests from forks; never use
+    # pull_request_target to work around that.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # full history for blame and new-code detection
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Go coverage
+        run: go test -count=1 -coverprofile=coverage.out ./cmd/... ./internal/... ./build/...
+      - uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
