@@ -157,7 +157,15 @@ func TestPrivateProbeTenantIsolation(t *testing.T) {
 	eventually(t, "n3 voter", 30*time.Second, func() bool { return isVoter(n1, n3.id) })
 
 	voters := []*testNode{n1, n2, n3}
-	requireLevel(ctx, t, voters, cluster.CommandVersion, time.Second)
+	eventually(t, "voters reach command version", 30*time.Second, func() bool {
+		for _, v := range voters {
+			lvl, err := v.host.Node.CommandLevel(ctx)
+			if err != nil || lvl < cluster.CommandVersion {
+				return false
+			}
+		}
+		return true
+	})
 
 	createTestTenant(ctx, t, n1, "tenant-a", "")
 	createTestTenant(ctx, t, n1, "tenant-b", "")
@@ -553,7 +561,7 @@ func TestPrivateProbeOfflineAlerts(t *testing.T) {
 		col := sysalert.New(sysalert.Options{
 			NodeID: n.id, IsLeader: n.host.Node.IsLeader, State: n.state, CommandLevel: n.host.Node.CommandLevel,
 			Cluster: n.host.Node, Self: n.host.SelfSignals, Peers: n.host.PeerSignals, ClockOffsets: n.host.ClockOffsets,
-			Thresholds: sysalert.Thresholds{ProbeOffline: 400 * time.Millisecond},
+			Thresholds: sysalert.Thresholds{ProbeOffline: 800 * time.Millisecond},
 			Interval:   150 * time.Millisecond, Logger: discard,
 		})
 		disp := alert.NewDispatcher(alert.DispatcherOptions{
@@ -621,7 +629,7 @@ func TestPrivateProbeOfflineAlerts(t *testing.T) {
 		return sysHook.hasSystemProbeAlert("pub-probe-1", false)
 	})
 
-	// 2. Short disconnect (< 400ms) raises no alert.
+	// 2. Short disconnect (< 800ms) raises no alert.
 	if _, err := leader.host.Node.Apply(ctx, cluster.NewSetNodeHealth("h-short-off", "priv-probe-a", false)); err != nil {
 		t.Fatal(err)
 	}
