@@ -6,10 +6,11 @@
 
 1. [CLAUDE.md](../CLAUDE.md): Regeln für Delegation, ADRs, Git und Sprache.
 2. [docs/roadmap.md](roadmap.md): „Aktueller Stand“ und „P5 – Reichweite“ inkl. Stack-Reihenfolge und Befehlsstufen.
-3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0042 sind alle `Accepted`. Für P5 zentral:
+3. [docs/adr/README.md](adr/README.md): ADRs 0001 bis 0042 sind `Accepted`, [ADR 0043](adr/0043-eigenes-probe-image.md) ist `Proposed`. Für P5 zentral:
    - [0034](adr/0034-probe-protokoll-und-puffer.md): Probe-Protokoll, Keepalive, Failover und lokaler Puffer (AP-5.1, erledigt)
    - [0035](adr/0035-private-probes-und-mandantenbindung.md): Private Probes, Mandantenbindung und Probe-Alerts (AP-5.2, erledigt)
-   - [0036](adr/0036-externes-frontend-und-client-failover.md): Externes Frontend & Client-Failover (**nächster Schritt AP-5.3**, Befehlsstufe 11)
+   - [0043](adr/0043-eigenes-probe-image.md): Eigenes schlankes Probe-Binary und -Image (**AP-5.2b, `Proposed` — wartet auf Approval**)
+   - [0036](adr/0036-externes-frontend-und-client-failover.md): Externes Frontend & Client-Failover (**AP-5.3**, Befehlsstufe 11)
    - [0037](adr/0037-postgresql-vorarbeiten.md)–[0040](adr/0040-ci-cd-haertung-und-manuelle-releases.md): PostgreSQL-Vorarbeiten (AP-5.4), Backup/Restore (AP-5.5a), CA-Rotation (AP-5.5b), CI/CD & Release (AP-5.0)
 4. [docs/betrieb/probe.md](betrieb/probe.md) und [deploy/probe/compose.yaml](../../deploy/probe/compose.yaml): Probe-Betrieb (öffentlich & privat), Probe-Alerts, Persistenzdateien, Puffer-Parameter und Failover-Verhalten.
 5. [docs/pflichtenheft.md](pflichtenheft.md): insb. FA-PRB-01..07 (Kap. 6.15), FA-UI-02/03, Konfiguration (Kap. 9.5) und Risiko PF-30 (Kap. 12.1).
@@ -21,7 +22,7 @@
 | P0 Fundament | fertig bis auf AP-0.9/0.10 (brauchen GitHub-Läufe, mit AP-5.0 zusammengefasst) |
 | P1 Kern, P2 Cluster, P3 HA-Logik | abgenommen (`docs/abnahme/p1-kern.md`, `p2-cluster.md`, `p3-ha.md`) |
 | P4 Mandanten | abgenommen (`docs/abnahme/p4-mandanten.md`) |
-| P5 Reichweite | ADRs 0034–0041 akzeptiert; **AP-5.1 ✅**, **AP-5.2 ✅**, AP-5.0 🔄; offen: **AP-5.3**, AP-5.5a, AP-5.5b, AP-5.4, AP-5.6 |
+| P5 Reichweite | ADRs 0034–0041 akzeptiert; ADR 0043 `Proposed`; **AP-5.1 ✅**, **AP-5.2 ✅**, AP-5.0 🔄; offen: **AP-5.2b** (blockiert ADR 0043), **AP-5.3**, AP-5.5a, AP-5.5b, AP-5.4, AP-5.6 |
 | P6 Ausbau | AP-6.5 ✅ (ADR 0042); AP-6.1..6.4 offen |
 
 **Was AP-5.1 gebracht hat (Branch `feat/phase-5.1`, `68c91e5`):**
@@ -70,17 +71,20 @@
 
 ### ADR-, Commit- und Sprachregeln
 
-- **Nächster freier ADR:** **0043** (Vorlage `docs/adr/0000-template.md`, Liste `docs/adr/README.md`). Status `Accepted` setzt nur der Projektinhaber oder auf ausdrückliche Anweisung.
+- **Nächster freier ADR:** **0044** (Vorlage `docs/adr/0000-template.md`, Liste `docs/adr/README.md`). Status `Accepted` setzt nur der Projektinhaber oder auf ausdrückliche Anweisung.
 - **Commits:** Conventional Commits auf Englisch (`feat(...)`, `fix(...)`, `test(...)`, `docs(...)`), Body erklärt das *Warum*; logische Schritte getrennt committen.
 - **Sprache:** Dokumentation (Roadmap, Betriebsdoku, Handoff, ADRs) auf **Deutsch**; Code, Bezeichner, Kommentare, API-Felder, Logs und Commit-Messages auf **Englisch**.
 
 ## 4. Nächste Schritte
 
-1. **Stacking/Merge abstimmen:** Falls `feat/phase-5.1` bzw. `feat/phase-5.2` per PR gemergt werden sollen, `origin/master` (`ee723c5`) prüfen; solange sie offen sind, auf eigenem Branch ab `feat/phase-5.2` weiterarbeiten.
-2. **AP-5.3 – Externes Frontend & Client-Failover (ADR 0036, FA-UI-02/03, Befehlsstufe 11):**
+1. **Stacking/Merge abstimmen:** Falls `feat/phase-5.2` (PR #37) noch offen ist, auf eigenem Branch ab `feat/phase-5.2` (bzw. `master` nach Merge) weiterarbeiten.
+2. **AP-5.2b – Eigenes Probe-Binary & -Image ([ADR 0043](adr/0043-eigenes-probe-image.md), `Proposed`):**
+   - **Erst nach Approval durch Projektinhaber umsetzen (`Accepted`).**
+   - Geplante Bausteine: `internal/proberun`, `cmd/pulsequorum-probe` (+ Architekturtest gegen Voter-/UI-Abhängigkeiten), `Dockerfile.probe`, `Dockerfile.probe.release`, `.goreleaser.yaml`, `.github/workflows/{ci,release}.yml`, `.github/dependabot.yml`, `Makefile` (`go-build-probe`), `deploy/probe/compose.yaml`, `docs/betrieb/probe.md`, UI-Snippet in `probe-token-dialog` sowie Update in `docs/pflichtenheft.md` und `docs/roadmap.md`.
+3. **AP-5.3 – Externes Frontend & Client-Failover (ADR 0036, FA-UI-02/03, Befehlsstufe 11):**
    - Zuerst [ADR 0036](adr/0036-externes-frontend-und-client-failover.md) komplett lesen und gegen den Bestand abgleichen.
    - Geplante Bausteine: `public_url`-Verbreitung über Raft (Befehlsstufe `11`), `/api/v1/cluster/nodes`, CORS/CSP sowie nginx-Container/Client-Failover für die Angular-SPA.
-3. **Danach in P5 (Reihenfolge laut `docs/roadmap.md`):**
+4. **Danach in P5 (Reihenfolge laut `docs/roadmap.md`):**
    - `AP-5.5a` Backup/Export/Restore (ADR 0038, Befehlsstufe 12)
    - `AP-5.5b` CA-Rotation über Raft (ADR 0039, Befehlsstufe 13)
    - `AP-5.4` PostgreSQL-Vorarbeiten (ADR 0037)

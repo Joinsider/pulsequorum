@@ -13,8 +13,8 @@ Arbeitsgrundlage für die Umsetzung. Anforderungen: [Pflichtenheft](pflichtenhef
 | | |
 |---|---|
 | **Aktive Phase** | P5 – Reichweite (P1 bis P4 abgenommen; AP-0.9/0.10 in AP-5.0 aufgegangen) |
-| **Wartet auf Projektinhaber** | Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6) |
-| **Nächster Schritt (Claude)** | AP-5.3 Externes Frontend & Client-Failover (ADR 0036); parallel AP-5.0 CI/CD & erster Release `v0.0.1` |
+| **Wartet auf Projektinhaber** | Entscheidungen zum öffentlichen Repo (ADR 0040 F1–F6); Review [ADR 0043](adr/0043-eigenes-probe-image.md) (eigenes Probe-Image) |
+| **Nächster Schritt (Claude)** | AP-5.2b Eigenes Probe-Image (nach Approval ADR 0043) → AP-5.3 Externes Frontend & Client-Failover (ADR 0036); parallel AP-5.0 CI/CD & erster Release `v0.0.1` |
 
 ---
 
@@ -125,15 +125,16 @@ ADRs 0034–0040 vorgeschlagen am 2026-11-19; 0035–0040 am 2026-11-20 akzeptie
 | AP-5.0 | Rename nach Pulsequorum (ADR 0041), CI/CD-Härtung, Release über lokal signierten Tag (`make release`), erste Version `v0.0.1` nach GHCR; schließt AP-0.9/0.10 ab | NFA-SEC-06, NFA-PORT-01, RB-LIC-03 | 0040 | 🔄 |
 | AP-5.1 | Probe-Rolle: Subscribe, Upload, Puffer, Keepalive, Failover, `RegisterProbe` | FA-PRB-01..04/07 | 0034 | ✅ ADR 0034, Befehlsstufe 10: Proto `ProbeService` (`Subscribe`/`Upload`/`GetBufferStatus`), SQLite-Migration `00019_probe_registry`, FSM `RegisterProbe` & `SubscribeChanges()`, CA-Bundle (`ca-bundle.pem`), `Assigner` für öffentliche/private Probes und `ProbeHealthWatcher`. Voter-Gateway `internal/probegw` (Server-Tick 5 s, Rate-Limit, In-Memory-Geheimnisauflösung). Probe-Runtime `internal/probe` & `cmd/pulsequorum/probe.go` (`CLUSTER_SEEDS`, `JOIN_TOKEN_FILE`/`CLUSTER_JOIN_TOKEN`, `PROBE_*`-Puffer mit `lost_below`, 30 s Keepalive, `PROBE_SESSION_TIMEOUT` 15 s, Failover + Full-Jitter-Backoff, `ErrCertRejected`). Admin-Cluster-API & Angular-UI erweitert (quorum-neutral), Multi-Node-/Quorum-/verkürzte AS-08-Tests (`internal/clusterhost/probe_test.go`), `deploy/probe/compose.yaml`, Doku `docs/betrieb/probe.md`. Offen: 24-h-NAT-Langzeittest (AP-5.6), Private-Probe-API/-UI/-Alerts (AP-5.2), CA-Rotation (AP-5.5b) |
 | AP-5.2 | Private Probes pro Mandant, Probe-Alerts | FA-PRB-05/06 | 0035 | ✅ ADR 0035, Befehlsstufe 10: SQLite-Migration `00020_probe_alerts`, FSM `SetProbeAlert`, automatischer Probe-Widerruf bei `DeleteTenant`, Durchsetzung von `maxPrivateProbes` bei Join-Token und `RegisterProbe`, `PROBE_OFFLINE_ALERT` (Standard `5m`), Alert-Templates & Kanalereignis `probe_offline`, `sysalert.Collector`-Routing (Plattform-Systemalert für öffentliche Probes vs. Mandanten-Alert für private Probes), Metrik `pulsequorum_probe_rejected_total{reason}` inkl. `OnRejected` im Gateway, Mandanten-REST-API `/api/v1/probes` & `/api/v1/monitors/assignable-nodes`, D2-Zuweisungsprüfung & Save-Time-SSRF-Ausnahme bei rein privaten Probes, Angular-UI (`/probes`, Node-Picker im Monitor-Editor, `privateProbes` in Limit-/Verbrauchsregeln), Multi-Node-Isolationstests (`internal/clusterhost/private_probe_test.go`), Doku `docs/betrieb/probe.md` |
+| AP-5.2b | Eigenes schlankes Probe-Binary (`cmd/pulsequorum-probe`) und Multi-Arch-Image (`ghcr.io/joinsider/pulsequorum-probe`) ohne Voter-/UI-/OIDC-/Shoutrrr-Ballast | Z-M-04, FA-NODE-01, NFA-PERF-07, NFA-PORT-01 | 0043 | ⛔ blockiert (ADR 0043 `Proposed`) |
 | AP-5.3 | Externes Frontend + Client-Failover, `/api/v1/cluster/nodes`, CORS/CSP | FA-UI-02/03 | 0036 | ⬜ |
 | AP-5.4 | PostgreSQL-Backend; Vorschlag: in P5 nur Vorarbeiten (Koordinations-Schnittstelle, geteilter Apply-Kern), Rest in eigener Phase nach 1.0 | Z-S-01, NFA-PORT-03 | 0037 | ⬜ (nur Vorarbeiten in P5) |
 | AP-5.5a | Backup/Export/Restore (age-verschlüsselt, Restore nur in frischen Cluster) | FA-OBS-03 | 0038 | ⬜ |
 | AP-5.5b | CA-Rotation in drei Phasen über Raft, Runbook | FA-PKI-05 | 0039 | ⬜ |
 | AP-5.6 | Abnahme AS-08, Release-Reife 1.0 (Namensprüfung O-08); bis dahin 0.x-Vorabversionen (ADR 0040) | – | – | ⬜ |
 
-**Befehlsstufen (ADR 0018):** Jedes AP mit neuen FSM-Befehlen bekommt eine eigene Stufe, damit zwischen zwei Stack-PRs ein Release möglich bleibt: 10 = Probes (AP-5.1/5.2), 11 = `public_url` (AP-5.3), 12 = `RecordBackup` (AP-5.5a), 13 = CA-Rotation (AP-5.5b). PostgreSQL-Vorarbeiten brauchen keine Stufe.
+**Befehlsstufen (ADR 0018):** Jedes AP mit neuen FSM-Befehlen bekommt eine eigene Stufe, damit zwischen zwei Stack-PRs ein Release möglich bleibt: 10 = Probes (AP-5.1/5.2), 11 = `public_url` (AP-5.3), 12 = `RecordBackup` (AP-5.5a), 13 = CA-Rotation (AP-5.5b). `AP-5.2b` und PostgreSQL-Vorarbeiten brauchen keine Stufe.
 
-**Stack-Reihenfolge (GitHub Stack auf `master`):** `docs/p5-adrs` → AP-5.0 (CI/CD) → AP-5.1 → AP-5.2 → AP-5.3 → AP-5.5a → AP-5.5b → AP-5.4 (Vorarbeiten) → AP-5.6. Jedes AP liegt in einem eigenen Worktree; größere APs werden in mehrere Branches geschnitten (Vertrag/FSM → Gateway/Backend → Runtime/UI → Tests/Doku). Sicherheitsrelevante Teile (mTLS/PKI, Tenant-Grenze, CORS/Auth, Geheimnisse, Workflows/Signaturen) schreibt der Hauptagent, der Rest geht an Haiku-Agenten (CLAUDE.md Regel 1).
+**Stack-Reihenfolge (GitHub Stack auf `master`):** `docs/p5-adrs` → AP-5.0 (CI/CD) → AP-5.1 → AP-5.2 → AP-5.2b → AP-5.3 → AP-5.5a → AP-5.5b → AP-5.4 (Vorarbeiten) → AP-5.6. Jedes AP liegt in einem eigenen Worktree; größere APs werden in mehrere Branches geschnitten (Vertrag/FSM → Gateway/Backend → Runtime/UI → Tests/Doku). Sicherheitsrelevante Teile (mTLS/PKI, Tenant-Grenze, CORS/Auth, Geheimnisse, Workflows/Signaturen) schreibt der Hauptagent, der Rest geht an Haiku-Agenten (CLAUDE.md Regel 1).
 
 ## P6 – Ausbau
 
