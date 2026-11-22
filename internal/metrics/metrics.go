@@ -61,6 +61,7 @@ type Metrics struct {
 	checkDuration   *prometheus.HistogramVec
 	checksRunning   prometheus.Gauge
 	alertDeliveries *prometheus.CounterVec
+	probeRejected   *prometheus.CounterVec
 	jwksFailures    prometheus.Counter
 	userInfoCalls   prometheus.Counter
 	userInfoFails   prometheus.Counter
@@ -96,6 +97,10 @@ func New(src Sources) *Metrics {
 			Name: "pulsequorum_alert_deliveries_total",
 			Help: "Alert deliveries by kind and outcome.",
 		}, []string{"kind", "outcome"}),
+		probeRejected: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "pulsequorum_probe_rejected_total",
+			Help: "Probe gateway requests or assignments rejected by reason.",
+		}, []string{"reason"}),
 		jwksFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "pulsequorum_auth_jwks_fetch_failures_total",
 			Help: "Failed fetches of the identity provider's signing keys (ADR 0027).",
@@ -109,7 +114,7 @@ func New(src Sources) *Metrics {
 			Help: "Failed userinfo lookups at the identity provider (ADR 0028).",
 		}),
 	}
-	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.jwksFailures, m.userInfoCalls, m.userInfoFails)
+	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.probeRejected, m.jwksFailures, m.userInfoCalls, m.userInfoFails)
 	m.reg.MustRegister(newCollector(src))
 	return m
 }
@@ -130,6 +135,14 @@ func (m *Metrics) CheckFinished(typ, result string, d time.Duration) {
 // outcome is e.g. "sent", "failed" or "throttled".
 func (m *Metrics) AlertDelivered(kind, outcome string) {
 	m.alertDeliveries.WithLabelValues(kind, outcome).Inc()
+}
+
+// ProbeRejected counts one probe gateway rejection by reason.
+func (m *Metrics) ProbeRejected(reason string) {
+	if m == nil {
+		return
+	}
+	m.probeRejected.WithLabelValues(reason).Inc()
 }
 
 // JWKSFetchFailed counts one failed fetch of the identity provider's keys.

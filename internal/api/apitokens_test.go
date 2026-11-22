@@ -372,7 +372,7 @@ var wantTokenOperations = []string{
 	"createNotificationChannel", "createStreamTicket", "deleteMaintenanceWindow",
 	"deleteMonitor", "deleteNotificationChannel", "getHealth", "getIncident",
 	"getMaintenanceWindow", "getMonitor", "getNotificationChannel", "getOwnTenant",
-	"getUptime", "listAudit", "listHeartbeats", "listIncidents",
+	"getUptime", "listAssignableNodes", "listAudit", "listHeartbeats", "listIncidents",
 	"listMaintenanceWindows", "listMonitorTypes", "listMonitors",
 	"listNotificationChannels", "pauseMonitor", "resumeMonitor", "testMonitor",
 	"testNotificationChannel", "updateMaintenanceWindow", "updateMonitor",
@@ -399,6 +399,7 @@ func TestTokenOperationSet(t *testing.T) {
 	for _, reserved := range []string{
 		"createApiToken", "listApiTokens", "revokeApiToken", "listAdminAudit",
 		"listUsers", "createUser", "getMe", "createJoinToken", "listClusterNodes",
+		"createPrivateProbeJoinToken", "listPrivateProbes", "removePrivateProbe",
 		"createTenant", "listTenants", "login",
 	} {
 		if ops[reserved] {

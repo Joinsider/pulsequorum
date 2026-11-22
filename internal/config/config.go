@@ -218,8 +218,11 @@ type Config struct {
 	DiskFreeAlert float64
 	// WALSizeAlert is the size in bytes of a WAL file above which a system
 	// alert is raised (WAL_SIZE_ALERT, FA-OBS-01, ADR 0025).
-	WALSizeAlert    int64
-	LogLevel        slog.Level
+	WALSizeAlert int64
+	// ProbeOfflineAlert is how long a probe must be unhealthy before an
+	// offline alert is raised (PROBE_OFFLINE_ALERT, FA-PRB-06, ADR 0035).
+	ProbeOfflineAlert time.Duration
+	LogLevel          slog.Level
 	LogFormat       string
 	ShutdownTimeout time.Duration
 }
@@ -554,6 +557,10 @@ func loadSystemAlertThresholds(get func(string, string) string, getenv func(stri
 		errs = append(errs, fmt.Errorf("WAL_SIZE_ALERT: must be a size above 0 such as 512MiB (B, KiB, MiB or GiB), got %q", walRaw))
 	}
 	cfg.WALSizeAlert = wal
+	cfg.ProbeOfflineAlert, err = durationAbove(get("PROBE_OFFLINE_ALERT", "5m"), 0)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("PROBE_OFFLINE_ALERT: must be a duration above 0, got %q", getenv("PROBE_OFFLINE_ALERT")))
+	}
 	return errs
 }
 

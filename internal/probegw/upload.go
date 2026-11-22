@@ -97,6 +97,7 @@ func (s *Server) processBatch(ctx context.Context, caller pki.Identity, req *pb.
 
 	for _, p := range req.GetHeartbeats() {
 		if err := checkBatchIdentity(caller, p); err != nil {
+			s.rejected("upload_identity")
 			s.log.Warn("probe upload batch rejected: identity or tenant violation", "node_id", caller.NodeID, "cert_tenant", caller.TenantID, "hb_node", p.GetNodeId(), "hb_tenant", p.GetTenantId())
 			return nil, err
 		}

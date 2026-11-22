@@ -286,6 +286,7 @@ func (s *Server) collectTenantMonitors(ctx context.Context, caller pki.Identity,
 		for _, m := range page.Items {
 			// Defense-in-depth D3: never deliver a foreign tenant's monitor to a private probe.
 			if caller.TenantID != "" && m.TenantID != caller.TenantID {
+				s.rejected("foreign_monitor")
 				s.log.Error("tenant boundary check dropped foreign monitor for private probe", "node_id", caller.NodeID, "probe_tenant", caller.TenantID, "monitor_tenant", m.TenantID, "monitor_id", m.ID)
 				continue
 			}

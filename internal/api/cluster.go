@@ -16,6 +16,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/clusterpki"
 	"github.com/joinsider/pulsequorum/internal/membership"
+	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/replication"
 	"github.com/joinsider/pulsequorum/internal/store"
@@ -34,7 +35,7 @@ const (
 // cluster host. cmd/pulsequorum fills it from the host's authority, membership
 // manager and Raft node.
 type ClusterAdmin interface {
-	CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration) (string, time.Time, error)
+	CreateJoinToken(ctx context.Context, role pki.Role, tenantID string, ttl time.Duration, actor *pb.Actor) (string, time.Time, error)
 	Remove(ctx context.Context, nodeID, requestedBy string) (membership.Removal, error)
 	Members() ([]cluster.Member, uint64, error)
 	Leader() (address, id string)
@@ -78,6 +79,12 @@ func clusterAdminError(err error) error {
 		switch cmdErr.Code {
 		case cluster.CodeInvalid:
 			return &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Detail: cmdErr.Message}
+		case cluster.CodeLimitExceeded:
+			return limitProblem(cmdErr)
+		case cluster.CodeConflict:
+			return &Problem{Status: http.StatusConflict, Title: "Conflict", Detail: cmdErr.Message}
+		case cluster.CodeNotFound:
+			return notFound("object")
 		case cluster.CodeNotEnabled:
 			return notEnabled(cmdErr)
 		}
@@ -94,7 +101,8 @@ func notEnabled(ce *cluster.CommandError) *Problem {
 // CreateJoinToken issues a one-time token. The secret is returned once and
 // never logged; the response must not be cached.
 func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenRequestObject) (gen.CreateJoinTokenResponseObject, error) {
-	if _, err := principal(ctx, platformAccess); err != nil {
+	p, err := principal(ctx, platformAccess)
+	if err != nil {
 		return nil, err
 	}
 	admin, err := h.clusterAdmin()
@@ -128,7 +136,7 @@ func (h *Handlers) CreateJoinToken(ctx context.Context, req gen.CreateJoinTokenR
 		return nil, &Problem{Status: http.StatusUnprocessableEntity, Title: problemTitleValidationFailed, Fields: fields}
 	}
 
-	token, expires, err := admin.CreateJoinToken(ctx, role, tenantID, time.Duration(minutes)*time.Minute)
+	token, expires, err := admin.CreateJoinToken(ctx, role, tenantID, time.Duration(minutes)*time.Minute, actorOf(p))
 	if err != nil {
 		return nil, clusterAdminError(err)
 	}

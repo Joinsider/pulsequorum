@@ -189,6 +189,7 @@ type Options struct {
 	ProbeTickInterval     time.Duration
 	ProbeDebounceInterval time.Duration
 	ProbeHealthInterval   time.Duration
+	OnProbeRejected       func(reason string)
 }
 
 // Host is the running cluster side of a voter.
@@ -331,6 +332,7 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		SSRFProtection:   opts.SSRFProtection,
 		OnStored:         opts.OnHeartbeatsStored,
 		Publish:          h.Replication.Publish,
+		OnRejected:       opts.OnProbeRejected,
 		Clock:            clock,
 		TickInterval:     opts.ProbeTickInterval,
 		DebounceInterval: opts.ProbeDebounceInterval,

@@ -44,9 +44,10 @@ type Applier interface {
 	Apply(ctx context.Context, cmd *pb.Command) (cluster.ApplyResult, error)
 }
 
-// ProbeSessionView describes a live probe session for the cluster listing (ADR 0034).
+// ProbeSessionView describes a live probe session for the cluster and probe listings (ADR 0034, 0035).
 type ProbeSessionView struct {
 	ConnectedVoterID string
+	LastMessageMs    int64
 	Buffer           *pb.ProbeBufferStatus
 }
 
