@@ -34,6 +34,14 @@ type AddressPolicy interface {
 	Check(ip netip.Addr) error
 }
 
+// AddrPortPolicy is implemented by policies that also decide on the port,
+// such as the local target policy of a probe (ADR 0044). The Dialer prefers
+// it over Check for connections; Allow keeps using Check, which then decides
+// on the address alone.
+type AddrPortPolicy interface {
+	CheckAddrPort(ap netip.AddrPort) error
+}
+
 // Dialer is the single entry point for outgoing connections of checkers and
 // notifications (FA-CHK-04). The policy is evaluated in net.Dialer.Control,
 // i.e. on the IP the socket actually connects to, after DNS resolution and for
@@ -68,7 +76,11 @@ func (d *Dialer) control(_, address string, _ syscall.RawConn) error {
 		// Control always receives a numeric address; anything else is unexpected.
 		return fmt.Errorf("%w: unparsable destination %q", ErrSSRFBlocked, address)
 	}
-	return d.Policy.Check(normalize(ap.Addr()))
+	ap = netip.AddrPortFrom(normalize(ap.Addr()), ap.Port())
+	if pp, ok := d.Policy.(AddrPortPolicy); ok {
+		return pp.CheckAddrPort(ap)
+	}
+	return d.Policy.Check(ap.Addr())
 }
 
 // normalize unmaps IPv4-mapped IPv6 addresses and drops the IPv6 zone.

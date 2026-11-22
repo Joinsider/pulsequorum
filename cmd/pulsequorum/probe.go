@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/node"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/probe"
+	"github.com/joinsider/pulsequorum/internal/probepolicy"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 	"github.com/joinsider/pulsequorum/internal/version"
@@ -52,6 +54,10 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log.Info("probe storage ready", "data_dir", cfg.DataDir, "node_id", nodeID, "incarnation", metrics.Incarnation())
 
 	icmpMode, capabilities := detectProbeCapabilities(ctx, cfg, log)
+	if cfg.ProbeAllowTargets != nil && !cfg.ProbeAllowTargets.Any() {
+		// Display only: the cluster neither relaxes nor tightens anything on it (ADR 0044, section 5).
+		capabilities = append(capabilities, probe.TargetPolicyCapability)
+	}
 	joinToken, err := readJoinToken(cfg)
 	if err != nil {
 		return err
@@ -85,9 +91,48 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			isPrivate = id.TenantID != ""
 		}
 	}
+	// ADR 0044: a private probe runs in the customer's network and must be
+	// told locally what it may reach there.
+	if isPrivate && cfg.ProbeAllowTargets == nil {
+		return errors.New(`PROBE_ALLOW_TARGETS is required for a private probe: list the networks it may reach, or set "any" on purpose (docs/betrieb/probe.md); the probe has joined and keeps its certificate`)
+	}
+	methods := cfg.ProbeAllowMethods
+	if methods == nil && isPrivate {
+		if methods, err = probepolicy.ParseMethods(probepolicy.DefaultPrivateMethods); err != nil {
+			return err
+		}
+	}
+	nodeMetrics := ucmetrics.New(ucmetrics.Sources{
+		DBSizes: func() map[string]struct{ Size, WAL int64 } {
+			return map[string]struct{ Size, WAL int64 }{
+				"metrics": dbFileSizes(metrics.DB()),
+			}
+		},
+		DiskFree: func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
+		Version:  version.Version,
+	})
+
+	registry, err := probe.GuardRegistry(checker.Default, probe.GuardOptions{
+		Types:       cfg.ProbeAllowTypes,
+		Methods:     methods,
+		Detail:      cfg.ProbeResultDetail,
+		HideTargets: isPrivate,
+		OnBlocked:   nodeMetrics.ProbePolicyBlocked,
+	})
+	if err != nil {
+		return err
+	}
+	log.Info("probe local policy",
+		"private", isPrivate,
+		"targets", policyString(cfg.ProbeAllowTargets.String()),
+		"http_methods", policyString(methods.String()),
+		"monitor_types", policyString(strings.Join(cfg.ProbeAllowTypes, ",")),
+		"result_detail", cfg.ProbeResultDetail)
+
 	// ADR 0035 section 4: for private probes auto=off; for public probes
 	// remote ProbeMonitor.ssrf_protection enables protection dynamically.
-	policy := probe.NewPolicy(cfg.SSRFProtection == "on", isPrivate)
+	// ADR 0044: the local target policy narrows both.
+	policy := probe.NewPolicy(cfg.SSRFProtection == "on", isPrivate).WithTargets(cfg.ProbeAllowTargets)
 	checkEnv := &checker.Env{
 		Dialer:    &checker.Dialer{Policy: policy},
 		UserAgent: "Pulsequorum/" + version.Version,
@@ -116,18 +161,8 @@ func runProbe(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
-	nodeMetrics := ucmetrics.New(ucmetrics.Sources{
-		DBSizes: func() map[string]struct{ Size, WAL int64 } {
-			return map[string]struct{ Size, WAL int64 }{
-				"metrics": dbFileSizes(metrics.DB()),
-			}
-		},
-		DiskFree: func() (float64, error) { return diskstat.FreeRatio(cfg.DataDir) },
-		Version:  version.Version,
-	})
-
 	sched := scheduler.New(scheduler.Options{
-		Registry: checker.Default,
+		Registry: registry,
 		Env:      checkEnv,
 		Sink:     heartbeats,
 		Logger:   log,
@@ -256,4 +291,12 @@ func writeProbeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// policyString shows an unset local policy setting as "unrestricted".
+func policyString(s string) string {
+	if s == "" {
+		return "unrestricted"
+	}
+	return s
 }

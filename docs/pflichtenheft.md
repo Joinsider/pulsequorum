@@ -4,7 +4,7 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | Pulsequorum (Arbeitstitel, E20) |
-| **Version** | 1.5 |
+| **Version** | 1.6 |
 | **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
 | **Datum** | 2026-11-17 |
 | **Grundlage** | [Konzept v0.3](../pulsequorum-konzept.md), Recherche zu Pitfalls (Kap. 12) |
@@ -21,6 +21,7 @@
 | 1.3 | 2026-11-15 | Teststrategie 13.1: Clock-Skew als Integrationstest statt im Container gemäß ADR 0020 |
 | 1.4 | 2026-11-17 | Externe Anmeldung über beliebige OIDC-Anbieter mit Profilen `generic` und `zitadel` gemäß ADR 0027 (FA-AUTH-05..09, FA-TEN-03, Produktumgebung) |
 | 1.5 | 2026-11-18 | SSRF-Schutz präzisiert gemäß ADR 0030: feste Bereichsliste, schaltbar über `SSRF_PROTECTION`, Prüfung beim Speichern, DNS-Antworten (FA-SEC-SSRF) |
+| 1.6 | 2026-11-22 | Lokale Richtlinie privater Probes gemäß ADR 0044 (FA-PRB-08..10) |
 
 ---
 
@@ -440,6 +441,9 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-PRB-05 | Private Probes (`owner_tenant_id`) prüfen nur Monitore ihres Mandanten; Registrierung durch `tenant-admin` über Join-Token mit Mandantenbindung. | M | P5 | Test. |
 | FA-PRB-06 | Probe-Offline wird als Systemalert (Plattform) bzw. Mandanten-Alert (private Probe) gemeldet. | M | P5 | Test. |
 | FA-PRB-07 | Probes sind keine Raft-Mitglieder und beeinflussen das Quorum nicht. | M | P5 | Test. |
+| FA-PRB-08 **[neu]** | Lokale Zielrichtlinie `PROBE_ALLOW_TARGETS` (IP/CIDR, optional Port oder Portbereich, `any`): Die Probe baut Verbindungen nur zu erfassten Zielen auf, geprüft auf der verbundenen IP und dem Port. Für private Probes Pflicht. Loopback, Link-Local, unspezifizierte Adressen und Multicast öffnen nur Einträge innerhalb dieser Bereiche. Der Cluster kann die Richtlinie weder lockern noch einsehen. (ADR 0044) | M | P5 | Tests: Port- und Bereichsgrenzen, Redirect und DNS-Rebinding auf nicht erfasstes Ziel, ICMP, DNS-Antworten, Startabbruch ohne Richtlinie. |
+| FA-PRB-09 **[neu]** | Lokale Beschränkung der HTTP-Methoden (`PROBE_ALLOW_HTTP_METHODS`, Standard bei privaten Probes `GET,HEAD`) und Monitor-Typen (`PROBE_ALLOW_MONITOR_TYPES`). Ein Verstoß baut keine Verbindung auf und meldet `ssrf_blocked`. (ADR 0044) | M | P5 | Test. |
+| FA-PRB-10 **[neu]** | `PROBE_RESULT_DETAIL=minimal` meldet nur Status, Latenz, Fehlerklasse, HTTP-Statuscode, DNS-Rcode, Zertifikatsablauf und Zeitmessungen; keine gelesenen Werte, DNS-Antworten, Zertifikatsnamen oder Adressen. Die Reduktion erfolgt vor dem lokalen Puffer. (ADR 0044) | S | P5 | Test. |
 
 ### 6.16 REST-API und Live-Feed (FA-API)
 

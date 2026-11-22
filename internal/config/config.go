@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/joinsider/pulsequorum/internal/probepolicy"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
 	"github.com/joinsider/pulsequorum/internal/tenant"
 )
@@ -153,6 +154,18 @@ type Config struct {
 	// ProbeSessionTimeout is how long a probe stream session may be idle
 	// before timing out (PROBE_SESSION_TIMEOUT, ADR 0034).
 	ProbeSessionTimeout time.Duration
+	// ProbeAllowTargets is the local target policy of a probe
+	// (PROBE_ALLOW_TARGETS, ADR 0044); nil means unset, which a private probe
+	// refuses at startup.
+	ProbeAllowTargets *probepolicy.Targets
+	// ProbeAllowMethods are the HTTP methods a probe may use
+	// (PROBE_ALLOW_HTTP_METHODS, ADR 0044); nil means the default of the role.
+	ProbeAllowMethods *probepolicy.Methods
+	// ProbeAllowTypes are the monitor types a probe may run
+	// (PROBE_ALLOW_MONITOR_TYPES, ADR 0044); nil means all.
+	ProbeAllowTypes []string
+	// ProbeResultDetail is full or minimal (PROBE_RESULT_DETAIL, ADR 0044).
+	ProbeResultDetail string
 	// RaftTimeout is the Raft heartbeat and election timeout (ADR 0012 A6).
 	RaftTimeout time.Duration
 	PublicURL   string
@@ -607,6 +620,28 @@ func loadProbe(get func(string, string) string, getenv func(string) string, cfg 
 		errs = append(errs, fmt.Errorf("PROBE_SESSION_TIMEOUT: must be a duration of at least 1s, got %q", sessRaw))
 	}
 	cfg.ProbeSessionTimeout = sessTimeout
+
+	targets, err := probepolicy.ParseTargets(get("PROBE_ALLOW_TARGETS", ""))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("PROBE_ALLOW_TARGETS: %w", err))
+	}
+	cfg.ProbeAllowTargets = targets
+	methods, err := probepolicy.ParseMethods(get("PROBE_ALLOW_HTTP_METHODS", ""))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("PROBE_ALLOW_HTTP_METHODS: %w", err))
+	}
+	cfg.ProbeAllowMethods = methods
+	types, err := probepolicy.ParseTypes(get("PROBE_ALLOW_MONITOR_TYPES", ""))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("PROBE_ALLOW_MONITOR_TYPES: %w", err))
+	}
+	cfg.ProbeAllowTypes = types
+	cfg.ProbeResultDetail = get("PROBE_RESULT_DETAIL", probepolicy.DetailFull)
+	switch cfg.ProbeResultDetail {
+	case probepolicy.DetailFull, probepolicy.DetailMinimal:
+	default:
+		errs = append(errs, fmt.Errorf("PROBE_RESULT_DETAIL: must be full or minimal, got %q", cfg.ProbeResultDetail))
+	}
 
 	return errs
 }
