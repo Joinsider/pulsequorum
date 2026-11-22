@@ -2,8 +2,15 @@
 // Copyright (C) 2026 The Pulsequorum Authors
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatExpansionModule } from '@angular/material/expansion';
@@ -13,10 +20,11 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ActivatedRoute, ActivatedRouteSnapshot, Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { firstValueFrom, forkJoin, of } from 'rxjs';
+import { catchError, firstValueFrom, forkJoin, of } from 'rxjs';
 import { MonitorsService } from '../../api/gen/endpoints/monitors/monitors.service';
 import { NotificationsService } from '../../api/gen/endpoints/notifications/notifications.service';
 import {
+  AssignableNode,
   AssignmentMode,
   ConsensusPolicy,
   Monitor,
@@ -162,6 +170,7 @@ export class MonitorEditorPage {
   protected readonly loadState = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly types = signal<MonitorType[]>([]);
   protected readonly channels = signal<NotificationChannel[]>([]);
+  protected readonly assignableNodes = signal<AssignableNode[]>([]);
   /** Schema of the selected monitor type; null if the type is unknown. */
   protected readonly typeSchema = signal<JsonSchema | null>(null);
   /** Translation prefix of the selected type's configuration fields. */
@@ -173,6 +182,33 @@ export class MonitorEditorPage {
   protected readonly consensusPolicies: ConsensusPolicy[] = ['majority', 'any', 'all'];
   protected readonly assignmentModes: AssignmentMode[] = ['all', 'count', 'nodes'];
   protected readonly summary = signal<Summary | null>(null);
+
+  private readonly selectedAssignmentMode = toSignal(
+    this.form.controls['assignmentMode'].valueChanges,
+    { initialValue: this.form.controls['assignmentMode'].value as AssignmentMode },
+  );
+  private readonly selectedAssignmentNodes = toSignal(
+    this.form.controls['assignmentNodes'].valueChanges,
+    { initialValue: (this.form.controls['assignmentNodes'].value as string[]) ?? [] },
+  );
+
+  protected readonly unknownSelectedNodes = computed<string[]>(() => {
+    const known = new Set(this.assignableNodes().map((n) => n.id));
+    const ids: string[] = this.selectedAssignmentNodes() ?? [];
+    return ids.filter((id) => !known.has(id));
+  });
+
+  protected readonly privateOnlySelected = computed<boolean>(() => {
+    if (this.selectedAssignmentMode() !== 'nodes') {
+      return false;
+    }
+    const ids: string[] = this.selectedAssignmentNodes() ?? [];
+    if (ids.length === 0) {
+      return false;
+    }
+    const byId = new Map(this.assignableNodes().map((n) => [n.id, n]));
+    return ids.every((id) => byId.get(id)?.private === true);
+  });
 
   /** Idempotency key of the current payload, reused for retries of the same submission. */
   private idempotencyKey: string | null = null;
@@ -187,13 +223,15 @@ export class MonitorEditorPage {
     forkJoin({
       types: this.monitors.listMonitorTypes(),
       channels: this.notifications.listNotificationChannels(),
+      nodes: this.monitors.listAssignableNodes().pipe(catchError(() => of([] as AssignableNode[]))),
       monitor: this.monitorId ? this.monitors.getMonitor(this.monitorId) : of(null),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ types, channels, monitor }) => {
+        next: ({ types, channels, nodes, monitor }) => {
           this.types.set(types);
           this.channels.set(channels);
+          this.assignableNodes.set(nodes);
           if (monitor) {
             this.fill(monitor);
           } else {

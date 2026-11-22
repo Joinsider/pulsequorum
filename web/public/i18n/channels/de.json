@@ -20,7 +20,8 @@
     "degraded": "Beeinträchtigt",
     "partial": "Teilweise ausgefallen",
     "flapping": "Flattern",
-    "channel_failed": "Anderer Kanal ausgefallen"
+    "channel_failed": "Anderer Kanal ausgefallen",
+    "probe_offline": "Private Probe offline"
   },
   "default": "Standard",
   "lastError": "Letzter Fehler",

@@ -20,7 +20,8 @@
     "degraded": "Degraded",
     "partial": "Partial",
     "flapping": "Flapping",
-    "channel_failed": "Another channel failed"
+    "channel_failed": "Another channel failed",
+    "probe_offline": "Private probe offline"
   },
   "default": "Default",
   "lastError": "Last error",

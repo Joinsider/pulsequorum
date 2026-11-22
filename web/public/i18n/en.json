@@ -10,6 +10,7 @@
     "systemChannels": "System channels",
     "tenants": "Tenants",
     "plans": "Plans",
+    "probes": "Private probes",
     "apiTokens": "API tokens",
     "audit": "Audit log",
     "adminAudit": "Platform audit log"

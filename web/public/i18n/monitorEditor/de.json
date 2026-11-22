@@ -34,8 +34,9 @@
     "consensus": "Konsensregel",
     "assignment": "Prüfungen ausführen auf",
     "assignmentCount": "Anzahl Nodes",
-    "assignmentNodes": "Node-IDs",
-    "assignmentNodesHint": "Durch Kommas getrennte Node-IDs.",
+    "assignmentNodes": "Nodes",
+    "assignmentNodesHint": "Wähle einen oder mehrere Voter oder Probes aus.",
+    "privateProbeTargetsHint": "Nur private Probes: Interne Ziele und private Netze sind für diesen Monitor erlaubt (SSRF-Prüfung gelockert).",
     "enable": "Konfigurieren",
     "none": "Keine",
     "key": "Schlüssel",
@@ -63,6 +64,13 @@
     "count": "Eine Anzahl von Nodes",
     "nodes": "Ausgewählte Nodes"
   },
+  "nodeKind": {
+    "voter": "Voter",
+    "publicProbe": "Öffentliche Probe",
+    "privateProbe": "Private Probe",
+    "unhealthy": "nicht gesund",
+    "unknown": "unbekannter Node"
+  },
   "saving": "Wird gespeichert …",
   "errors": {
     "load": "Der Monitor konnte nicht geladen werden.",
@@ -89,7 +97,7 @@
     "tagCount": "Verwende höchstens {{ max }} Tags.",
     "tagLength": "Jeder Tag darf höchstens {{ max }} Zeichen lang sein.",
     "countRequired": "Gib die Anzahl der Nodes ein.",
-    "nodesRequired": "Gib mindestens eine Node-ID ein."
+    "nodesRequired": "Wähle mindestens einen Node aus."
   },
   "pem": {
     "loadFile": "Datei laden…",

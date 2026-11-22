@@ -72,7 +72,7 @@ describe('monitorFormValue', () => {
       notificationChannelIds: [],
       assignmentMode: 'all',
       assignmentCount: null,
-      assignmentNodes: '',
+      assignmentNodes: [],
       consensusPolicy: 'majority',
     });
   });
@@ -127,7 +127,7 @@ describe('monitorInputOf', () => {
 
   it('sends the node list for mode nodes', () => {
     const form = filled({ assignment: { mode: 'nodes', nodes: ['node-a'] } });
-    form.controls['assignmentNodes'].setValue('node-a, node-b');
+    form.controls['assignmentNodes'].setValue(['node-a', 'node-b']);
     expect(monitorInputOf(form, HTTP_SCHEMA).assignment).toEqual({
       mode: 'nodes',
       nodes: ['node-a', 'node-b'],
@@ -198,7 +198,7 @@ describe('form validation', () => {
     form.controls['assignmentMode'].setValue('nodes');
     expect(form.controls['assignmentNodes'].hasError('nodesRequired')).toBe(true);
 
-    form.controls['assignmentNodes'].setValue('node-a');
+    form.controls['assignmentNodes'].setValue(['node-a']);
     expect(form.controls['assignmentNodes'].valid).toBe(true);
 
     form.controls['assignmentMode'].setValue('all');

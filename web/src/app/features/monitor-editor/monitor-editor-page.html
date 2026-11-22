@@ -224,10 +224,40 @@
             @if (form.controls['assignmentMode'].value === 'nodes') {
               <mat-form-field appearance="outline" class="span-all">
                 <mat-label>{{ t('monitorEditor.fields.assignmentNodes') }}</mat-label>
-                <input matInput formControlName="assignmentNodes" autocomplete="off" />
+                <mat-select formControlName="assignmentNodes" multiple>
+                  @for (node of assignableNodes(); track node.id) {
+                    <mat-option [value]="node.id">
+                      {{ node.name || node.id }}
+                      ({{
+                        node.private
+                          ? t('monitorEditor.nodeKind.privateProbe')
+                          : node.role === 'probe'
+                            ? t('monitorEditor.nodeKind.publicProbe')
+                            : t('monitorEditor.nodeKind.voter')
+                      }}
+                      @if (node.region) {
+                        , {{ node.region }}
+                      }
+                      @if (!node.healthy) {
+                        , {{ t('monitorEditor.nodeKind.unhealthy') }}
+                      }
+                      )
+                    </mat-option>
+                  }
+                  @for (id of unknownSelectedNodes(); track id) {
+                    <mat-option [value]="id">
+                      {{ id }} ({{ t('monitorEditor.nodeKind.unknown') }})
+                    </mat-option>
+                  }
+                </mat-select>
                 <mat-hint>{{ t('monitorEditor.fields.assignmentNodesHint') }}</mat-hint>
                 <mat-error>{{ messageOf('assignmentNodes') }}</mat-error>
               </mat-form-field>
+              @if (privateOnlySelected()) {
+                <p class="hint span-all" role="status" data-testid="private-probe-ssrf-hint">
+                  {{ t('monitorEditor.fields.privateProbeTargetsHint') }}
+                </p>
+              }
             }
           </div>
         </mat-expansion-panel>

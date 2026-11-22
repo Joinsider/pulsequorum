@@ -143,6 +143,7 @@
       "incarnation_changed": "Node incarnation changed",
       "fingerprint_mismatch": "FSM fingerprint mismatch",
       "mixed_versions": "Mixed versions",
+      "probe_offline": "Probe offline",
       "quorum": "Quorum",
       "test": "Test alert"
     }
@@ -192,12 +193,14 @@
     "usage": {
       "monitors": "{{ used }} / {{ limit }} monitors",
       "channels": "{{ used }} / {{ limit }} channels",
+      "privateProbes": "{{ used }} / {{ limit }} private probes",
       "interval": "Shortest interval {{ used }} (minimum {{ limit }})"
     },
     "exceededTitle": "Limits exceeded: existing items keep running, new ones are refused.",
     "exceeded": {
       "maxMonitors": "{{ actual }} monitors, {{ allowed }} allowed",
       "maxChannels": "{{ actual }} channels, {{ allowed }} allowed",
+      "maxPrivateProbes": "{{ actual }} private probes, {{ allowed }} allowed",
       "minIntervalSeconds": "Shortest interval {{ actual }} s, minimum {{ allowed }} s"
     },
     "suspend": "Suspend",

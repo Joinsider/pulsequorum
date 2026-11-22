@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The Pulsequorum Authors
+
+.banner {
+  margin: 0 0 1rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+
+.banner--warn {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.state,
+.empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.state--error {
+  color: var(--danger);
+}
+
+.hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+}
+
+.probes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.probe {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.probe__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.probe__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.probe__name {
+  font-weight: 650;
+  font-size: 1rem;
+}
+
+.probe__id {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+
+.badge--healthy {
+  color: var(--ok);
+  border-color: currentColor;
+}
+
+.badge--unhealthy,
+.badge--alert {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.probe__actions {
+  display: flex;
+  justify-content: flex-end;
+}

@@ -19,7 +19,7 @@ export const LIMIT_KEYS = [
 export type LimitKey = (typeof LIMIT_KEYS)[number];
 
 /** Limits the server stores but does not enforce yet (their features come later, ADR 0029). */
-export const NOT_ENFORCED_YET: readonly LimitKey[] = ['maxStatusPages', 'maxPrivateProbes'];
+export const NOT_ENFORCED_YET: readonly LimitKey[] = ['maxStatusPages'];
 
 export const LIMIT_BOUNDS: Readonly<
   Record<LimitKey, { readonly min: number; readonly max: number }>

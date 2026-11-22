@@ -11,7 +11,7 @@ import { Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MonitorsService } from '../../api/gen/endpoints/monitors/monitors.service';
 import { NotificationsService } from '../../api/gen/endpoints/notifications/notifications.service';
-import { Monitor, MonitorType, NotificationChannel } from '../../api/gen/model';
+import { AssignableNode, Monitor, MonitorType, NotificationChannel } from '../../api/gen/model';
 import { AuthService } from '../../core/auth/auth.service';
 import { MonitorEditorPage } from './monitor-editor-page';
 
@@ -120,10 +120,24 @@ const SECRET_MONITOR: Monitor = {
   },
 };
 
+const ASSIGNABLE_NODES: AssignableNode[] = [
+  { id: 'v1', name: 'voter-eu', role: 'voter', private: false, healthy: true, capabilities: [] },
+  {
+    id: 'p-priv',
+    name: 'edge-corp',
+    role: 'probe',
+    private: true,
+    healthy: true,
+    capabilities: ['http'],
+    region: 'dc-1',
+  },
+];
+
 interface Setup {
   fixture: ComponentFixture<MonitorEditorPage>;
   monitors: {
     listMonitorTypes: ReturnType<typeof vi.fn>;
+    listAssignableNodes: ReturnType<typeof vi.fn>;
     getMonitor: ReturnType<typeof vi.fn>;
     createMonitor: ReturnType<typeof vi.fn>;
     updateMonitor: ReturnType<typeof vi.fn>;
@@ -137,9 +151,11 @@ function setup(options: {
   update?: () => Observable<Monitor>;
   types?: MonitorType[];
   monitor?: Monitor;
+  nodes?: AssignableNode[];
 }): Setup {
   const monitors = {
     listMonitorTypes: vi.fn(() => of(options.types ?? [HTTP_TYPE, TCP_TYPE])),
+    listAssignableNodes: vi.fn(() => of(options.nodes ?? ASSIGNABLE_NODES)),
     getMonitor: vi.fn(() => of(options.monitor ?? MONITOR)),
     createMonitor: vi.fn(options.create ?? (() => of({ ...MONITOR, id: 'new-id' }))),
     updateMonitor: vi.fn(options.update ?? (() => of(MONITOR))),
@@ -366,6 +382,7 @@ describe('MonitorEditorPage', () => {
           provide: MonitorsService,
           useValue: {
             listMonitorTypes: () => throwError(() => new HttpErrorResponse({ status: 500 })),
+            listAssignableNodes: () => of([]),
           },
         },
         { provide: NotificationsService, useValue: { listNotificationChannels: () => of([]) } },
@@ -484,6 +501,41 @@ describe('MonitorEditorPage', () => {
       expect(JSON.stringify(config.getRawValue())).not.toContain('***');
       expect((config.get('headers') as FormArray).length).toBe(0);
       expect(config.get('auth')?.disabled).toBe(true);
+    });
+  });
+
+  describe('assignable nodes picker', () => {
+    it('loads assignable nodes and shows internal-targets hint only for private probes', () => {
+      const { fixture } = setup({ mode: 'create' });
+      const p = page(fixture);
+
+      p['form'].controls['assignmentMode'].setValue('nodes');
+      p['form'].controls['assignmentNodes'].setValue(['v1']);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="private-probe-ssrf-hint"]'),
+      ).toBeNull();
+
+      p['form'].controls['assignmentNodes'].setValue(['p-priv']);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="private-probe-ssrf-hint"]'),
+      ).not.toBeNull();
+
+      p['form'].controls['assignmentNodes'].setValue(['p-priv', 'v1']);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="private-probe-ssrf-hint"]'),
+      ).toBeNull();
+    });
+
+    it('preserves unknown saved node ids when editing an existing monitor', () => {
+      const { fixture } = setup({
+        mode: 'edit',
+        monitor: { ...MONITOR, assignment: { mode: 'nodes', nodes: ['deleted-node'] } },
+      });
+      const p = page(fixture);
+      expect(p['unknownSelectedNodes']()).toEqual(['deleted-node']);
     });
   });
 });

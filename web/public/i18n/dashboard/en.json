@@ -69,6 +69,7 @@
     "rows": {
       "monitors": "Monitors",
       "channels": "Channels",
+      "privateProbes": "Private probes",
       "interval": "Shortest interval"
     },
     "count": "{{ used }} / {{ limit }}",
@@ -79,11 +80,13 @@
     "hints": {
       "reached": {
         "monitors": "Monitor limit reached. Delete a monitor or ask an administrator for a larger plan.",
-        "channels": "Channel limit reached. Delete a channel or ask an administrator for a larger plan."
+        "channels": "Channel limit reached. Delete a channel or ask an administrator for a larger plan.",
+        "privateProbes": "Private probe limit reached. Remove a probe or ask an administrator for a larger plan."
       },
       "exceeded": {
         "monitors": "More monitors than the plan allows. Existing monitors keep running; new ones are refused.",
         "channels": "More channels than the plan allows. Existing channels keep running; new ones are refused.",
+        "privateProbes": "More private probes than the plan allows. Existing probes keep running; new join tokens are refused.",
         "interval": "Some monitors check more often than the plan allows. They keep running; new or shorter intervals are refused."
       }
     }

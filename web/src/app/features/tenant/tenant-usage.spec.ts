@@ -49,6 +49,16 @@ describe('usageRows', () => {
     const rows = usageRows(tenant({ usage: { monitors: 0, channels: 0 } }));
     expect(rows[2]).toMatchObject({ used: null, state: 'ok' });
   });
+
+  it('includes privateProbes row when limit is set or usage > 0', () => {
+    const tWithLimit = tenant({
+      effectiveLimits: { maxMonitors: 10, minIntervalSeconds: 60, maxPrivateProbes: 2 },
+      usage: { monitors: 1, channels: 1, privateProbes: 2, minIntervalSeconds: 60 },
+    });
+    const rows = usageRows(tWithLimit);
+    expect(rows).toContainEqual({ key: 'privateProbes', used: 2, limit: 2, state: 'reached' });
+    expect(hintKey(rows[2])).toBe('dashboard.usage.hints.reached.privateProbes');
+  });
 });
 
 describe('hintKey', () => {
