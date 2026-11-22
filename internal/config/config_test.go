@@ -449,7 +449,7 @@ func TestSystemAlertThresholds(t *testing.T) {
 		"REPLICATION_LAG_ALERT": "0s",
 		"CLOCK_SKEW_ALERT":      "-1s",
 		"DISK_FREE_ALERT":       "1",
-		"WAL_SIZE_ALERT":        "512MB",
+		"WAL_SIZE_ALERT":        "512M",
 	}
 	for key, value := range invalid {
 		_, err := Load(env(map[string]string{"NODE_NAME": "n1", key: value}))
@@ -473,7 +473,8 @@ func TestParseByteSize(t *testing.T) {
 		{in: "", wantErr: true},
 		{in: "MiB", wantErr: true},
 		{in: "-1MiB", wantErr: true},
-		{in: "10MB", wantErr: true},
+		{in: "10MB", want: 10_000_000},
+		{in: "10M", wantErr: true},
 		{in: "9999999999999GiB", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -900,6 +901,203 @@ func TestOIDCAutoProvision(t *testing.T) {
 			if cfg.OIDC.AutoProvision != tt.wantOn || cfg.OIDC.AutoProvisionPlan != tt.wantPlan || cfg.OIDC.AutoProvisionMax != tt.wantMax {
 				t.Errorf("auto provision = %t %q %d, want %t %q %d", cfg.OIDC.AutoProvision, cfg.OIDC.AutoProvisionPlan,
 					cfg.OIDC.AutoProvisionMax, tt.wantOn, tt.wantPlan, tt.wantMax)
+			}
+		})
+	}
+}
+
+func TestClusterSeeds(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    []string
+		wantErr string
+	}{
+		{name: "unset", value: "", want: nil},
+		{name: "host port and https", value: "voter1:9443, https://voter2:9443", want: []string{"voter1:9443", "voter2:9443"}},
+		{name: "empty entries skipped", value: " ,, https://a:1 ,,", want: []string{"a:1"}},
+		{name: "http rejected", value: "http://voter1:9443", wantErr: "CLUSTER_SEEDS"},
+		{name: "other scheme rejected", value: "ftp://voter1:9443", wantErr: "CLUSTER_SEEDS"},
+		{name: "empty port rejected", value: "voter1:", wantErr: "CLUSTER_SEEDS"},
+		{name: "empty host rejected", value: ":9443", wantErr: "CLUSTER_SEEDS"},
+		{name: "no port rejected", value: "voter1", wantErr: "CLUSTER_SEEDS"},
+		{name: "path rejected", value: "https://voter1:9443/api", wantErr: "CLUSTER_SEEDS"},
+		{name: "query rejected", value: "voter1:9443?x=1", wantErr: "CLUSTER_SEEDS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "CLUSTER_SEEDS": tt.value}))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(cfg.ClusterSeeds, tt.want) {
+				t.Errorf("ClusterSeeds = %v, want %v", cfg.ClusterSeeds, tt.want)
+			}
+		})
+	}
+}
+
+func TestClusterJoinTokenAlias(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "CLUSTER_JOIN_TOKEN": "tok-alias"}))
+	if err != nil || cfg.JoinToken != "tok-alias" {
+		t.Fatalf("CLUSTER_JOIN_TOKEN: token = %q, err = %v; want tok-alias", cfg.JoinToken, err)
+	}
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME":          "n1",
+		"JOIN_TOKEN":         "tok-primary",
+		"CLUSTER_JOIN_TOKEN": "tok-alias",
+	}))
+	if err != nil || cfg.JoinToken != "tok-primary" {
+		t.Fatalf("JOIN_TOKEN precedence: token = %q, err = %v; want tok-primary", cfg.JoinToken, err)
+	}
+	_, err = Load(env(map[string]string{
+		"NODE_NAME":          "n1",
+		"CLUSTER_JOIN_TOKEN": "tok-alias",
+		"JOIN_TOKEN_FILE":    "/run/secrets/join",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "JOIN_TOKEN_FILE") {
+		t.Fatalf("CLUSTER_JOIN_TOKEN + JOIN_TOKEN_FILE: err = %v, want JOIN_TOKEN_FILE error", err)
+	}
+}
+
+func TestNodeRegion(t *testing.T) {
+	maxRegion := strings.Repeat("a", 64)
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "NODE_REGION": " " + maxRegion + " "}))
+	if err != nil || cfg.NodeRegion != maxRegion {
+		t.Fatalf("64-byte region: region = %q, err = %v", cfg.NodeRegion, err)
+	}
+	_, err = Load(env(map[string]string{"NODE_NAME": "n1", "NODE_REGION": strings.Repeat("a", 65)}))
+	if err == nil || !strings.Contains(err.Error(), "NODE_REGION") {
+		t.Fatalf("65-byte region: err = %v, want NODE_REGION error", err)
+	}
+}
+
+func TestNodeLabels(t *testing.T) {
+	var thirtyTwo []string
+	want32 := make(map[string]string, 32)
+	for i := range 32 {
+		k := strings.Repeat("k", 1) + string(rune('a'+i/10)) + string(rune('0'+i%10))
+		thirtyTwo = append(thirtyTwo, k+"=v")
+		want32[k] = "v"
+	}
+	thirtyThree := append(slices.Clone(thirtyTwo), "extra=v")
+
+	tests := []struct {
+		name    string
+		value   string
+		want    map[string]string
+		wantErr string
+	}{
+		{name: "unset", value: "", want: nil},
+		{name: "trimmed pairs", value: " tier = edge , dc = eu-central-1 , empty= ", want: map[string]string{
+			"tier":  "edge",
+			"dc":    "eu-central-1",
+			"empty": "",
+		}},
+		{name: "32 labels allowed", value: strings.Join(thirtyTwo, ","), want: want32},
+		{name: "33 labels rejected", value: strings.Join(thirtyThree, ","), wantErr: "NODE_LABELS"},
+		{name: "missing equals", value: "tier", wantErr: "NODE_LABELS"},
+		{name: "empty key", value: "=val", wantErr: "NODE_LABELS"},
+		{name: "key too long", value: strings.Repeat("k", 65) + "=v", wantErr: "NODE_LABELS"},
+		{name: "value too long", value: "k=" + strings.Repeat("v", 257), wantErr: "NODE_LABELS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "NODE_LABELS": tt.value}))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !maps.Equal(cfg.NodeLabels, tt.want) {
+				t.Errorf("NodeLabels = %v, want %v", cfg.NodeLabels, tt.want)
+			}
+		})
+	}
+}
+
+func TestProbeSettings(t *testing.T) {
+	// Defaults
+	cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProbeBufferMaxAge != 24*time.Hour ||
+		cfg.ProbeBufferMaxBytes != 100<<20 ||
+		cfg.ProbeAckRetain != 10*time.Minute ||
+		cfg.ProbeSessionTimeout != 15*time.Second {
+		t.Errorf("unexpected probe defaults: age=%v bytes=%d ack=%v session=%v",
+			cfg.ProbeBufferMaxAge, cfg.ProbeBufferMaxBytes, cfg.ProbeAckRetain, cfg.ProbeSessionTimeout)
+	}
+
+	// Overrides including decimal MB/GB/KB and binary MiB
+	cfg, err = Load(env(map[string]string{
+		"NODE_NAME":              "n1",
+		"PROBE_BUFFER_MAX_AGE":   "12h",
+		"PROBE_BUFFER_MAX_BYTES": "100MB",
+		"PROBE_ACK_RETAIN":       "0",
+		"PROBE_SESSION_TIMEOUT":  "1s",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ProbeBufferMaxAge != 12*time.Hour ||
+		cfg.ProbeBufferMaxBytes != 100_000_000 ||
+		cfg.ProbeAckRetain != 0 ||
+		cfg.ProbeSessionTimeout != time.Second {
+		t.Errorf("unexpected probe overrides: age=%v bytes=%d ack=%v session=%v",
+			cfg.ProbeBufferMaxAge, cfg.ProbeBufferMaxBytes, cfg.ProbeAckRetain, cfg.ProbeSessionTimeout)
+	}
+
+	// Decimal suffixes KB, MB, GB in parseByteSize
+	for _, tc := range []struct {
+		raw  string
+		want int64
+	}{
+		{"2KB", 2_000},
+		{"3MB", 3_000_000},
+		{"1GB", 1_000_000_000},
+		{"100MiB", 100 << 20},
+	} {
+		got, err := parseByteSize(tc.raw)
+		if err != nil || got != tc.want {
+			t.Errorf("parseByteSize(%q) = %d, %v; want %d", tc.raw, got, err, tc.want)
+		}
+	}
+
+	// Invalid cases
+	invalid := []struct {
+		name    string
+		key     string
+		val     string
+		wantErr string
+	}{
+		{"max age zero", "PROBE_BUFFER_MAX_AGE", "0", "PROBE_BUFFER_MAX_AGE"},
+		{"max age negative", "PROBE_BUFFER_MAX_AGE", "-1s", "PROBE_BUFFER_MAX_AGE"},
+		{"max age invalid", "PROBE_BUFFER_MAX_AGE", "soon", "PROBE_BUFFER_MAX_AGE"},
+		{"max bytes zero", "PROBE_BUFFER_MAX_BYTES", "0", "PROBE_BUFFER_MAX_BYTES"},
+		{"max bytes invalid", "PROBE_BUFFER_MAX_BYTES", "huge", "PROBE_BUFFER_MAX_BYTES"},
+		{"ack retain negative", "PROBE_ACK_RETAIN", "-1s", "PROBE_ACK_RETAIN"},
+		{"ack retain invalid", "PROBE_ACK_RETAIN", "never", "PROBE_ACK_RETAIN"},
+		{"session timeout below 1s", "PROBE_SESSION_TIMEOUT", "500ms", "PROBE_SESSION_TIMEOUT"},
+		{"session timeout zero", "PROBE_SESSION_TIMEOUT", "0", "PROBE_SESSION_TIMEOUT"},
+		{"session timeout invalid", "PROBE_SESSION_TIMEOUT", "soon", "PROBE_SESSION_TIMEOUT"},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(env(map[string]string{"NODE_NAME": "n1", tt.key: tt.val}))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
 	}
