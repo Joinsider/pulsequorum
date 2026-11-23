@@ -100,9 +100,7 @@ func parseOrdered(dec *json.Decoder) (any, error) {
 // recurses into the nested schemas.
 func annotateSchema(obj *object) {
 	if props, ok := obj.values["properties"].(*object); ok {
-		for _, name := range props.keys {
-			annotateAny(props.values[name])
-		}
+		annotateObjectChildren(props)
 		if _, exists := obj.values[orderKey]; !exists {
 			names := make([]any, 0, len(props.keys))
 			for _, name := range props.keys {
@@ -111,18 +109,19 @@ func annotateSchema(obj *object) {
 			obj.values[orderKey] = names
 		}
 	}
-	for _, kw := range []string{"items", "additionalProperties"} {
-		annotateAny(obj.values[kw])
-	}
-	for _, kw := range []string{"oneOf", "anyOf", "allOf"} {
+	for _, kw := range []string{"items", "additionalProperties", "oneOf", "anyOf", "allOf"} {
 		annotateAny(obj.values[kw])
 	}
 	for _, kw := range []string{"$defs", "definitions"} {
 		if defs, ok := obj.values[kw].(*object); ok {
-			for _, name := range defs.keys {
-				annotateAny(defs.values[name])
-			}
+			annotateObjectChildren(defs)
 		}
+	}
+}
+
+func annotateObjectChildren(obj *object) {
+	for _, name := range obj.keys {
+		annotateAny(obj.values[name])
 	}
 }
 

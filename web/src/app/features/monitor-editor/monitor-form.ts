@@ -123,12 +123,12 @@ export function monitorFormValue(input: Partial<MonitorInput>): Record<string, u
 export function monitorInputOf(form: FormGroup, configSchema: JsonSchema): MonitorInput {
   const v = form.getRawValue() as Record<string, unknown>;
   const config = controlToValue(configSchema, form.controls['config'], true);
-  const description = String(v['description'] ?? '').trim();
+  const description = asString(v['description']).trim();
   const timeout = v['timeoutSeconds'];
 
   const input: MonitorInput = {
-    name: String(v['name'] ?? '').trim(),
-    type: String(v['type'] ?? ''),
+    name: asString(v['name']).trim(),
+    type: asString(v['type']),
     config: (isRecord(config) ? config : {}) as MonitorInputConfig,
     intervalSeconds: Number(v['intervalSeconds']),
     retries: Number(v['retries']),
@@ -137,7 +137,7 @@ export function monitorInputOf(form: FormGroup, configSchema: JsonSchema): Monit
     paused: v['paused'] === true,
     assignment: assignmentOf(v),
     consensusPolicy: v['consensusPolicy'] as ConsensusPolicy,
-    tags: parseList(String(v['tags'] ?? '')),
+    tags: parseList(asString(v['tags'])),
     notificationChannelIds: [...((v['notificationChannelIds'] as string[] | null) ?? [])],
   };
   if (description !== '') {
@@ -170,6 +170,10 @@ function assignmentOf(v: Record<string, unknown>): Assignment {
     return { mode, nodes: [...((v['assignmentNodes'] as string[] | null) ?? [])] };
   }
   return { mode: 'all' };
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

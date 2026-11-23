@@ -188,7 +188,28 @@ func validate(raw json.RawMessage) error {
 	var fields []checker.FieldError
 	add := func(field, msg string) { fields = append(fields, checker.FieldError{Field: field, Message: msg}) }
 
-	u, err := url.Parse(c.URL)
+	validateURL(c.URL, add)
+	if _, err := parseStatusRanges(c.ExpectedStatus); err != nil {
+		add("/expectedStatus", err.Error())
+	}
+	if c.JSONPath != nil {
+		if _, err := parsePath(c.JSONPath.Path); err != nil {
+			add("/jsonPath/path", err.Error())
+		}
+	}
+	validateAuth(c.Auth, add)
+	if c.ClientCertificate != nil {
+		validateClientCertificate(c.ClientCertificate, add)
+	}
+	validateHeadersAndMethod(c, add)
+	if len(fields) > 0 {
+		return &checker.ValidationError{Fields: fields}
+	}
+	return nil
+}
+
+func validateURL(rawURL string, add func(string, string)) {
+	u, err := url.Parse(rawURL)
 	switch {
 	case err != nil:
 		add("/url", "not a valid URL")
@@ -204,26 +225,21 @@ func validate(raw json.RawMessage) error {
 			add("/url", "non-canonical IP address notation is not allowed")
 		}
 	}
+}
 
-	if _, err := parseStatusRanges(c.ExpectedStatus); err != nil {
-		add("/expectedStatus", err.Error())
+func validateAuth(a *Auth, add func(string, string)) {
+	if a == nil {
+		return
 	}
-	if c.JSONPath != nil {
-		if _, err := parsePath(c.JSONPath.Path); err != nil {
-			add("/jsonPath/path", err.Error())
-		}
+	switch {
+	case a.Type == "basic" && a.Username == "":
+		add("/auth/username", "required for basic auth")
+	case a.Type == "bearer" && a.Token == "":
+		add("/auth/token", "required for bearer auth")
 	}
-	if c.Auth != nil {
-		switch {
-		case c.Auth.Type == "basic" && c.Auth.Username == "":
-			add("/auth/username", "required for basic auth")
-		case c.Auth.Type == "bearer" && c.Auth.Token == "":
-			add("/auth/token", "required for bearer auth")
-		}
-	}
-	if c.ClientCertificate != nil {
-		validateClientCertificate(c.ClientCertificate, add)
-	}
+}
+
+func validateHeadersAndMethod(c *Config, add func(string, string)) {
 	for name, value := range c.Headers {
 		if !validHeaderName(name) || strings.ContainsAny(value, "\r\n") {
 			add("/headers/"+name, "invalid header")
@@ -235,10 +251,6 @@ func validate(raw json.RawMessage) error {
 	if c.Method == http.MethodHead && (c.Keyword != nil || c.JSONPath != nil) {
 		add("/method", "HEAD responses have no body to check")
 	}
-	if len(fields) > 0 {
-		return &checker.ValidationError{Fields: fields}
-	}
-	return nil
 }
 
 // Targets implements checker.TargetLister: the host of the URL is the only

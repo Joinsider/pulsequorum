@@ -42,57 +42,79 @@ type Change struct {
 //
 // Incident IDs are derived from the monitor and the start of the DOWN episode,
 // so the same input gives the same result (see incidentID).
-func Reevaluate(m store.Monitor, from store.MonitorStatus, fromMs, toMs int64, hbs []store.Heartbeat, responsible []string, maintenance func(at time.Time) bool, unit time.Duration) []Change {
+func Reevaluate(m store.Monitor, from store.MonitorStatus, fromMs, toMs int64, hbs []store.Heartbeat, responsible []string, maintenance func(at time.Time) bool) []Change {
 	w := &watch{}
-	w.configure(m, unit, defaultReportDelay)
-	if w.intervalMs <= 0 || toMs <= fromMs {
-		return nil
-	}
+	w.configure(m, time.Second, defaultReportDelay)
+	return reevaluateWatch(w, m, from, fromMs, toMs, hbs, responsible)(maintenance)
+}
 
+func reevaluateWatch(w *watch, m store.Monitor, from store.MonitorStatus, fromMs, toMs int64, hbs []store.Heartbeat, responsible []string) func(func(at time.Time) bool) []Change {
+	return func(maintenance func(at time.Time) bool) []Change {
+		if w.intervalMs <= 0 || toMs <= fromMs {
+			return nil
+		}
+		ids := sortedUniqueIDs(responsible)
+		loadWatchHeartbeats(w, m, hbs)
+
+		t := &tracker{status: from}
+		k := firstSlotAtOrAfter(w, fromMs)
+		var out []Change
+		afterMaintenance := false
+		for ; w.start(k) < toMs; k++ {
+			startMs := w.start(k)
+			if maintenance != nil && maintenance(time.UnixMilli(startMs)) {
+				t.resetStreaks()
+				afterMaintenance = true
+				continue
+			}
+			if afterMaintenance {
+				// The controller moved the monitor from MAINTENANCE to PENDING.
+				t.status = store.StatusPending
+				afterMaintenance = false
+			}
+			if c, ok := evaluateSlot(w, t, m, k, startMs, ids); ok {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+}
+
+func sortedUniqueIDs(responsible []string) []string {
 	ids := slices.Clone(responsible)
 	slices.Sort(ids)
-	ids = slices.Compact(ids)
+	return slices.Compact(ids)
+}
 
+func loadWatchHeartbeats(w *watch, m store.Monitor, hbs []store.Heartbeat) {
 	w.hbs = make(map[hbKey]store.Heartbeat, len(hbs))
 	for _, hb := range hbs {
-		if hb.TenantID != m.TenantID || hb.MonitorID != m.ID {
-			continue
+		if hb.TenantID == m.TenantID && hb.MonitorID == m.ID {
+			w.hbs[hbKey{hb.NodeID, hb.Incarnation, hb.Seq}] = hb
 		}
-		w.hbs[hbKey{hb.NodeID, hb.Incarnation, hb.Seq}] = hb
 	}
+}
 
-	t := &tracker{status: from}
+func firstSlotAtOrAfter(w *watch, fromMs int64) int64 {
 	k := w.slotOf(fromMs)
 	if w.start(k) < fromMs {
 		k++
 	}
-	var out []Change
-	afterMaintenance := false
-	for ; w.start(k) < toMs; k++ {
-		startMs := w.start(k)
-		if maintenance != nil && maintenance(time.UnixMilli(startMs)) {
-			t.resetStreaks()
-			afterMaintenance = true
-			continue
-		}
-		if afterMaintenance {
-			// The controller moved the monitor from MAINTENANCE to PENDING.
-			t.status = store.StatusPending
-			afterMaintenance = false
-		}
-		reports := w.reporters(k, ids)
-		to, since, change := decide(t, m, startMs, reports)
-		if !change {
-			continue
-		}
-		t.status = to
-		c := Change{SinceMs: since, Status: to, Reporters: nodeIDs(reports)}
-		if to == store.StatusDown {
-			c.Incident = incidentOf(incidentID(m, since), reports)
-		}
-		out = append(out, c)
+	return k
+}
+
+func evaluateSlot(w *watch, t *tracker, m store.Monitor, k, startMs int64, ids []string) (Change, bool) {
+	reports := w.reporters(k, ids)
+	to, since, change := decide(t, m, startMs, reports)
+	if !change {
+		return Change{}, false
 	}
-	return out
+	t.status = to
+	c := Change{SinceMs: since, Status: to, Reporters: nodeIDs(reports)}
+	if to == store.StatusDown {
+		c.Incident = incidentOf(incidentID(m, since), reports)
+	}
+	return c, true
 }
 
 // incidentID returns the ID of the incident that starts at sinceMs for m. It
@@ -131,5 +153,5 @@ func (a *Aggregator) ReevaluateGap(ctx context.Context, m store.Monitor, from st
 	if a.opts.Maintenance != nil {
 		maintenance = func(at time.Time) bool { return a.opts.Maintenance(m, at) }
 	}
-	return Reevaluate(m, from, fromMs, toMs, hbs, a.responsible(m, registry), maintenance, a.opts.Unit), nil
+	return reevaluateWatch(w, m, from, fromMs, toMs, hbs, a.responsible(m, registry))(maintenance), nil
 }

@@ -258,6 +258,20 @@ func TestGRPCAuthorization(t *testing.T) {
 	expect("anonymous ProbeService.Subscribe", subErr(noClientCert(f, ALPNGRPC)), codes.Unauthenticated)
 	expect("voter ProbeService.Subscribe", subErr(voterCfg), codes.PermissionDenied)
 	expect("probe ProbeService.Subscribe", subErr(probeCfg), codes.OK)
+
+	// DialProbe connects a probe to a voter server and refuses a probe server.
+	pConn, err := DialProbe(m.Addr().String(), Security{Holder: f.holder(t, "p3", pki.RoleProbe), Verifier: f.v})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pConn.Close() }()
+	pStream, err := pb.NewProbeServiceClient(pConn).Subscribe(ctx, &pb.SubscribeRequest{})
+	if err != nil {
+		t.Fatalf("DialProbe Subscribe: %v", err)
+	}
+	if _, err := pStream.Recv(); err != nil {
+		t.Fatalf("DialProbe Subscribe Recv: %v", err)
+	}
 }
 
 var _ net.Listener = (*chanListener)(nil)

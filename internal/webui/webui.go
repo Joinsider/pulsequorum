@@ -46,30 +46,32 @@ func NewHandler(fsys fs.FS) http.Handler {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			return
 		}
+		serveSPA(w, r, fsys)
+	})
+}
 
-		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-		if isHidden(name) {
+func serveSPA(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
+	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if isHidden(name) {
+		http.NotFound(w, r)
+		return
+	}
+	if name != "" && name != indexHTML {
+		if serveFile(w, r, fsys, name) {
+			return
+		}
+		// Paths that look like files must not fall back to index.html,
+		// otherwise missing assets would be answered with HTML.
+		if path.Ext(name) != "" {
 			http.NotFound(w, r)
 			return
 		}
-
-		if name != "" && name != indexHTML {
-			if serveFile(w, r, fsys, name) {
-				return
-			}
-			// Paths that look like files must not fall back to index.html,
-			// otherwise missing assets would be answered with HTML.
-			if path.Ext(name) != "" {
-				http.NotFound(w, r)
-				return
-			}
-		}
-		if !serveFile(w, r, fsys, indexHTML) {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = io.WriteString(w, "Pulsequorum UI is not built. Run `make build`.\n")
-		}
-	})
+	}
+	if !serveFile(w, r, fsys, indexHTML) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, "Pulsequorum UI is not built. Run `make build`.\n")
+	}
 }
 
 // serveFile writes name from fsys and reports whether it existed.

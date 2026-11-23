@@ -138,35 +138,19 @@ func createMonitors(ctx context.Context, client *apiClient, opts setupOptions, l
 	var wg sync.WaitGroup
 
 	start := time.Now()
+	noteFailure := func(i int, err error) {
+		failed.Add(1)
+		errMu.Lock()
+		if len(firstErrs) < 5 {
+			firstErrs = append(firstErrs, fmt.Sprintf("index %d: %v", i, err))
+		}
+		errMu.Unlock()
+	}
 	for w := 0; w < opts.workers; w++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range jobs {
-				if err := createMonitor(ctx, client, opts, i); err != nil {
-					failed.Add(1)
-					errMu.Lock()
-					if len(firstErrs) < 5 {
-						firstErrs = append(firstErrs, fmt.Sprintf("index %d: %v", i, err))
-					}
-					errMu.Unlock()
-				}
-				n := done.Add(1)
-				if n%100 == 0 || n == int64(opts.count) {
-					log.Info("progress", "done", n, "total", opts.count, "failed", failed.Load(),
-						"elapsed", time.Since(start).Round(time.Millisecond))
-				}
-			}
-		}()
+		go runCreateMonitorWorker(ctx, client, opts, jobs, start, log, &done, &failed, noteFailure, &wg)
 	}
-feed:
-	for i := 0; i < opts.count; i++ {
-		select {
-		case jobs <- i:
-		case <-ctx.Done():
-			break feed
-		}
-	}
+	feedMonitorJobs(ctx, opts.count, jobs)
 	close(jobs)
 	wg.Wait()
 
@@ -180,6 +164,30 @@ feed:
 		return fmt.Errorf("%d of %d monitors failed; first errors: %s", n, opts.count, strings.Join(firstErrs, "; "))
 	}
 	return nil
+}
+
+func runCreateMonitorWorker(ctx context.Context, client *apiClient, opts setupOptions, jobs <-chan int, start time.Time, log *slog.Logger, done, failed *atomic.Int64, noteFailure func(int, error), wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := range jobs {
+		if err := createMonitor(ctx, client, opts, i); err != nil {
+			noteFailure(i, err)
+		}
+		n := done.Add(1)
+		if n%100 == 0 || n == int64(opts.count) {
+			log.Info("progress", "done", n, "total", opts.count, "failed", failed.Load(),
+				"elapsed", time.Since(start).Round(time.Millisecond))
+		}
+	}
+}
+
+func feedMonitorJobs(ctx context.Context, count int, jobs chan<- int) {
+	for i := 0; i < count; i++ {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func createMonitor(ctx context.Context, client *apiClient, opts setupOptions, i int) error {

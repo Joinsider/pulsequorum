@@ -72,7 +72,7 @@ function findControl(form: FormGroup, pointer: string): AbstractControl | null {
     .slice(1)
     .split('/')
     .map((s) => s.replaceAll('~1', '/').replaceAll('~0', '~'));
-  if (segments.some((s) => s === '')) {
+  if (segments.includes('')) {
     return null;
   }
   return form.get(segments);

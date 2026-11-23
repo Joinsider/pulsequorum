@@ -112,7 +112,7 @@ function captureSetupToken(
 /** Polls until check() resolves to true; failed attempts (e.g. connection refused) count as not ready. */
 async function waitFor(what: string, check: () => Promise<boolean>): Promise<void> {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-  for (;;) {
+  const poll = async (): Promise<void> => {
     try {
       if (await check()) {
         return;
@@ -124,5 +124,7 @@ async function waitFor(what: string, check: () => Promise<boolean>): Promise<voi
       throw new Error(`${what} did not become ready within ${STARTUP_TIMEOUT_MS} ms`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
-  }
+    await poll();
+  };
+  await poll();
 }

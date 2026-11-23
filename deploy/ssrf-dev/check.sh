@@ -19,6 +19,7 @@ REBIND_CHECKS=10        # scheduled results needed for case h
 REBIND_TIMEOUT_S=420
 CANARY_CONTAINER="ssrf-target"
 CANARY_LOG="/var/log/canary.log"
+readonly EXPECTED_SSRF_BLOCKED='DOWN ssrf_blocked'
 
 die() { echo "check.sh: $*" >&2; exit 1; }
 say() { echo "check.sh: $*" >&2; }
@@ -82,37 +83,39 @@ api() {
 
 # pick ON_VALUE OFF_VALUE: the expectation for the current mode.
 pick() {
-  if [[ "$MODE" == "on" ]]; then echo "$1"; else echo "$2"; fi
+  local on_value="$1" off_value="$2"
+  if [[ "$MODE" == "on" ]]; then echo "$on_value"; else echo "$off_value"; fi
 }
 
 # record CASE CHECK EXPECTED ACTUAL: stores one row and counts failures.
 record() {
-  local verdict="FAIL"
-  if matches "$4" "$3"; then verdict="PASS"; fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$verdict" >>"$RESULTS_FILE"
+  local case_id="$1" check="$2" expected="$3" actual="$4" verdict="FAIL"
+  if matches "$actual" "$expected"; then verdict="PASS"; fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$case_id" "$check" "$expected" "$actual" "$verdict" >>"$RESULTS_FILE"
   if [[ "$verdict" != "PASS" ]]; then
     FAILS=$((FAILS + 1))
   fi
-  say "$1 $verdict: $4"
+  say "$case_id $verdict: $actual"
 }
 
 # record_bool CASE CHECK EXPECTED ACTUAL OK(0|1): for checks with their own pass rule.
 record_bool() {
-  local verdict="FAIL"
-  if [[ "$5" == "1" ]]; then verdict="PASS"; fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$verdict" >>"$RESULTS_FILE"
+  local case_id="$1" check="$2" expected="$3" actual="$4" ok="$5" verdict="FAIL"
+  if [[ "$ok" == "1" ]]; then verdict="PASS"; fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$case_id" "$check" "$expected" "$actual" "$verdict" >>"$RESULTS_FILE"
   if [[ "$verdict" != "PASS" ]]; then
     FAILS=$((FAILS + 1))
   fi
-  say "$1 $verdict: $4"
+  say "$case_id $verdict: $actual"
 }
 
 # matches ACTUAL EXPECTED: EXPECTED is an exact string, or "not:TEXT" meaning
 # "ACTUAL does not contain TEXT".
 matches() {
-  case "$2" in
-    not:*) [[ "$1" != *"${2#not:}"* ]] ;;
-    *) [[ "$1" == "$2" ]] ;;
+  local actual="$1" expected="$2"
+  case "$expected" in
+    not:*) [[ "$actual" != *"${expected#not:}"* ]] ;;
+    *) [[ "$actual" == "$expected" ]] ;;
   esac
 }
 
@@ -122,8 +125,8 @@ problem_fields() {
 
 # create_monitor NAME TYPE CONFIG_JSON: sets HTTP_CODE, BODY and LAST_ID (on 201).
 create_monitor() {
-  local payload
-  payload="$(jq -n --arg n "$1" --arg t "$2" --argjson c "$3" --argjson i "$INTERVAL_S" \
+  local name="$1" type="$2" config_json="$3" payload
+  payload="$(jq -n --arg n "$name" --arg t "$type" --argjson c "$config_json" --argjson i "$INTERVAL_S" \
     '{name: $n, type: $t, config: $c, intervalSeconds: $i, timeoutSeconds: 10}')"
   api POST /monitors "$payload"
   LAST_ID=""
@@ -134,13 +137,14 @@ create_monitor() {
 }
 
 delete_monitor() {
-  api DELETE "/monitors/$1"
+  local id="$1"
+  api DELETE "/monitors/$id"
 }
 
 # latest_heartbeat ID TIMEOUT_S: prints the newest heartbeat as JSON; fails on timeout.
 latest_heartbeat() {
-  local id="$1" deadline hb
-  deadline=$(($(date +%s) + $2))
+  local id="$1" timeout_s="$2" deadline hb
+  deadline=$(($(date +%s) + timeout_s))
   while :; do
     api GET "/monitors/$id/heartbeats?limit=1000"
     hb="$(jq -c '.items | last // empty' <<<"$BODY" 2>/dev/null || true)"
@@ -157,7 +161,8 @@ latest_heartbeat() {
 
 # summary_of HEARTBEAT_JSON: "STATUS errorClass", or "STATUS -" without error class.
 summary_of() {
-  jq -r '.status + " " + (.errorClass // "-")' <<<"$1"
+  local hb_json="$1"
+  jq -r '.status + " " + (.errorClass // "-")' <<<"$hb_json"
 }
 
 # result_case ID EXPECTED TYPE CONFIG_JSON LABEL: one monitor, first scheduled result.
@@ -249,31 +254,31 @@ reject_case c http '{"url":"http://0x7f.1/"}' /config/url yes \
 
 # d: name that resolves to an internal address.
 before="$(canary_hits)"
-result_case d "$(pick 'DOWN ssrf_blocked' 'UP -')" http '{"url":"http://internal.ssrf.test/hit"}' \
+result_case d "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" http '{"url":"http://internal.ssrf.test/hit"}' \
   "d: name resolves to internal IP"
 after="$(canary_hits)"
 canary_case d/canary "d: canary during case d" "$before" "$after"
 
 # e: name that resolves to loopback.
-result_case e "$(pick 'DOWN ssrf_blocked' 'not:ssrf_blocked')" http \
+result_case e "$(pick "$EXPECTED_SSRF_BLOCKED" 'not:ssrf_blocked')" http \
   '{"url":"http://loop.ssrf.test:8080/"}' "e: name resolves to 127.0.0.1"
 
 # f: redirects from the public server to internal targets.
 before="$(canary_hits)"
-result_case f1 "$(pick 'DOWN ssrf_blocked' 'UP -')" http '{"url":"http://public.ssrf.test/to-internal"}' \
+result_case f1 "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" http '{"url":"http://public.ssrf.test/to-internal"}' \
   "f1: redirect to 10.99.0.10 (IP)"
 after="$(canary_hits)"
 canary_case f1/canary "f1: canary during case f1" "$before" "$after"
 
 before="$(canary_hits)"
-result_case f2 "$(pick 'DOWN ssrf_blocked' 'UP -')" http '{"url":"http://public.ssrf.test/to-internal-name"}' \
+result_case f2 "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" http '{"url":"http://public.ssrf.test/to-internal-name"}' \
   "f2: redirect to internal name"
 after="$(canary_hits)"
 canary_case f2/canary "f2: canary during case f2" "$before" "$after"
 
-result_case f3 "$(pick 'DOWN ssrf_blocked' 'not:ssrf_blocked')" http \
+result_case f3 "$(pick "$EXPECTED_SSRF_BLOCKED" 'not:ssrf_blocked')" http \
   '{"url":"http://public.ssrf.test/to-metadata"}' "f3: redirect to cloud metadata"
-result_case f4 "$(pick 'DOWN ssrf_blocked' 'not:ssrf_blocked')" http \
+result_case f4 "$(pick "$EXPECTED_SSRF_BLOCKED" 'not:ssrf_blocked')" http \
   '{"url":"http://public.ssrf.test/to-loop"}' "f4: redirect to 127.0.0.1:8080"
 
 # g: positive control, the "public" network works.
@@ -285,10 +290,10 @@ create_monitor "ssrf-i-dns" dns '{"hostname":"internal.ssrf.test"}'
 if [[ -n "$LAST_ID" ]]; then
   i_id="$LAST_ID"
   if hb="$(latest_heartbeat "$i_id" "$RESULT_TIMEOUT_S")"; then
-    record i "i: DNS internal name, scheduled result" "$(pick 'DOWN ssrf_blocked' 'UP -')" "$(summary_of "$hb")"
+    record i "i: DNS internal name, scheduled result" "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" "$(summary_of "$hb")"
     i_hb_msg="$(jq -r '.message // ""' <<<"$hb")"
   else
-    record i "i: DNS internal name, scheduled result" "$(pick 'DOWN ssrf_blocked' 'UP -')" "no result within ${RESULT_TIMEOUT_S}s"
+    record i "i: DNS internal name, scheduled result" "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" "no result within ${RESULT_TIMEOUT_S}s"
     i_hb_msg=""
   fi
   api POST "/monitors/$i_id/test"
@@ -305,7 +310,7 @@ if [[ -n "$LAST_ID" ]]; then
   fi
   delete_monitor "$i_id"
 else
-  record i "i: DNS internal name, scheduled result" "$(pick 'DOWN ssrf_blocked' 'UP -')" "monitor not saved, HTTP $HTTP_CODE"
+  record i "i: DNS internal name, scheduled result" "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" "monitor not saved, HTTP $HTTP_CODE"
 fi
 
 # j: DNS check on a public name.
@@ -323,7 +328,7 @@ else
 fi
 
 # k: TCP check on an internal name.
-result_case k "$(pick 'DOWN ssrf_blocked' 'UP -')" tcp '{"host":"internal.ssrf.test","port":80}' \
+result_case k "$(pick "$EXPECTED_SSRF_BLOCKED" 'UP -')" tcp '{"host":"internal.ssrf.test","port":80}' \
   "k: TCP to internal name, port 80"
 
 # l: webhook channels.

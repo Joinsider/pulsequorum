@@ -17,7 +17,7 @@
   }
 
   @if (loading()) {
-    <p class="state" role="status">{{ t('common.loading') }}</p>
+    <output class="state">{{ t('common.loading') }}</output>
   } @else if (loadError(); as key) {
     <p class="state state--error" role="alert">
       {{ t(key) }}
@@ -148,7 +148,7 @@
           </ul>
 
           @if (row.tenant.exceeded.length > 0) {
-            <div class="exceeded" role="status">
+            <output class="exceeded">
               <p class="exceeded__title">{{ t('admin.tenants.exceededTitle') }}</p>
               <ul>
                 @for (e of row.tenant.exceeded; track e.limit) {
@@ -162,7 +162,7 @@
                   </li>
                 }
               </ul>
-            </div>
+            </output>
           }
         </li>
       }

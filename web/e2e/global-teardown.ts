@@ -14,9 +14,8 @@ export default async function globalTeardown(): Promise<void> {
   }
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8')) as RunState;
   // The server first, so it cannot write into a target that is already gone.
-  for (const pid of [state.serverPid, state.targetPid]) {
-    await stopProcess(pid);
-  }
+  await stopProcess(state.serverPid);
+  await stopProcess(state.targetPid);
 }
 
 /** Sends SIGTERM and waits for the process to exit; SIGKILL after the timeout. */
@@ -26,9 +25,14 @@ async function stopProcess(pid: number): Promise<void> {
   }
   process.kill(pid, 'SIGTERM');
   const deadline = Date.now() + STOP_TIMEOUT_MS;
-  while (isAlive(pid) && Date.now() < deadline) {
+  const waitUntilStopped = async (): Promise<void> => {
+    if (!isAlive(pid) || Date.now() >= deadline) {
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
-  }
+    await waitUntilStopped();
+  };
+  await waitUntilStopped();
   if (isAlive(pid)) {
     process.kill(pid, 'SIGKILL');
   }

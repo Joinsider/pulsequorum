@@ -105,7 +105,8 @@ export class AuthService {
   login(returnUrl?: string): Promise<void>;
   login(usernameOrReturnUrl?: string, password?: string): Promise<void> {
     if (this.mode() === 'oidc') {
-      return this.loginOidc(usernameOrReturnUrl);
+      this.loginOidc(usernameOrReturnUrl);
+      return Promise.resolve();
     }
     return this.loginLocal(usernameOrReturnUrl ?? '', password ?? '');
   }
@@ -223,7 +224,7 @@ export class AuthService {
     }
   }
 
-  private async loginOidc(returnUrl?: string): Promise<void> {
+  private loginOidc(returnUrl?: string): void {
     removeSession(SILENT_TRIED_KEY);
     writeSession(RETURN_URL_KEY, safeReturnUrl(returnUrl));
     this.oidc().authorize(OIDC_CONFIG_ID);
@@ -337,7 +338,7 @@ export class AuthService {
   private storage(): SplitSecurityStorage {
     const storage = this.injector.get(AbstractSecurityStorage);
     if (!(storage instanceof SplitSecurityStorage)) {
-      throw new Error('OIDC mode requires SplitSecurityStorage (NFA-SEC-04)');
+      throw new TypeError('OIDC mode requires SplitSecurityStorage (NFA-SEC-04)');
     }
     return storage;
   }
@@ -436,11 +437,11 @@ function base64UrlDecode(input: string): string | null {
     return null;
   }
   const padded = input
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
+    .replaceAll('-', '+')
+    .replaceAll('_', '/')
     .padEnd(Math.ceil(input.length / 4) * 4, '=');
   try {
-    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(padded), (c) => c.codePointAt(0) ?? 0);
     return new TextDecoder().decode(bytes);
   } catch {
     return null;

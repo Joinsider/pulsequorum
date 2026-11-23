@@ -121,40 +121,45 @@ func parse(raw []byte) (Overrides, error) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: trailing data after the limits object", ErrInvalidLimits)
 	}
-	if m == nil {
-		return out, nil // literal null
-	}
 	for name, v := range m {
-		if (&Limits{}).field(name) == nil {
-			return nil, fmt.Errorf("%w: unknown limit %q; known limits are %s", ErrInvalidLimits, name, strings.Join(limitNames, ", "))
-		}
-		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
-			out[name] = nil
-			continue
-		}
-		// json.Number also accepts a quoted number; only a bare number counts.
-		if t := bytes.TrimSpace(v); len(t) == 0 || t[0] == '"' {
-			return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
-		}
-		var n json.Number
-		if err := json.Unmarshal(v, &n); err != nil {
-			return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
-		}
-		i, err := n.Int64()
+		ptr, err := parseLimitOverride(name, v)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
+			return nil, err
 		}
-		lo := int64(0)
-		if name == LimitMinInterval {
-			lo = 1
-		}
-		if i < lo || i > maxLimitValue {
-			return nil, fmt.Errorf("%w: %s must be between %d and %d", ErrInvalidLimits, name, lo, maxLimitValue)
-		}
-		val := int(i)
-		out[name] = &val
+		out[name] = ptr
 	}
 	return out, nil
+}
+
+func parseLimitOverride(name string, v json.RawMessage) (*int, error) {
+	if (&Limits{}).field(name) == nil {
+		return nil, fmt.Errorf("%w: unknown limit %q; known limits are %s", ErrInvalidLimits, name, strings.Join(limitNames, ", "))
+	}
+	t := bytes.TrimSpace(v)
+	if bytes.Equal(t, []byte("null")) {
+		return nil, nil
+	}
+	// json.Number also accepts a quoted number; only a bare number counts.
+	if len(t) == 0 || t[0] == '"' {
+		return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
+	}
+	var n json.Number
+	if err := json.Unmarshal(v, &n); err != nil {
+		return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
+	}
+	i, err := n.Int64()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s must be an integer or null", ErrInvalidLimits, name)
+	}
+	lo := int64(0)
+	if name == LimitMinInterval {
+		lo = 1
+	}
+	if i < lo || i > maxLimitValue {
+		return nil, fmt.Errorf("%w: %s must be between %d and %d", ErrInvalidLimits, name, lo, maxLimitValue)
+	}
+	val := int(i)
+	return &val, nil
 }
 
 // Effective returns the limits of a tenant: each override replaces the plan

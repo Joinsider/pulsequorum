@@ -154,7 +154,7 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, "test", JoinOptions{Seeds: seeds, Token: token, MaxCommandVersion: n.maxVersion, Clock: n.clock}, log)
+	prepared, err := Prepare(ctx, n.dir, n.id, "n", n.addr, JoinOptions{Seeds: seeds, Token: token, Version: "test", MaxCommandVersion: n.maxVersion, Clock: n.clock}, log)
 	if err != nil {
 		return nil, err
 	}

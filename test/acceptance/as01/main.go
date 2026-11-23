@@ -46,6 +46,13 @@ const (
 	minIntervalSeconds = 20
 	maxIntervalSeconds = 86400
 	maxRetries         = 10
+
+	stepAdminSetUp           = "Admin set up"
+	stepDownNotificationNtfy = "DOWN notification in ntfy"
+	stepOpenIncidentExists   = "Open incident exists"
+	expectAtLeastOneIncident = "at least 1 open incident"
+	stepUptimeBelow100       = "Uptime 24 h below 100 %"
+	expectBelow100Percent    = "< 100 %"
 )
 
 // options holds the parsed command line.
@@ -306,19 +313,19 @@ func (s *scenario) setupAdmin(ctx context.Context) error {
 		}
 		err := s.api.Setup(ctx, s.opts.setupToken, "AS-01 acceptance")
 		if err == nil {
-			s.rep.Add("Admin set up", "201, admin logged in", fmt.Sprintf("user %q created", s.opts.user), true)
+			s.rep.Add(stepAdminSetUp, "201, admin logged in", fmt.Sprintf("user %q created", s.opts.user), true)
 			return nil
 		}
 		var ae *ucapi.APIError
 		if !errors.As(err, &ae) || (ae.Status != http.StatusForbidden && ae.Status != http.StatusConflict) {
-			return s.fail("Admin set up", "201, admin logged in", err.Error(), err)
+			return s.fail(stepAdminSetUp, "201, admin logged in", err.Error(), err)
 		}
 		s.log.Info("setup not possible, trying login", "status", ae.Status)
 		s.api.Token = ""
 	}
 	if s.generatedPassword {
 		err := errors.New("node already has an admin; pass its password with -password")
-		return s.fail("Admin set up", "201 or login", err.Error(), err)
+		return s.fail(stepAdminSetUp, "201 or login", err.Error(), err)
 	}
 	if err := s.api.Login(ctx); err != nil {
 		return s.fail("Admin logged in", "200", err.Error(), err)
@@ -368,17 +375,17 @@ func (s *scenario) checkDown(ctx context.Context) error {
 	msg, ok := s.ntfy.WaitFor(waitCtx, t0, s.matchEvent("DOWN"))
 	expected := fmt.Sprintf("DOWN notification within %s = (retries+1) x interval + 30 s", limit)
 	if !ok {
-		return s.fail("DOWN notification in ntfy", expected,
+		return s.fail(stepDownNotificationNtfy, expected,
 			fmt.Sprintf("no DOWN notification within %s", limit+time.Minute),
 			errors.New("no DOWN notification"))
 	}
 	elapsed := msg.At.Sub(t0)
 	measured := fmt.Sprintf("after %s", elapsed.Round(100*time.Millisecond))
 	if elapsed > limit {
-		return s.fail("DOWN notification in ntfy", expected, measured,
+		return s.fail(stepDownNotificationNtfy, expected, measured,
 			fmt.Errorf("DOWN after %s, limit %s", elapsed, limit))
 	}
-	s.rep.Add("DOWN notification in ntfy", expected, measured, true)
+	s.rep.Add(stepDownNotificationNtfy, expected, measured, true)
 
 	st, err := s.api.GetMonitor(ctx, s.monitorID)
 	if err != nil {
@@ -388,23 +395,23 @@ func (s *scenario) checkDown(ctx context.Context) error {
 
 	incidents, err := s.openIncidents(ctx)
 	if err != nil {
-		return s.fail("Open incident exists", "at least 1 open incident", err.Error(), err)
+		return s.fail(stepOpenIncidentExists, expectAtLeastOneIncident, err.Error(), err)
 	}
 	if len(incidents) == 0 {
-		return s.fail("Open incident exists", "at least 1 open incident", "0 open incidents",
+		return s.fail(stepOpenIncidentExists, expectAtLeastOneIncident, "0 open incidents",
 			errors.New("no open incident"))
 	}
-	s.rep.Add("Open incident exists", "at least 1 open incident",
+	s.rep.Add(stepOpenIncidentExists, expectAtLeastOneIncident,
 		fmt.Sprintf("%d open, cause %q", len(incidents), incidents[0].Cause), true)
 	s.incidentID = incidents[0].ID
 
 	uptime, err := s.waitUptimeBelow100(ctx)
 	if err != nil {
-		return s.fail("Uptime 24 h below 100 %", "< 100 %", err.Error(), err)
+		return s.fail(stepUptimeBelow100, expectBelow100Percent, err.Error(), err)
 	}
-	s.rep.Add("Uptime 24 h below 100 %", "< 100 %", fmt.Sprintf("%.2f %%", uptime), uptime < 100)
+	s.rep.Add(stepUptimeBelow100, expectBelow100Percent, fmt.Sprintf("%.2f %%", uptime), uptime < 100)
 	if uptime >= 100 {
-		return s.fail("Uptime 24 h below 100 %", "< 100 %", fmt.Sprintf("%.2f %%", uptime),
+		return s.fail(stepUptimeBelow100, expectBelow100Percent, fmt.Sprintf("%.2f %%", uptime),
 			errors.New("uptime is 100 %"))
 	}
 	return nil

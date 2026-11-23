@@ -26,6 +26,7 @@ var requiredChecks = []string{"go", "golangci", "web", "licenses", "generate", "
 const (
 	releaseBranch  = "master"
 	allowedSigners = ".github/allowed_signers"
+	gitRevParse    = "rev-parse"
 )
 
 func main() {
@@ -46,7 +47,7 @@ func run(bump, explicit, remote string, dryRun, skipCI bool) error {
 	if err := checkWorkingTree(remote); err != nil {
 		return err
 	}
-	sha, err := git("rev-parse", "HEAD")
+	sha, err := git(gitRevParse, "HEAD")
 	if err != nil {
 		return err
 	}
@@ -105,7 +106,7 @@ func run(bump, explicit, remote string, dryRun, skipCI bool) error {
 
 // checkWorkingTree requires a clean master that equals the remote master.
 func checkWorkingTree(remote string) error {
-	branch, err := git("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git(gitRevParse, "--abbrev-ref", "HEAD")
 	if err != nil {
 		return err
 	}
@@ -122,11 +123,11 @@ func checkWorkingTree(remote string) error {
 	if err := gitRun("fetch", "--quiet", "--tags", remote, releaseBranch); err != nil {
 		return fmt.Errorf("fetch %s: %w", remote, err)
 	}
-	local, err := git("rev-parse", "HEAD")
+	local, err := git(gitRevParse, "HEAD")
 	if err != nil {
 		return err
 	}
-	upstream, err := git("rev-parse", remote+"/"+releaseBranch)
+	upstream, err := git(gitRevParse, remote+"/"+releaseBranch)
 	if err != nil {
 		return err
 	}
@@ -158,8 +159,12 @@ func commitsSince(latest string) ([]Commit, error) {
 
 // checkCI requires every required check run on sha to have concluded with success.
 func checkCI(sha string) error {
+	gh, err := exec.LookPath("gh")
+	if err != nil {
+		return fmt.Errorf("find gh in PATH (use -skip-ci-check only if CI is known green): %w", err)
+	}
 	//nolint:gosec // G204: fixed binary, argv without shell; sha comes from git rev-parse.
-	out, err := exec.Command("gh", "api", "--paginate", "--slurp",
+	out, err := exec.Command(gh, "api", "--paginate", "--slurp",
 		"repos/{owner}/{repo}/commits/"+sha+"/check-runs?per_page=100").Output()
 	if err != nil {
 		return fmt.Errorf("query check runs with gh (use -skip-ci-check only if CI is known green): %w", err)

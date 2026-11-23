@@ -41,7 +41,7 @@
           {{ t('admin.joinToken.copy') }}
         </button>
         @if (copied()) {
-          <span class="copied" role="status">{{ t('admin.joinToken.copied') }}</span>
+          <output class="copied">{{ t('admin.joinToken.copied') }}</output>
         }
       </div>
       @if (expiresAt(); as exp) {

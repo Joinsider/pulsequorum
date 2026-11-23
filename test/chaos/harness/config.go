@@ -104,6 +104,10 @@ func (c Config) Validate() error {
 	if c.Interval < minMonitorInterval || c.Interval > maxMonitorInterval {
 		return fmt.Errorf("interval must be between %s and %s, got %s", minMonitorInterval, maxMonitorInterval, c.Interval)
 	}
+	return c.validateOptionalFields()
+}
+
+func (c Config) validateOptionalFields() error {
 	if c.AlertBundleWindow != "" {
 		d, err := time.ParseDuration(c.AlertBundleWindow)
 		if err != nil || d < 0 {

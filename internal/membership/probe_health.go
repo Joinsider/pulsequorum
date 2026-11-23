@@ -108,25 +108,32 @@ func (t *ProbeHealthTracker) Decide(now time.Time, registry []store.Node) map[st
 		if n.Role != store.NodeRoleProbe {
 			continue
 		}
-		p, seen := t.probes[n.ID]
-		if !seen {
-			if now.Sub(t.leaderSince) >= ProbeUnhealthyAfter && n.Healthy {
-				changes[n.ID] = false
-			}
-			continue
-		}
-		switch {
-		case !p.disconnectedSince.IsZero():
-			if now.Sub(p.disconnectedSince) >= ProbeUnhealthyAfter && n.Healthy {
-				changes[n.ID] = false
-			}
-		case !p.connectedSince.IsZero():
-			if now.Sub(p.connectedSince) >= ProbeHealthyAfter && !n.Healthy {
-				changes[n.ID] = true
-			}
+		if next, changed := t.decideNode(now, n); changed {
+			changes[n.ID] = next
 		}
 	}
 	return changes
+}
+
+func (t *ProbeHealthTracker) decideNode(now time.Time, n store.Node) (bool, bool) {
+	p, seen := t.probes[n.ID]
+	if !seen {
+		if now.Sub(t.leaderSince) >= ProbeUnhealthyAfter && n.Healthy {
+			return false, true
+		}
+		return false, false
+	}
+	switch {
+	case !p.disconnectedSince.IsZero():
+		if now.Sub(p.disconnectedSince) >= ProbeUnhealthyAfter && n.Healthy {
+			return false, true
+		}
+	case !p.connectedSince.IsZero():
+		if now.Sub(p.connectedSince) >= ProbeHealthyAfter && !n.Healthy {
+			return true, true
+		}
+	}
+	return false, false
 }
 
 // ProbeHealthWatcher runs probe health decisions on the leader (ADR 0034): it

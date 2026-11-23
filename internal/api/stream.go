@@ -253,7 +253,7 @@ func (h *Handlers) runStream(ctx context.Context, conn *websocket.Conn, sub *str
 
 func sessionEndTimer(sessionEnd time.Time, now func() time.Time) (<-chan time.Time, func()) {
 	if sessionEnd.IsZero() {
-		return nil, func() {}
+		return nil, func() { /* no timer to stop when session has no end time */ }
 	}
 	t := time.NewTimer(sessionEnd.Sub(now()))
 	return t.C, func() { t.Stop() }

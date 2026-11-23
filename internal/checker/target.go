@@ -65,13 +65,20 @@ func ValidateHost(host string, policy AddressPolicy) error {
 		return errors.New("IPv6 zones are not allowed")
 	}
 	if strings.ContainsRune(host, ':') {
-		ip, err := netip.ParseAddr(host)
-		if err != nil || !ip.Is6() {
-			return fmt.Errorf("invalid IPv6 address %q", host)
-		}
-		return checkPolicy(ip, policy)
+		return validateIPv6Host(host, policy)
 	}
+	return validateDNSOrIPv4Host(host, policy)
+}
 
+func validateIPv6Host(host string, policy AddressPolicy) error {
+	ip, err := netip.ParseAddr(host)
+	if err != nil || !ip.Is6() {
+		return fmt.Errorf("invalid IPv6 address %q", host)
+	}
+	return checkPolicy(ip, policy)
+}
+
+func validateDNSOrIPv4Host(host string, policy AddressPolicy) error {
 	candidates := []string{host}
 	ascii, err := idna.Lookup.ToASCII(host)
 	if err != nil {

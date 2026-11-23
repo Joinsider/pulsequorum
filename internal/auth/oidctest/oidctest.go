@@ -211,7 +211,7 @@ func (s *Server) Sign(claims map[string]any) string {
 // a nil value removes the field. The signature is always made with the key's
 // own algorithm, so a header alg that differs from it yields a token whose
 // declared algorithm does not match its signature. It panics on an unknown kid.
-func (s *Server) SignWith(kid string, header map[string]any, claims map[string]any) string {
+func (s *Server) SignWith(kid string, header, claims map[string]any) string {
 	k := s.signingKey(kid)
 	hdr := map[string]any{"alg": k.alg, "kid": k.kid, "typ": "JWT"}
 	for name, v := range header {

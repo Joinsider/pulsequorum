@@ -100,32 +100,7 @@ func (h *Handlers) ListPrivateProbes(ctx context.Context, _ gen.ListPrivateProbe
 		if n.Role != store.NodeRoleProbe || n.OwnerTenantID != p.TenantID {
 			continue
 		}
-		caps := slices.Clone(n.Capabilities)
-		if caps == nil {
-			caps = []string{}
-		}
-		offline := alertActive[n.ID]
-		item := gen.PrivateProbe{
-			Id:              n.ID,
-			Name:            n.Name,
-			Capabilities:    caps,
-			Healthy:         n.Healthy,
-			HealthChangedAt: time.UnixMilli(n.HealthChangedMs).UTC(),
-			OfflineAlert:    &offline,
-			Version:         n.Version,
-		}
-		if n.Region != "" {
-			region := n.Region
-			item.Region = &region
-		}
-		if sess, ok := sessions[n.ID]; ok {
-			if sess.LastMessageMs > 0 {
-				t := time.UnixMilli(sess.LastMessageMs).UTC()
-				item.LastContactAt = &t
-			}
-			item.ProbeBuffer = probeBufferStatus(sess.Buffer)
-		}
-		out = append(out, item)
+		out = append(out, buildPrivateProbeView(n, alertActive[n.ID], sessions[n.ID]))
 	}
 	slices.SortFunc(out, func(a, b gen.PrivateProbe) int {
 		if c := cmp.Compare(a.Name, b.Name); c != 0 {
@@ -134,6 +109,32 @@ func (h *Handlers) ListPrivateProbes(ctx context.Context, _ gen.ListPrivateProbe
 		return cmp.Compare(a.Id, b.Id)
 	})
 	return gen.ListPrivateProbes200JSONResponse(out), nil
+}
+
+func buildPrivateProbeView(n store.Node, offline bool, sess ProbeSessionView) gen.PrivateProbe {
+	caps := slices.Clone(n.Capabilities)
+	if caps == nil {
+		caps = []string{}
+	}
+	item := gen.PrivateProbe{
+		Id:              n.ID,
+		Name:            n.Name,
+		Capabilities:    caps,
+		Healthy:         n.Healthy,
+		HealthChangedAt: time.UnixMilli(n.HealthChangedMs).UTC(),
+		OfflineAlert:    &offline,
+		Version:         n.Version,
+		ProbeBuffer:     probeBufferStatus(sess.Buffer),
+	}
+	if n.Region != "" {
+		region := n.Region
+		item.Region = &region
+	}
+	if sess.LastMessageMs > 0 {
+		t := time.UnixMilli(sess.LastMessageMs).UTC()
+		item.LastContactAt = &t
+	}
+	return item
 }
 
 // RemovePrivateProbe revokes and removes a private probe owned by the caller's

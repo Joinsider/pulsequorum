@@ -311,6 +311,9 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 	if err := checkAuditHints(ctx, tx, cmd); err != nil {
 		return nil, err
 	}
+	if res, handled, err := applyTenantAndAuthPayload(ctx, tx, cmd); handled {
+		return res, err
+	}
 	switch p := cmd.GetPayload().(type) {
 	case *pb.Command_PutEntity:
 		return applyPut(ctx, tx, cmd, p.PutEntity)
@@ -322,12 +325,6 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyEnqueueAlert(ctx, tx, cmd, p.EnqueueAlert)
 	case *pb.Command_AckAlertDelivery:
 		return applyAckAlertDelivery(ctx, tx, cmd, p.AckAlertDelivery)
-	case *pb.Command_CreateSession:
-		return applyCreateSession(ctx, tx, cmd, p.CreateSession)
-	case *pb.Command_RotateSession:
-		return applyRotateSession(ctx, tx, cmd, p.RotateSession)
-	case *pb.Command_RevokeSessions:
-		return applyRevokeSessions(ctx, tx, cmd, p.RevokeSessions)
 	case *pb.Command_RedeemJoinToken:
 		return applyRedeemJoinToken(ctx, tx, cmd, p.RedeemJoinToken)
 	case *pb.Command_RevokeCertificate:
@@ -360,24 +357,6 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return applyRecordIncarnation(ctx, tx, cmd, p.RecordIncarnation)
 	case *pb.Command_Checkpoint:
 		return applyCheckpoint(ctx, tx)
-	case *pb.Command_BindTenantOrg:
-		return applyBindTenantOrg(ctx, tx, cmd, p.BindTenantOrg)
-	case *pb.Command_CreateTenant:
-		return applyCreateTenant(ctx, tx, cmd, p.CreateTenant)
-	case *pb.Command_UpdateTenant:
-		return applyUpdateTenant(ctx, tx, cmd, p.UpdateTenant)
-	case *pb.Command_SetTenantSuspended:
-		return applySetTenantSuspended(ctx, tx, cmd, p.SetTenantSuspended)
-	case *pb.Command_DeleteTenant:
-		return applyDeleteTenant(ctx, tx, cmd, p.DeleteTenant)
-	case *pb.Command_PutPlan:
-		return applyPutPlan(ctx, tx, cmd, p.PutPlan)
-	case *pb.Command_DeletePlan:
-		return applyDeletePlan(ctx, tx, cmd, p.DeletePlan)
-	case *pb.Command_CreateApiToken:
-		return applyCreateAPIToken(ctx, tx, cmd, p.CreateApiToken)
-	case *pb.Command_RevokeApiToken:
-		return applyRevokeAPIToken(ctx, tx, cmd, p.RevokeApiToken)
 	case *pb.Command_PruneAudit:
 		return applyPruneAudit(ctx, tx, cmd, p.PruneAudit)
 	case *pb.Command_Batch:
@@ -386,6 +365,49 @@ func applyPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.
 		return nil, invalid("command without payload")
 	default:
 		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("payload %T is not supported yet", p)}
+	}
+}
+
+func applyTenantAndAuthPayload(ctx context.Context, tx store.StateTx, cmd *pb.Command) (json.RawMessage, bool, error) {
+	switch p := cmd.GetPayload().(type) {
+	case *pb.Command_CreateSession:
+		res, err := applyCreateSession(ctx, tx, cmd, p.CreateSession)
+		return res, true, err
+	case *pb.Command_RotateSession:
+		res, err := applyRotateSession(ctx, tx, cmd, p.RotateSession)
+		return res, true, err
+	case *pb.Command_RevokeSessions:
+		res, err := applyRevokeSessions(ctx, tx, cmd, p.RevokeSessions)
+		return res, true, err
+	case *pb.Command_BindTenantOrg:
+		res, err := applyBindTenantOrg(ctx, tx, cmd, p.BindTenantOrg)
+		return res, true, err
+	case *pb.Command_CreateTenant:
+		res, err := applyCreateTenant(ctx, tx, cmd, p.CreateTenant)
+		return res, true, err
+	case *pb.Command_UpdateTenant:
+		res, err := applyUpdateTenant(ctx, tx, cmd, p.UpdateTenant)
+		return res, true, err
+	case *pb.Command_SetTenantSuspended:
+		res, err := applySetTenantSuspended(ctx, tx, cmd, p.SetTenantSuspended)
+		return res, true, err
+	case *pb.Command_DeleteTenant:
+		res, err := applyDeleteTenant(ctx, tx, cmd, p.DeleteTenant)
+		return res, true, err
+	case *pb.Command_PutPlan:
+		res, err := applyPutPlan(ctx, tx, cmd, p.PutPlan)
+		return res, true, err
+	case *pb.Command_DeletePlan:
+		res, err := applyDeletePlan(ctx, tx, cmd, p.DeletePlan)
+		return res, true, err
+	case *pb.Command_CreateApiToken:
+		res, err := applyCreateAPIToken(ctx, tx, cmd, p.CreateApiToken)
+		return res, true, err
+	case *pb.Command_RevokeApiToken:
+		res, err := applyRevokeAPIToken(ctx, tx, cmd, p.RevokeApiToken)
+		return res, true, err
+	default:
+		return nil, false, nil
 	}
 }
 
@@ -400,152 +422,163 @@ func applyPut(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.Pu
 
 	switch put.GetKind() {
 	case pb.EntityKind_ENTITY_KIND_TENANT:
-		if put.GetId() == store.SystemTenantID && cmd.GetActor().GetKind() != pb.Actor_KIND_SYSTEM {
-			return nil, invalid("the system tenant is reserved")
-		}
-		var doc TenantDocument
-		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
-			return nil, invalid("tenant document: %v", err)
-		}
-		if put.GetId() == store.SystemTenantID && doc.ZitadelOrgID != "" {
-			return nil, invalid("the system tenant cannot be bound to an organization")
-		}
-		if err := checkPutTenant(ctx, tx, cmd, put.GetId(), doc); err != nil {
-			return nil, err
-		}
-		err := tx.PutTenant(ctx, store.Tenant{
-			ID: put.GetId(), Name: doc.Name, Plan: doc.Plan, ZitadelOrgID: doc.ZitadelOrgID,
-			Limits: doc.Limits, Suspended: doc.Suspended, Source: tenant.SourceBootstrap,
-			CreatedMs: issuedAt, UpdatedMs: issuedAt,
-		})
-		if err != nil {
-			return nil, storeError(err)
-		}
-		return json.Marshal(PutResult{ID: put.GetId()})
-
+		return applyPutTenantEntity(ctx, tx, cmd, put, issuedAt)
 	case pb.EntityKind_ENTITY_KIND_MONITOR:
-		if cmd.GetTenantId() == store.SystemTenantID {
-			return nil, invalid("the system tenant has no monitors")
-		}
-		if cmd.GetTenantId() == "" {
-			return nil, invalid("monitor command without tenant")
-		}
-		var doc MonitorDocument
-		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
-			return nil, invalid("monitor document: %v", err)
-		}
-		if err := checkMonitorSecrets(doc.Secrets); err != nil {
-			return nil, err
-		}
-		create := put.GetExpectedRevision() == 0
-		target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_MONITOR, create: create, interval: doc.IntervalSeconds}
-		if !create {
-			if old, err := tx.GetMonitor(ctx, cmd.GetTenantId(), put.GetId()); err == nil {
-				target.oldInterval = old.IntervalSeconds
-			} else if !errors.Is(err, store.ErrNotFound) {
-				return nil, storeError(err)
-			}
-		}
-		if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
-			return nil, err
-		}
-		err := tx.PutMonitor(ctx, store.Monitor{
-			TenantID:              cmd.GetTenantId(),
-			ID:                    put.GetId(),
-			Name:                  doc.Name,
-			Description:           doc.Description,
-			Type:                  doc.Type,
-			Config:                doc.Config,
-			IntervalSeconds:       doc.IntervalSeconds,
-			TimeoutSeconds:        doc.TimeoutSeconds,
-			Retries:               doc.Retries,
-			RecoveryThreshold:     doc.RecoveryThreshold,
-			ResendIntervalMinutes: doc.ResendIntervalMinutes,
-			Assignment:            doc.Assignment,
-			ConsensusPolicy:       doc.ConsensusPolicy,
-			Tags:                  doc.Tags,
-			ChannelIDs:            doc.NotificationChannelIDs,
-			Secrets:               doc.Secrets,
-			Paused:                doc.Paused,
-			CreatedMs:             issuedAt,
-			UpdatedMs:             issuedAt,
-		}, put.GetExpectedRevision())
-		if err != nil {
-			return nil, storeError(err)
-		}
-		if err := syncPausedState(ctx, tx, cmd.GetTenantId(), put.GetId(), doc.Paused, create, issuedAt); err != nil {
-			return nil, err
-		}
-		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
-
+		return applyPutMonitorEntity(ctx, tx, cmd, put, issuedAt)
 	case pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL:
-		var doc ChannelDocument
-		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
-			return nil, invalid("channel document: %v", err)
-		}
-		level, err := currentCommandLevel(ctx, tx)
-		if err != nil {
-			return nil, err
-		}
-		ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, level)
-		if err != nil {
-			return nil, err
-		}
-		target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, create: put.GetExpectedRevision() == 0}
-		if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
-			return nil, err
-		}
-		if err := tx.PutChannel(ctx, ch, put.GetExpectedRevision()); err != nil {
-			return nil, storeError(err)
-		}
-		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
-
+		return applyPutChannelEntity(ctx, tx, cmd, put, issuedAt)
 	case pb.EntityKind_ENTITY_KIND_MAINTENANCE_WINDOW:
-		var doc MaintenanceDocument
-		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
-			return nil, invalid("maintenance document: %v", err)
-		}
-		w, err := maintenanceFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt)
-		if err != nil {
-			return nil, err
-		}
-		if err := tx.PutMaintenanceWindow(ctx, w, put.GetExpectedRevision()); err != nil {
-			return nil, storeError(err)
-		}
-		return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
-
+		return applyPutMaintenanceEntity(ctx, tx, cmd, put, issuedAt)
 	case pb.EntityKind_ENTITY_KIND_USER:
 		return applyPutUser(ctx, tx, cmd, put)
-
 	case pb.EntityKind_ENTITY_KIND_SIGNING_KEY:
 		return applyPutSigningKey(ctx, tx, cmd, put)
-
 	case pb.EntityKind_ENTITY_KIND_CLUSTER_CA:
 		return applyPutClusterCA(ctx, tx, cmd, put)
-
 	case pb.EntityKind_ENTITY_KIND_JOIN_TOKEN:
 		return applyPutJoinToken(ctx, tx, cmd, put)
-
 	case pb.EntityKind_ENTITY_KIND_SECRET_KEY:
-		var doc SecretKeyDocument
-		if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
-			return nil, invalid("secret key document: %v", err)
-		}
-		if len(doc.WrappedDEK) == 0 || doc.KEKFingerprint == "" {
-			return nil, invalid("secret key without wrapped key or master key fingerprint")
-		}
-		err := tx.PutSecretKey(ctx, store.SecretKey{
-			KeyID: put.GetId(), WrappedDEK: doc.WrappedDEK, KEKFingerprint: doc.KEKFingerprint,
-			CreatedMs: issuedAt, RetiredMs: doc.RetiredMs,
-		})
-		if err != nil {
-			return nil, storeError(err)
-		}
-		return json.Marshal(PutResult{ID: put.GetId()})
-
+		return applyPutSecretKeyEntity(ctx, tx, put, issuedAt)
 	default:
 		return nil, &CommandError{Code: CodeUnsupported, Message: fmt.Sprintf("put of %s is not supported yet", put.GetKind())}
 	}
+}
+
+func applyPutTenantEntity(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity, issuedAt int64) (json.RawMessage, error) {
+	if put.GetId() == store.SystemTenantID && cmd.GetActor().GetKind() != pb.Actor_KIND_SYSTEM {
+		return nil, invalid("the system tenant is reserved")
+	}
+	var doc TenantDocument
+	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+		return nil, invalid("tenant document: %v", err)
+	}
+	if put.GetId() == store.SystemTenantID && doc.ZitadelOrgID != "" {
+		return nil, invalid("the system tenant cannot be bound to an organization")
+	}
+	if err := checkPutTenant(ctx, tx, cmd, put.GetId(), doc); err != nil {
+		return nil, err
+	}
+	err := tx.PutTenant(ctx, store.Tenant{
+		ID: put.GetId(), Name: doc.Name, Plan: doc.Plan, ZitadelOrgID: doc.ZitadelOrgID,
+		Limits: doc.Limits, Suspended: doc.Suspended, Source: tenant.SourceBootstrap,
+		CreatedMs: issuedAt, UpdatedMs: issuedAt,
+	})
+	if err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(PutResult{ID: put.GetId()})
+}
+
+func applyPutMonitorEntity(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity, issuedAt int64) (json.RawMessage, error) {
+	if cmd.GetTenantId() == store.SystemTenantID {
+		return nil, invalid("the system tenant has no monitors")
+	}
+	if cmd.GetTenantId() == "" {
+		return nil, invalid("monitor command without tenant")
+	}
+	var doc MonitorDocument
+	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+		return nil, invalid("monitor document: %v", err)
+	}
+	if err := checkMonitorSecrets(doc.Secrets); err != nil {
+		return nil, err
+	}
+	create := put.GetExpectedRevision() == 0
+	target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_MONITOR, create: create, interval: doc.IntervalSeconds}
+	if !create {
+		if old, err := tx.GetMonitor(ctx, cmd.GetTenantId(), put.GetId()); err == nil {
+			target.oldInterval = old.IntervalSeconds
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, storeError(err)
+		}
+	}
+	if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
+		return nil, err
+	}
+	err := tx.PutMonitor(ctx, store.Monitor{
+		TenantID:              cmd.GetTenantId(),
+		ID:                    put.GetId(),
+		Name:                  doc.Name,
+		Description:           doc.Description,
+		Type:                  doc.Type,
+		Config:                doc.Config,
+		IntervalSeconds:       doc.IntervalSeconds,
+		TimeoutSeconds:        doc.TimeoutSeconds,
+		Retries:               doc.Retries,
+		RecoveryThreshold:     doc.RecoveryThreshold,
+		ResendIntervalMinutes: doc.ResendIntervalMinutes,
+		Assignment:            doc.Assignment,
+		ConsensusPolicy:       doc.ConsensusPolicy,
+		Tags:                  doc.Tags,
+		ChannelIDs:            doc.NotificationChannelIDs,
+		Secrets:               doc.Secrets,
+		Paused:                doc.Paused,
+		CreatedMs:             issuedAt,
+		UpdatedMs:             issuedAt,
+	}, put.GetExpectedRevision())
+	if err != nil {
+		return nil, storeError(err)
+	}
+	if err := syncPausedState(ctx, tx, cmd.GetTenantId(), put.GetId(), doc.Paused, create, issuedAt); err != nil {
+		return nil, err
+	}
+	return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+}
+
+func applyPutChannelEntity(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity, issuedAt int64) (json.RawMessage, error) {
+	var doc ChannelDocument
+	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+		return nil, invalid("channel document: %v", err)
+	}
+	level, err := currentCommandLevel(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	ch, err := channelFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt, level)
+	if err != nil {
+		return nil, err
+	}
+	target := limitTarget{kind: pb.EntityKind_ENTITY_KIND_NOTIFICATION_CHANNEL, create: put.GetExpectedRevision() == 0}
+	if err := checkTenantLimits(ctx, tx, cmd.GetTenantId(), target); err != nil {
+		return nil, err
+	}
+	if err := tx.PutChannel(ctx, ch, put.GetExpectedRevision()); err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+}
+
+func applyPutMaintenanceEntity(ctx context.Context, tx store.StateTx, cmd *pb.Command, put *pb.PutEntity, issuedAt int64) (json.RawMessage, error) {
+	var doc MaintenanceDocument
+	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+		return nil, invalid("maintenance document: %v", err)
+	}
+	w, err := maintenanceFromDocument(cmd.GetTenantId(), put.GetId(), doc, issuedAt)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.PutMaintenanceWindow(ctx, w, put.GetExpectedRevision()); err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(PutResult{ID: put.GetId(), Revision: put.GetExpectedRevision() + 1})
+}
+
+func applyPutSecretKeyEntity(ctx context.Context, tx store.StateTx, put *pb.PutEntity, issuedAt int64) (json.RawMessage, error) {
+	var doc SecretKeyDocument
+	if err := json.Unmarshal(put.GetDocumentJson(), &doc); err != nil {
+		return nil, invalid("secret key document: %v", err)
+	}
+	if len(doc.WrappedDEK) == 0 || doc.KEKFingerprint == "" {
+		return nil, invalid("secret key without wrapped key or master key fingerprint")
+	}
+	err := tx.PutSecretKey(ctx, store.SecretKey{
+		KeyID: put.GetId(), WrappedDEK: doc.WrappedDEK, KEKFingerprint: doc.KEKFingerprint,
+		CreatedMs: issuedAt, RetiredMs: doc.RetiredMs,
+	})
+	if err != nil {
+		return nil, storeError(err)
+	}
+	return json.Marshal(PutResult{ID: put.GetId()})
 }
 
 func applyDelete(ctx context.Context, tx store.StateTx, cmd *pb.Command, del *pb.DeleteEntity) (json.RawMessage, error) {

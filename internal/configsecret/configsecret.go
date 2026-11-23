@@ -132,31 +132,50 @@ func Split(kr Keyring, paths Paths, monitorID string, config json.RawMessage, pr
 	out := Secrets{}
 	cleared := map[string]bool{}
 	for _, loc := range locate(doc, paths) {
-		ptr := pointer(loc.path)
-		s, isString := loc.value.(string)
-		switch {
-		case isString && s == Mask:
-			c, ok := previous[ptr]
-			if !ok {
-				return nil, nil, &MaskError{Pointer: ptr}
-			}
-			out[ptr] = c
-		case isString && s == "":
-			loc.remove()
-			cleared[ptr] = true
-		default:
-			plain, err := json.Marshal(loc.value)
-			if err != nil {
-				return nil, nil, err
-			}
-			c, err := kr.Encrypt(plain, AAD(monitorID, ptr))
-			if err != nil {
-				return nil, nil, fmt.Errorf("encrypt %s: %w", ptr, err)
-			}
-			out[ptr] = c
-			loc.set(Mask)
+		if err := splitLocation(kr, monitorID, loc, previous, out, cleared); err != nil {
+			return nil, nil, err
 		}
 	}
+	preserveOmittedSecrets(doc, paths, previous, out, cleared)
+	masked, err := json.Marshal(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	return masked, out, nil
+}
+
+func splitLocation(kr Keyring, monitorID string, loc location, previous, out Secrets, cleared map[string]bool) error {
+	ptr := pointer(loc.path)
+	s, isString := loc.value.(string)
+	switch {
+	case isString && s == Mask:
+		c, ok := previous[ptr]
+		if !ok {
+			return &MaskError{Pointer: ptr}
+		}
+		out[ptr] = c
+	case isString && s == "":
+		loc.remove()
+		cleared[ptr] = true
+	default:
+		plain, err := json.Marshal(loc.value)
+		if err != nil {
+			return err
+		}
+		c, err := kr.Encrypt(plain, AAD(monitorID, ptr))
+		if err != nil {
+			return fmt.Errorf("encrypt %s: %w", ptr, err)
+		}
+		out[ptr] = c
+		loc.set(Mask)
+	}
+	return nil
+}
+
+func preserveOmittedSecrets(doc any, paths Paths, previous, out Secrets, cleared map[string]bool) {
 	// Keep secrets whose field was left out of an otherwise present object.
 	for _, ptr := range sortedKeys(previous) {
 		if _, done := out[ptr]; done || cleared[ptr] {
@@ -173,14 +192,6 @@ func Split(kr Keyring, paths Paths, monitorID string, config json.RawMessage, pr
 			}
 		}
 	}
-	masked, err := json.Marshal(doc)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(out) == 0 {
-		out = nil
-	}
-	return masked, out, nil
 }
 
 // MaskConfig replaces every value at a secret position with Mask. Stored

@@ -83,17 +83,22 @@ api_call() { # METHOD PATH [JSON]; Rückgabe 0 bei 2xx
   [[ "$code" =~ ^2 ]]
 }
 must() { # METHOD PATH [JSON]; bricht bei Fehler ab
+  local method="$1" path="$2"
   if ! api_call "$@"; then
-    die "API $1 $2 -> HTTP $HTTP_CODE: $RESP"
+    die "API $method $path -> HTTP $HTTP_CODE: $RESP"
   fi
 }
 must_upd() { # wie must, aber "No changes" (Zitadel: failed_precondition) gilt als Erfolg
+  local method="$1" path="$2"
   if ! api_call "$@"; then
     if grep -q "No changes" <<<"$RESP"; then return 0; fi
-    die "API $1 $2 -> HTTP $HTTP_CODE: $RESP"
+    die "API $method $path -> HTTP $HTTP_CODE: $RESP"
   fi
 }
-jqr() { jq -r "$1" <<<"$RESP"; } # Filter auf RESP; für Filter mit Argumenten jq direkt aufrufen
+jqr() {
+  local filter="$1"
+  jq -r "$filter" <<<"$RESP"
+} # Filter auf RESP; für Filter mit Argumenten jq direkt aufrufen
 
 # --- Instanz und Plattform-Organisation ---
 must GET /auth/v1/users/me
@@ -102,13 +107,14 @@ PLATFORM_ORG_ID="$(jqr '.user.details.resourceOwner')"
 log "Plattform-Organisation: $PLATFORM_ORG_ID"
 
 ensure_org() { # NAME -> ORG_ID
-  must POST /v2/organizations/_search "$(jq -nc --arg n "$1" \
+  local name="$1"
+  must POST /v2/organizations/_search "$(jq -nc --arg n "$name" \
     '{queries:[{nameQuery:{name:$n,method:"TEXT_QUERY_METHOD_EQUALS"}}]}')"
   ORG_ID="$(jqr '.result[0].id // empty')"
   if [[ -z "$ORG_ID" ]]; then
-    must POST /v2/organizations "$(jq -nc --arg n "$1" '{name:$n}')"
+    must POST /v2/organizations "$(jq -nc --arg n "$name" '{name:$n}')"
     ORG_ID="$(jqr '.organizationId')"
-    log "Organisation $1 angelegt"
+    log "Organisation $name angelegt"
   fi
 }
 ensure_org acme
@@ -263,8 +269,9 @@ INITECH_BOT_ID="$MACHINE_ID"
 # (bei Maschinenbenutzern der Benutzername, nicht die Benutzer-ID) und clientSecret.
 # Liegt der Maschinenbenutzer nicht in der Standard-Organisation, wird x-zitadel-orgid gesetzt.
 bot_secret() {
-  if [[ -n "${2:-}" ]]; then ORG_HDR=(-H "x-zitadel-orgid: $2"); fi
-  must PUT "/management/v1/users/$1/secret" '{}'
+  local machine_id="$1" org_id="${2:-}"
+  if [[ -n "$org_id" ]]; then ORG_HDR=(-H "x-zitadel-orgid: $org_id"); fi
+  must PUT "/management/v1/users/$machine_id/secret" '{}'
   ORG_HDR=()
   BOT_CLIENT_ID="$(jqr '.clientId')"
   BOT_SECRET="$(jqr '.clientSecret')"
@@ -286,13 +293,13 @@ INITECH_BOT_CLIENT_ID="$BOT_CLIENT_ID"; INITECH_BOT_SECRET="$BOT_SECRET"
 # --- Berechtigungen (Authorizations) ---
 # grant NUTZER_ID ORG_ID ROLLEN_JSON
 grant() {
-  local body
-  body="$(jq -nc --arg u "$1" --arg p "$PROJECT_ID" --arg o "$2" --argjson r "$3" \
+  local user_id="$1" org_id="$2" roles_json="$3" body
+  body="$(jq -nc --arg u "$user_id" --arg p "$PROJECT_ID" --arg o "$org_id" --argjson r "$roles_json" \
     '{userId:$u, projectId:$p, organizationId:$o, roleKeys:$r}')"
   if api_call POST /zitadel.authorization.v2.AuthorizationService/CreateAuthorization "$body"; then
-    log "Berechtigung $3 für Nutzer $1 angelegt"
+    log "Berechtigung $roles_json für Nutzer $user_id angelegt"
   elif [[ "$HTTP_CODE" == "409" ]]; then
-    log "Berechtigung $3 für Nutzer $1 besteht bereits"
+    log "Berechtigung $roles_json für Nutzer $user_id besteht bereits"
   else
     die "CreateAuthorization -> HTTP $HTTP_CODE: $RESP"
   fi

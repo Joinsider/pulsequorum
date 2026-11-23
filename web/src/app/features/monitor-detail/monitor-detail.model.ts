@@ -60,7 +60,7 @@ export function heartbeatTime(h: Heartbeat): number {
 
 /** Sorted, de-duplicated node ids of the heartbeats. */
 export function nodeIds(heartbeats: readonly Heartbeat[]): string[] {
-  return [...new Set(heartbeats.map((h) => h.nodeId))].sort();
+  return [...new Set(heartbeats.map((h) => h.nodeId))].sort((a, b) => a.localeCompare(b));
 }
 
 /**

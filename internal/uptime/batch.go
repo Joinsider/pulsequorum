@@ -30,12 +30,9 @@ func (s *Service) ConsensusTotals(ctx context.Context, tenantID string, ms []sto
 	if len(ms) == 0 {
 		return out, nil
 	}
-	ids := make([]string, 0, len(ms))
-	for _, m := range ms {
-		if m.TenantID != tenantID {
-			return nil, fmt.Errorf("consensus totals: monitor %s is not of tenant %s", m.ID, tenantID)
-		}
-		ids = append(ids, m.ID)
+	ids, err := monitorIDsForTenant(tenantID, ms)
+	if err != nil {
+		return nil, err
 	}
 
 	nowMs := now.UnixMilli()
@@ -47,18 +44,9 @@ func (s *Service) ConsensusTotals(ctx context.Context, tenantID string, ms []sto
 	first := last - int64(n-1)*bucket
 	end := last + hourMs
 
-	rows, err := s.Metrics.ListRollupsBatch(ctx, tenantID, store.RollupBatchQuery{
-		MonitorIDs: ids, NodeID: "", BucketMs: hourMs, FromMs: first, ToMs: end,
-	})
+	stored, err := s.loadStoredHourRollups(ctx, tenantID, ids, first, end, len(ms))
 	if err != nil {
 		return nil, err
-	}
-	stored := make(map[string]map[int64]store.Rollup, len(ms))
-	for _, row := range rows {
-		if stored[row.MonitorID] == nil {
-			stored[row.MonitorID] = map[int64]store.Rollup{}
-		}
-		stored[row.MonitorID][row.StartMs] = row
 	}
 
 	queries := make([]query, len(ms))
@@ -66,6 +54,54 @@ func (s *Service) ConsensusTotals(ctx context.Context, tenantID string, ms []sto
 		queries[i] = query{svc: s, m: m, nodeID: "", now: nowMs, hourWM: hourWM}
 	}
 
+	changes, err := s.loadLiveChangesForQueries(ctx, tenantID, queries, stored, first, end)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range queries {
+		q := &queries[i]
+		m := q.m
+		buckets, err := q.assemble(first, end, stored[m.ID], func(start, e int64) (store.Rollup, error) {
+			return consensusHour(m, statusWindow(changes[m.ID], start, e), start, e), nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		out[m.ID] = merge(buckets, store.Rollup{TenantID: m.TenantID, MonitorID: m.ID, NodeID: "", BucketMs: bucket, StartMs: first})
+	}
+	return out, nil
+}
+
+func monitorIDsForTenant(tenantID string, ms []store.Monitor) ([]string, error) {
+	ids := make([]string, 0, len(ms))
+	for _, m := range ms {
+		if m.TenantID != tenantID {
+			return nil, fmt.Errorf("consensus totals: monitor %s is not of tenant %s", m.ID, tenantID)
+		}
+		ids = append(ids, m.ID)
+	}
+	return ids, nil
+}
+
+func (s *Service) loadStoredHourRollups(ctx context.Context, tenantID string, ids []string, first, end int64, capHint int) (map[string]map[int64]store.Rollup, error) {
+	rows, err := s.Metrics.ListRollupsBatch(ctx, tenantID, store.RollupBatchQuery{
+		MonitorIDs: ids, NodeID: "", BucketMs: hourMs, FromMs: first, ToMs: end,
+	})
+	if err != nil {
+		return nil, err
+	}
+	stored := make(map[string]map[int64]store.Rollup, capHint)
+	for _, row := range rows {
+		if stored[row.MonitorID] == nil {
+			stored[row.MonitorID] = map[int64]store.Rollup{}
+		}
+		stored[row.MonitorID][row.StartMs] = row
+	}
+	return stored, nil
+}
+
+func (s *Service) loadLiveChangesForQueries(ctx context.Context, tenantID string, queries []query, stored map[string]map[int64]store.Rollup, first, end int64) (map[string][]store.StatusChange, error) {
 	// First find the hours that must be computed from the status history, so
 	// that the history is read only for monitors that need it and only for the
 	// span that they need.
@@ -91,25 +127,10 @@ func (s *Service) ConsensusTotals(ctx context.Context, tenantID string, ms []sto
 			return nil, err
 		}
 	}
-	var changes map[string][]store.StatusChange
-	if len(liveIDs) > 0 {
-		if changes, err = s.State.StatusHistoryBatch(ctx, tenantID, liveIDs, liveFrom, liveTo); err != nil {
-			return nil, err
-		}
+	if len(liveIDs) == 0 {
+		return nil, nil
 	}
-
-	for i := range queries {
-		q := &queries[i]
-		m := q.m
-		buckets, err := q.assemble(first, end, stored[m.ID], func(start, e int64) (store.Rollup, error) {
-			return consensusHour(m, statusWindow(changes[m.ID], start, e), start, e), nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		out[m.ID] = merge(buckets, store.Rollup{TenantID: m.TenantID, MonitorID: m.ID, NodeID: "", BucketMs: bucket, StartMs: first})
-	}
-	return out, nil
+	return s.State.StatusHistoryBatch(ctx, tenantID, liveIDs, liveFrom, liveTo)
 }
 
 // consensusHour returns the consensus rollup of the hour [start, end) from the

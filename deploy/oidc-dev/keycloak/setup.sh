@@ -23,7 +23,8 @@ done
 
 # json_get <key>: reads JSON from stdin, prints top-level string/number value of <key>.
 json_get() {
-  python3 -c 'import json,sys; v=json.load(sys.stdin)[sys.argv[1]]; print(v if not isinstance(v,(dict,list)) else json.dumps(v))' "$1"
+  local key="$1"
+  python3 -c 'import json,sys; v=json.load(sys.stdin)[sys.argv[1]]; print(v if not isinstance(v,(dict,list)) else json.dumps(v))' "$key"
 }
 
 umask 077
@@ -89,7 +90,8 @@ api() { # api METHOD PATH [JSON-BODY]
 
 # Realm-Rolle als Representation holen (id und name).
 role_rep() {
-  api GET "/roles/$1"
+  local role="$1"
+  api GET "/roles/$role"
 }
 
 # ensure_user <email> <first> <last> <password-var-value> <role>

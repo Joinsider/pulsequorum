@@ -189,12 +189,16 @@ export class ClusterPage implements OnInit {
     const voters = data.nodes.filter((n) => n.voter).length;
     const probes = data.nodes.filter(isProbe).length;
     const leader = data.nodes.find((n) => n.leader);
+    let leaderLabel: string | null = null;
+    if (data.leaderId) {
+      leaderLabel = leader ? displayName(leader) : data.leaderId;
+    }
     return {
       voters,
       probes,
       quorum: quorumOf(voters),
       tolerates: faultTolerance(voters),
-      leaderLabel: data.leaderId ? (leader ? displayName(leader) : data.leaderId) : null,
+      leaderLabel,
       commandLevel: data.commandLevel ?? null,
     };
   });

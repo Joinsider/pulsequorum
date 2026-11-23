@@ -57,7 +57,9 @@ func enqueueAlerts(ctx context.Context, tx store.StateTx, issuedAt int64, m stor
 		if ch.State == store.ChannelDisabled || !ch.Subscribes(p.Event) {
 			continue
 		}
-		if err := enqueueAlertDelivery(ctx, tx, issuedAt, m.TenantID, m.ID, id, p.AlertID, payload); err != nil {
+		if err := enqueueAlertDelivery(ctx, tx, issuedAt, store.AlertDelivery{
+			TenantID: m.TenantID, AlertKey: p.AlertID, ChannelID: id, MonitorID: m.ID, Payload: payload,
+		}); err != nil {
 			return err
 		}
 	}
@@ -65,11 +67,12 @@ func enqueueAlerts(ctx context.Context, tx store.StateTx, issuedAt int64, m stor
 }
 
 // enqueueAlertDelivery adds the outbox entry of one alert for one channel (ADR 0014).
-func enqueueAlertDelivery(ctx context.Context, tx store.StateTx, issuedAt int64, tenantID, monitorID, channelID, alertKey string, payload []byte) error {
-	return tx.EnqueueAlert(ctx, store.AlertDelivery{
-		TenantID: tenantID, AlertKey: alertKey, ChannelID: channelID, MonitorID: monitorID, Payload: payload,
-		NextAttemptMs: issuedAt, State: store.AlertPending, CreatedMs: issuedAt, UpdatedMs: issuedAt,
-	})
+func enqueueAlertDelivery(ctx context.Context, tx store.StateTx, issuedAt int64, d store.AlertDelivery) error {
+	d.NextAttemptMs = issuedAt
+	d.State = store.AlertPending
+	d.CreatedMs = issuedAt
+	d.UpdatedMs = issuedAt
+	return tx.EnqueueAlert(ctx, d)
 }
 
 func alertKey(monitorID string, sinceMs int64, status store.MonitorStatus) string {
@@ -210,22 +213,8 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 		}
 	}
 	for _, e := range doc.Events {
-		switch e {
-		case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
-		case store.EventFlapping, store.EventChannelFailed:
-			if level < FlappingCommandLevel {
-				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
-			}
-		case store.EventProbeOffline:
-			if tenantID == store.SystemTenantID || level < ProbeCommandLevel {
-				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
-			}
-		case store.EventSystem:
-			if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
-				return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
-			}
-		default:
-			return store.NotificationChannel{}, invalid(errInvalidEventFormat, e)
+		if err := validateChannelEvent(tenantID, e, level); err != nil {
+			return store.NotificationChannel{}, err
 		}
 	}
 	return store.NotificationChannel{
@@ -233,6 +222,30 @@ func channelFromDocument(tenantID, id string, doc ChannelDocument, issuedAt int6
 		WebhookMethod: doc.WebhookMethod, WebhookHeaders: doc.WebhookHeaders, WebhookTemplate: doc.WebhookTemplate,
 		Events: doc.Events, IsDefault: doc.IsDefault, CreatedMs: issuedAt, UpdatedMs: issuedAt,
 	}, nil
+}
+
+func validateChannelEvent(tenantID, e string, level uint32) error {
+	switch e {
+	case store.EventDown, store.EventUp, store.EventDegraded, store.EventPartial:
+		return nil
+	case store.EventFlapping, store.EventChannelFailed:
+		if level < FlappingCommandLevel {
+			return invalid(errInvalidEventFormat, e)
+		}
+		return nil
+	case store.EventProbeOffline:
+		if tenantID == store.SystemTenantID || level < ProbeCommandLevel {
+			return invalid(errInvalidEventFormat, e)
+		}
+		return nil
+	case store.EventSystem:
+		if tenantID != store.SystemTenantID || level < SystemAlertCommandLevel {
+			return invalid(errInvalidEventFormat, e)
+		}
+		return nil
+	default:
+		return invalid(errInvalidEventFormat, e)
+	}
 }
 
 // senderView returns the view of the proposing node for an alert of set

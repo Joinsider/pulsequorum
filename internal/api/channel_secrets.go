@@ -227,33 +227,42 @@ func (h *Handlers) apiChannel(ctx context.Context, ch store.NotificationChannel)
 	if ch.LastError != "" {
 		out.LastError = &ch.LastError
 	}
-	masked := alert.Mask
-	if h.deps.Keyring != nil {
-		if t, err := alert.DecryptTarget(ctx, h.deps.Keyring, ch); err == nil {
-			masked = alert.MaskURL(t.URL)
-		} else {
-			h.log.Warn("cannot decrypt notification channel", "tenant", ch.TenantID, "channel", ch.ID, "err", err)
-		}
-	}
+	masked := h.maskedChannelURL(ctx, ch)
 	if ch.Kind == store.ChannelWebhook {
-		w := gen.WebhookConfig{Url: masked}
-		if ch.WebhookMethod != "" {
-			m := gen.WebhookConfigMethod(ch.WebhookMethod)
-			w.Method = &m
-		}
-		if ch.WebhookTemplate != "" {
-			w.BodyTemplate = &ch.WebhookTemplate
-		}
-		if len(ch.WebhookHeaders) > 0 {
-			headers := make(map[string]string, len(ch.WebhookHeaders))
-			for name := range ch.WebhookHeaders {
-				headers[name] = alert.Mask
-			}
-			w.Headers = &headers
-		}
-		out.Webhook = &w
+		out.Webhook = buildWebhookConfigView(ch, masked)
 	} else {
 		out.MaskedUrl = &masked
 	}
 	return out, nil
+}
+
+func (h *Handlers) maskedChannelURL(ctx context.Context, ch store.NotificationChannel) string {
+	if h.deps.Keyring == nil {
+		return alert.Mask
+	}
+	t, err := alert.DecryptTarget(ctx, h.deps.Keyring, ch)
+	if err != nil {
+		h.log.Warn("cannot decrypt notification channel", "tenant", ch.TenantID, "channel", ch.ID, "err", err)
+		return alert.Mask
+	}
+	return alert.MaskURL(t.URL)
+}
+
+func buildWebhookConfigView(ch store.NotificationChannel, masked string) *gen.WebhookConfig {
+	w := gen.WebhookConfig{Url: masked}
+	if ch.WebhookMethod != "" {
+		m := gen.WebhookConfigMethod(ch.WebhookMethod)
+		w.Method = &m
+	}
+	if ch.WebhookTemplate != "" {
+		w.BodyTemplate = &ch.WebhookTemplate
+	}
+	if len(ch.WebhookHeaders) > 0 {
+		headers := make(map[string]string, len(ch.WebhookHeaders))
+		for name := range ch.WebhookHeaders {
+			headers[name] = alert.Mask
+		}
+		w.Headers = &headers
+	}
+	return &w
 }

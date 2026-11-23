@@ -165,7 +165,6 @@ func (q *checkQueue) Pop() any {
 // heartbeatWriter stores the checks as heartbeats of this node's stream in
 // batches. Seq is strictly increasing and continues after the stored seq.
 type heartbeatWriter struct {
-	ctx         context.Context
 	metrics     store.Metrics
 	nodeID      string
 	incarnation string
@@ -176,7 +175,7 @@ type heartbeatWriter struct {
 }
 
 // add queues one heartbeat and stores the batch when it is full.
-func (w *heartbeatWriter) add(g *monitorGen, tsMs int64, o outcome) error {
+func (w *heartbeatWriter) add(ctx context.Context, g *monitorGen, tsMs int64, o outcome) error {
 	w.seq++
 	w.batch = append(w.batch, store.Heartbeat{
 		NodeID:      w.nodeID,
@@ -191,18 +190,18 @@ func (w *heartbeatWriter) add(g *monitorGen, tsMs int64, o outcome) error {
 		Message:     o.message,
 	})
 	if len(w.batch) >= w.size {
-		return w.flush()
+		return w.flush(ctx)
 	}
 	return nil
 }
 
 // flush stores the queued heartbeats. Every row must be new: a duplicate seq
 // would mean that the stream was not fresh.
-func (w *heartbeatWriter) flush() error {
+func (w *heartbeatWriter) flush(ctx context.Context) error {
 	if len(w.batch) == 0 {
 		return nil
 	}
-	n, err := w.metrics.InsertHeartbeats(w.ctx, w.batch)
+	n, err := w.metrics.InsertHeartbeats(ctx, w.batch)
 	if err != nil {
 		return fmt.Errorf("insert %d heartbeats: %w", len(w.batch), err)
 	}

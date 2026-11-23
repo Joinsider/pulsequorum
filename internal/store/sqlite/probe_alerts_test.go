@@ -17,6 +17,9 @@ func TestProbeAlertsAndTenantCounts(t *testing.T) {
 	s := openState(t, t.TempDir())
 
 	err := s.Update(ctx, func(tx store.StateTx) error {
+		if err := tx.PutProbeAlert(ctx, store.ProbeAlert{}); err == nil {
+			t.Fatal("PutProbeAlert with empty tenant/probe ID: want error")
+		}
 		if err := tx.PutTenant(ctx, store.Tenant{ID: "t1", Name: "T1", Plan: "default", CreatedMs: 1, UpdatedMs: 1}); err != nil {
 			return err
 		}
@@ -94,5 +97,90 @@ func TestProbeAlertsAndTenantCounts(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMetricsStreamDeletesAndPurge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m, err := OpenMetrics(ctx, t.TempDir(), MetricsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.Close() }()
+
+	if _, err := m.PurgeTenant(ctx, "", 10); err == nil {
+		t.Fatal("expected error for empty tenant ID in PurgeTenant")
+	}
+	if _, err := m.PurgeTenant(ctx, "t1", 0); err == nil {
+		t.Fatal("expected error for non-positive batchSize in PurgeTenant")
+	}
+	if err := m.MarkTenantPurged(ctx, "", 1000); err == nil {
+		t.Fatal("expected error for empty tenant ID in MarkTenantPurged")
+	}
+	if err := m.MarkTenantPurged(ctx, "t1", 1000); err != nil {
+		t.Fatalf("MarkTenantPurged: %v", err)
+	}
+	purged, err := m.PurgedTenants(ctx)
+	if err != nil || len(purged) != 1 || purged[0] != "t1" {
+		t.Fatalf("PurgedTenants = (%v, %v), want [t1]", purged, err)
+	}
+
+	inc := m.Incarnation()
+	hbs := []store.Heartbeat{
+		{NodeID: "p1", Incarnation: inc, Seq: 1, TenantID: "t1", MonitorID: "m1", TsMs: 1000, Status: store.CheckUp, LatencyMs: 10},
+		{NodeID: "p1", Incarnation: inc, Seq: 2, TenantID: "t1", MonitorID: "m1", TsMs: 2000, Status: store.CheckUp, LatencyMs: 12},
+		{NodeID: "p1", Incarnation: inc, Seq: 3, TenantID: "t1", MonitorID: "m1", TsMs: 3000, Status: store.CheckDown, LatencyMs: 50},
+		{NodeID: "p1", Incarnation: inc, Seq: 4, TenantID: "t1", MonitorID: "m1", TsMs: 4000, Status: store.CheckUp, LatencyMs: 11},
+	}
+	if _, err := m.InsertHeartbeats(ctx, hbs); err != nil {
+		t.Fatalf("InsertHeartbeats: %v", err)
+	}
+
+	minSeq, err := m.MinSeq(ctx, "p1", inc)
+	if err != nil || minSeq != 1 {
+		t.Fatalf("MinSeq = (%d, %v), want 1", minSeq, err)
+	}
+
+	count, oldest, err := m.UnackedStats(ctx, "p1", inc, 1)
+	if err != nil || count != 3 || oldest != 2000 {
+		t.Fatalf("UnackedStats = (%d, %d, %v), want (3, 2000, nil)", count, oldest, err)
+	}
+
+	if _, err := m.DeleteStreamHeartbeatsUpTo(ctx, "p1", inc, 1, 0); err == nil {
+		t.Fatal("expected error for limit <= 0 in DeleteStreamHeartbeatsUpTo")
+	}
+	nDel, err := m.DeleteStreamHeartbeatsUpTo(ctx, "p1", inc, 1, 10)
+	if err != nil || nDel != 1 {
+		t.Fatalf("DeleteStreamHeartbeatsUpTo = (%d, %v), want 1", nDel, err)
+	}
+
+	if _, _, err := m.DeleteStreamHeartbeatsOlderThan(ctx, "p1", inc, 1, 2500, 0); err == nil {
+		t.Fatal("expected error for limit <= 0 in DeleteStreamHeartbeatsOlderThan")
+	}
+	nOlder, maxOlderSeq, err := m.DeleteStreamHeartbeatsOlderThan(ctx, "p1", inc, 1, 2500, 10)
+	if err != nil || nOlder != 1 || maxOlderSeq != 2 {
+		t.Fatalf("DeleteStreamHeartbeatsOlderThan = (%d, %d, %v), want (1, 2, nil)", nOlder, maxOlderSeq, err)
+	}
+	// Calling again when none match returns (0, 0, nil).
+	nOlder, maxOlderSeq, err = m.DeleteStreamHeartbeatsOlderThan(ctx, "p1", inc, 1, 2500, 10)
+	if err != nil || nOlder != 0 || maxOlderSeq != 0 {
+		t.Fatalf("DeleteStreamHeartbeatsOlderThan empty = (%d, %d, %v), want (0, 0, nil)", nOlder, maxOlderSeq, err)
+	}
+
+	if _, _, _, err := m.DeleteOldestStreamHeartbeats(ctx, "p1", inc, 2, 0); err == nil {
+		t.Fatal("expected error for limit <= 0 in DeleteOldestStreamHeartbeats")
+	}
+	del, unackedDel, maxUnacked, err := m.DeleteOldestStreamHeartbeats(ctx, "p1", inc, 2, 1)
+	if err != nil || del != 1 || unackedDel != 1 || maxUnacked != 3 {
+		t.Fatalf("DeleteOldestStreamHeartbeats = (%d, %d, %d, %v), want (1, 1, 3, nil)", del, unackedDel, maxUnacked, err)
+	}
+
+	size, err := m.DBSizeBytes(ctx)
+	if err != nil || size <= 0 {
+		t.Fatalf("DBSizeBytes = (%d, %v)", size, err)
+	}
+	if err := m.IncrementalVacuum(ctx, 1); err != nil {
+		t.Fatalf("IncrementalVacuum: %v", err)
 	}
 }

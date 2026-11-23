@@ -155,7 +155,7 @@ func TestReevaluate(t *testing.T) {
 			}
 			m := replayMonitor(tt.policy, tt.retries, tt.recovery)
 			changes := Reevaluate(m, tt.from, replayStart(0)+tt.fromOff, replayStart(int64(toSlot)),
-				replayHeartbeats(tt.slots), replayNodes, maintenance, time.Second)
+				replayHeartbeats(tt.slots), replayNodes, maintenance)
 			for _, c := range changes {
 				if (c.Status == store.StatusDown) != (c.Incident != nil) {
 					t.Fatalf("change %+v: incident must be set exactly for DOWN", c)
@@ -174,7 +174,7 @@ func TestReevaluateReportersAndIncident(t *testing.T) {
 	m := replayMonitor("majority", 0, 1)
 	hbs := replayHeartbeats([]string{"DD-", "UUU"})
 	run := func() []Change {
-		return Reevaluate(m, store.StatusUp, replayStart(0), replayStart(2), hbs, replayNodes, nil, time.Second)
+		return Reevaluate(m, store.StatusUp, replayStart(0), replayStart(2), hbs, replayNodes, nil)
 	}
 	first := run()
 	if len(first) != 2 {
@@ -242,7 +242,7 @@ func TestReevaluateMatchesLive(t *testing.T) {
 	}
 
 	var replay []string
-	for _, c := range Reevaluate(r.f.monitor(), from, r.slot(0), r.slot(int64(len(rounds))), all, replayNodes, nil, time.Second) {
+	for _, c := range Reevaluate(r.f.monitor(), from, r.slot(0), r.slot(int64(len(rounds))), all, replayNodes, nil) {
 		replay = append(replay, fmt.Sprintf("%s reporters=%s incident=%t",
 			slotLabel(c.Status, c.SinceMs), strings.Join(c.Reporters, ","), c.Incident != nil))
 	}

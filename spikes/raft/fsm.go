@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the sqlite driver with database/sql.
 )
 
 const dedupRetentionMs = 24 * 60 * 60 * 1000
@@ -236,7 +236,9 @@ func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	return sink.Close()
 }
 
-func (s *fsmSnapshot) Release() {}
+func (s *fsmSnapshot) Release() {
+	// No-op: Persist removes the temporary snapshot file before returning.
+}
 
 // Restore swaps state.db atomically with the received snapshot file.
 func (f *FSM) Restore(rc io.ReadCloser) error {

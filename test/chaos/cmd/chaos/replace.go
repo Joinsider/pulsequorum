@@ -13,7 +13,12 @@ import (
 )
 
 // replaceSlot is the voter whose node is replaced.
-const replaceSlot = 3
+const (
+	replaceSlot         = 3
+	replacePrefix       = "replace-"
+	expectListedAsVoter = "listed as voter"
+	expectLoginAnswers  = "login answers"
+)
 
 // replaceHTTP409 matches a standalone 409 (not part of a UUID or a number).
 var replaceHTTP409 = regexp.MustCompile(`\b409\b`)
@@ -53,13 +58,13 @@ func runReplace(ctx context.Context, env *Env) error {
 	rep.Check("Voter 1 bootstraps", "admin set up", "admin created on "+cl.Names().Voter(1), true)
 
 	suffix := randomSuffix()
-	ch, err := opsCreateChannel(ctx, env, cl.Client(1), "replace-ntfy-"+suffix, "replace-"+suffix)
+	ch, err := opsCreateChannel(ctx, env, cl.Client(1), "replace-ntfy-"+suffix, replacePrefix+suffix)
 	if err != nil {
 		rep.Check("Notification channel with test delivery", "delivered to ntfy", err.Error(), false)
 		return err
 	}
 	rep.Check("Notification channel with test delivery", "delivered to ntfy", "channel "+ch.ID, true)
-	m, err := opsHTTPMonitor(ctx, env, cl.Client(1), "replace-"+suffix, "/replace/"+suffix, []string{ch.ID})
+	m, err := opsHTTPMonitor(ctx, env, cl.Client(1), replacePrefix+suffix, "/replace/"+suffix, []string{ch.ID})
 	if err != nil {
 		rep.Check("HTTP monitor created", "201, assignment all", err.Error(), false)
 		return err
@@ -68,14 +73,14 @@ func runReplace(ctx context.Context, env *Env) error {
 
 	for _, i := range []int{2, 3} {
 		if err := cl.Join(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter", err.Error(), false)
+			rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoter, err.Error(), false)
 			return err
 		}
 		if err := opsJoinLogin(ctx, env, cl, i); err != nil {
-			rep.Check(fmt.Sprintf("Login on voter %d after join", i), "login answers", err.Error(), false)
+			rep.Check(fmt.Sprintf("Login on voter %d after join", i), expectLoginAnswers, err.Error(), false)
 			return err
 		}
-		rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter", "joined", true)
+		rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoter, "joined", true)
 	}
 
 	nodes, err := opsNodeIDs(ctx, cl, all)
@@ -162,7 +167,7 @@ func runReplace(ctx context.Context, env *Env) error {
 
 	// Remove the old member through a follower (exercises the forwarding).
 	if err := opsRefreshLogins(ctx, cl, []int{remover}); err != nil {
-		rep.Check("Login on the follower", "login answers", err.Error(), false)
+		rep.Check("Login on the follower", expectLoginAnswers, err.Error(), false)
 		return err
 	}
 	removal, err := cl.Client(remover).RemoveClusterNode(ctx, oldID)
@@ -206,11 +211,11 @@ func runReplace(ctx context.Context, env *Env) error {
 	// Join again with a new token and an empty directory.
 	joinStart := time.Now()
 	if err := cl.Join(ctx, replaceSlot); err != nil {
-		rep.Check("Second join with a new token", "listed as voter", err.Error(), false)
+		rep.Check("Second join with a new token", expectListedAsVoter, err.Error(), false)
 		return err
 	}
 	if err := opsJoinLogin(ctx, env, cl, replaceSlot); err != nil {
-		rep.Check("Login on voter 3 after the second join", "login answers", err.Error(), false)
+		rep.Check("Login on voter 3 after the second join", expectLoginAnswers, err.Error(), false)
 		return err
 	}
 	newID, err := cl.NodeID(ctx, replaceSlot)
@@ -248,7 +253,7 @@ func runReplace(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Identical data after the replacement", "normalized snapshots equal", measured, snapOK)
 
-	desc, visible, err := opsWriteVisible(ctx, cl, env, 3, []int{1, 2}, "replace-"+suffix+"-via-v3", "/replace/"+suffix+"/via-v3")
+	desc, visible, err := opsWriteVisible(ctx, cl, env, 3, []int{1, 2}, replacePrefix+suffix+"-via-v3", "/replace/"+suffix+"/via-v3")
 	if err != nil {
 		rep.Check("Write through the new voter 3", "201, visible within 5 s", err.Error(), false)
 		return err

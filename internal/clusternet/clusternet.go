@@ -214,7 +214,7 @@ func (l *raftLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net
 	if err != nil {
 		return nil, err
 	}
-	if p := c.(*tls.Conn).ConnectionState().NegotiatedProtocol; p != ALPNRaft {
+	if c.(*tls.Conn).ConnectionState().NegotiatedProtocol != ALPNRaft {
 		_ = c.Close()
 		return nil, fmt.Errorf("peer %s did not negotiate %s", address, ALPNRaft)
 	}

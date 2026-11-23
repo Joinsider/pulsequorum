@@ -310,11 +310,20 @@ type concStats struct {
 	maxWALMB   float64
 }
 
+type concParams struct {
+	w        *sql.DB
+	r        *sql.DB
+	g        *generator
+	monitors []string
+	dur      time.Duration
+	think    time.Duration
+	lastTs   *atomic.Int64
+	dbPath   string
+}
+
 // concurrentPhase: ein Schreiber fügt kontinuierlich neue Intervalle ein,
 // während numReaders Leser 24-h-Bereichsabfragen auf zufälligen Monitoren fahren.
-func concurrentPhase(ctx context.Context, w, r *sql.DB, g *generator, monitors []string,
-	dur, think time.Duration, lastTs *atomic.Int64, dbPath string) concStats {
-
+func concurrentPhase(ctx context.Context, p concParams) concStats {
 	var (
 		st    concStats
 		stop  atomic.Bool
@@ -337,75 +346,21 @@ func concurrentPhase(ctx context.Context, w, r *sql.DB, g *generator, monitors [
 	}
 
 	start := time.Now()
-	timer := time.AfterFunc(dur, func() { stop.Store(true) })
+	timer := time.AfterFunc(p.dur, func() { stop.Store(true) })
 	defer timer.Stop()
 
 	wg.Add(1)
-	go func() { // Schreiber
-		defer wg.Done()
-		buf := make([]hb, 0, batchSize)
-		for !stop.Load() {
-			buf = g.batch(buf)
-			t := time.Now()
-			if err := insertBatch(ctx, w, buf); err != nil {
-				noteErr(err)
-				continue
-			}
-			st.writerTx = append(st.writerTx, time.Since(t))
-			st.writerRows += batchSize
-			var mx int64
-			for i := range buf {
-				if buf[i].ts > mx {
-					mx = buf[i].ts
-				}
-			}
-			lastTs.Store(mx)
-		}
-	}()
+	go runConcurrentWriter(ctx, p, &stop, &wg, &st, noteErr)
 
 	for i := 0; i < numReaders; i++ {
 		wg.Add(1)
-		go func(seed int64) { // Leser
-			defer wg.Done()
-			rng := rand.New(rand.NewSource(seed))
-			var local []time.Duration
-			for !stop.Load() {
-				mon := monitors[rng.Intn(len(monitors))]
-				end := lastTs.Load()
-				t := time.Now()
-				if _, err := queryRange(ctx, r, mon, end-dayMs, end); err != nil {
-					noteErr(err)
-					continue
-				}
-				local = append(local, time.Since(t))
-				if think > 0 {
-					time.Sleep(think) // optionales Denkpause-Intervall pro Leser (nicht gemessen)
-				}
-			}
-			mu.Lock()
-			st.readerDur = append(st.readerDur, local...)
-			mu.Unlock()
-		}(int64(i + 1))
+		go runConcurrentReader(ctx, p, int64(i+1), &stop, &wg, &mu, &st, noteErr)
 	}
 
 	// WAL-Groesse waehrend der Last beobachten (Wachstum durch ueberlappende Leser).
 	sampleDone := make(chan struct{})
 	sampleExited := make(chan struct{})
-	go func() {
-		defer close(sampleExited)
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			select {
-			case <-sampleDone:
-				return
-			case <-tick.C:
-				if mb := fileMB(dbPath + "-wal"); mb > st.maxWALMB {
-					st.maxWALMB = mb
-				}
-			}
-		}
-	}()
+	go sampleConcurrentWAL(p.dbPath, sampleDone, sampleExited, &st)
 
 	wg.Wait()
 	close(sampleDone)
@@ -414,6 +369,66 @@ func concurrentPhase(ctx context.Context, w, r *sql.DB, g *generator, monitors [
 	st.busy = busy.Load()
 	st.other = other.Load()
 	return st
+}
+
+func runConcurrentWriter(ctx context.Context, p concParams, stop *atomic.Bool, wg *sync.WaitGroup, st *concStats, noteErr func(error)) {
+	defer wg.Done()
+	buf := make([]hb, 0, batchSize)
+	for !stop.Load() {
+		buf = p.g.batch(buf)
+		t := time.Now()
+		if err := insertBatch(ctx, p.w, buf); err != nil {
+			noteErr(err)
+			continue
+		}
+		st.writerTx = append(st.writerTx, time.Since(t))
+		st.writerRows += batchSize
+		var mx int64
+		for i := range buf {
+			if buf[i].ts > mx {
+				mx = buf[i].ts
+			}
+		}
+		p.lastTs.Store(mx)
+	}
+}
+
+func runConcurrentReader(ctx context.Context, p concParams, seed int64, stop *atomic.Bool, wg *sync.WaitGroup, mu *sync.Mutex, st *concStats, noteErr func(error)) {
+	defer wg.Done()
+	rng := rand.New(rand.NewSource(seed))
+	var local []time.Duration
+	for !stop.Load() {
+		mon := p.monitors[rng.Intn(len(p.monitors))]
+		end := p.lastTs.Load()
+		t := time.Now()
+		if _, err := queryRange(ctx, p.r, mon, end-dayMs, end); err != nil {
+			noteErr(err)
+			continue
+		}
+		local = append(local, time.Since(t))
+		if p.think > 0 {
+			time.Sleep(p.think) // optionales Denkpause-Intervall pro Leser (nicht gemessen)
+		}
+	}
+	mu.Lock()
+	st.readerDur = append(st.readerDur, local...)
+	mu.Unlock()
+}
+
+func sampleConcurrentWAL(dbPath string, sampleDone <-chan struct{}, sampleExited chan<- struct{}, st *concStats) {
+	defer close(sampleExited)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-sampleDone:
+			return
+		case <-tick.C:
+			if mb := fileMB(dbPath + "-wal"); mb > st.maxWALMB {
+				st.maxWALMB = mb
+			}
+		}
+	}
 }
 
 type retStats struct {

@@ -174,69 +174,15 @@ func applyPutJoinToken(ctx context.Context, tx store.StateTx, cmd *pb.Command, p
 	}
 	id := put.GetId()
 	issuedAt := cmd.GetIssuedAtMs()
-	role := pki.Role(doc.Role)
-	switch {
-	case put.GetExpectedRevision() != 0:
-		return nil, &CommandError{Code: CodeConflict, Message: "join tokens can only be created"}
-	case !isLowerHex(doc.SecretHash) || len(doc.SecretHash) != 64:
-		return nil, invalid("join token secret hash must be a SHA-256 hex digest")
-	case !role.Valid():
-		return nil, invalid("join token role %q", doc.Role)
-	case doc.TenantID != "" && role != pki.RoleProbe:
-		return nil, invalid("only probe tokens can be bound to a tenant")
-	case doc.ExpiresMs <= issuedAt:
-		return nil, invalid("join token already expired")
-	case doc.ExpiresMs > issuedAt+joinTokenMaxTTL.Milliseconds():
-		return nil, invalid("join token lifetime exceeds %s", joinTokenMaxTTL)
+	if err := validateJoinTokenDoc(put, doc, issuedAt); err != nil {
+		return nil, err
 	}
 
 	// A private probe must belong to an existing tenant; otherwise the token
 	// could enroll a probe for a tenant created later with that ID.
 	if doc.TenantID != "" {
-		if doc.TenantID == store.SystemTenantID {
-			return nil, invalid("probes cannot belong to the system tenant")
-		}
-		if cmd.GetTenantId() != "" && cmd.GetTenantId() != doc.TenantID {
-			return nil, invalid("join token tenant does not match command tenant")
-		}
-		tn, err := tx.GetTenant(ctx, doc.TenantID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return nil, invalid("join token for unknown tenant %q", doc.TenantID)
-			}
+		if err := validatePrivateProbeTokenTenant(ctx, tx, cmd, doc.TenantID, issuedAt); err != nil {
 			return nil, err
-		}
-		level, err := currentCommandLevel(ctx, tx)
-		if err != nil {
-			return nil, err
-		}
-		if level >= ProbeCommandLevel {
-			if err := requireUserActor(cmd, "private probe join tokens"); err != nil {
-				return nil, err
-			}
-			if tn.Suspended {
-				return nil, &CommandError{Code: CodeConflict, Message: "tenant is suspended"}
-			}
-			lim, err := tenantLimits(ctx, tx, tn)
-			if err != nil {
-				return nil, err
-			}
-			if lim.MaxPrivateProbes != nil {
-				probes, err := tx.CountTenantPrivateProbes(ctx, doc.TenantID)
-				if err != nil {
-					return nil, storeError(err)
-				}
-				openTokens, err := tx.CountOpenTenantJoinTokens(ctx, doc.TenantID, issuedAt)
-				if err != nil {
-					return nil, storeError(err)
-				}
-				if probes+openTokens >= *lim.MaxPrivateProbes {
-					return nil, &CommandError{
-						Code:    CodeLimitExceeded,
-						Message: fmt.Sprintf("private probe limit reached: plan %q allows %d private probes", tn.Plan, *lim.MaxPrivateProbes),
-					}
-				}
-			}
 		}
 	}
 
@@ -258,6 +204,80 @@ func applyPutJoinToken(ctx context.Context, tx store.StateTx, cmd *pb.Command, p
 		return nil, err
 	}
 	return json.Marshal(PutResult{ID: id})
+}
+
+func validateJoinTokenDoc(put *pb.PutEntity, doc JoinTokenDocument, issuedAt int64) error {
+	role := pki.Role(doc.Role)
+	switch {
+	case put.GetExpectedRevision() != 0:
+		return &CommandError{Code: CodeConflict, Message: "join tokens can only be created"}
+	case !isLowerHex(doc.SecretHash) || len(doc.SecretHash) != 64:
+		return invalid("join token secret hash must be a SHA-256 hex digest")
+	case !role.Valid():
+		return invalid("join token role %q", doc.Role)
+	case doc.TenantID != "" && role != pki.RoleProbe:
+		return invalid("only probe tokens can be bound to a tenant")
+	case doc.ExpiresMs <= issuedAt:
+		return invalid("join token already expired")
+	case doc.ExpiresMs > issuedAt+joinTokenMaxTTL.Milliseconds():
+		return invalid("join token lifetime exceeds %s", joinTokenMaxTTL)
+	}
+	return nil
+}
+
+func validatePrivateProbeTokenTenant(ctx context.Context, tx store.StateTx, cmd *pb.Command, tenantID string, issuedAt int64) error {
+	if tenantID == store.SystemTenantID {
+		return invalid("probes cannot belong to the system tenant")
+	}
+	if cmd.GetTenantId() != "" && cmd.GetTenantId() != tenantID {
+		return invalid("join token tenant does not match command tenant")
+	}
+	tn, err := tx.GetTenant(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return invalid("join token for unknown tenant %q", tenantID)
+		}
+		return err
+	}
+	level, err := currentCommandLevel(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if level < ProbeCommandLevel {
+		return nil
+	}
+	if err := requireUserActor(cmd, "private probe join tokens"); err != nil {
+		return err
+	}
+	if tn.Suspended {
+		return &CommandError{Code: CodeConflict, Message: "tenant is suspended"}
+	}
+	return checkPrivateProbeQuota(ctx, tx, tn, issuedAt)
+}
+
+func checkPrivateProbeQuota(ctx context.Context, tx store.StateTx, tn store.Tenant, issuedAt int64) error {
+	lim, err := tenantLimits(ctx, tx, tn)
+	if err != nil {
+		return err
+	}
+	if lim.MaxPrivateProbes == nil {
+		return nil
+	}
+	probes, err := tx.CountTenantPrivateProbes(ctx, tn.ID)
+	if err != nil {
+		return storeError(err)
+	}
+	openTokens, err := tx.CountOpenTenantJoinTokens(ctx, tn.ID, issuedAt)
+	if err != nil {
+		return storeError(err)
+	}
+	if probes+openTokens >= *lim.MaxPrivateProbes {
+		return &CommandError{
+			Code:    CodeLimitExceeded,
+			Message: fmt.Sprintf("private probe limit reached: plan %q allows %d private probes", tn.Plan, *lim.MaxPrivateProbes),
+		}
+	}
+	return nil
 }
 
 func applyDeleteJoinToken(ctx context.Context, tx store.StateTx, id string) (json.RawMessage, error) {
@@ -337,11 +357,8 @@ func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *
 		return nil, nodeErr
 	}
 	if level >= ProbeCommandLevel && cmd.GetTenantId() != "" {
-		if err := requireUserActor(cmd, "revoking probes"); err != nil {
+		if err := checkTenantProbeRevocation(cmd, existing, nodeErr); err != nil {
 			return nil, err
-		}
-		if errors.Is(nodeErr, store.ErrNotFound) || existing.Role != store.NodeRoleProbe || existing.OwnerTenantID != cmd.GetTenantId() {
-			return nil, &CommandError{Code: CodeNotFound, Message: "probe not found"}
 		}
 	}
 	now := cmd.GetIssuedAtMs()
@@ -353,24 +370,47 @@ func applyRevokeNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r *
 		return nil, storeError(err)
 	}
 	if level >= ProbeCommandLevel {
-		// Silently clear any open probe offline alerts without notification (ADR 0035 section 5).
-		if err := tx.DeleteProbeAlertsByProbe(ctx, id); err != nil {
-			return nil, storeError(err)
-		}
-		if nodeErr == nil && existing.Role == store.NodeRoleProbe && existing.OwnerTenantID == "" {
-			sa, err := tx.GetSystemAlert(ctx, "probe_offline", id)
-			if err == nil && sa.Active {
-				sa.Active = false
-				sa.UpdatedMs = now
-				if err := tx.PutSystemAlert(ctx, sa); err != nil {
-					return nil, storeError(err)
-				}
-			} else if err != nil && !errors.Is(err, store.ErrNotFound) {
-				return nil, err
-			}
+		if err := clearRevokedProbeAlerts(ctx, tx, id, existing, nodeErr == nil, now); err != nil {
+			return nil, err
 		}
 	}
 	return json.Marshal(RevokeNodeResult{RevokedMs: now})
+}
+
+func checkTenantProbeRevocation(cmd *pb.Command, existing store.Node, nodeErr error) error {
+	if err := requireUserActor(cmd, "revoking probes"); err != nil {
+		return err
+	}
+	if errors.Is(nodeErr, store.ErrNotFound) || existing.Role != store.NodeRoleProbe || existing.OwnerTenantID != cmd.GetTenantId() {
+		return &CommandError{Code: CodeNotFound, Message: "probe not found"}
+	}
+	return nil
+}
+
+func clearRevokedProbeAlerts(ctx context.Context, tx store.StateTx, id string, existing store.Node, found bool, now int64) error {
+	// Silently clear any open probe offline alerts without notification (ADR 0035 section 5).
+	if err := tx.DeleteProbeAlertsByProbe(ctx, id); err != nil {
+		return storeError(err)
+	}
+	if !found || existing.Role != store.NodeRoleProbe || existing.OwnerTenantID != "" {
+		return nil
+	}
+	sa, err := tx.GetSystemAlert(ctx, "probe_offline", id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if !sa.Active {
+		return nil
+	}
+	sa.Active = false
+	sa.UpdatedMs = now
+	if err := tx.PutSystemAlert(ctx, sa); err != nil {
+		return storeError(err)
+	}
+	return nil
 }
 
 // isNodeID reports whether s is a valid node ID: 1 to 128 characters of ASCII

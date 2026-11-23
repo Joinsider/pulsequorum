@@ -135,7 +135,7 @@ export function applyStreamEvent(
     next = { ...current, status: event.status, statusSince: event.ts };
   } else if (event.type === 'heartbeat' && event.heartbeat) {
     const at = Date.parse(event.heartbeat.ts);
-    const known = current.lastCheckAt ? Date.parse(current.lastCheckAt) : NaN;
+    const known = current.lastCheckAt ? Date.parse(current.lastCheckAt) : Number.NaN;
     if (!Number.isNaN(at) && (Number.isNaN(known) || at >= known)) {
       next = {
         ...current,
