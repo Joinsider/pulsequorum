@@ -12,7 +12,7 @@
   <app-own-tenant-panel />
 
   <div class="toolbar">
-    <div class="chips" [attr.aria-label]="t('dashboard.filterByStatus')">
+    <fieldset class="chips" [attr.aria-label]="t('dashboard.filterByStatus')">
       <button
         type="button"
         class="chip"
@@ -36,7 +36,7 @@
           <span class="chip__count">{{ counts()[status] }}</span>
         </button>
       }
-    </div>
+    </fieldset>
 
     <input
       class="search"

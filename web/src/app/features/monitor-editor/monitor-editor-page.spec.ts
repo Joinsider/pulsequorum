@@ -453,7 +453,7 @@ describe('MonitorEditorPage', () => {
       expect(root.textContent).not.toContain('***');
       expect(root.querySelector('input[value="***"]')).toBeNull();
 
-      const password = root.querySelector('div.secret[aria-label="Password"]');
+      const password = root.querySelector('fieldset.secret[aria-label="Password"]');
       expect(password).not.toBeNull();
       clickIn(password as Element, 'monitorEditor.secret.replace');
       fixture.detectChanges();

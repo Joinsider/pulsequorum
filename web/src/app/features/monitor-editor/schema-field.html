@@ -102,7 +102,7 @@
   @case ('secret') {
     @if (secret(); as sc) {
       @if (secretMode() === 'stored') {
-        <div class="secret" [attr.aria-label]="title() || null">
+        <fieldset class="secret" [attr.aria-label]="title() || null">
           <span class="secret-title">{{ title() }}</span>
           <div class="secret-state">
             <span>{{ 'monitorEditor.secret.stored' | transloco }}</span>
@@ -125,9 +125,9 @@
               }
             </p>
           }
-        </div>
+        </fieldset>
       } @else if (secretMode() === 'removed') {
-        <div class="secret" [attr.aria-label]="title() || null">
+        <fieldset class="secret" [attr.aria-label]="title() || null">
           <span class="secret-title">{{ title() }}</span>
           <div class="secret-state">
             <span>{{ 'monitorEditor.secret.removed' | transloco }}</span>
@@ -135,7 +135,7 @@
               {{ 'monitorEditor.secret.keep' | transloco }}
             </button>
           </div>
-        </div>
+        </fieldset>
       }
     }
     @if (secretMode() !== 'stored' && secretMode() !== 'removed') {
@@ -241,7 +241,7 @@
   }
 
   @case ('map') {
-    <div class="list" [attr.aria-label]="title() || null">
+    <fieldset class="list" [attr.aria-label]="title() || null">
       @if (title()) {
         <span class="list-title">{{ title() }}</span>
       }
@@ -286,11 +286,11 @@
           {{ 'monitorEditor.fields.addEntry' | transloco }}
         </button>
       </div>
-    </div>
+    </fieldset>
   }
 
   @case ('array') {
-    <div class="list" [attr.aria-label]="title() || null">
+    <fieldset class="list" [attr.aria-label]="title() || null">
       @if (title()) {
         <span class="list-title">{{ title() }}</span>
       }
@@ -324,6 +324,6 @@
           {{ 'monitorEditor.fields.addItem' | transloco }}
         </button>
       </div>
-    </div>
+    </fieldset>
   }
 }

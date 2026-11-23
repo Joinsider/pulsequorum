@@ -124,6 +124,8 @@ import {
       gap: 0.25rem;
       padding: 0.25rem 0 0.5rem;
       min-width: 0;
+      margin: 0;
+      border: 0;
     }
     .secret-title {
       color: var(--muted);

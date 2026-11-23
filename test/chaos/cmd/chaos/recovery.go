@@ -295,13 +295,15 @@ func chooseBestSurvivor(infos []recSurvivor) recSurvivor {
 	return best
 }
 
+// extractBackupLine returns the last backup line of the recover output.
 func extractBackupLine(applied string) string {
+	backupLine := ""
 	for _, line := range strings.Split(applied, "\n") {
 		if strings.HasPrefix(line, "Backup of raft/ and state.db:") {
-			return strings.TrimSpace(line)
+			backupLine = strings.TrimSpace(line)
 		}
 	}
-	return ""
+	return backupLine
 }
 
 func recStartRecoveredAndRejoinOthers(ctx context.Context, env *Env, cl *harness.Cluster, all []int, bestSlot int, nodes map[int]string, others, monIDs, monNames []string, suffix string, interval time.Duration) error {

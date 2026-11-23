@@ -149,7 +149,7 @@ func TestJoinFlowAndErrors(t *testing.T) {
 		t.Fatalf("expected ErrJoinRejected from server, got %v", err)
 	}
 
-	// Transient error on first call, then success on retry (probe role).
+	// Successful join with the probe role.
 	addrRetry, tokRetry, _ := startFakeJoinServer(t, nil)
 	// Also test transient failure -> context cancellation.
 	addrUnavail, tokUnavail, _ := startFakeJoinServer(t, func(_ int32, _ *pb.JoinRequest) (*pb.JoinResponse, error) {
