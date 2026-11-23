@@ -66,11 +66,11 @@ web-embed: web-build ## Copy the SPA build into the Go embed directory
 
 test: go-test web-test ## Run all tests
 
-go-test: ## Run Go tests with race detector
-	go test -race -cover $(GO_PKGS)
+go-test: ## Run Go tests with race detector (writes coverage.out)
+	go test -race -cover -coverprofile=coverage.out $(GO_PKGS)
 
-web-test: web/node_modules ## Run frontend unit tests
-	cd web && npx ng test --watch=false
+web-test: web/node_modules ## Run frontend unit tests (writes web/coverage/pulsequorum-web/lcov.info)
+	cd web && npx ng test --watch=false --coverage --coverage-reporters=lcov
 
 web-e2e: build web/node_modules ## Run Playwright E2E smoke tests against the built binary (runs make build first)
 	cd web && npx playwright test
