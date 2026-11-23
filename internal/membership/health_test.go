@@ -166,3 +166,45 @@ func TestHealthTrackerReset(t *testing.T) {
 		t.Errorf("after the new grace: Decide() = %v, want p1 healthy", got)
 	}
 }
+
+// TestHealthTrackerThreshold checks that the Threshold field replaces the
+// 10 s threshold of ADR 0017 and that zero still means 10 s.
+func TestHealthTrackerThreshold(t *testing.T) {
+	base := time.Unix(1_000_000, 0)
+	tests := []struct {
+		name      string
+		threshold time.Duration
+		failFor   time.Duration
+		wantFlip  bool // the peer is decided unhealthy
+	}{
+		{name: "zero value, failing 250 ms: no change", threshold: 0, failFor: 250 * time.Millisecond},
+		{name: "threshold 200 ms, failing 250 ms: unhealthy", threshold: 200 * time.Millisecond, failFor: 250 * time.Millisecond, wantFlip: true},
+		{name: "threshold 200 ms, failing 150 ms: no change", threshold: 200 * time.Millisecond, failFor: 150 * time.Millisecond},
+		{name: "zero value, failing 9.9 s: no change", threshold: 0, failFor: 9900 * time.Millisecond},
+		{name: "zero value, failing 10 s: unhealthy", threshold: 0, failFor: 10 * time.Second, wantFlip: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := HealthTracker{Threshold: tt.threshold}
+			tr.BecameLeader(base.Add(-time.Hour))
+			tr.Failed("p1", base)
+			got := tr.Decide(base.Add(tt.failFor), []string{"p1"}, map[string]bool{"p1": true})
+			if _, flipped := got["p1"]; flipped != tt.wantFlip {
+				t.Errorf("Decide() = %v, want p1 unhealthy: %t", got, tt.wantFlip)
+			}
+		})
+	}
+}
+
+// TestHealthWatcherThreshold checks that the Threshold of the watcher reaches
+// its tracker.
+func TestHealthWatcherThreshold(t *testing.T) {
+	base := time.Unix(1_000_000, 0)
+	w := &HealthWatcher{Threshold: 200 * time.Millisecond}
+	w.tracker.BecameLeader(base.Add(-time.Hour))
+	w.Observe("p1", false, base)
+	got := w.tracker.Decide(base.Add(250*time.Millisecond), []string{"p1"}, map[string]bool{"p1": true})
+	if healthy, flipped := got["p1"]; !flipped || healthy {
+		t.Errorf("Decide() = %v, want p1 unhealthy after 250 ms with a 200 ms threshold", got)
+	}
+}

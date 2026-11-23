@@ -639,6 +639,41 @@ func TestJudgeGates(t *testing.T) {
 	}
 }
 
+func TestJudgeSettle(t *testing.T) {
+	now := rjBase
+	// The monitor has 60 s intervals and retries 1: the window of the alert
+	// ends 3 intervals after its start, here 5 s before now.
+	since := now.Add(-5*time.Second - 3*time.Minute)
+	tests := []struct {
+		name    string
+		settle  time.Duration
+		decided bool
+	}{
+		{name: "zero means the default of 30 s", settle: 0, decided: false},
+		{name: "one second", settle: time.Second, decided: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &rjState{
+				monitors: []store.Monitor{rjMonitor("m1", store.StatusUp, rjBase.Add(-time.Hour))},
+			}
+			j := NewJudge(JudgeOptions{
+				State: st, Proposer: &rjProposer{}, IsLeader: func() bool { return true },
+				CommandLevel: rjCmdLevel(cluster.DegradedCommandLevel), GapDone: func() bool { return true },
+				Settle: tc.settle, Now: func() time.Time { return now }, Logger: rjLogger(),
+			})
+			a := rjAlert("node-a", 1, "m1", "DOWN", since, alert.LocalOutcomeSent)
+			_, ok, err := j.decide(context.Background(), now, a)
+			if err != nil {
+				t.Fatalf("decide: %v", err)
+			}
+			if ok != tc.decided {
+				t.Errorf("decided = %v, want %v", ok, tc.decided)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------- GapJob
 
 // rjGap builds a gap job with a fixed clock and the given state, re-evaluator and peers.

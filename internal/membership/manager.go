@@ -84,9 +84,21 @@ type Manager struct {
 	// The caller closes the connection with the returned func.
 	DialLeader func(address string) (pb.ClusterServiceClient, func(), error)
 	Log        *slog.Logger
+	// PromotePoll is the period in which the leader checks whether a joined
+	// non-voter has caught up and promotes it; zero means promotePoll. Tests
+	// shorten it.
+	PromotePoll time.Duration
 
 	mu        sync.Mutex
 	promoting map[string]bool
+}
+
+// promoteInterval returns the effective period of the promotion checks.
+func (m *Manager) promoteInterval() time.Duration {
+	if m.PromotePoll <= 0 {
+		return promotePoll
+	}
+	return m.PromotePoll
 }
 
 // CheckAddress reports whether nodeID may use address: it is free or
@@ -172,7 +184,7 @@ func (m *Manager) promote(nodeID, address string, joinIndex uint64) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), PromoteTimeout)
 	defer cancel()
-	ticker := time.NewTicker(promotePoll)
+	ticker := time.NewTicker(m.promoteInterval())
 	defer ticker.Stop()
 	for {
 		if !m.Raft.IsLeader() {
