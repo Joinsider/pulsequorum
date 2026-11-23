@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -173,6 +174,10 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, joinResponse{Error: err.Error()})
 		return
 	}
+	// The joiner's name and ID are logged; strip line breaks so a request
+	// cannot forge log entries.
+	req.Name = stripLineBreaks(req.Name)
+	req.ID = stripLineBreaks(req.ID)
 	if n.raft.State() != raft.Leader {
 		n.forwardJoin(w, r, req)
 		return
@@ -217,6 +222,10 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	res.PromoteMs = time.Since(t3).Milliseconds()
 	slog.Info("join: promoted to voter", "joiner", req.Name, "catch_up_ms", res.CatchUpMs, "promote_ms", res.PromoteMs)
 	writeJSON(w, http.StatusOK, res)
+}
+
+func stripLineBreaks(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }
 
 func (n *Node) forwardJoin(w http.ResponseWriter, r *http.Request, req joinRequest) {
