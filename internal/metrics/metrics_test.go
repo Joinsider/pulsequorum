@@ -170,6 +170,30 @@ func TestNoTenantOrMonitorLabels(t *testing.T) {
 	}
 }
 
+func TestProbePolicyBlockedCounts(t *testing.T) {
+	m := New(Sources{})
+	m.ProbePolicyBlocked("target")
+	m.ProbePolicyBlocked("method")
+	m.ProbePolicyBlocked("method")
+	body := scrape(t, m.Handler())
+	for _, line := range []string{
+		`pulsequorum_probe_policy_blocked_total{reason="method"} 2`,
+		`pulsequorum_probe_policy_blocked_total{reason="target"} 1`,
+	} {
+		if !hasLine(body, line) {
+			t.Errorf("missing %q in:\n%s", line, body)
+		}
+	}
+	if hasLine(body, `pulsequorum_probe_policy_blocked_total{reason="type"}`) {
+		t.Errorf("unused reason exported:\n%s", body)
+	}
+}
+
+func TestProbePolicyBlockedNilSafe(_ *testing.T) {
+	var m *Metrics
+	m.ProbePolicyBlocked("type")
+}
+
 func TestCheckObserverCounts(t *testing.T) {
 	m := New(Sources{})
 	m.CheckStarted("tcp")

@@ -11,11 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -43,8 +40,10 @@ import (
 	"github.com/joinsider/pulsequorum/internal/membership"
 	ucmetrics "github.com/joinsider/pulsequorum/internal/metrics"
 	"github.com/joinsider/pulsequorum/internal/node"
+	"github.com/joinsider/pulsequorum/internal/nodecli"
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
+	"github.com/joinsider/pulsequorum/internal/proberun"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
@@ -68,10 +67,10 @@ func run(args []string) int {
 	if len(args) > 0 {
 		switch args[0] {
 		case "version":
-			fmt.Printf("pulsequorum %s (commit %s, built %s)\n", version.Version, version.Commit, version.Date)
+			fmt.Println(nodecli.VersionLine("pulsequorum"))
 			return 0
 		case "healthcheck":
-			return healthcheck()
+			return nodecli.Healthcheck()
 		case "admin":
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -87,7 +86,7 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "invalid configuration:\n%v\n", err)
 		return 2
 	}
-	log := newLogger(cfg)
+	log := nodecli.NewLogger(cfg)
 	log.Info("starting pulsequorum",
 		"version", version.Version, "commit", version.Commit,
 		"role", cfg.Role, "node", cfg.NodeName)
@@ -102,7 +101,7 @@ func run(args []string) int {
 			return 1
 		}
 	case config.RoleProbe:
-		if err := runProbe(ctx, cfg, log); err != nil {
+		if err := proberun.Run(ctx, cfg, log); err != nil {
 			log.Error("probe stopped with error", "err", err)
 			return 1
 		}
@@ -113,8 +112,6 @@ func run(args []string) int {
 }
 
 const (
-	// checkpointInterval is the period of the WAL checkpoint job (ADR 0013 C4).
-	checkpointInterval = 60 * time.Second
 	// reconcileInterval bounds how long the scheduler may miss a change signal.
 	reconcileInterval = 30 * time.Second
 	// keyRefreshInterval bounds how long a joined voter has no active data key
@@ -315,7 +312,7 @@ func initClusterCredentials(ctx context.Context, cfg config.Config, clock func()
 	if err != nil {
 		return voterCreds{}, err
 	}
-	joinToken, err := readJoinToken(cfg)
+	joinToken, err := proberun.ReadJoinToken(cfg)
 	if err != nil {
 		return voterCreds{}, err
 	}
@@ -395,8 +392,8 @@ func observeHeartbeats(aggPtr, degradedAggPtr *atomic.Pointer[aggregator.Aggrega
 
 func startCoreBackgroundJobs(ctx context.Context, bg *sync.WaitGroup, deps voterRuntimeDeps, bridge *stream.StateBridge, stop context.CancelCauseFunc) {
 	raftNode := deps.host.Node
-	bg.Go(func() { deps.state.DB().RunCheckpointer(ctx, checkpointInterval, deps.log) })
-	bg.Go(func() { deps.metrics.DB().RunCheckpointer(ctx, checkpointInterval, deps.log) })
+	bg.Go(func() { deps.state.DB().RunCheckpointer(ctx, proberun.CheckpointInterval, deps.log) })
+	bg.Go(func() { deps.metrics.DB().RunCheckpointer(ctx, proberun.CheckpointInterval, deps.log) })
 	bg.Go(func() { runBootstrapAndKeyMaintenance(ctx, deps, stop) })
 	bg.Go(func() { deps.host.Run(ctx) })
 	bg.Go(func() {
@@ -711,8 +708,8 @@ func buildNodeMetrics(deps voterRuntimeDeps, detector *degraded.Detector) *ucmet
 		ReplicationDropped: func() map[string]uint64 { return collectReplicationDropped(deps.host) },
 		DBSizes: func() map[string]struct{ Size, WAL int64 } {
 			return map[string]struct{ Size, WAL int64 }{
-				"state":   dbFileSizes(deps.state.DB()),
-				"metrics": dbFileSizes(deps.metrics.DB()),
+				"state":   proberun.DBFileSizes(deps.state.DB()),
+				"metrics": proberun.DBFileSizes(deps.metrics.DB()),
 			}
 		},
 		DiskFree:           func() (float64, error) { return diskstat.FreeRatio(deps.cfg.DataDir) },
@@ -839,19 +836,6 @@ func walSize(db *sqlite.DB) int64 {
 	return n
 }
 
-// dbFileSizes returns the size of the database file and of its WAL in bytes.
-// A file that cannot be stat'ed counts as 0; the metric then shows the drop.
-func dbFileSizes(db *sqlite.DB) struct{ Size, WAL int64 } {
-	var sizes struct{ Size, WAL int64 }
-	if info, err := os.Stat(db.Path()); err == nil {
-		sizes.Size = info.Size()
-	}
-	if wal, err := db.WALSize(); err == nil {
-		sizes.WAL = wal
-	}
-	return sizes
-}
-
 // disabledIfZero maps the configured DEGRADED_AFTER to the detector option: a
 // zero duration disables the degraded mode, which the detector expresses as a
 // negative value (its zero value means the default).
@@ -916,57 +900,6 @@ func bootstrapCluster(ctx context.Context, log *slog.Logger, n *cluster.Node,
 			"setup_token", token)
 	}
 	return true
-}
-
-func newLogger(cfg config.Config) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
-	if cfg.LogFormat == "text" {
-		return slog.New(slog.NewTextHandler(os.Stderr, opts))
-	}
-	return slog.New(slog.NewJSONHandler(os.Stderr, opts))
-}
-
-// healthcheck probes the local liveness endpoint. It is used as container
-// HEALTHCHECK because the distroless image has no shell or curl.
-func healthcheck() int {
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid HTTP_ADDR %q: %v\n", addr, err)
-		return 1
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-
-	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz") //nolint:gosec // G704: target is the operator-configured local listen address, not user input
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "unhealthy: HTTP %d\n", resp.StatusCode)
-		return 1
-	}
-	return 0
-}
-
-// readJoinToken returns the join token from JOIN_TOKEN or JOIN_TOKEN_FILE.
-// It is a secret and never logged.
-func readJoinToken(cfg config.Config) (string, error) {
-	if cfg.JoinTokenFile == "" {
-		return cfg.JoinToken, nil
-	}
-	raw, err := os.ReadFile(cfg.JoinTokenFile)
-	if err != nil {
-		return "", fmt.Errorf("JOIN_TOKEN_FILE: %w", err)
-	}
-	return strings.TrimSpace(string(raw)), nil
 }
 
 // clusterAdmin serves the cluster administration endpoints from the cluster

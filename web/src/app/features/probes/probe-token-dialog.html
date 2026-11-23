@@ -38,7 +38,7 @@
           {{ t('probes.tokenDialog.copy') }}
         </button>
         @if (copied()) {
-          <span class="copied" role="status">{{ t('probes.tokenDialog.copied') }}</span>
+          <output class="copied">{{ t('probes.tokenDialog.copied') }}</output>
         }
       </div>
       @if (expiresAt(); as exp) {
@@ -48,12 +48,13 @@
       <pre class="env" data-testid="probe-compose-snippet">
 services:
   pulsequorum-probe:
-    image: ghcr.io/joinsider/pulsequorum:latest
+    image: ghcr.io/joinsider/pulsequorum-probe:{{ probeImageTag() }}
     environment:
       NODE_ROLE: probe
       NODE_NAME: private-probe-1
       CLUSTER_SEEDS: &lt;host:port&gt;
       JOIN_TOKEN_FILE: /run/secrets/join-token
+      PROBE_ALLOW_TARGETS: "&lt;allowed-targets, e.g. 10.20.0.0/16:443&gt;"
     volumes:
       - probe-data:/data
     secrets:

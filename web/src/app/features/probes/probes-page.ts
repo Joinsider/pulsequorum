@@ -12,6 +12,7 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { catchError, firstValueFrom, forkJoin, of } from 'rxjs';
 import { ProbesService } from '../../api/gen/endpoints/probes/probes.service';
@@ -25,8 +26,13 @@ import { RelativeTimePipe } from '../../shared/relative-time.pipe';
 import { formatBytes, formatDuration } from '../admin/cluster-rules';
 import { openProbeTokenDialog } from './probe-token-dialog';
 
+/** Node capability a probe announces while its local target policy (PROBE_ALLOW_TARGETS) is active (ADR 0044). */
+const TARGET_POLICY_CAPABILITY = 'target-policy';
+
 export interface PrivateProbeRow {
   readonly probe: PrivateProbe;
+  /** False means the probe runs without a local target restriction ("any"). */
+  readonly targetPolicy: boolean;
   readonly bufferMetrics: {
     readonly unacked: number;
     readonly bytesText: string;
@@ -38,7 +44,14 @@ export interface PrivateProbeRow {
 /** Tenant-admin view for private probes and join token creation (FA-PRB-05, ADR 0035). */
 @Component({
   selector: 'app-probes-page',
-  imports: [MatButtonModule, Icon, PageHeader, RelativeTimePipe, TranslocoDirective],
+  imports: [
+    MatButtonModule,
+    MatTooltipModule,
+    Icon,
+    PageHeader,
+    RelativeTimePipe,
+    TranslocoDirective,
+  ],
   templateUrl: './probes-page.html',
   styleUrl: './probes-page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -79,6 +92,7 @@ export class ProbesPage implements OnInit {
       const buf = probe.probeBuffer;
       return {
         probe,
+        targetPolicy: probe.capabilities.includes(TARGET_POLICY_CAPABILITY),
         bufferMetrics: buf
           ? {
               unacked: buf.unacked,
