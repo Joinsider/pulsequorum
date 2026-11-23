@@ -36,8 +36,9 @@ const (
 
 	judgeInterval = 30 * time.Second
 	judgeLimit    = 200
-	// judgeSettle keeps a window open until it is this old, so that the
-	// heartbeats of its last slots have been replicated and evaluated.
+	// judgeSettle is the default of JudgeOptions.Settle: a window stays open
+	// until it is this old, so that the heartbeats of its last slots have been
+	// replicated and evaluated.
 	judgeSettle = 30 * time.Second
 
 	gapTick        = time.Second
@@ -183,6 +184,10 @@ type JudgeOptions struct {
 	RetentionRaw time.Duration
 	// Interval is the period of the judgement, default 30 s.
 	Interval time.Duration
+	// Settle keeps a window open until it is this old, so that the heartbeats
+	// of its last slots have been replicated and evaluated; zero means
+	// judgeSettle (30 s). Tests shorten it.
+	Settle time.Duration
 	// Unit is the length of one interval second, as aggregator.Options.Unit;
 	// tests shrink it. Zero means 1 s.
 	Unit time.Duration
@@ -218,6 +223,9 @@ type Judge struct {
 func NewJudge(opts JudgeOptions) *Judge {
 	if opts.Interval <= 0 {
 		opts.Interval = judgeInterval
+	}
+	if opts.Settle <= 0 {
+		opts.Settle = judgeSettle
 	}
 	if opts.Unit <= 0 {
 		opts.Unit = time.Second
@@ -365,7 +373,7 @@ func (j *Judge) decide(ctx context.Context, now time.Time, a store.UnconfirmedAl
 
 	fromMs := a.SinceMs - 2*intervalMs
 	toMs := a.SinceMs + int64(m.Retries+2)*intervalMs
-	if toMs > now.Add(-judgeSettle).UnixMilli() {
+	if toMs > now.Add(-j.opts.Settle).UnixMilli() {
 		return decision{}, false, nil
 	}
 	changes, err := j.opts.State.StatusHistory(ctx, a.TenantID, a.MonitorID, fromMs, toMs)

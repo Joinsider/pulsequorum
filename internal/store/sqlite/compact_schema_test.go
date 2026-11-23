@@ -68,6 +68,7 @@ func explain(t *testing.T, m *MetricsStore, sql string, args ...any) string {
 // statement is bounded by the primary key prefix series_id, and reads reach
 // their rows through series lookups.
 func TestCompactSchemaPlans(t *testing.T) {
+	t.Parallel()
 	m := openMetrics(t, t.TempDir())
 	cases := []struct {
 		name  string
@@ -114,6 +115,7 @@ func TestCompactSchemaPlans(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			sql := tc.sql
 			if tc.name == "listRollupsBatch" {
 				// sqlc leaves the slice as a marker; expand it to two placeholders.
@@ -139,6 +141,7 @@ func TestCompactSchemaPlans(t *testing.T) {
 // old tables to version 3 and checks that every row arrived with identical
 // values, latencies within 0.001 ms, and that the old tables are gone (ADR 0016).
 func TestMigrationV3KeepsRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, MetricsFile)
@@ -321,6 +324,7 @@ func checkMillis(t *testing.T, what string, us int64, ms float64) {
 // 10 series are written, the file is vacuumed, and dbstat reads the pages of
 // the minutes b-tree.
 func TestMinuteRowSize(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 	const series, perSeries = 10, 1000
@@ -364,6 +368,7 @@ func TestMinuteRowSize(t *testing.T) {
 // with heartbeats of two streams to version 4 and checks that each stream's
 // position is its highest stored seq. Down removes the table again.
 func TestMigrationV4InitialisesStreamPositions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	migrations, err := fs.Sub(metricsMigrationFiles, "migrations/metrics")
 	if err != nil {

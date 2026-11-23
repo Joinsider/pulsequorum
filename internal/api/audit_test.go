@@ -61,6 +61,7 @@ func actionsOf(entries []gen.AuditEntry) []string {
 // TestAuditRecordsWrites checks the entries of the single-object operations,
 // with the actor by name and without any secret.
 func TestAuditRecordsWrites(t *testing.T) {
+	t.Parallel()
 	e, admin := newLocalAdminEnv(t)
 	raiseCommandLevel(t, e, 9)
 	_, editorToken := e.addUser(admin, "audit-editor", "tenant-editor")
@@ -119,6 +120,7 @@ func TestAuditRecordsWrites(t *testing.T) {
 // TestAuditRecordsTokensWithoutSecrets: token operations are audited; the
 // secret never reaches the log.
 func TestAuditRecordsTokensWithoutSecrets(t *testing.T) {
+	t.Parallel()
 	e, admin := newLocalAdminEnv(t)
 	raiseCommandLevel(t, e, 9)
 	created := createTokenRes(t, e, bearer(admin), "audited-token", "tenant-viewer")
@@ -144,6 +146,7 @@ func TestAuditRecordsTokensWithoutSecrets(t *testing.T) {
 
 // TestAuditNotWrittenBelowLevel9 checks that the log starts with command level 9.
 func TestAuditNotWrittenBelowLevel9(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 8)
 	res := e.do("POST", "/api/v1/monitors", editor, httpMonitor("early", "https://example.com"))
@@ -158,6 +161,7 @@ func TestAuditNotWrittenBelowLevel9(t *testing.T) {
 // TestAuditTenantSeparation: a tenant admin sees only its own tenant; the
 // platform admin sees all of them and the platform actions.
 func TestAuditTenantSeparation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	mineRes := e.do("POST", "/api/v1/monitors", editor, httpMonitor("mine", "https://example.com"))
@@ -206,6 +210,7 @@ func TestAuditTenantSeparation(t *testing.T) {
 
 // TestAuditAccess covers the roles and the query validation.
 func TestAuditAccess(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 
@@ -253,6 +258,7 @@ func TestAuditAccess(t *testing.T) {
 
 // TestAuditPaging walks the log page by page and filters by action and object.
 func TestAuditPaging(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	var ids []string

@@ -20,6 +20,7 @@ import (
 // SetMonitorFlapping writes them, every read returns them, and PutMonitorState
 // keeps them.
 func TestFlappingRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	if err := s.Update(ctx, func(tx store.StateTx) error {
@@ -117,6 +118,7 @@ func TestFlappingRoundTrip(t *testing.T) {
 // channels receive the two new events once, and the rows of the monitors
 // start unflapped.
 func TestFlappingMigrationExtendsChannels(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), StateFile)
 	migrations, err := fs.Sub(stateMigrationFiles, "migrations/state")

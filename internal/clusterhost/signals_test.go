@@ -15,6 +15,7 @@ import (
 // ADR 0025, section 2: every voter reports its incarnation, disk, WAL sizes and
 // certificate expiry in GetStatus, and the leader records them per peer.
 func TestPeerAndSelfSignals(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -73,6 +74,7 @@ func TestPeerAndSelfSignals(t *testing.T) {
 
 // The signal tracker drops answers older than clockMaxAge.
 func TestSignalTrackerExpires(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	var tr signalTracker
 	tr.record("fresh", sysalert.Signals{NodeID: "fresh", AnsweredAt: now})

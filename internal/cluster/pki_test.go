@@ -112,6 +112,7 @@ func caDoc(ca *pki.CA, keyEnc string) CADocument {
 // TestClusterCAValidation covers FA-PKI-01: the CA is stored only if its
 // certificate is a CA matching the fingerprint, and its key is encrypted.
 func TestClusterCAValidation(t *testing.T) {
+	t.Parallel()
 	ca, keyEnc := testCA(t, "cluster-1")
 	other, _ := testCA(t, "cluster-1")
 	fp := pki.Fingerprint(ca.Cert)
@@ -139,6 +140,7 @@ func TestClusterCAValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := newReplica(t)
 			cmd, err := NewPutClusterCA("ca-"+tt.name, tt.id, tt.doc)
 			if err != nil {
@@ -152,6 +154,7 @@ func TestClusterCAValidation(t *testing.T) {
 // TestClusterCAIsSingleAndIdempotent covers the rule that a cluster has one CA
 // until rotation (P5): the same CA again is a no-op, another one a conflict.
 func TestClusterCAIsSingleAndIdempotent(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	ca, keyEnc := testCA(t, "cluster-1")
 	other, otherKey := testCA(t, "cluster-1")
@@ -178,6 +181,7 @@ func TestClusterCAIsSingleAndIdempotent(t *testing.T) {
 // TestJoinTokenCreateRules covers FA-PKI-02 for creating a token: hash shape,
 // role, tenant binding, and a lifetime of at most 24 hours.
 func TestJoinTokenCreateRules(t *testing.T) {
+	t.Parallel()
 	const issuedAt = int64(10_000)
 	hash := pki.HashSecret("create-secret")
 	hour := time.Hour.Milliseconds()
@@ -203,6 +207,7 @@ func TestJoinTokenCreateRules(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := newReplica(t)
 			cmd, err := NewPutJoinToken(fmt.Sprint("create-", i), fmt.Sprint("tok-", i), tt.doc)
 			if err != nil {
@@ -217,6 +222,7 @@ func TestJoinTokenCreateRules(t *testing.T) {
 // TestJoinTokenDuplicateAndDelete covers the creation of an existing token
 // and the deletion of tokens.
 func TestJoinTokenDuplicateAndDelete(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	hash := pki.HashSecret("dup")
 	create := func(req string) ApplyResult {
@@ -239,6 +245,7 @@ func TestJoinTokenDuplicateAndDelete(t *testing.T) {
 // TestJoinTokenPruning covers the pruning of tokens that expired more than
 // 24 hours before the command time.
 func TestJoinTokenPruning(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	hour := time.Hour.Milliseconds()
 	const first = int64(10_000)
@@ -265,6 +272,7 @@ func TestJoinTokenPruning(t *testing.T) {
 // TestRedeemJoinToken covers FA-PKI-02 for redemption: one use, the stored
 // secret hash, the expiry, and one generic rejection for every failure.
 func TestRedeemJoinToken(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	hour := time.Hour.Milliseconds()
 	const created = int64(10_000)
@@ -326,6 +334,7 @@ func TestRedeemJoinToken(t *testing.T) {
 // TestRedeemRejectsDeletedAndMalformedTokens covers redemption of a token that
 // was deleted, and of a token whose stored hash does not match.
 func TestRedeemRejectsDeletedAndMalformedTokens(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	cmd, err := NewPutJoinToken("del-mk", "gone", JoinTokenDocument{SecretHash: pki.HashSecret("gone-secret"), Role: "voter", ExpiresMs: 90_000})
 	if err != nil {
@@ -343,6 +352,7 @@ func TestRedeemRejectsDeletedAndMalformedTokens(t *testing.T) {
 // TestRevokeCertificate covers FA-PKI-04: strict serial and node rules,
 // idempotent revocation and pruning of expired certificates.
 func TestRevokeCertificate(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	tests := []struct {
 		name     string
@@ -392,6 +402,7 @@ func TestRevokeCertificate(t *testing.T) {
 // TestRevokeNode covers FA-PKI-04: a node revocation is stored with the command
 // time, node IDs are validated, and a repeated revocation keeps the later time.
 func TestRevokeNode(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	tests := []struct {
 		name    string
@@ -448,6 +459,7 @@ func TestRevokeNode(t *testing.T) {
 // TestPKICommandsAreDeterministic covers the determinism rule of the FSM: two
 // replicas applying the same log reach the same state and results.
 func TestPKICommandsAreDeterministic(t *testing.T) {
+	t.Parallel()
 	ca, keyEnc := testCA(t, "cluster-det")
 	fp := pki.Fingerprint(ca.Cert)
 	secret := "det-secret"

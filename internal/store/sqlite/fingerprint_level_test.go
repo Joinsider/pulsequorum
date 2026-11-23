@@ -17,6 +17,7 @@ import (
 // that a rolling update does not look like divergence.
 // Rows are changed directly in SQL, bypassing the command level on purpose.
 func TestFingerprintLevelGates(t *testing.T) {
+	t.Parallel()
 	changes := []struct {
 		name string
 		sql  string
@@ -40,6 +41,7 @@ func TestFingerprintLevelGates(t *testing.T) {
 	for _, level := range []uint32{7, 8, 9, 10} {
 		for _, c := range changes {
 			t.Run(fmt.Sprintf("level %d: %s", level, c.name), func(t *testing.T) {
+				t.Parallel()
 				ctx := context.Background()
 				s := openState(t, t.TempDir())
 				err := s.Update(ctx, func(tx store.StateTx) error {

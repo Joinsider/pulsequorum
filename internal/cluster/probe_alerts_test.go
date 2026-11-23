@@ -55,9 +55,11 @@ func (h *alertFSM) suspendTenant(issuedAt int64, id string, suspended bool) {
 }
 
 func TestSetProbeAlertLevelAndValidation(t *testing.T) {
+	t.Parallel()
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u1", Name: "Ada"}
 
 	t.Run("rejected below level 10", func(t *testing.T) {
+		t.Parallel()
 		h := setupProbeAlertFSM(t, ProbeCommandLevel-1)
 		h.putChannel(1100, "t1", "ch1", channel(store.EventProbeOffline), ErrInvalidCommand)
 		h.do(NewRegisterNode("v1", store.Node{ID: "v1", Role: store.NodeRoleVoter}), 1100, nil)
@@ -65,6 +67,7 @@ func TestSetProbeAlertLevelAndValidation(t *testing.T) {
 	})
 
 	t.Run("validation and ownership", func(t *testing.T) {
+		t.Parallel()
 		h := setupProbeAlertFSM(t, ProbeCommandLevel)
 		h.do(NewRegisterNode("v1", store.Node{ID: "v1", Role: store.NodeRoleVoter}), 1100, nil)
 		h.do(NewRegisterProbe("rp-pub", store.Node{ID: "p-pub", Name: "pub"}), 1100, nil)
@@ -94,6 +97,7 @@ func TestSetProbeAlertLevelAndValidation(t *testing.T) {
 }
 
 func TestSetProbeAlertLifecycleAndOutbox(t *testing.T) {
+	t.Parallel()
 	h := setupProbeAlertFSM(t, ProbeCommandLevel)
 	h.do(NewRegisterNode("v1", store.Node{ID: "v1", Role: store.NodeRoleVoter}), 1100, nil)
 	h.do(NewRegisterNode("v2", store.Node{ID: "v2", Role: store.NodeRoleVoter}), 1100, nil)
@@ -169,6 +173,7 @@ func TestSetProbeAlertLifecycleAndOutbox(t *testing.T) {
 }
 
 func TestPrivateProbeTokenLimitsAndActors(t *testing.T) {
+	t.Parallel()
 	h := setupProbeAlertFSM(t, ProbeCommandLevel)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
 	apiToken := &pb.Actor{Kind: pb.Actor_KIND_API_TOKEN, Id: "tok_1", Name: "ci"}
@@ -227,6 +232,7 @@ func TestPrivateProbeTokenLimitsAndActors(t *testing.T) {
 }
 
 func TestRevokeTenantProbeAndDeleteTenant(t *testing.T) {
+	t.Parallel()
 	h := setupProbeAlertFSM(t, ProbeCommandLevel)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
 
@@ -311,6 +317,7 @@ func TestRevokeTenantProbeAndDeleteTenant(t *testing.T) {
 }
 
 func TestProbeCommandsAreDeterministic(t *testing.T) {
+	t.Parallel()
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-1", Name: "Ada"}
 	system := &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
 	tokCmd, err := NewPutJoinToken("tok-1", "jt-1", JoinTokenDocument{
@@ -359,6 +366,7 @@ func TestProbeCommandsAreDeterministic(t *testing.T) {
 }
 
 func TestIsNodeIDAllowsUUID(t *testing.T) {
+	t.Parallel()
 	if errors.Is(ErrInvalidCommand, store.ErrNotFound) {
 		t.Fatal("sentinel errors collided")
 	}

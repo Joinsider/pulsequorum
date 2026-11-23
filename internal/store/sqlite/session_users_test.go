@@ -48,6 +48,7 @@ func insertSession(t *testing.T, s *StateStore, hash, family, tenantID, userID s
 }
 
 func TestListUnrevokedSessionUsers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := sessionUsersState(t,
 		[2]string{"t1", "u-a"}, [2]string{"t1", "u-b"}, [2]string{"t1", "u-revoked"},
@@ -90,6 +91,7 @@ func TestListUnrevokedSessionUsers(t *testing.T) {
 }
 
 func TestListUnrevokedSessionUsersWithoutSessions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := sessionUsersState(t, [2]string{"t1", "u-a"})
 	got, err := s.ListUnrevokedSessionUsers(ctx)

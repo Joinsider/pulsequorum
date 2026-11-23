@@ -38,10 +38,23 @@ type peerHealth struct {
 // proposes the changes it returns. It is safe for concurrent use. The zero
 // value is ready to use.
 type HealthTracker struct {
+	// Threshold is how long heartbeats must fail (or succeed again) before a
+	// peer changes health; zero means healthThreshold (ADR 0017). Tests shorten it.
+	Threshold time.Duration
+
 	mu sync.Mutex
 	// leaderSince is when this node became leader; zero if it is not.
 	leaderSince time.Time
 	peers       map[string]peerHealth
+}
+
+// threshold returns the effective threshold of the tracker. The caller holds
+// the lock.
+func (t *HealthTracker) threshold() time.Duration {
+	if t.Threshold <= 0 {
+		return healthThreshold
+	}
+	return t.Threshold
 }
 
 // Failed records a failed heartbeat to peer at the given time.
@@ -62,7 +75,7 @@ func (t *HealthTracker) Resumed(peer string, at time.Time) {
 	t.set(peer, peerHealth{resumedAt: at})
 }
 
-// BecameLeader records when this node became leader. Until healthThreshold
+// BecameLeader records when this node became leader. Until the threshold
 // has passed no peer is decided healthy, because the heartbeats of the
 // previous leader tell nothing about the new one.
 func (t *HealthTracker) BecameLeader(at time.Time) {
@@ -85,8 +98,8 @@ func (t *HealthTracker) Reset() {
 // health. A change is returned only if the decided value differs from the
 // registry. Without leadership nothing is decided.
 //
-// A peer is unhealthy once its heartbeats failed for healthThreshold. It is
-// healthy again once it has been without failure for healthThreshold, and the
+// A peer is unhealthy once its heartbeats failed for the threshold. It is
+// healthy again once it has been without failure for the threshold, and the
 // node has been leader for that long too; a peer that never failed counts as
 // healthy after the leader grace. Failures shorter than the threshold change
 // nothing, which keeps brief interruptions from making a node flap.
@@ -113,12 +126,13 @@ func (t *HealthTracker) Decide(now time.Time, peers []string, registry map[strin
 // The caller holds the lock.
 func (t *HealthTracker) verdict(now time.Time, peer string) (healthy, decided bool) {
 	p := t.peers[peer]
+	threshold := t.threshold()
 	switch {
 	case !p.failingSince.IsZero():
-		return false, now.Sub(p.failingSince) >= healthThreshold
-	case now.Sub(t.leaderSince) < healthThreshold:
+		return false, now.Sub(p.failingSince) >= threshold
+	case now.Sub(t.leaderSince) < threshold:
 		return false, false
-	case p.resumedAt.IsZero() || now.Sub(p.resumedAt) >= healthThreshold:
+	case p.resumedAt.IsZero() || now.Sub(p.resumedAt) >= threshold:
 		return true, true
 	}
 	return false, false
@@ -142,15 +156,30 @@ type HealthWatcher struct {
 	// Now is the wall clock of this node; nil means time.Now. It must be the
 	// clock the heartbeat observations are stamped with (ADR 0020).
 	Now func() time.Time
+	// Threshold is how long heartbeats must fail (or succeed again) before a
+	// peer changes health; zero means healthThreshold (ADR 0017). It is handed
+	// to the tracker on first use. Tests shorten it.
+	Threshold time.Duration
 
 	tracker HealthTracker
+	// initOnce hands Threshold to the tracker before the tracker is first used.
+	initOnce sync.Once
 	// leader is true between BecameLeader and the next step down.
 	leader bool
+}
+
+// init hands Threshold to the tracker. It runs once, before any call into the
+// tracker, so that the tracker never reads a field that is still being set.
+func (w *HealthWatcher) init() {
+	w.initOnce.Do(func() {
+		w.tracker.Threshold = w.Threshold
+	})
 }
 
 // Observe records one heartbeat observation of the leader. It is the callback
 // of cluster.Node.OnHeartbeat.
 func (w *HealthWatcher) Observe(peerID string, ok bool, at time.Time) {
+	w.init()
 	if ok {
 		w.tracker.Resumed(peerID, at)
 		return
@@ -168,6 +197,7 @@ func (w *HealthWatcher) now() time.Time {
 
 // Run decides on health changes every healthInterval until ctx ends.
 func (w *HealthWatcher) Run(ctx context.Context) {
+	w.init()
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
 	for {

@@ -44,6 +44,7 @@ func (e *env) changeState(monitorID string, from, to store.MonitorStatus, sinceM
 // TestMonitorStatusAndIncidents covers FA-INC-02 and the consensus status
 // fields of the monitor resource.
 func TestMonitorStatusAndIncidents(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	web, db := e.createMonitor("web"), e.createMonitor("db")
 	b := time.Now().UnixMilli()
@@ -131,6 +132,7 @@ func TestMonitorStatusAndIncidents(t *testing.T) {
 
 // TestUptime covers GET /monitors/{id}/uptime and uptime24h (FA-UPT-01).
 func TestUptime(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	id := e.createMonitor("web")
 	// The monitor was UP for 10 minutes after its creation, then DOWN for 10

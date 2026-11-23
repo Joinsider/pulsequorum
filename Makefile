@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test go-test-shard web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
 
 MODULE    := github.com/joinsider/pulsequorum
 GO_PKGS   := ./cmd/... ./internal/... ./build/...
@@ -68,6 +68,22 @@ test: go-test web-test ## Run all tests
 
 go-test: ## Run Go tests with race detector (writes coverage.out)
 	go test -race -cover -coverprofile=coverage.out $(GO_PKGS)
+
+# CI runs go-test in shards on separate runners: each of the slowest packages
+# (api and the two with real Raft clusters) is a shard of its own, everything
+# else is the shard "rest". The go job of ci.yml merges the shard profiles
+# into coverage.out.
+GO_TEST_HEAVY := api cluster clusterhost
+
+go-test-shard: ## Run one CI shard of go-test (SHARD=rest|api|cluster|clusterhost, writes coverage-$(SHARD).out)
+	@case " rest $(GO_TEST_HEAVY) " in *" $(SHARD) "*) ;; *) echo "SHARD must be one of: rest $(GO_TEST_HEAVY)"; exit 2;; esac
+	@if [ "$(SHARD)" = rest ]; then \
+		pkgs="$$(go list $(GO_PKGS) | grep -v -x -F $(foreach p,$(GO_TEST_HEAVY),-e $(MODULE)/internal/$(p)))"; \
+	else \
+		pkgs="./internal/$(SHARD)"; \
+	fi; \
+	echo "go test -race -cover -coverprofile=coverage-$(SHARD).out $$pkgs"; \
+	go test -race -cover -coverprofile=coverage-$(SHARD).out $$pkgs
 
 web-test: web/node_modules ## Run frontend unit tests (writes web/coverage/pulsequorum-web/lcov.info)
 	cd web && npx ng test --watch=false --coverage --coverage-reporters=lcov

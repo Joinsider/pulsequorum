@@ -132,6 +132,7 @@ func waitSubscribers(t *testing.T, hub *stream.Hub, n int) {
 
 // FA-TEN-05: each connection receives only the events of its ticket's tenant.
 func TestStreamTenantIsolation(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Time{})
 	a := e.connect(viewer, "")
 	waitSubscribers(t, e.hub, 1)
@@ -153,6 +154,7 @@ func TestStreamTenantIsolation(t *testing.T) {
 }
 
 func TestStreamMonitorFilter(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Time{})
 	m1, m2 := "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
 	conn := e.connect(viewer, "&monitorId="+m1)
@@ -218,6 +220,7 @@ func TestStreamMonitorFilter(t *testing.T) {
 
 // FA-AUTH-11: tickets are required, single use, and checked against Origin.
 func TestStreamTicketRules(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Time{})
 
 	if status, err := e.dialStatus("", ""); err == nil || status != http.StatusUnauthorized {
@@ -261,6 +264,7 @@ func TestStreamTicketRules(t *testing.T) {
 
 // FA-AUTH-11: the stream ends when the session the ticket was issued for ends.
 func TestStreamClosesAtSessionEnd(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Now().Add(1500*time.Millisecond))
 	conn := e.connect(viewer, "")
 	_, err := read(t, conn, 5*time.Second)
@@ -271,6 +275,7 @@ func TestStreamClosesAtSessionEnd(t *testing.T) {
 }
 
 func TestStreamClosesOnShutdown(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Time{})
 	conn := e.connect(viewer, "")
 	waitSubscribers(t, e.hub, 1)
@@ -282,6 +287,7 @@ func TestStreamClosesOnShutdown(t *testing.T) {
 }
 
 func TestStreamClosesSlowClient(t *testing.T) {
+	t.Parallel()
 	e := newStreamEnv(t, time.Time{})
 	conn := e.connect(viewer, "")
 	waitSubscribers(t, e.hub, 1)

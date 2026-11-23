@@ -46,6 +46,7 @@ func insertToken(t *testing.T, s *StateStore, tok store.APIToken) error {
 }
 
 func TestAPITokenRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := tokenStore(t)
 	const far = 9_000_000_000_000
@@ -99,6 +100,7 @@ func tokenIDs(list []store.APIToken) []string {
 }
 
 func TestAPITokenTenantSeparation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := tokenStore(t)
 	if err := insertToken(t, s, token("tok_a", "t1", "ci", "hash-a", 1, 9_000_000_000_000)); err != nil {
@@ -129,6 +131,7 @@ func TestAPITokenTenantSeparation(t *testing.T) {
 }
 
 func TestAPITokenConstraints(t *testing.T) {
+	t.Parallel()
 	const far = 9_000_000_000_000
 	base := token("tok_a", "t1", "ci", "hash-a", 1, far)
 	tests := []struct {
@@ -144,6 +147,7 @@ func TestAPITokenConstraints(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := tokenStore(t)
 			if err := insertToken(t, s, base); err != nil {
 				t.Fatal(err)
@@ -163,6 +167,7 @@ func TestAPITokenConstraints(t *testing.T) {
 }
 
 func TestAPITokenDelete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := tokenStore(t)
 	if err := insertToken(t, s, token("tok_a", "t1", "ci", "hash-a", 1, 9_000_000_000_000)); err != nil {
@@ -183,6 +188,7 @@ func TestAPITokenDelete(t *testing.T) {
 }
 
 func TestPruneAPITokens(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := tokenStore(t)
 	for i, exp := range []int64{100, 200, 300} {

@@ -59,6 +59,7 @@ func auditKeys(entries []store.AuditEntry) []string {
 }
 
 func TestListAuditFilters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		q    store.AuditQuery
@@ -81,6 +82,7 @@ func TestListAuditFilters(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := auditStore(t)
 			page, err := s.ListAudit(context.Background(), tc.q)
 			if err != nil {
@@ -97,6 +99,7 @@ func TestListAuditFilters(t *testing.T) {
 }
 
 func TestListAuditFieldsAndTenantSeparation(t *testing.T) {
+	t.Parallel()
 	s := auditStore(t)
 	page, err := s.ListAudit(context.Background(), store.AuditQuery{TenantID: "t2"})
 	if err != nil {
@@ -110,6 +113,7 @@ func TestListAuditFieldsAndTenantSeparation(t *testing.T) {
 }
 
 func TestListAuditCursorPaging(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		q     store.AuditQuery
@@ -126,6 +130,7 @@ func TestListAuditCursorPaging(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := auditStore(t)
 			ctx := context.Background()
 			q := tc.q
@@ -152,6 +157,7 @@ func TestListAuditCursorPaging(t *testing.T) {
 }
 
 func TestListAuditCursorIsStrict(t *testing.T) {
+	t.Parallel()
 	s := auditStore(t)
 	ctx := context.Background()
 	tests := []struct {
@@ -165,6 +171,7 @@ func TestListAuditCursorIsStrict(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cursor := tc.cursor
 			page, err := s.ListAudit(ctx, store.AuditQuery{After: &cursor, Limit: 10})
 			if err != nil {
@@ -178,6 +185,7 @@ func TestListAuditCursorIsStrict(t *testing.T) {
 }
 
 func TestListAuditLimit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	var entries []store.AuditEntry
@@ -200,6 +208,7 @@ func TestListAuditLimit(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			page, err := s.ListAudit(ctx, store.AuditQuery{TenantID: "t1", Limit: tc.limit})
 			if err != nil {
 				t.Fatal(err)
@@ -218,6 +227,7 @@ func TestListAuditLimit(t *testing.T) {
 }
 
 func TestInsertAuditDuplicate(t *testing.T) {
+	t.Parallel()
 	s := auditStore(t)
 	err := insertAudit(t, s, auditEntry(5, 1, 9, "t1", "monitor.pause", "monitor", "m1", "tok_1"))
 	if !errors.Is(err, store.ErrConflict) {
@@ -234,6 +244,7 @@ func TestInsertAuditDuplicate(t *testing.T) {
 }
 
 func TestPruneAudit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	if err := insertAudit(t, s,

@@ -153,6 +153,7 @@ func (h *alertFSM) checkPayload(a store.AlertDelivery, want map[string]any) {
 }
 
 func TestAlertEvent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		from, to store.MonitorStatus
@@ -174,6 +175,7 @@ func TestAlertEvent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := alertEvent(tt.from, tt.to); got != tt.want {
 				t.Errorf("alertEvent(%s, %s) = %q, want %q", tt.from, tt.to, got, tt.want)
 			}
@@ -184,6 +186,7 @@ func TestAlertEvent(t *testing.T) {
 // TestChannelValidation covers FA-ALR-01: secrets arrive encrypted, kinds and
 // events are known, and every channel belongs to a tenant.
 func TestChannelValidation(t *testing.T) {
+	t.Parallel()
 	plainHeader := channel(store.EventDown)
 	plainHeader.WebhookHeaders = map[string]string{"Authorization": "Bearer abc"}
 	encHeader := channel(store.EventDown)
@@ -232,6 +235,7 @@ func TestChannelValidation(t *testing.T) {
 // TestStateChangeAlerts covers FA-ALR-02: a status change enqueues one entry
 // per enabled channel that subscribes to its event, in the same transaction.
 func TestStateChangeAlerts(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 	h.putChannel(1000, "t1", "a", channel(store.EventDown, store.EventUp), nil)
@@ -283,6 +287,7 @@ func TestStateChangeAlerts(t *testing.T) {
 // TestEnqueueReminder covers FA-ALR-02: repeated DOWN alerts belong to one
 // DOWN period and stop when the monitor recovers.
 func TestEnqueueReminder(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 	h.putChannel(1000, "t1", "a", channel(store.EventDown), nil)
@@ -309,6 +314,7 @@ func TestEnqueueReminder(t *testing.T) {
 // TestAckAlertDelivery covers FA-ALR-03 and FA-ALR-05: the leader reports each
 // attempt, and the outcome decides the entry and the channel state.
 func TestAckAlertDelivery(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 	h.putTenant(1000, "t2")
@@ -388,6 +394,7 @@ func TestAckAlertDelivery(t *testing.T) {
 // TestDeterministicAlerts applies the same alert history to two replicas and
 // compares their state (FA-CLU-07).
 func TestDeterministicAlerts(t *testing.T) {
+	t.Parallel()
 	var prints []string
 	for range 2 {
 		h := newAlertFSM(t, t.TempDir())

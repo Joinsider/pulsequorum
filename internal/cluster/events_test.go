@@ -18,6 +18,7 @@ import (
 // TestStateEvents covers the StateEvent observer: committed status changes are
 // delivered with their tenant, incident effects and nothing else.
 func TestStateEvents(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	var got []StateEvent
 	h.fsm.OnStateChange(func(ev StateEvent) { got = append(got, ev) })
@@ -93,6 +94,7 @@ func TestStateEvents(t *testing.T) {
 // log entry, and that rejected payloads and duplicates do not leak events of
 // their failed transaction.
 func TestStateEventsOnlyCommitted(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 	h.putMonitor(1001, "t1", "m1")
@@ -137,6 +139,7 @@ func TestStateEventsOnlyCommitted(t *testing.T) {
 // TestStateEventsWithoutObserver makes sure that applying without a registered
 // observer works and that the observer can be removed again.
 func TestStateEventsWithoutObserver(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 	h.putMonitor(1001, "t1", "m1")

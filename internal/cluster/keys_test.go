@@ -14,6 +14,7 @@ import (
 )
 
 func TestSecretKeyBootstrapAndRotation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()

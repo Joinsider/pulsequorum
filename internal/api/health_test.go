@@ -22,6 +22,7 @@ func (f fixedDegraded) State() degraded.State { return f.st }
 // TestHealthReportsDegradedState covers the additive health fields of the
 // degraded mode (ADR 0024): they are set only while degraded.
 func TestHealthReportsDegradedState(t *testing.T) {
+	t.Parallel()
 	since := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name          string
@@ -39,6 +40,7 @@ func TestHealthReportsDegradedState(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			e := newEnvTweaked(t, false, func(d *Deps) { d.Degraded = fixedDegraded{st: tc.state} })
 			res := e.do("GET", "/api/v1/health", "", nil)
 			if res.code != http.StatusOK {
@@ -66,6 +68,7 @@ func TestHealthReportsDegradedState(t *testing.T) {
 
 // TestToAPIIncidentReevaluated maps the FA-UPT-07 flag of an incident.
 func TestToAPIIncidentReevaluated(t *testing.T) {
+	t.Parallel()
 	inc := store.Incident{ID: "0b8f3c52-9d1e-4f6a-8c27-5e4d1a9b3f60", MonitorID: "0b8f3c52-9d1e-4f6a-8c27-5e4d1a9b3f61", StartedMs: 1, Confirmed: true, Reevaluated: true}
 	out := toAPIIncident(inc)
 	if out.Reevaluated == nil || !*out.Reevaluated {

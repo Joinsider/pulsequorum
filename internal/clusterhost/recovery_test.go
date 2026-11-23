@@ -64,6 +64,7 @@ func runAdmin(t *testing.T, vars map[string]string, stdin string, args ...string
 // the old members are revoked once it leads, and a returning old node is
 // refused while a fresh node can join.
 func TestRecoverAfterQuorumLoss(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -245,6 +246,7 @@ func containsRevokedNode(revoked []store.RevokedNode, id string) bool {
 // CLI resets a password next to a follower; the leader applies it, every
 // replica stores the new hash, and the sessions of the user end.
 func TestResetPasswordThroughFollower(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

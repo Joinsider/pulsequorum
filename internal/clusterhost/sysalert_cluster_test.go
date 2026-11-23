@@ -186,6 +186,7 @@ func startSysStack(c *alertCluster, n *testNode) {
 // TestSystemAlertsVoterOfflineAndCheckpoint covers FA-OBS-01 (voter_offline),
 // the clear after a restart, and the FSM checkpoints of ADR 0025, section 4.
 func TestSystemAlertsVoterOfflineAndCheckpoint(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters and waits for health checks and checkpoints")
 	}

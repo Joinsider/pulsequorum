@@ -28,6 +28,7 @@ func putProbe(t *testing.T, e *env, n store.Node) {
 // listed with their role, region, owner, session and buffer, but never count
 // as voters (FA-PRB-07).
 func TestListClusterNodesProbes(t *testing.T) {
+	t.Parallel()
 	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
 	sessions := map[string]ProbeSessionView{
 		"probe-pub": {
@@ -115,6 +116,7 @@ func TestListClusterNodesProbes(t *testing.T) {
 // TestRemoveClusterNodeProbe checks that a probe is removed through the same
 // endpoint as a voter.
 func TestRemoveClusterNodeProbe(t *testing.T) {
+	t.Parallel()
 	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1", removal: membership.Removal{VotersLeft: 3}}
 	e := clusterEnv(t, admin)
 	putProbe(t, e, store.Node{ID: "probe-pub", Name: "fra-1"})

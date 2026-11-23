@@ -18,6 +18,14 @@ import (
 	"github.com/joinsider/pulsequorum/internal/uptime"
 )
 
+// listFixtureSparse spaces the heartbeats of the comparison test ten minutes
+// apart: it needs variety, not density, and the sparser fixture keeps the
+// race-enabled setup short. The benchmark keeps one heartbeat per minute.
+const (
+	listFixtureDense  = 60
+	listFixtureSparse = 600
+)
+
 // seedListFixture creates n monitors of the default tenant with a mix of
 // states and heartbeats for the 26 hours before now, and runs the uptime job
 // until its hourly rollups cover the window. Monitors are written to the store
@@ -28,7 +36,7 @@ import (
 // three hours ago, every fifth had a DOWN period, every seventh is paused,
 // every ninth is in maintenance since two hours ago, every third reports from a
 // second node, and every eighth stopped reporting two hours ago.
-func seedListFixture(tb testing.TB, e *env, n int, now time.Time) []store.Monitor {
+func seedListFixture(tb testing.TB, e *env, n, intervalSeconds int, now time.Time) []store.Monitor {
 	tb.Helper()
 	ctx := context.Background()
 	const tenant = "default"
@@ -44,7 +52,7 @@ func seedListFixture(tb testing.TB, e *env, n int, now time.Time) []store.Monito
 		m := store.Monitor{
 			TenantID: tenant, ID: uuid.Must(uuid.NewV7()).String(), Name: fmt.Sprintf("svc-%04d", i),
 			Type: "http", Config: json.RawMessage(fmt.Sprintf(`{"url":"https://example.com/svc-%d"}`, i)),
-			IntervalSeconds: 60, TimeoutSeconds: 24, Retries: 1, RecoveryThreshold: 1, ResendIntervalMinutes: 60,
+			IntervalSeconds: intervalSeconds, TimeoutSeconds: 24, Retries: 1, RecoveryThreshold: 1, ResendIntervalMinutes: 60,
 			Assignment: store.Assignment{Mode: "all"}, ConsensusPolicy: "majority",
 			Paused:    i%7 == 2,
 			CreatedMs: created, UpdatedMs: created,
@@ -112,7 +120,7 @@ func seedListFixture(tb testing.TB, e *env, n int, now time.Time) []store.Monito
 		}
 		for ni, node := range nodes {
 			seq := uint64(0)
-			for ts := start + int64(ni)*20_000; ts <= end; ts += 60_000 {
+			for ts := start + int64(ni)*int64(intervalSeconds)*1000/3; ts <= end; ts += int64(intervalSeconds) * 1000 {
 				seq++
 				status := store.CheckUp
 				if i%5 == 0 && ts >= now.Add(-4*time.Hour).UnixMilli() && ts < now.Add(-3*time.Hour).UnixMilli() {
@@ -146,7 +154,7 @@ func BenchmarkListMonitors(b *testing.B) {
 	e := newEnvWith(b, false)
 	now := time.Now().Truncate(time.Minute)
 	e.now = now
-	seedListFixture(b, e, 500, now)
+	seedListFixture(b, e, 500, listFixtureDense, now)
 
 	b.ResetTimer()
 	for range b.N {
@@ -196,10 +204,11 @@ func referenceSummary(t *testing.T, e *env, m store.Monitor, now time.Time) list
 // of monitors: with and without heartbeats, paused, in maintenance, created
 // inside the window, and stale.
 func TestListMonitorsMatchesPerMonitorValues(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	now := time.Now().Truncate(time.Minute)
 	e.now = now
-	monitors := seedListFixture(t, e, 60, now)
+	monitors := seedListFixture(t, e, 20, listFixtureSparse, now)
 
 	page := decode[gen.MonitorPage](t, e.do("GET", "/api/v1/monitors?limit=500", viewer, nil))
 	if len(page.Items) != len(monitors) {

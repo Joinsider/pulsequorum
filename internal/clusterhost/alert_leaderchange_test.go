@@ -104,7 +104,7 @@ func newAlertCluster(ctx context.Context, t *testing.T) *alertCluster {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNode(ctx, t, []string{n2.addr}, token())
+	n3, err := startNode(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +280,7 @@ func upKey(sinceMs int64) string   { return fmt.Sprintf("%s:%d:UP", alertMonitor
 // produces one notification per transition and channel, and duplicates only
 // when a delivery was not acknowledged in the cluster.
 func TestLeaderChangeAlerting(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters")
 	}

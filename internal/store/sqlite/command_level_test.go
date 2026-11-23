@@ -16,6 +16,7 @@ import (
 // TestCommandLevel covers ADR 0018 section 2: the command level is stored in
 // fsm_meta, readable through State and StateTx, and survives a snapshot.
 func TestCommandLevel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	src := openState(t, t.TempDir())
 
@@ -59,6 +60,7 @@ func TestCommandLevel(t *testing.T) {
 // TestFingerprintIncludesCommandLevel checks that replicas with different
 // command levels are detected as diverged (ADR 0018 section 2).
 func TestFingerprintIncludesCommandLevel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a := openState(t, t.TempDir())
 	b := openState(t, t.TempDir())
@@ -90,9 +92,11 @@ func TestFingerprintIncludesCommandLevel(t *testing.T) {
 // TestOpenToleratesNewerMigrations covers ADR 0018 section 5: an older binary
 // must open state.db and metrics.db that carry migrations it does not know.
 func TestOpenToleratesNewerMigrations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("state", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		s, err := OpenState(ctx, dir)
 		if err != nil {
@@ -110,6 +114,7 @@ func TestOpenToleratesNewerMigrations(t *testing.T) {
 	})
 
 	t.Run("metrics", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		m, err := OpenMetrics(ctx, dir, MetricsOptions{})
 		if err != nil {

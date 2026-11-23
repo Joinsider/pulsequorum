@@ -14,6 +14,7 @@ import (
 )
 
 func TestAuthProblem(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		err        error
@@ -29,6 +30,7 @@ func TestAuthProblem(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			p := authProblem(tc.err)
 			if p.Status != tc.status || !strings.Contains(p.Detail, tc.detail) {
 				t.Fatalf("problem = %d %q, want %d containing %q", p.Status, p.Detail, tc.status, tc.detail)

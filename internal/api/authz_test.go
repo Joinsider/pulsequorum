@@ -34,6 +34,7 @@ var roleLevel = map[string]accessLevel{
 // that is neither 401 nor 403. Operations on unknown IDs and invalid bodies
 // keep the checks free of side effects.
 func TestPermissionMatrix(t *testing.T) {
+	t.Parallel()
 	e, admin := newLocalAdminEnv(t)
 	_, tenantAdmin := e.addUser(admin, "matrix-tadmin", "tenant-admin")
 	_, editor := e.addUser(admin, "matrix-editor", "tenant-editor")

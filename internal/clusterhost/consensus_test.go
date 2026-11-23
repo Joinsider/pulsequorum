@@ -43,6 +43,8 @@ const (
 	consensusUnit      = 500 * time.Millisecond // one interval second of the test monitor
 	consensusGrace     = 500 * time.Millisecond // LeaderGrace of the aggregators
 	consensusSettle    = 3 * consensusUnit      // time in which nothing else may happen
+	// consensusPromotePoll is the production default of membership.Manager.PromotePoll (2 s).
+	consensusPromotePoll = 2 * time.Second
 )
 
 // consensusNode is a voter with its aggregator, heartbeat feed and counters.
@@ -147,8 +149,11 @@ func startConsensusCluster(ctx context.Context, t *testing.T) *consensusCluster 
 func (c *consensusCluster) start(seeds []string, token string) *consensusNode {
 	c.t.Helper()
 	cn := &consensusNode{}
+	// The consensus scenarios rely on the production promotion period: a
+	// faster promotion changes the membership while the scenario starts
+	// (reproduced: DOWN changes and incidents differ from the expected ones).
 	n, err := launch(c.ctx, c.t, &testNode{id: uuid.NewString(), addr: freeAddr(c.t), dir: c.t.TempDir(),
-		replInterval: 300 * time.Millisecond, onStored: cn.observeStored}, seeds, token)
+		replInterval: 300 * time.Millisecond, promotePoll: consensusPromotePoll, onStored: cn.observeStored}, seeds, token)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -333,6 +338,7 @@ func (c *consensusCluster) shutdown() {
 // TestConsensusAcrossVoters runs three voters through three scenarios on one
 // cluster: partial failure, total failure, and a leader change while DOWN.
 func TestConsensusAcrossVoters(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters")
 	}

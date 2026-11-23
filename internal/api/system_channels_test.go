@@ -71,6 +71,7 @@ func listedIDs(chs []gen.NotificationChannel) []uuid.UUID {
 // TestSystemOperationsRequirePlatformAdmin: every system operation needs the
 // platform-admin role, tenant admins included (ADR 0025).
 func TestSystemOperationsRequirePlatformAdmin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	missing := uuid.NewString()
 	createBody := map[string]any{"name": "sys", "kind": "shoutrrr", "url": shoutrrrURL}
@@ -105,6 +106,7 @@ func TestSystemOperationsRequirePlatformAdmin(t *testing.T) {
 // whatever the request says, the event system is always included, and no
 // tenant sees the channel.
 func TestCreateSystemChannelLandsInSystemTenant(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	enableSystemChannels(t, e)
@@ -155,6 +157,7 @@ func TestCreateSystemChannelLandsInSystemTenant(t *testing.T) {
 // TestTenantChannelRejectsSystemEvent: tenant channels answer 400 for the
 // reserved event, on create and on update, and never store it.
 func TestTenantChannelRejectsSystemEvent(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 
@@ -184,6 +187,7 @@ func TestTenantChannelRejectsSystemEvent(t *testing.T) {
 // TestSystemChannelSecretsMasked: URLs and header values of system channels
 // never leave the API in plaintext, in any response.
 func TestSystemChannelSecretsMasked(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	srv, rec := newRecorder(t, http.StatusOK)
@@ -231,6 +235,7 @@ func TestSystemChannelSecretsMasked(t *testing.T) {
 // TestSystemChannelTestSend: a test of a system channel carries the event
 // system and reports the delivery.
 func TestSystemChannelTestSend(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	srv, rec := newRecorder(t, http.StatusOK)
@@ -258,6 +263,7 @@ func TestSystemChannelTestSend(t *testing.T) {
 // system tenant through the system endpoints, and tenant channels are not
 // found there.
 func TestSystemChannelsAreIsolatedFromTenants(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	tenantCh := createChannel(t, e, tenantAdmin, map[string]any{"name": "t", "kind": "shoutrrr", "url": shoutrrrURL})
@@ -285,6 +291,7 @@ func TestSystemChannelsAreIsolatedFromTenants(t *testing.T) {
 // TestUpdateAndDeleteSystemChannel: updates keep the system event, deletes
 // remove the channel.
 func TestUpdateAndDeleteSystemChannel(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	ch := createSystemChannel(t, e, map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL})
@@ -314,6 +321,7 @@ func TestUpdateAndDeleteSystemChannel(t *testing.T) {
 // TestListSystemAlerts: the default lists active alerts only, active=false
 // lists all of them, and details are objects.
 func TestListSystemAlerts(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
@@ -353,6 +361,7 @@ func TestListSystemAlerts(t *testing.T) {
 // TestSystemChannelBeforeSystemTenant: until the leader created the system
 // tenant, creating a system channel answers 503 with Retry-After, not 404.
 func TestSystemChannelBeforeSystemTenant(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	res := e.do("POST", systemChannelsPath, platformAdmin, webhookBody("sys-hook", "https://example.com/hook", nil))
 	if res.code != http.StatusServiceUnavailable {

@@ -99,6 +99,7 @@ func (r *replica) session(t *testing.T, id string) store.Session {
 }
 
 func TestUserDocumentValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		tenant  string
@@ -127,6 +128,7 @@ func TestUserDocumentValidation(t *testing.T) {
 }
 
 func TestSetupFlagAllowsOnlyTheFirstUser(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	setup := userDoc("admin", "platform-admin")
 	setup.Setup = true
@@ -151,6 +153,7 @@ func TestSetupFlagAllowsOnlyTheFirstUser(t *testing.T) {
 }
 
 func TestSigningKeyValidation(t *testing.T) {
+	t.Parallel()
 	pub, _, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +187,7 @@ func TestSigningKeyValidation(t *testing.T) {
 }
 
 func TestCreateSessionRules(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	active := r.createUser("active", userDoc("active", "tenant-viewer"))
 	disabled := userDoc("disabled", "tenant-viewer")
@@ -233,6 +237,7 @@ func TestCreateSessionRules(t *testing.T) {
 }
 
 func TestPasswordOrDisableRevokesSessions(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	u := r.createUser("u1", userDoc("pw-user", "tenant-editor"))
 	other := r.createUser("u2", userDoc("disable-user", "tenant-editor"))
@@ -275,6 +280,7 @@ func TestPasswordOrDisableRevokesSessions(t *testing.T) {
 }
 
 func TestRotateSessionResults(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	u := r.createUser("rot-user", userDoc("rot", "tenant-viewer"))
 
@@ -328,6 +334,7 @@ func TestRotateSessionResults(t *testing.T) {
 }
 
 func TestRevokeSessions(t *testing.T) {
+	t.Parallel()
 	r := newReplica(t)
 	u := r.createUser("rev-user", userDoc("rev", "tenant-viewer"))
 	other := r.createUser("rev-other", userDoc("rev-other", "tenant-viewer"))
@@ -384,6 +391,7 @@ func TestRevokeSessions(t *testing.T) {
 // TestSessionCommandsAreDeterministic applies the same log to two replicas and
 // compares their state (FA-CLU-02).
 func TestSessionCommandsAreDeterministic(t *testing.T) {
+	t.Parallel()
 	var prints []string
 	for range 2 {
 		r := newReplica(t)
@@ -440,8 +448,10 @@ func adminActions() []lastAdminAction {
 // TestLastPlatformAdminIsKept: the last enabled platform admin of a tenant
 // cannot be demoted, disabled or deleted (FA-AUTH-09).
 func TestLastPlatformAdminIsKept(t *testing.T) {
+	t.Parallel()
 	for _, act := range adminActions() {
 		t.Run("single admin "+act.name, func(t *testing.T) {
+			t.Parallel()
 			r := newReplica(t)
 			only := r.createUser("only", userDoc("only", platformAdmin))
 			res := r.apply(act.build(only), 2000)
@@ -474,6 +484,7 @@ func TestLastPlatformAdminIsKept(t *testing.T) {
 	})
 
 	t.Run("disabled admin does not count", func(t *testing.T) {
+		t.Parallel()
 		r := newReplica(t)
 		enabled := r.createUser("enabled", userDoc("enabled", platformAdmin))
 		disabledDoc := userDoc("disabled", platformAdmin)
@@ -490,6 +501,7 @@ func TestLastPlatformAdminIsKept(t *testing.T) {
 	})
 
 	t.Run("tenant admin is not affected", func(t *testing.T) {
+		t.Parallel()
 		r := newReplica(t)
 		r.createUser("root", userDoc("root", platformAdmin))
 		ta := r.createUser("ta", userDoc("ta", "tenant-admin"))
@@ -503,6 +515,7 @@ func TestLastPlatformAdminIsKept(t *testing.T) {
 	})
 
 	t.Run("deleting a missing user", func(t *testing.T) {
+		t.Parallel()
 		r := newReplica(t)
 		r.createUser("root", userDoc("root", platformAdmin))
 		if res := r.apply(NewDeleteUser("del-missing", DefaultTenantID, "nobody"), 2000); !errors.Is(res.Err, store.ErrNotFound) {

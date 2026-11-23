@@ -16,14 +16,12 @@ import (
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/store"
 	"github.com/joinsider/pulsequorum/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/sqlitetest"
 )
 
 func openStore(t *testing.T, dir string) *sqlite.StateStore {
 	t.Helper()
-	s, err := sqlite.OpenState(context.Background(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := sqlitetest.OpenState(t, dir)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -72,6 +70,7 @@ func commandLog(t *testing.T) []*raft.Log {
 // TestFSMDeterminism applies the same log to two FSMs and compares the
 // resulting state (FA-CLU-07).
 func TestFSMDeterminism(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var prints []string
 	for range 2 {
@@ -116,6 +115,7 @@ func TestFSMDeterminism(t *testing.T) {
 }
 
 func TestFSMHaltsOnStoreFailure(t *testing.T) {
+	t.Parallel()
 	st := openStore(t, t.TempDir())
 	halted := make(chan error, 1)
 	fsm, err := NewFSM(context.Background(), st, slog.New(slog.DiscardHandler), func(err error) { halted <- err })
@@ -139,6 +139,7 @@ func TestFSMHaltsOnStoreFailure(t *testing.T) {
 
 // TestNodeBootstrapAndRestart covers FA-CLU-01/02 and the snapshot path.
 func TestNodeBootstrapAndRestart(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -191,6 +192,7 @@ func TestNodeBootstrapAndRestart(t *testing.T) {
 }
 
 func TestEnsureDefaultTenantAndReady(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()

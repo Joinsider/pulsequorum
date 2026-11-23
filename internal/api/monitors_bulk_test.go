@@ -87,6 +87,7 @@ func auditCountOf(t *testing.T, e *env, action string, ids ...string) int {
 // entry each, all with the same request ID; monitors already in the state are
 // unchanged.
 func TestBulkPauseAndResume(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	m := []gen.Monitor{
@@ -153,6 +154,7 @@ func TestBulkPauseAndResume(t *testing.T) {
 
 // TestBulkTags adds and removes tags with the rules of a single update.
 func TestBulkTags(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	m1 := makeMonitor(t, e, editor, "t1", []string{"keep"})
@@ -201,6 +203,7 @@ func TestBulkTags(t *testing.T) {
 
 // TestBulkDelete removes monitors; deleted monitors have no revision in the result.
 func TestBulkDelete(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	m1 := makeMonitor(t, e, editor, "d1", nil)
@@ -227,6 +230,7 @@ func TestBulkDelete(t *testing.T) {
 // TestBulkValidation: every invalid request is answered with 422 and the
 // position of the problem, and changes nothing.
 func TestBulkValidation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	m1 := makeMonitor(t, e, editor, "v1", nil)
@@ -264,6 +268,7 @@ func TestBulkValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := bulkAs(e, editor, tt.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Fatalf("= %d, want 422: %s", res.code, res.body)
@@ -284,6 +289,7 @@ func TestBulkValidation(t *testing.T) {
 // TestBulkIsAtomicOnConflict: a monitor changed between the read and the
 // batch makes the whole action fail with 409 and names the monitor.
 func TestBulkIsAtomicOnConflict(t *testing.T) {
+	t.Parallel()
 	var e *env
 	var racing *racingApplier
 	e = newEnvTweaked(t, false, func(d *Deps) {
@@ -339,6 +345,7 @@ func (r *racingApplier) Apply(ctx context.Context, cmd *pb.Command) (cluster.App
 
 // TestBulkTenantAndRoles: other tenants' monitors are unknown, viewers are refused.
 func TestBulkTenantAndRoles(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	mine := makeMonitor(t, e, editor, "own", nil)

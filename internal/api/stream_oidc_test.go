@@ -20,6 +20,7 @@ import (
 // TestStreamRevalidateWithoutLocalUsers covers the OIDC mode (ADR 0027): the
 // stream stays open while the tenant exists and is active.
 func TestStreamRevalidateWithoutLocalUsers(t *testing.T) {
+	t.Parallel()
 	e := newEnvTweaked(t, false, func(d *Deps) { d.Local = nil })
 	ctx := context.Background()
 	h := &Handlers{deps: Deps{State: e.state}}
@@ -47,6 +48,7 @@ func TestStreamRevalidateWithoutLocalUsers(t *testing.T) {
 // TestLocalEndpointsInOIDCMode: local login and user management answer 409
 // while an identity provider manages the users (ADR 0027, option 4A).
 func TestLocalEndpointsInOIDCMode(t *testing.T) {
+	t.Parallel()
 	h := &Handlers{cfg: config.Config{AuthMode: config.AuthOIDC}}
 	if _, err := h.localAuth(); !isConflict(err) {
 		t.Fatalf("localAuth: err = %v, want 409", err)

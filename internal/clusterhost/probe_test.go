@@ -112,7 +112,7 @@ func startThreeVotersForProbes(ctx context.Context, t *testing.T, replInterval t
 	}
 	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
 
-	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, token(), replInterval)
+	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()), replInterval)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,6 +380,7 @@ func assertContiguousPrefix(t *testing.T, where string, hbs []store.Heartbeat, w
 // 2 probes over mTLS: join, snapshot & delta push, heartbeat replication,
 // failover on connected voter & leader loss, and clean exit on revocation.
 func TestProbeEndToEndAndFailover(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -579,6 +580,7 @@ func TestProbeEndToEndAndFailover(t *testing.T) {
 // TestProbeQuorumNeutrality verifies FA-PRB-07: probes never become Raft
 // voters or non-voters and neither help reach nor preserve quorum.
 func TestProbeQuorumNeutrality(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -653,6 +655,7 @@ func TestProbeQuorumNeutrality(t *testing.T) {
 // completely in order upon reconnect with zero gaps/duplicates/drops, and the
 // overflow subtest exercises MaxAge expiry + lost_below progress.
 func TestProbeAS08(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -710,23 +713,32 @@ func TestProbeAS08(t *testing.T) {
 			t.Errorf("dropped_total = %d, want 0", dropped)
 		}
 
-		// Quiesce checks while HeartbeatWriter flushes and Client uploads everything.
+		// Quiesce checks. HeartbeatWriter may still flush after stopChecks, so the
+		// final sequence is not known up front. Each poll re-reads the probe's
+		// LastSeq; the value counts as final once it is unchanged across two
+		// consecutive polls, is acked by the buffer, and is replicated to all voters.
+		// The sleep only gives the writer a head start; correctness does not depend on it.
 		p.stopChecks()
 		time.Sleep(1200 * time.Millisecond)
-		probeLast, err := p.metrics.LastSeq(ctx, p.id, p.incarnation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		eventually(t, "all final probe heartbeats replicated to all 3 voters", 20*time.Second, func() bool {
-			if p.buf.AckedSeq() < probeLast {
+		var probeLast, prevLast uint64
+		havePrev := false
+		eventually(t, "all final probe heartbeats replicated to all 3 voters", 30*time.Second, func() bool {
+			cur, err := p.metrics.LastSeq(ctx, p.id, p.incarnation)
+			if err != nil {
+				return false
+			}
+			stable := havePrev && cur == prevLast
+			prevLast, havePrev = cur, true
+			if !stable || p.buf.AckedSeq() < cur {
 				return false
 			}
 			for _, v := range voters {
 				last, err := v.metrics.LastSeq(ctx, p.id, p.incarnation)
-				if err != nil || last != probeLast {
+				if err != nil || last != cur {
 					return false
 				}
 			}
+			probeLast = cur
 			return true
 		})
 		p.stop()

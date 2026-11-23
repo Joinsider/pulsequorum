@@ -71,6 +71,7 @@ func problemFields(t *testing.T, res response) map[string]string {
 func boolValue(p *bool) bool { return p != nil && *p }
 
 func TestMaintenanceOnceWindowRoundTrip(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	mon := createMonitorAs(t, e, editor, "web")
 	start := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
@@ -115,6 +116,7 @@ func TestMaintenanceOnceWindowRoundTrip(t *testing.T) {
 }
 
 func TestMaintenanceRecurringNextStart(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.now = time.Date(2026, 10, 21, 0, 30, 0, 0, time.UTC)
 	w := createMaintenance(t, e, editor, windowBody("nightly", nil, nightlySchedule()))
@@ -153,6 +155,7 @@ func TestMaintenanceRecurringNextStart(t *testing.T) {
 }
 
 func TestMaintenanceEmptyMonitorListMeansAll(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	res := e.do("POST", maintenancePath, editor, windowBody("all", []string{}, nightlySchedule()))
 	if res.code != http.StatusCreated {
@@ -164,6 +167,7 @@ func TestMaintenanceEmptyMonitorListMeansAll(t *testing.T) {
 }
 
 func TestMaintenanceListGetUpdateDelete(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.now = time.Date(2026, 10, 21, 1, 30, 0, 0, time.UTC)
 	mon := createMonitorAs(t, e, editor, "web")
@@ -227,6 +231,7 @@ func TestMaintenanceListGetUpdateDelete(t *testing.T) {
 }
 
 func TestMaintenanceCreateIsIdempotent(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	body := windowBody("once", nil, onceSchedule(time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC), time.Date(2026, 10, 21, 11, 0, 0, 0, time.UTC)))
 	key := uuid.NewString()
@@ -247,6 +252,7 @@ func TestMaintenanceCreateIsIdempotent(t *testing.T) {
 }
 
 func TestMaintenanceValidation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	mon := createMonitorAs(t, e, editor, "web")
 	start := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
@@ -291,6 +297,7 @@ func TestMaintenanceValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do("POST", maintenancePath, editor, c.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Fatalf("create = %d %s, want 422", res.code, res.body)
@@ -308,6 +315,7 @@ func TestMaintenanceValidation(t *testing.T) {
 // TestMaintenanceForeignMonitorReportedAsUnknown checks that a monitor of
 // another tenant gets the same field error as a monitor that does not exist.
 func TestMaintenanceForeignMonitorReportedAsUnknown(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	foreign := createMonitorAs(t, e, other, "foreign")
 	start := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
@@ -326,6 +334,7 @@ func TestMaintenanceForeignMonitorReportedAsUnknown(t *testing.T) {
 }
 
 func TestMaintenanceRoles(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	mon := createMonitorAs(t, e, editor, "web")
 	body := windowBody("x", []string{mon}, onceSchedule(time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC), time.Date(2026, 10, 21, 11, 0, 0, 0, time.UTC)))
@@ -350,6 +359,7 @@ func TestMaintenanceRoles(t *testing.T) {
 }
 
 func TestMaintenanceTenantIsolation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	start := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
 	w := createMaintenance(t, e, editor, windowBody("own", nil, onceSchedule(start, start.Add(time.Hour))))
@@ -374,6 +384,7 @@ func TestMaintenanceTenantIsolation(t *testing.T) {
 }
 
 func TestMaintenanceRequiresAuthentication(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	if res := e.do("GET", maintenancePath, "", nil); res.code != http.StatusUnauthorized {
 		t.Errorf("anonymous list = %d, want 401", res.code)

@@ -91,6 +91,7 @@ func problemDetail(t *testing.T, r response) string {
 }
 
 func TestClusterAdminRequiresPlatformAdmin(t *testing.T) {
+	t.Parallel()
 	fake := &fakeClusterAdmin{token: "t", expires: time.Now().Add(time.Hour), selfID: "n1", leaderID: "n1"}
 	e := clusterEnv(t, fake)
 	ops := []struct {
@@ -121,6 +122,7 @@ func TestClusterAdminRequiresPlatformAdmin(t *testing.T) {
 }
 
 func TestCreateJoinTokenSuccess(t *testing.T) {
+	t.Parallel()
 	expires := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	fake := &fakeClusterAdmin{token: "secret-token-value", expires: expires}
 	e := clusterEnv(t, fake)
@@ -146,6 +148,7 @@ func TestCreateJoinTokenSuccess(t *testing.T) {
 }
 
 func TestCreateJoinTokenDefaultTTL(t *testing.T) {
+	t.Parallel()
 	fake := &fakeClusterAdmin{token: "t", expires: time.Now().Add(time.Hour)}
 	e := clusterEnv(t, fake)
 	res := e.do("POST", "/api/v1/admin/join-tokens", platformAdmin, map[string]any{"role": "voter"})
@@ -161,6 +164,7 @@ func TestCreateJoinTokenDefaultTTL(t *testing.T) {
 }
 
 func TestCreateJoinTokenValidation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		body  map[string]any
@@ -173,6 +177,7 @@ func TestCreateJoinTokenValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			fake := &fakeClusterAdmin{token: "t", expires: time.Now()}
 			e := clusterEnv(t, fake)
 			res := e.do("POST", "/api/v1/admin/join-tokens", platformAdmin, c.body)
@@ -197,6 +202,7 @@ func TestCreateJoinTokenValidation(t *testing.T) {
 }
 
 func TestCreateJoinTokenErrorMapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  error
@@ -210,6 +216,7 @@ func TestCreateJoinTokenErrorMapping(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			e := clusterEnv(t, &fakeClusterAdmin{tokenErr: c.err})
 			res := e.do("POST", "/api/v1/admin/join-tokens", platformAdmin, map[string]any{"role": "voter"})
 			if res.code != c.code {
@@ -226,6 +233,7 @@ func TestCreateJoinTokenErrorMapping(t *testing.T) {
 }
 
 func TestRemoveClusterNode(t *testing.T) {
+	t.Parallel()
 	t.Run("removed with warning", func(t *testing.T) {
 		fake := &fakeClusterAdmin{removal: membership.Removal{VotersLeft: 2, Warning: "even number of voters"}}
 		e := clusterEnv(t, fake)
@@ -266,6 +274,7 @@ func TestRemoveClusterNode(t *testing.T) {
 	}
 	for _, c := range errCases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			e := clusterEnv(t, &fakeClusterAdmin{removeErr: c.err})
 			res := e.do("DELETE", "/api/v1/admin/nodes/n2", platformAdmin, nil)
 			if res.code != c.code {
@@ -291,6 +300,7 @@ func voters(n int) []cluster.Member {
 }
 
 func TestListClusterNodes(t *testing.T) {
+	t.Parallel()
 	t.Run("two voters warn about an even count", func(t *testing.T) {
 		e := clusterEnv(t, &fakeClusterAdmin{members: voters(2), leaderID: "n1", selfID: "n2"})
 		res := e.do("GET", "/api/v1/admin/nodes", platformAdmin, nil)
@@ -330,6 +340,7 @@ func TestListClusterNodes(t *testing.T) {
 }
 
 func TestClusterAdminUnavailableWithoutHost(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t) // no cluster administration in these deps
 	for _, o := range []struct {
 		method, path string
@@ -358,6 +369,7 @@ func (f fakeReplication) Status() []replication.PeerStatus { return f }
 // the last replication error; the answering node and peers that were never
 // caught up carry neither.
 func TestListClusterNodesReplicationLag(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
 	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
 	statuses := fakeReplication{
@@ -414,6 +426,7 @@ func TestListClusterNodesReplicationLag(t *testing.T) {
 // ADR 0020: the listing shows the clock offset of each peer with a fresh
 // sample; the answering node and peers without one carry none.
 func TestListClusterNodesClockOffset(t *testing.T) {
+	t.Parallel()
 	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
 	offsets := map[string]int64{"n1": 5, "n2": 90_000, "n3": -2_300}
 	e := newEnvTweaked(t, false, func(d *Deps) {
@@ -448,6 +461,7 @@ func TestListClusterNodesClockOffset(t *testing.T) {
 // TestListClusterNodesRegistry checks that the registry fields are shown for
 // registered nodes only (ADR 0017).
 func TestListClusterNodesRegistry(t *testing.T) {
+	t.Parallel()
 	e := clusterEnv(t, &fakeClusterAdmin{members: voters(2), leaderID: "n1", selfID: "n1"})
 	cmd := cluster.NewRegisterNode("register-n1", store.Node{ID: "n1", Name: "node-one", Role: store.NodeRoleVoter,
 		Version: "1.2.3", Capabilities: []string{"icmp"}})
@@ -479,6 +493,7 @@ func TestListClusterNodesRegistry(t *testing.T) {
 // TestListClusterNodesCommandVersions covers ADR 0018 section 7: the registry
 // version of each node, the active command level and whether voters differ.
 func TestListClusterNodesCommandVersions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	register := func(e *env, id string, maxVersion uint32) {
 		t.Helper()
@@ -522,6 +537,7 @@ func TestListClusterNodesCommandVersions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			e := clusterEnv(t, &fakeClusterAdmin{members: voters(2), leaderID: "n1", selfID: "n1"})
 			for _, id := range []string{"n1", "n2"} {
 				if v, ok := tt.register[id]; ok {
@@ -559,6 +575,7 @@ func TestListClusterNodesCommandVersions(t *testing.T) {
 // TestCommandNotEnabledIs503 covers ADR 0018 section 4: a command that waits
 // for a rolling update to finish is answered with 503 and a retry hint.
 func TestCommandNotEnabledIs503(t *testing.T) {
+	t.Parallel()
 	notEnabled := &cluster.CommandError{Code: cluster.CodeNotEnabled, Message: "requires command version 3; upgrade all voters first"}
 
 	t.Run("apply", func(t *testing.T) {
@@ -597,6 +614,7 @@ func (f fakeApplier) Apply(context.Context, *pb.Command) (cluster.ApplyResult, e
 // TestListClusterNodesSSRFProtection checks that each node shows its SSRF
 // setting (ADR 0030) and that a node without a recent answer shows none.
 func TestListClusterNodesSSRFProtection(t *testing.T) {
+	t.Parallel()
 	admin := &fakeClusterAdmin{members: voters(3), leaderID: "n1", selfID: "n1"}
 	ssrf := map[string]bool{"n1": true, "n2": false}
 	e := newEnvTweaked(t, false, func(d *Deps) {

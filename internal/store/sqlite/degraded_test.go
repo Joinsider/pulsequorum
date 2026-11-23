@@ -81,6 +81,7 @@ func seedMonitors(t *testing.T, s *StateStore, pairs ...[2]string) {
 }
 
 func TestUnconfirmedAlertInsertIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	seedMonitors(t, s, [2]string{"t1", "m1"})
@@ -122,6 +123,7 @@ func TestUnconfirmedAlertInsertIsIdempotent(t *testing.T) {
 }
 
 func TestUnconfirmedAlertResolve(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	seedMonitors(t, s, [2]string{"t1", "m1"})
@@ -147,6 +149,7 @@ func TestUnconfirmedAlertResolve(t *testing.T) {
 		{name: "unknown alert", nodeID: "node-a", localID: 99, verdict: store.VerdictConfirmed, wantErr: store.ErrNotFound},
 		{name: "unknown verdict", nodeID: "node-a", localID: 2, verdict: "maybe", wantErr: errAny},
 	}
+	// Not parallel subtests: they share s and "already judged" depends on "confirmed".
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := s.Update(ctx, func(tx store.StateTx) error {
@@ -191,6 +194,7 @@ func TestUnconfirmedAlertResolve(t *testing.T) {
 var errAny = errors.New("any error")
 
 func TestReplaceStatusHistory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	// Monitor IDs are unique across tenants, so the second tenant has its own monitor.
@@ -242,6 +246,7 @@ func TestReplaceStatusHistory(t *testing.T) {
 			},
 		},
 	}
+	// Not parallel subtests: they share s, and each expects the history left by the previous one.
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := s.Update(ctx, func(tx store.StateTx) error {
@@ -282,6 +287,7 @@ func TestReplaceStatusHistory(t *testing.T) {
 }
 
 func TestReevaluatedIncident(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	seedMonitors(t, s, [2]string{"t1", "m1"})
@@ -316,6 +322,7 @@ func TestReevaluatedIncident(t *testing.T) {
 }
 
 func TestLastIssuedAt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	fresh, err := s.Fingerprint(ctx)
@@ -364,6 +371,7 @@ func TestLastIssuedAt(t *testing.T) {
 }
 
 func TestDegradedAlertLog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 	base := store.DegradedAlert{TenantID: "t1", MonitorID: "m1", ChannelID: "c1", Status: "DOWN", Outcome: "sent", Total: 3, Reachable: 1}
@@ -427,6 +435,7 @@ func TestDegradedAlertLog(t *testing.T) {
 // TestDegradedMigrationsUpDown covers migrations 00015 (state) and 00005 (metrics):
 // the new tables and the column appear on Up and disappear on Down.
 func TestDegradedMigrationsUpDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	stateMigs := openMigrated(t, stateMigrationFiles, "migrations/state", StateFile)
 	if _, err := stateMigs.provider.UpTo(ctx, 14); err != nil {

@@ -13,6 +13,7 @@ import (
 // TestSystemTenantReserved: only the system actor creates the system tenant,
 // and it never holds monitors (ADR 0025).
 func TestSystemTenantReserved(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 
 	byUser, err := NewPutTenant("sys-by-user", store.SystemTenantID, TenantDocument{Name: "System", Plan: "system"})

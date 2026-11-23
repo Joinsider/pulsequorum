@@ -225,6 +225,7 @@ func createTenantPayload(source string) *pb.CreateTenant {
 // TestTenantAdminNeedsLevel8 covers ADR 0029 and ADR 0018: below command level 8
 // all six commands are rejected with CodeUnsupported and nothing is written.
 func TestTenantAdminNeedsLevel8(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		payload any
@@ -238,6 +239,7 @@ func TestTenantAdminNeedsLevel8(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := newAlertFSM(t, t.TempDir())
 			h.setLevel(TenantAdminCommandLevel - 1)
 			h.putSystemTenant(1000)
@@ -255,6 +257,7 @@ func TestTenantAdminNeedsLevel8(t *testing.T) {
 // system may run the tenant and plan commands, only the system provisions
 // tenants automatically, and a rejected command writes nothing.
 func TestTenantAdminActors(t *testing.T) {
+	t.Parallel()
 	suspendT1 := func(h *alertFSM) {
 		h.adminDo(1500, "pre-suspend-t1", actorSystem, &pb.SetTenantSuspended{TenantId: "t1", Suspended: true}, "")
 	}
@@ -288,6 +291,7 @@ func TestTenantAdminActors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			if tt.pre != nil {
 				tt.pre(h)
@@ -306,6 +310,7 @@ func TestTenantAdminActors(t *testing.T) {
 // TestCreateTenantRules covers the validation of CreateTenant in the order of
 // the FSM: IDs, names, plans, overrides, organizations.
 func TestCreateTenantRules(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		edit func(c *pb.CreateTenant)
@@ -339,6 +344,7 @@ func TestCreateTenantRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			c := createTenantPayload(tenant.SourceAdmin)
 			tt.edit(c)
@@ -355,6 +361,7 @@ func TestCreateTenantRules(t *testing.T) {
 
 // TestCreateTenantStoresFields checks what a successful CreateTenant stores.
 func TestCreateTenantStoresFields(t *testing.T) {
+	t.Parallel()
 	h := adminFSM(t)
 	res := h.adminDo(4242, "create-t2", actorSystem, &pb.CreateTenant{TenantId: "t2", Name: "Two", PlanId: "pro",
 		OrgId: "org-2", LimitsJson: `{"maxMonitors":5,"maxChannels":null}`, Source: tenant.SourceAdmin}, "")
@@ -381,6 +388,7 @@ func TestCreateTenantStoresFields(t *testing.T) {
 // TestCreateTenantTombstone covers ADR 0029: the ID of a deleted tenant is never
 // reused, but its organization is free again.
 func TestCreateTenantTombstone(t *testing.T) {
+	t.Parallel()
 	h := adminFSM(t)
 	h.adminDo(1100, "create-t2", actorSystem, createTenantPayload(tenant.SourceAdmin), "")
 	h.adminDo(1200, "suspend-t2", actorSystem, &pb.SetTenantSuspended{TenantId: "t2", Suspended: true}, "")
@@ -396,11 +404,13 @@ func TestCreateTenantTombstone(t *testing.T) {
 
 // TestAutoProvisioning covers the automatic creation of tenants (ADR 0029, 4A).
 func TestAutoProvisioning(t *testing.T) {
+	t.Parallel()
 	autoPayload := func(id, org string, maxTenants uint32) *pb.CreateTenant {
 		return &pb.CreateTenant{TenantId: id, Name: "Org " + org, PlanId: "pro", OrgId: org, Source: tenant.SourceAuto, MaxAutoTenants: maxTenants}
 	}
 
 	t.Run("bound organization returns its tenant and creates nothing", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		before := h.catalogJSON()
 		res := h.adminDo(2000, "auto-existing", actorSystem, autoPayload("p1", "org-1", 10), "")
@@ -414,6 +424,7 @@ func TestAutoProvisioning(t *testing.T) {
 	})
 
 	t.Run("parallel first logins end at the first tenant", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		r1 := h.adminDo(2000, "prov-1", actorSystem, autoPayload("p1", "org-7", 10), "")
 		r2 := h.adminDo(2001, "prov-2", actorSystem, autoPayload("p2", "org-7", 10), "")
@@ -427,6 +438,7 @@ func TestAutoProvisioning(t *testing.T) {
 	})
 
 	t.Run("the maximum counts automatic tenants only", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "auto-a1", actorSystem, autoPayload("a1", "org-a", 1), "")
 		h.adminDo(2001, "auto-a2", actorSystem, autoPayload("a2", "org-b", 1), CodeLimitExceeded)
@@ -436,6 +448,7 @@ func TestAutoProvisioning(t *testing.T) {
 	})
 
 	t.Run("a maximum of zero admits no automatic tenant", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "auto-zero", actorSystem, autoPayload("a1", "org-a", 0), CodeLimitExceeded)
 		h.wantAbsentTenant("a1")
@@ -458,6 +471,7 @@ func TestAutoProvisioning(t *testing.T) {
 	}
 	for _, tt := range rejections {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			c := autoPayload("p1", "org-free", 10)
 			tt.edit(c)
@@ -474,6 +488,7 @@ func TestAutoProvisioning(t *testing.T) {
 // command level 8: only the system creates tenants that way, the plan must be
 // assignable, and the organization is validated and must be free.
 func TestPutEntityTenantAtLevel8(t *testing.T) {
+	t.Parallel()
 	h := adminFSM(t)
 	doc := TenantDocument{Name: "Five", Plan: "pro"}
 	h.putTenantDoc(2000, "put-t5-user", "t5", doc, actorUser, CodeInvalid)
@@ -496,6 +511,7 @@ func TestPutEntityTenantAtLevel8(t *testing.T) {
 // TestUpdateTenant covers UpdateTenant: set fields only, the protected tenants,
 // rebinding and unbinding of organizations.
 func TestUpdateTenant(t *testing.T) {
+	t.Parallel()
 	withT2 := func(h *alertFSM) {
 		h.adminDo(1100, "create-t2", actorSystem, createTenantPayload(tenant.SourceAdmin), "")
 	}
@@ -633,6 +649,7 @@ func TestUpdateTenant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			if tt.setup != nil {
 				tt.setup(h)
@@ -654,18 +671,22 @@ func TestUpdateTenant(t *testing.T) {
 // TestSetTenantSuspended covers ADR 0029: suspending revokes the refresh
 // sessions of that tenant only, and the command is idempotent.
 func TestSetTenantSuspended(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{tenant.DefaultTenantID, store.SystemTenantID} {
 		t.Run("protected "+id+" cannot be suspended", func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			h.adminDo(2000, "suspend", actorSystem, &pb.SetTenantSuspended{TenantId: id, Suspended: true}, CodeInvalid)
 		})
 	}
 	t.Run("unknown tenant", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "suspend-ghost", actorSystem, &pb.SetTenantSuspended{TenantId: "ghost", Suspended: true}, CodeNotFound)
 	})
 
 	t.Run("revokes the sessions of the tenant only", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(1100, "create-t2", actorSystem, createTenantPayload(tenant.SourceAdmin), "")
 		alice := h.userWithSession(1200, "t1", "alice")
@@ -702,12 +723,15 @@ func TestSetTenantSuspended(t *testing.T) {
 // TestDeleteTenant covers ADR 0029 (5A): a suspended tenant is deleted with all
 // its replicated data, a tombstone remains and the organization is freed.
 func TestDeleteTenant(t *testing.T) {
+	t.Parallel()
 	t.Run("protected tenants cannot be deleted", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "delete-default", actorSystem, &pb.DeleteTenant{TenantId: tenant.DefaultTenantID}, CodeInvalid)
 		h.adminDo(2000, "delete-system", actorSystem, &pb.DeleteTenant{TenantId: store.SystemTenantID}, CodeInvalid)
 	})
 	t.Run("a tenant must be suspended first", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		before := h.catalogJSON()
 		h.adminDo(2000, "delete-active", actorSystem, &pb.DeleteTenant{TenantId: "t1"}, CodeConflict)
@@ -716,10 +740,12 @@ func TestDeleteTenant(t *testing.T) {
 		}
 	})
 	t.Run("unknown tenant", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "delete-ghost", actorSystem, &pb.DeleteTenant{TenantId: "ghost"}, CodeNotFound)
 	})
 	t.Run("deletes the data of the tenant and frees its organization", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(1100, "create-t2", actorSystem, createTenantPayload(tenant.SourceAdmin), "")
 		h.putMonitorAt(1200, "m-t1-1", "t1", "m1", 60, 0, "")
@@ -775,6 +801,7 @@ func TestDeleteTenant(t *testing.T) {
 
 // TestPlans covers PutPlan and DeletePlan (ADR 0029).
 func TestPutPlanRules(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		payload *pb.PutPlan
@@ -799,6 +826,7 @@ func TestPutPlanRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := adminFSM(t)
 			before := h.catalogJSON()
 			h.adminDo(2000, "put-plan", actorSystem, tt.payload, tt.code)
@@ -811,6 +839,7 @@ func TestPutPlanRules(t *testing.T) {
 	}
 
 	t.Run("stores limits canonically", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "plan-a", actorSystem, &pb.PutPlan{PlanId: "team", Name: "Team", LimitsJson: `{"maxChannels":3,"maxMonitors":2}`}, "")
 		if got := string(h.plan("team").Limits); got != `{"maxMonitors":2,"maxChannels":3}` {
@@ -827,6 +856,7 @@ func TestPutPlanRules(t *testing.T) {
 	})
 
 	t.Run("replacing a plan keeps its creation time", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(5000, "pro-again", actorSystem, &pb.PutPlan{PlanId: "pro", Name: "Pro 2", LimitsJson: "{}"}, "")
 		p := h.plan("pro")
@@ -839,12 +869,15 @@ func TestPutPlanRules(t *testing.T) {
 // TestDeletePlanRules covers DeletePlan: the reserved plans are never deleted,
 // a plan in use is a conflict.
 func TestDeletePlanRules(t *testing.T) {
+	t.Parallel()
 	t.Run("default and system plans stay", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "del-default", actorSystem, &pb.DeletePlan{PlanId: tenant.DefaultPlanID}, CodeInvalid)
 		h.adminDo(2000, "del-system", actorSystem, &pb.DeletePlan{PlanId: tenant.SystemPlanID}, CodeInvalid)
 	})
 	t.Run("a plan in use conflicts until no tenant uses it", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "del-starter-in-use", actorSystem, &pb.DeletePlan{PlanId: "starter"}, CodeConflict)
 		if _, err := h.st.GetPlan(h.ctx, "starter"); err != nil {
@@ -857,6 +890,7 @@ func TestDeletePlanRules(t *testing.T) {
 		}
 	})
 	t.Run("unknown plan", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(2000, "del-ghost", actorSystem, &pb.DeletePlan{PlanId: "ghost"}, CodeNotFound)
 	})
@@ -865,7 +899,9 @@ func TestDeletePlanRules(t *testing.T) {
 // TestTenantLimitsOnWrites covers the limits enforced in PutEntity for monitors
 // and channels (ADR 0029, 2B and 3A).
 func TestTenantLimitsOnWrites(t *testing.T) {
+	t.Parallel()
 	t.Run("monitor limit rejects new monitors", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.putMonitorAt(1100, "m1", "t1", "m1", 60, 0, "")
 		h.putMonitorAt(1101, "m2", "t1", "m2", 60, 0, "")
@@ -874,6 +910,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("updates of existing monitors are allowed at the limit", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.putMonitorAt(1100, "m1", "t1", "m1", 60, 0, "")
 		h.putMonitorAt(1101, "m2", "t1", "m2", 60, 0, "")
@@ -882,6 +919,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("a shorter plan keeps the stock and rejects new or shorter intervals", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(1100, "create-t2", actorSystem, createTenantPayload(tenant.SourceAdmin), "")
 		h.putMonitorAt(1200, "m-fast", "t2", "fast", 30, 0, "") // pro has no limits
@@ -900,6 +938,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("channel limit rejects new channels", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.putChannelAt(1100, "ch-1", "t1", "c1", []string{store.EventDown}, 0, "")
 		h.putChannelAt(1101, "ch-2", "t1", "c2", []string{store.EventDown}, 0, CodeLimitExceeded)
@@ -907,6 +946,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("explicit null lifts plan limits", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(1100, "create-t3", actorSystem, &pb.CreateTenant{TenantId: "t3", Name: "Three", PlanId: "starter", OrgId: "org-3",
 			LimitsJson: `{"maxMonitors":null,"minIntervalSeconds":null,"maxChannels":null}`, Source: tenant.SourceAdmin}, "")
@@ -918,6 +958,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("override raises a plan limit", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.adminDo(1100, "create-t3", actorSystem, &pb.CreateTenant{TenantId: "t3", Name: "Three", PlanId: "starter", OrgId: "org-3",
 			LimitsJson: `{"maxMonitors":3}`, Source: tenant.SourceAdmin}, "")
@@ -928,6 +969,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("suspended tenant rejects writes", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		h.putMonitorAt(1100, "m1", "t1", "m1", 60, 0, "")
 		h.adminDo(1200, "suspend-t1", actorSystem, &pb.SetTenantSuspended{TenantId: "t1", Suspended: true}, "")
@@ -937,6 +979,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 	})
 
 	t.Run("system channels are not limited", func(t *testing.T) {
+		t.Parallel()
 		h := adminFSM(t)
 		// The system tenant carries a limit of one channel; system channels ignore limits.
 		h.putTenantDoc(1100, "tenant-system-limits", store.SystemTenantID,
@@ -951,6 +994,7 @@ func TestTenantLimitsOnWrites(t *testing.T) {
 // TestLimitsIgnoredBelowLevel8 covers ADR 0018 for ADR 0029: below command level
 // 8 no limit and no suspension is checked on writes.
 func TestLimitsIgnoredBelowLevel8(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(TenantAdminCommandLevel - 1)
 	h.putSystemTenant(1000)
@@ -974,6 +1018,7 @@ func TestLimitsIgnoredBelowLevel8(t *testing.T) {
 
 // TestLimitViolation covers the rules of ADR 0029 for a single write.
 func TestLimitViolation(t *testing.T) {
+	t.Parallel()
 	ptr := func(v int) *int { return &v }
 	starter := tenant.Limits{MaxMonitors: ptr(2), MinIntervalSeconds: ptr(60), MaxChannels: ptr(1)}
 	monitor := pb.EntityKind_ENTITY_KIND_MONITOR
@@ -1008,6 +1053,7 @@ func TestLimitViolation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := LimitViolation(tt.lim, "starter", tt.usage, tt.kind, tt.create, tt.interval, tt.oldInterval)
 			if !tt.violation {
 				if err != nil {
@@ -1078,6 +1124,7 @@ func adminScript(t *testing.T) ([]string, string) {
 // TestAdminCommandsAreDeterministic checks that the same log gives the same
 // results and the same state on every replica (FA-CLU-07, ADR 0029).
 func TestAdminCommandsAreDeterministic(t *testing.T) {
+	t.Parallel()
 	stepsA, fpA := adminScript(t)
 	stepsB, fpB := adminScript(t)
 	if len(stepsA) != len(stepsB) {
@@ -1104,6 +1151,7 @@ func TestAdminCommandsAreDeterministic(t *testing.T) {
 // the default tenant (EnsureDefaultTenant) carries the system actor, so a
 // cluster already at command level 8 still creates it (ADR 0029).
 func TestBootstrapTenantAtLevel8(t *testing.T) {
+	t.Parallel()
 	h := adminFSM(t)
 	cmd, err := NewPutTenant("bootstrap-t7", "t7", TenantDocument{Name: "Seven", Plan: "default"})
 	if err != nil {

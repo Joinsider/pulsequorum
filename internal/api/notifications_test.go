@@ -104,6 +104,7 @@ func createChannel(t *testing.T, e *env, principal string, body map[string]any) 
 }
 
 func TestCreateShoutrrrChannelMasksURL(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	res := e.do("POST", channelsPath, admin, map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL})
 	if res.code != http.StatusCreated {
@@ -129,6 +130,7 @@ func TestCreateShoutrrrChannelMasksURL(t *testing.T) {
 // TestChannelSecretsNeverReturned reads a channel back through GET and LIST and
 // checks the raw bodies for the plaintext secrets.
 func TestChannelSecretsNeverReturned(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	srv, _ := newRecorder(t, http.StatusOK)
 	secretURL := srv.URL + "/" + webhookPathPart
@@ -157,6 +159,7 @@ func TestChannelSecretsNeverReturned(t *testing.T) {
 }
 
 func TestUpdateKeepsURLAndHeaders(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	srv, rec := newRecorder(t, http.StatusOK)
 	ch := createChannel(t, e, admin, webhookBody("hook", srv.URL+"/original", map[string]string{"Authorization": "Bearer original"}))
@@ -191,6 +194,7 @@ func TestUpdateKeepsURLAndHeaders(t *testing.T) {
 }
 
 func TestInvalidChannelInput(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	srv, _ := newRecorder(t, http.StatusOK)
 	tests := []struct {
@@ -210,6 +214,7 @@ func TestInvalidChannelInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do("POST", channelsPath, admin, tt.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Errorf("status = %d %s, want 422", res.code, res.body)
@@ -219,6 +224,7 @@ func TestInvalidChannelInput(t *testing.T) {
 }
 
 func TestChannelAuthorization(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ch := createChannel(t, e, admin, map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL})
 	id := ch.Id.String()
@@ -251,6 +257,7 @@ func TestChannelAuthorization(t *testing.T) {
 // TestChannelTenantIsolation checks that another tenant's admin cannot see or
 // change the channels of this tenant (FA-TEN-01/02).
 func TestChannelTenantIsolation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ch := createChannel(t, e, admin, map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL})
 	id := ch.Id.String()
@@ -279,6 +286,7 @@ func TestChannelTenantIsolation(t *testing.T) {
 }
 
 func TestTestNotificationChannel(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	srv, rec := newRecorder(t, http.StatusOK)
 	ch := createChannel(t, e, admin, webhookBody("hook", srv.URL+"/hook", nil))
@@ -309,6 +317,7 @@ func TestTestNotificationChannel(t *testing.T) {
 }
 
 func TestDeleteChannel(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ch := createChannel(t, e, admin, map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL})
 	path := channelsPath + "/" + ch.Id.String()
@@ -324,6 +333,7 @@ func TestDeleteChannel(t *testing.T) {
 }
 
 func TestMonitorChannelAssignment(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	own := createChannel(t, e, admin, map[string]any{"name": "own", "kind": "shoutrrr", "url": shoutrrrURL})
 	foreign := createChannel(t, e, other, map[string]any{"name": "foreign", "kind": "shoutrrr", "url": shoutrrrURL})
@@ -392,6 +402,7 @@ func TestMonitorChannelAssignment(t *testing.T) {
 // TestDefaultChannelEventsFollowCommandLevel: new channels get the flapping and
 // channel-failed events only once the cluster command level is 4 (ADR 0023).
 func TestDefaultChannelEventsFollowCommandLevel(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	body := map[string]any{"name": "ops", "kind": "shoutrrr", "url": shoutrrrURL}

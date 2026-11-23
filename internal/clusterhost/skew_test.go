@@ -66,6 +66,7 @@ func withinMs(got, want, tolerance int64) bool {
 //     certificates issued by that leader. The test verifies the certificates
 //     directly with the verifier; no leadership change is forced.
 func TestClockSkewAcrossVoters(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 

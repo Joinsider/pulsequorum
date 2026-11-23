@@ -9,6 +9,7 @@
 # Go
 *.test
 coverage.out
+coverage-*.out
 
 # OS / editors
 .DS_Store

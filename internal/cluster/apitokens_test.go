@@ -81,6 +81,7 @@ func (h *alertFSM) tokens(tenantID string) []store.APIToken {
 // TestCreateAPIToken covers ADR 0031, section 1: every validation rule of a
 // token, with a fresh FSM per case so that names and IDs never collide.
 func TestCreateAPIToken(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", 64)
 	tests := []struct {
 		name   string
@@ -125,6 +126,7 @@ func TestCreateAPIToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := tokenFSM(t)
 			p := validTokenPayload(1)
 			tt.mutate(p)
@@ -144,6 +146,7 @@ func TestCreateAPIToken(t *testing.T) {
 // TestCreateAPITokenStoresHashOnly checks the stored record: the hash only, the
 // creator, and the times from the command.
 func TestCreateAPITokenStoresHashOnly(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	p := validTokenPayload(7)
 	res := h.apply(createTokenCmd("create-7", "t1", p), tokenIssuedMs)
@@ -170,6 +173,7 @@ func TestCreateAPITokenStoresHashOnly(t *testing.T) {
 // the tenant rules (present, not the system tenant, existing, not suspended)
 // and the command level.
 func TestAPITokenActorsAndTenant(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		cmd    func(*alertFSM) *pb.Command
@@ -199,6 +203,7 @@ func TestAPITokenActorsAndTenant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := tokenFSM(t)
 			if tt.prep != nil {
 				tt.prep(h)
@@ -219,6 +224,7 @@ func TestAPITokenActorsAndTenant(t *testing.T) {
 // TestAPITokenLimit covers the limit of 50 tokens per tenant (a fixed FSM
 // limit, not a plan limit) and a freed slot after a revocation.
 func TestAPITokenLimit(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	for i := range MaxAPITokensPerTenant {
 		checkCode(t, h.apply(createTokenCmd(fmt.Sprintf("create-%d", i), "t1", validTokenPayload(i)), tokenIssuedMs).Err, "")
@@ -237,6 +243,7 @@ func TestAPITokenLimit(t *testing.T) {
 // TestAPITokenNameIsUniquePerTenant covers a name taken in the tenant
 // (CodeConflict) and the same name in another tenant (allowed).
 func TestAPITokenNameIsUniquePerTenant(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	checkCode(t, h.apply(createTokenCmd("create-1", "t1", validTokenPayload(1)), tokenIssuedMs).Err, "")
 
@@ -253,6 +260,7 @@ func TestAPITokenNameIsUniquePerTenant(t *testing.T) {
 // TestAPITokenNeedsLevel9 covers ADR 0018: below command level 9 the token and
 // prune commands and Batch are rejected with CodeUnsupported and nothing changes.
 func TestAPITokenNeedsLevel9(t *testing.T) {
+	t.Parallel()
 	h := tokenFSMAt(t, AuditCommandLevel-1)
 	checkCode(t, h.apply(createTokenCmd("create", "t1", validTokenPayload(1)), tokenIssuedMs).Err, CodeUnsupported)
 	checkCode(t, h.apply(NewRevokeAPIToken("revoke", "t1", userActor(), tokID(1)), tokenIssuedMs).Err, CodeUnsupported)
@@ -267,6 +275,7 @@ func TestAPITokenNeedsLevel9(t *testing.T) {
 // TestRevokeAPIToken covers revocation: the token is gone afterwards, unknown
 // and foreign tokens are not found, and only signed-in users may revoke.
 func TestRevokeAPIToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		tenant string
@@ -284,6 +293,7 @@ func TestRevokeAPIToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := tokenFSM(t)
 			checkCode(t, h.apply(createTokenCmd("create", "t1", validTokenPayload(1)), tokenIssuedMs).Err, "")
 			res := h.apply(NewRevokeAPIToken("revoke", tt.tenant, tt.actor, tt.id), tokenIssuedMs+1)
@@ -303,6 +313,7 @@ func TestRevokeAPIToken(t *testing.T) {
 // tokens: the cut-offs are checked against the command time, and only expired
 // tokens and old entries go.
 func TestPruneAudit(t *testing.T) {
+	t.Parallel()
 	createdAt := tokenIssuedMs
 	setup := func(t *testing.T) *alertFSM {
 		t.Helper()
@@ -318,6 +329,7 @@ func TestPruneAudit(t *testing.T) {
 	}
 
 	t.Run("removes old entries and expired tokens", func(t *testing.T) {
+		t.Parallel()
 		h := setup(t)
 		if n := len(auditEntries(t, h)); n < 2 {
 			t.Fatalf("audit entries before pruning = %d, want at least 2", n)
@@ -352,6 +364,7 @@ func TestPruneAudit(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 				h := setup(t)
 				cmd := NewPruneAudit(tt.before, tt.tokens)
 				checkCode(t, h.apply(cmd, tt.issued).Err, tt.code)

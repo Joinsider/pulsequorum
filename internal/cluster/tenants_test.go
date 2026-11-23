@@ -47,6 +47,7 @@ func (h *alertFSM) tenantOrg(id string) store.Tenant {
 // TestBindTenantOrg covers ADR 0027: the rules of BindTenantOrg, applied in the
 // order of the FSM, with the expected outcome and organization afterwards.
 func TestBindTenantOrg(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("a", 128)
 	tests := []struct {
 		name string
@@ -102,6 +103,7 @@ func TestBindTenantOrg(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := bindFSM(t)
 			for _, s := range tt.setup {
 				h.do(s, 2000, nil)
@@ -121,6 +123,7 @@ func TestBindTenantOrg(t *testing.T) {
 // TestBindTenantOrgResult checks the result JSON of a bind, including the
 // idempotent case.
 func TestBindTenantOrgResult(t *testing.T) {
+	t.Parallel()
 	h := bindFSM(t)
 	want := `{"tenant_id":"t1","org_id":"org-1"}`
 	for _, id := range []string{"first", "again"} {
@@ -137,6 +140,7 @@ func TestBindTenantOrgResult(t *testing.T) {
 // TestBindTenantOrgNoWriteWhenBound checks that a repeated bind to the same
 // organization does not touch the tenant row (the update time stays).
 func TestBindTenantOrgNoWriteWhenBound(t *testing.T) {
+	t.Parallel()
 	h := bindFSM(t)
 	h.do(NewBindTenantOrg("t1", "org-1"), 2000, nil)
 	before := h.tenantOrg("t1")
@@ -151,6 +155,7 @@ func TestBindTenantOrgNoWriteWhenBound(t *testing.T) {
 // TestBindTenantOrgKeepsOtherFields checks that only the organization and the
 // update time change, and that the tenant is found by its organization.
 func TestBindTenantOrgKeepsOtherFields(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(OIDCCommandLevel)
 	cmd, err := NewPutTenant("put-acme", "acme", TenantDocument{Name: "Acme", Plan: "pro", Limits: json.RawMessage(`{"monitors":5}`)})
@@ -179,7 +184,9 @@ func TestBindTenantOrgKeepsOtherFields(t *testing.T) {
 // TestBindTenantOrgNeedsLevel7 covers ADR 0018 at the FSM: below level 7 the
 // command is rejected and writes nothing; at level 7 it is applied.
 func TestBindTenantOrgNeedsLevel7(t *testing.T) {
+	t.Parallel()
 	t.Run("rejected at level 6", func(t *testing.T) {
+		t.Parallel()
 		h := newAlertFSM(t, t.TempDir())
 		h.setLevel(OIDCCommandLevel - 1)
 		h.putTenant(1000, "t1")
@@ -189,6 +196,7 @@ func TestBindTenantOrgNeedsLevel7(t *testing.T) {
 		}
 	})
 	t.Run("accepted at level 7", func(t *testing.T) {
+		t.Parallel()
 		h := newAlertFSM(t, t.TempDir())
 		h.setLevel(OIDCCommandLevel)
 		h.putTenant(1000, "t1")
@@ -203,6 +211,7 @@ func TestBindTenantOrgNeedsLevel7(t *testing.T) {
 // needs a version the cluster does not have yet is rejected before it is proposed,
 // and a node that cannot apply version 7 rejects it locally.
 func TestBindTenantOrgCommandLevelGate(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -243,6 +252,7 @@ func TestBindTenantOrgCommandLevelGate(t *testing.T) {
 // tenants (ADR 0027): the system tenant never holds an organization, but other
 // tenants are unaffected.
 func TestSystemTenantPutRejectsOrganization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		tenantID string
@@ -256,6 +266,7 @@ func TestSystemTenantPutRejectsOrganization(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := newAlertFSM(t, t.TempDir())
 			h.setLevel(OIDCCommandLevel)
 			cmd, err := NewPutTenant("put-"+tt.tenantID+"-"+tt.orgID, tt.tenantID,
@@ -276,6 +287,7 @@ func TestSystemTenantPutRejectsOrganization(t *testing.T) {
 
 // TestValidOrgID covers the character set and length rules of organization IDs (ADR 0027).
 func TestValidOrgID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		id   string
 		want bool

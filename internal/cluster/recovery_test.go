@@ -27,6 +27,7 @@ func recoveryTestConfig(dir string) Config {
 }
 
 func TestPlanRecovery(t *testing.T) {
+	t.Parallel()
 	voter := func(id, addr string) RaftServer { return RaftServer{ID: id, Address: addr, Voter: true} }
 	tests := []struct {
 		name        string
@@ -70,6 +71,7 @@ func TestPlanRecovery(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			plan, err := PlanRecovery(tc.info)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
@@ -98,6 +100,7 @@ func TestPlanRecovery(t *testing.T) {
 
 // ADR 0019: a running node holds the Raft log; inspection reports that instead of waiting.
 func TestInspectRaftWhileNodeRuns(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -122,6 +125,7 @@ func TestInspectRaftWhileNodeRuns(t *testing.T) {
 }
 
 func TestInspectRaftWithoutState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st := openStore(t, dir)
@@ -135,6 +139,7 @@ func TestInspectRaftWithoutState(t *testing.T) {
 // but not yet in state.db (planted after shutdown) must stay out of state.db.
 // Recovery applies it.
 func TestInspectRaftLeavesStateUntouched(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -246,6 +251,7 @@ func appendLogEntry(t *testing.T, dir string, typ raft.LogType, data []byte) raf
 // ADR 0019: the members that recovery drops are written to the revoke file, so
 // that they are revoked once the recovered node leads again.
 func TestRecoverRevokesDroppedMembers(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -290,6 +296,7 @@ func TestRecoverRevokesDroppedMembers(t *testing.T) {
 // ADR 0019: recovery of a single-member cluster keeps all data, writes a backup
 // and starts again as leader with the earlier data.
 func TestRecoverSingleNode(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir := t.TempDir()

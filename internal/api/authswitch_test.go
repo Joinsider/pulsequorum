@@ -86,6 +86,7 @@ func remount(t *testing.T, base *env, cfg config.Config, local *auth.Local, auth
 // refresh sessions are revoked, API tokens keep working, and a switch back to
 // local accepts only passwords again.
 func TestSwitchLocalToOIDC(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	const adminName = "root-admin"
