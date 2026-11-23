@@ -170,6 +170,19 @@ type Options struct {
 	// ClockInterval is the period of the clock offset measurement; zero means
 	// clockSampleInterval. Tests shorten it.
 	ClockInterval time.Duration
+	// RevocationReload is the period in which the revocation list is reloaded
+	// into the handshakes; zero means RevocationReload (FA-PKI-04). Tests
+	// shorten it.
+	RevocationReload time.Duration
+	// StopGrace bounds the graceful stop of the cluster port before open
+	// streams are cut; zero means grpcStopGrace. Tests shorten it.
+	StopGrace time.Duration
+	// HealthThreshold is membership.HealthWatcher.Threshold; zero means the
+	// default of ADR 0017. Tests shorten it.
+	HealthThreshold time.Duration
+	// PromotePoll is membership.Manager.PromotePoll; zero means its default.
+	// Tests shorten it.
+	PromotePoll time.Duration
 	// SelfCheck returns the latest result of this node's reference targets
 	// (ADR 0022); it is reported in GetStatus. Nil means not configured.
 	SelfCheck func() selfcheck.Status
@@ -227,13 +240,17 @@ type Host struct {
 	// service answers GetStatus; SelfSignals asks it for this node's signals.
 	service       *membership.Service
 	clockInterval time.Duration
-	mux           *clusternet.Mux
-	grpc          *grpc.Server
-	advertise     string
-	dataDir       string
-	sec           clusternet.Security
-	log           *slog.Logger
-	wg            sync.WaitGroup
+	// revocationReload and stopGrace are Options.RevocationReload and
+	// Options.StopGrace with their defaults applied.
+	revocationReload time.Duration
+	stopGrace        time.Duration
+	mux              *clusternet.Mux
+	grpc             *grpc.Server
+	advertise        string
+	dataDir          string
+	sec              clusternet.Security
+	log              *slog.Logger
+	wg               sync.WaitGroup
 
 	// leaderMu guards the cached connection to the current leader, which
 	// write forwarding reuses instead of dialing per command.
@@ -250,17 +267,19 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 		clock = time.Now
 	}
 	h := &Host{
-		Cert:           opts.Prepared.Cert,
-		ssrfProtection: opts.SSRFProtection,
-		Revocations:    &clusterpki.Revocations{},
-		Authority:      &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
-		log:            opts.Log,
-		advertise:      opts.Advertise,
-		dataDir:        opts.DataDir,
-		state:          opts.State,
-		self:           selfNode(opts),
-		clock:          clock,
-		clockInterval:  opts.ClockInterval,
+		Cert:             opts.Prepared.Cert,
+		ssrfProtection:   opts.SSRFProtection,
+		Revocations:      &clusterpki.Revocations{},
+		Authority:        &clusterpki.Authority{State: opts.State, Keyring: opts.Keyring, Now: clock},
+		log:              opts.Log,
+		advertise:        opts.Advertise,
+		dataDir:          opts.DataDir,
+		state:            opts.State,
+		self:             selfNode(opts),
+		clock:            clock,
+		clockInterval:    opts.ClockInterval,
+		revocationReload: positiveOr(opts.RevocationReload, RevocationReload),
+		stopGrace:        positiveOr(opts.StopGrace, grpcStopGrace),
 	}
 	if h.clockInterval <= 0 {
 		h.clockInterval = clockSampleInterval
@@ -301,8 +320,10 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	}
 	h.Node = node
 	h.Authority.Cluster = node
-	h.Manager = &membership.Manager{Raft: node, State: opts.State, Status: h.status, DialLeader: h.dial, Log: opts.Log}
-	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log, Now: clock}
+	h.Manager = &membership.Manager{Raft: node, State: opts.State, Status: h.status, DialLeader: h.dial, Log: opts.Log,
+		PromotePoll: opts.PromotePoll}
+	h.Health = &membership.HealthWatcher{Node: node, State: opts.State, Log: opts.Log, Now: clock,
+		Threshold: opts.HealthThreshold}
 	h.Level = &membership.LevelWatcher{Node: node, State: opts.State, Log: opts.Log}
 	node.OnHeartbeat(h.Health.Observe)
 	h.Replication = replication.New(replication.Options{
@@ -394,7 +415,7 @@ func (h *Host) Bootstrap(ctx context.Context) error {
 // replication, node registration and node health. It returns when ctx ends.
 func (h *Host) Run(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Go(func() { h.Revocations.Run(ctx, h.Authority.State, RevocationReload, h.log) })
+	wg.Go(func() { h.Revocations.Run(ctx, h.Authority.State, h.revocationReload, h.log) })
 	wg.Go(func() { h.Cert.RunRenewal(ctx, h.issuer, renewalCheck, h.log) })
 	wg.Go(func() { h.Manager.Run(ctx, leaderWatch) })
 	wg.Go(func() { h.announceAddress(ctx) })
@@ -595,7 +616,7 @@ func (h *Host) Close() error {
 }
 
 // stopGRPC stops the cluster port gracefully and cuts the streams that are
-// still open after grpcStopGrace, such as the replication push streams of
+// still open after the stop grace (grpcStopGrace by default), such as the replication push streams of
 // the peers.
 func (h *Host) stopGRPC() {
 	done := make(chan struct{})
@@ -605,8 +626,8 @@ func (h *Host) stopGRPC() {
 	}()
 	select {
 	case <-done:
-	case <-time.After(grpcStopGrace):
-		h.log.Warn("cluster port still has open streams, closing them", "grace", grpcStopGrace)
+	case <-time.After(h.stopGrace):
+		h.log.Warn("cluster port still has open streams, closing them", "grace", h.stopGrace)
 		h.grpc.Stop()
 		<-done
 	}
@@ -682,4 +703,12 @@ func (h *Host) status(ctx context.Context, address string) (*pb.GetStatusRespons
 	}
 	defer done()
 	return client.GetStatus(ctx, &pb.GetStatusRequest{})
+}
+
+// positiveOr returns d if it is positive and def otherwise.
+func positiveOr(d, def time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return def
 }

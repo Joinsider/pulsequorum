@@ -380,6 +380,7 @@ func assertContiguousPrefix(t *testing.T, where string, hbs []store.Heartbeat, w
 // 2 probes over mTLS: join, snapshot & delta push, heartbeat replication,
 // failover on connected voter & leader loss, and clean exit on revocation.
 func TestProbeEndToEndAndFailover(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -579,6 +580,7 @@ func TestProbeEndToEndAndFailover(t *testing.T) {
 // TestProbeQuorumNeutrality verifies FA-PRB-07: probes never become Raft
 // voters or non-voters and neither help reach nor preserve quorum.
 func TestProbeQuorumNeutrality(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -653,6 +655,7 @@ func TestProbeQuorumNeutrality(t *testing.T) {
 // completely in order upon reconnect with zero gaps/duplicates/drops, and the
 // overflow subtest exercises MaxAge expiry + lost_below progress.
 func TestProbeAS08(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 

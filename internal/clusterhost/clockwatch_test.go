@@ -13,6 +13,7 @@ import (
 // ADR 0020: the offset is remote minus the local midpoint of the call, and
 // samples with a round trip above one second are discarded.
 func TestEstimateOffset(t *testing.T) {
+	t.Parallel()
 	local := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name   string
@@ -48,6 +49,7 @@ func TestEstimateOffset(t *testing.T) {
 // ADR 0020: the last good sample per peer is kept, a failed or slow call does
 // not replace it, and a sample older than two minutes is dropped.
 func TestClockTrackerFreshness(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
 	var tr clockTracker
 	tr.record("b", clockSample{offset: 90 * time.Second, at: base})
@@ -79,6 +81,7 @@ func TestClockTrackerFreshness(t *testing.T) {
 // ADR 0024: the last GetStatus answer per peer is kept as a PeerView, and
 // answers older than clockMaxAge are dropped.
 func TestPeerViewTrackerFreshness(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
 	var tr peerViewTracker
 	tr.record("b", degraded.PeerView{AnsweredAt: base, LeaderID: "node-c"})
@@ -108,6 +111,7 @@ func TestPeerViewTrackerFreshness(t *testing.T) {
 // ADR 0024: while no leader is known the poll runs at most every 5 s; a
 // shorter configured interval (tests) and a leader known keep the normal one.
 func TestClockWait(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		normal     time.Duration

@@ -113,6 +113,7 @@ func waitMonitor(ctx context.Context, t *testing.T, nodes []*shNode, monitorID s
 }
 
 func TestSelfHealExcludesDeviatingVoter(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters")
 	}

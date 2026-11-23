@@ -51,9 +51,16 @@ const (
 	degAfter = 1500 * time.Millisecond
 	// degTick is the period of the degraded components and the judge (the defaults are 1 s to 30 s).
 	degTick = 500 * time.Millisecond
-	// degVerdict bounds the wait for the verdict: the judge decides a window
-	// once it is 30 s old (judgeSettle), so the wait includes that settle time.
-	degVerdict = 90 * time.Second
+	// degSettle is JudgeOptions.Settle: the judge decides a window once it is
+	// this old (production default 30 s). The slot unit is 500 ms, so 3 s keeps
+	// the same safety margin as the production settle time.
+	degSettle = 3 * time.Second
+	// degReportDelay is aggregator.Options.ReportDelay (production default 5 s),
+	// the slack added to the report deadline of a round.
+	degReportDelay = 200 * time.Millisecond
+	// degVerdict bounds the wait for the verdict: the settle time plus the
+	// reporting and judging rounds, with a generous margin.
+	degVerdict = 30 * time.Second
 )
 
 // degNode holds the degraded components of one voter.
@@ -89,8 +96,11 @@ func (d *degCluster) startVoter(seeds []string, token string) *consensusNode {
 	d.t.Helper()
 	cn := &consensusNode{}
 	dn := &degNode{cn: cn}
+	// The voters keep the production stop grace: with the test value the
+	// stopped voter's streams are cut at once and the status and alert timing
+	// of the scenario changes, so the verdict is a false alarm (reproduced).
 	n, err := launch(d.ctx, d.t, &testNode{id: uuid.NewString(), addr: freeAddr(d.t), dir: d.t.TempDir(),
-		replInterval: 300 * time.Millisecond, onStored: dn.observe}, seeds, token)
+		replInterval: 300 * time.Millisecond, stopGrace: grpcStopGrace, onStored: dn.observe}, seeds, token)
 	if err != nil {
 		d.t.Fatal(err)
 	}
@@ -166,7 +176,7 @@ func (d *degCluster) startStack(dn *degNode) {
 		State: cn.state, Metrics: cn.metrics, Cluster: host.Node, NodeID: cn.id,
 		IsLeader: func() bool { return host.Node.IsLeader() && gap != nil && gap.Done() },
 		Registry: registry, Assigner: assigner,
-		LeaderGrace: consensusGrace, Unit: consensusUnit, Logger: discard,
+		LeaderGrace: consensusGrace, Unit: consensusUnit, ReportDelay: degReportDelay, Logger: discard,
 	})
 	cn.agg.Store(agg)
 
@@ -200,7 +210,7 @@ func (d *degCluster) startStack(dn *degNode) {
 	degAgg := aggregator.New(aggregator.Options{
 		State: overlay, Metrics: cn.metrics, Cluster: applier, NodeID: cn.id,
 		IsLeader: detector.IsSender, Registry: registry, Assigner: assigner,
-		LeaderGrace: consensusGrace, Unit: consensusUnit, Logger: discard,
+		LeaderGrace: consensusGrace, Unit: consensusUnit, ReportDelay: degReportDelay, Logger: discard,
 	})
 	dn.degAgg.Store(degAgg)
 
@@ -217,7 +227,7 @@ func (d *degCluster) startStack(dn *degNode) {
 	})
 	judge := degraded.NewJudge(degraded.JudgeOptions{
 		State: cn.state, Proposer: host.Node, IsLeader: host.Node.IsLeader, CommandLevel: host.Node.CommandLevel,
-		GapDone: gap.Done, Unit: consensusUnit, Interval: degTick, Logger: discard,
+		GapDone: gap.Done, Unit: consensusUnit, Interval: degTick, Settle: degSettle, Logger: discard,
 	})
 	live := alert.NewDispatcher(alert.DispatcherOptions{
 		State: cn.state, Cluster: host.Node, Keyring: cn.keyring, Sender: sender,
@@ -443,6 +453,7 @@ func (d *degCluster) waitDegMonitor(want store.MonitorStatus, timeout time.Durat
 // voter alerts unconfirmed; after they return, the alert is reported, judged and
 // the FSM converges.
 func TestDegradedModeAlertsAndCorrects(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters and runs the degraded mode")
 	}

@@ -280,6 +280,7 @@ func upKey(sinceMs int64) string   { return fmt.Sprintf("%s:%d:UP", alertMonitor
 // produces one notification per transition and channel, and duplicates only
 // when a delivery was not acknowledged in the cluster.
 func TestLeaderChangeAlerting(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("starts three voters")
 	}

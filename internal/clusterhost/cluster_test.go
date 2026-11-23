@@ -27,6 +27,24 @@ import (
 	"github.com/joinsider/pulsequorum/internal/store/sqlite"
 )
 
+// Test values for the production intervals that Options makes overridable
+// (zero = production default). They keep the real-Raft tests in this package
+// fast without changing what they prove.
+const (
+	// testStopGrace replaces the 5 s graceful stop of the cluster port; the
+	// streams of the stopped voter are then cut after 100 ms.
+	testStopGrace = 100 * time.Millisecond
+	// testHealthThreshold is the time after which a silent voter counts as
+	// unhealthy (ADR 0017: 10 x the test HeartbeatTimeout of 200 ms).
+	testHealthThreshold = 2 * time.Second
+	// testPromotePoll is the period in which the leader promotes joined
+	// non-voters; the production default is 2 s.
+	testPromotePoll = 100 * time.Millisecond
+	// testRevocationReload is the period in which revoked certificates reach
+	// the handshakes; the production default is 10 s.
+	testRevocationReload = 500 * time.Millisecond
+)
+
 type testNode struct {
 	id      string
 	addr    string
@@ -42,6 +60,10 @@ type testNode struct {
 	lastIssuedAtStart int64
 	// replInterval is the anti-entropy period; zero keeps the default.
 	replInterval time.Duration
+	// stopGrace is Options.StopGrace of the node; zero means testStopGrace.
+	stopGrace time.Duration
+	// promotePoll is Options.PromotePoll of the node; zero means testPromotePoll.
+	promotePoll time.Duration
 	// caps are the node capabilities the node registers with (ADR 0017).
 	caps []string
 	// maxVersion overrides the command version of the node; zero keeps
@@ -152,6 +174,12 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		t.Fatal(err)
 	}
 	n.keyring = secrets.NewKeyring(n.kek, n.state.ListSecretKeys)
+	if n.stopGrace == 0 {
+		n.stopGrace = testStopGrace
+	}
+	if n.promotePoll == 0 {
+		n.promotePoll = testPromotePoll
+	}
 	n.host, err = Start(ctx, Options{
 		NodeID: n.id, ListenAddr: n.addr, Advertise: n.addr, DataDir: n.dir, Timeout: 300 * time.Millisecond,
 		State: n.state, Metrics: n.metrics, ReplicationInterval: n.replInterval,
@@ -163,6 +191,10 @@ func launch(ctx context.Context, t *testing.T, n *testNode, seeds []string, toke
 		SSRFProtection:      n.ssrfProtection,
 		ProbeHealthInterval: n.probeHealthInterval,
 		OnProbeRejected:     n.onProbeRejected,
+		StopGrace:           n.stopGrace,
+		HealthThreshold:     testHealthThreshold,
+		PromotePoll:         n.promotePoll,
+		RevocationReload:    testRevocationReload,
 	})
 	if err != nil {
 		// The state is not registered for cleanup yet; close it here.
@@ -228,6 +260,7 @@ func memberCount(n *testNode) int {
 // FA-CLU-03/04/08/10, FA-PKI-01..04: 1 → 3 voters over mTLS, removal with
 // revocation.
 func TestThreeVotersJoinOverMTLS(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -352,6 +385,7 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 // FA-CLU-08: a removal asked of a follower is forwarded to the leader, which
 // does the work; the leader itself and unknown nodes are rejected.
 func TestRemoveForwardedByFollower(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -421,6 +455,7 @@ func tenantCount(t *testing.T, n *testNode) int {
 // leader and visible on the follower when Apply returns; a retry with the same
 // request ID is deduplicated on any node, also after a leader change.
 func TestWriteForwarding(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -575,6 +610,7 @@ type streamKey struct {
 // all voters. Pushed batches arrive directly; a batch that is not pushed is
 // repaired by anti-entropy.
 func TestHeartbeatReplication(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	const interval = 300 * time.Millisecond
@@ -643,6 +679,7 @@ func registry(t *testing.T, n *testNode) map[string]store.Node {
 // capabilities and is healthy; when a node stops, the leader marks it unhealthy
 // and the remaining nodes agree on the new node of a count monitor.
 func TestAssignment(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -751,6 +788,7 @@ func nodesOf(reg map[string]store.Node) []store.Node {
 // binary holds the cluster command level back; the level rises once it is
 // updated; a downgrade does not start; a join with an old binary is rejected.
 func TestRollingUpdate(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 

@@ -14,6 +14,7 @@ import (
 // voters would name it as leader, and its old address is not reachable, so
 // asking them never succeeds (FA-CLU-10).
 func TestLeaderAnnouncesNewAddress(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("restarts a voter")
 	}

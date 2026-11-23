@@ -111,6 +111,7 @@ func hasReason(reasons *[]string, mu *sync.Mutex, want string) bool {
 // TestPrivateProbeTenantIsolation verifies ADR 0035 defense-in-depth D1, D3,
 // D4, and cert-vs-registry ownership checks across a multi-node cluster.
 func TestPrivateProbeTenantIsolation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -274,6 +275,7 @@ func TestPrivateProbeTenantIsolation(t *testing.T) {
 // TestPrivateProbeConcurrentLimit verifies ADR 0035 atomic FSM enforcement of
 // maxPrivateProbes=1 when two concurrent join-token creations race across voters.
 func TestPrivateProbeConcurrentLimit(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -322,6 +324,7 @@ func TestPrivateProbeConcurrentLimit(t *testing.T) {
 // revokes all private probes of that tenant, terminates live streams, and
 // blocks reconnections while other tenants keep running.
 func TestPrivateProbeDeleteTenantRevocation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -401,6 +404,7 @@ func TestPrivateProbeDeleteTenantRevocation(t *testing.T) {
 // private probes check loopback targets when local SSRF is off even when the
 // voter enables SSRF protection, while public probes obey the voter's SSRF flag.
 func TestPrivateProbeSSRFSplit(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -538,6 +542,7 @@ func (c *capturedWebhook) hasSystemProbeAlert(probeID string, active bool) bool 
 // tenant after PROBE_OFFLINE_ALERT; short disconnects raise nothing; recovery
 // clears and notifies; RevokeNode clears silently without notifications.
 func TestPrivateProbeOfflineAlerts(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
