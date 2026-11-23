@@ -16,9 +16,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # make go-test in shards on separate runners: the packages with real Raft
-  # clusters are CPU-bound under -race and would starve each other on one
-  # runner. Each shard uploads its coverage profile.
+  # make go-test in shards on separate runners (GO_TEST_HEAVY in the
+  # Makefile): under -race the slowest packages are CPU-bound and would
+  # starve each other on one runner. Each shard uploads its coverage profile.
   go-test:
     runs-on: ubuntu-latest
     permissions:
@@ -26,7 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [rest, cluster, clusterhost]
+        # Keep in sync with GO_TEST_HEAVY and SHARD_COUNT in the go job.
+        shard: [rest, api, cluster, clusterhost]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -66,12 +67,14 @@ jobs:
           path: shards
           merge-multiple: true
       - name: Merge the shard profiles into coverage.out
+        env:
+          SHARD_COUNT: 4
         run: |
           set -euo pipefail
           shopt -s nullglob
           profiles=(shards/coverage-*.out)
-          if [ "${#profiles[@]}" -ne 3 ]; then
-            echo "::error::expected 3 shard profiles, got ${#profiles[@]}"
+          if [ "${#profiles[@]}" -ne "$SHARD_COUNT" ]; then
+            echo "::error::expected $SHARD_COUNT shard profiles, got ${#profiles[@]}"
             exit 1
           fi
           for f in "${profiles[@]}"; do

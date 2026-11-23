@@ -69,12 +69,13 @@ test: go-test web-test ## Run all tests
 go-test: ## Run Go tests with race detector (writes coverage.out)
 	go test -race -cover -coverprofile=coverage.out $(GO_PKGS)
 
-# CI runs go-test in shards on separate runners: each package with real Raft
-# clusters is a shard of its own, everything else is the shard "rest". The go
-# job of ci.yml merges the shard profiles into coverage.out.
-GO_TEST_HEAVY := cluster clusterhost
+# CI runs go-test in shards on separate runners: each of the slowest packages
+# (api and the two with real Raft clusters) is a shard of its own, everything
+# else is the shard "rest". The go job of ci.yml merges the shard profiles
+# into coverage.out.
+GO_TEST_HEAVY := api cluster clusterhost
 
-go-test-shard: ## Run one CI shard of go-test (SHARD=rest|cluster|clusterhost, writes coverage-$(SHARD).out)
+go-test-shard: ## Run one CI shard of go-test (SHARD=rest|api|cluster|clusterhost, writes coverage-$(SHARD).out)
 	@case " rest $(GO_TEST_HEAVY) " in *" $(SHARD) "*) ;; *) echo "SHARD must be one of: rest $(GO_TEST_HEAVY)"; exit 2;; esac
 	@if [ "$(SHARD)" = rest ]; then \
 		pkgs="$$(go list $(GO_PKGS) | grep -v -x -F $(foreach p,$(GO_TEST_HEAVY),-e $(MODULE)/internal/$(p)))"; \
