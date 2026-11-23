@@ -54,13 +54,19 @@ export function userRights(target: User, actor: Me, users: readonly User[]): Use
     !target.disabled &&
     !users.some((u) => u.id !== target.id && u.role === 'platform-admin' && !u.disabled);
   const locked = self || lastPlatformAdmin;
+  let lockKey: string | null = null;
+  if (self) {
+    lockKey = 'users.lock.self';
+  } else if (lastPlatformAdmin) {
+    lockKey = 'users.lock.lastPlatformAdmin';
+  }
   return {
     editable: true,
     canChangeRole: !locked,
     canDisable: !locked,
     canDelete: !locked,
     canResetPassword: !self,
-    lockKey: self ? 'users.lock.self' : lastPlatformAdmin ? 'users.lock.lastPlatformAdmin' : null,
+    lockKey,
   };
 }
 

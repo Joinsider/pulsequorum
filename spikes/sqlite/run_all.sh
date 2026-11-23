@@ -7,8 +7,9 @@ export CGO_ENABLED=0 GOWORK=off
 mkdir -p results
 
 run() { # driver variant rows think_ms conc_seconds
-	log="results/$1-$2-$3-think$4.log"
-	go run . -driver="$1" -variant="$2" -rows="$3" -think-ms="$4" -conc-seconds="$5" >"$log" 2>&1
+	local driver="$1" variant="$2" rows="$3" think_ms="$4" conc_seconds="$5"
+	local log="results/$driver-$variant-$rows-think$think_ms.log"
+	go run . -driver="$driver" -variant="$variant" -rows="$rows" -think-ms="$think_ms" -conc-seconds="$conc_seconds" >"$log" 2>&1
 	echo "done $log"
 }
 

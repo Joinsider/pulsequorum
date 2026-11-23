@@ -370,33 +370,9 @@ func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, erro
 	if err != nil {
 		return Removal{}, err
 	}
-	var target *cluster.Member
-	voters := 0
-	for i, s := range members {
-		if s.Voter {
-			voters++
-		}
-		if s.ID == nodeID {
-			target = &members[i]
-		}
-	}
+	target, voters := findMemberAndCountVoters(members, nodeID)
 	if target == nil {
-		if m.State != nil {
-			if isProbe, err := m.isRegisteredProbe(ctx, nodeID); err != nil {
-				return Removal{}, err
-			} else if isProbe {
-				res, err := m.Raft.Apply(ctx, cluster.NewRevokeNode(uuid.NewString(), nodeID))
-				if err == nil {
-					err = res.Err
-				}
-				if err != nil {
-					return Removal{}, fmt.Errorf("revoking probe %s failed: %w", nodeID, err)
-				}
-				m.Log.Warn("probe removed from the cluster", "node_id", nodeID)
-				return Removal{VotersLeft: voters}, nil
-			}
-		}
-		return Removal{}, ErrUnknownNode
+		return m.removeRegisteredProbeIfAny(ctx, nodeID, voters)
 	}
 	left := voters
 	if target.Voter {
@@ -410,11 +386,7 @@ func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, erro
 	}
 	// Revoke after the removal: a removed node must not reconnect with its
 	// old certificate (FA-PKI-04).
-	res, err := m.Raft.Apply(ctx, cluster.NewRevokeNode(uuid.NewString(), nodeID))
-	if err == nil {
-		err = res.Err
-	}
-	if err != nil {
+	if err := m.applyRevokeNode(ctx, nodeID); err != nil {
 		return Removal{}, fmt.Errorf("node %s removed, but revoking its certificates failed: %w", nodeID, err)
 	}
 	m.Log.Warn("node removed from the cluster", "node_id", nodeID, "address", target.Address, "voters_left", left)
@@ -426,6 +398,46 @@ func (m *Manager) removeLocal(ctx context.Context, nodeID string) (Removal, erro
 		out.Warning = fmt.Sprintf("%d voters: an even number tolerates no more failures than %d", left, left-1)
 	}
 	return out, nil
+}
+
+func findMemberAndCountVoters(members []cluster.Member, nodeID string) (*cluster.Member, int) {
+	var target *cluster.Member
+	voters := 0
+	for i, s := range members {
+		if s.Voter {
+			voters++
+		}
+		if s.ID == nodeID {
+			target = &members[i]
+		}
+	}
+	return target, voters
+}
+
+func (m *Manager) removeRegisteredProbeIfAny(ctx context.Context, nodeID string, voters int) (Removal, error) {
+	if m.State == nil {
+		return Removal{}, ErrUnknownNode
+	}
+	isProbe, err := m.isRegisteredProbe(ctx, nodeID)
+	if err != nil {
+		return Removal{}, err
+	}
+	if !isProbe {
+		return Removal{}, ErrUnknownNode
+	}
+	if err := m.applyRevokeNode(ctx, nodeID); err != nil {
+		return Removal{}, fmt.Errorf("revoking probe %s failed: %w", nodeID, err)
+	}
+	m.Log.Warn("probe removed from the cluster", "node_id", nodeID)
+	return Removal{VotersLeft: voters}, nil
+}
+
+func (m *Manager) applyRevokeNode(ctx context.Context, nodeID string) error {
+	res, err := m.Raft.Apply(ctx, cluster.NewRevokeNode(uuid.NewString(), nodeID))
+	if err == nil {
+		err = res.Err
+	}
+	return err
 }
 
 func (m *Manager) isRegisteredProbe(ctx context.Context, nodeID string) (bool, error) {

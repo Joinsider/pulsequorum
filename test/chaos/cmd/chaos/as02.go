@@ -56,12 +56,51 @@ func runAS02(ctx context.Context, env *Env) error {
 		"admin created on "+cl.Names().Voter(1), true)
 	api := cl.Client(1)
 
-	// Notification channel with a synchronous test delivery to the fake ntfy.
 	suffix := randomSuffix()
+	monitors, node1, err := as02SetupMonitors(ctx, env, cl, api, suffix, interval, intervalSec)
+	if err != nil {
+		return err
+	}
+
+	// Joins while the monitors keep running.
+	joinStart := time.Now()
+	if err := cl.Join(ctx, 2); err != nil {
+		rep.Check("Voter 2 joins", expectListedAsVoter, err.Error(), false)
+		return err
+	}
+	rep.Check("Voter 2 joins", expectListedAsVoterByLeader,
+		fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
+	if err := requireLogin(ctx, env, cl, 2); err != nil {
+		return err
+	}
+
+	join3Start := time.Now()
+	if err := cl.Join(ctx, 3); err != nil {
+		rep.Check("Voter 3 joins", expectListedAsVoterByLeader, err.Error(), false)
+		return err
+	}
+	joinEnd := time.Now()
+	rep.Check("Voter 3 joins", expectListedAsVoterByLeader,
+		fmt.Sprintf("joined after %s", joinEnd.Sub(join3Start).Round(time.Second)), true)
+	if err := requireLogin(ctx, env, cl, 3); err != nil {
+		return err
+	}
+
+	if err := as02CheckNoInterruptionAndReplication(ctx, env, cl, monitors, node1, joinStart, joinEnd, interval); err != nil {
+		return err
+	}
+	if err := as02CheckClusterStateAndSnapshots(ctx, env, cl, api, monitors); err != nil {
+		return err
+	}
+	return as02CheckWriteViaVoter3(ctx, env, cl, suffix, intervalSec)
+}
+
+func as02SetupMonitors(ctx context.Context, env *Env, cl *harness.Cluster, api *ucapi.Client, suffix string, interval time.Duration, intervalSec int) ([]ucapi.Monitor, string, error) {
+	rep := env.Rep
 	ch, err := api.CreateChannel(ctx, "as02-ntfy-"+suffix, env.NtfyURL("as02-"+suffix), []string{"down", "up"})
 	if err != nil {
 		rep.Check("Notification channel created", "201, kind shoutrrr, default", err.Error(), false)
-		return err
+		return nil, "", err
 	}
 	rep.Check("Notification channel created", "201, kind shoutrrr, default", "channel "+ch.ID, true)
 	res, err := api.TestChannel(ctx, ch.ID)
@@ -70,12 +109,11 @@ func runAS02(ctx context.Context, env *Env) error {
 		if err != nil {
 			msg = err.Error()
 		}
-		rep.Check("Channel test delivery", "delivered to ntfy", msg, false)
-		return errors.New("channel test delivery failed")
+		rep.Check("Channel test delivery", expectDeliveredToNtfy, msg, false)
+		return nil, "", errors.New("channel test delivery failed")
 	}
-	rep.Check("Channel test delivery", "delivered to ntfy", fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
+	rep.Check("Channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
 
-	// Five HTTP monitors against the fake target, all voters check.
 	const monitorCount = 5
 	monitors := make([]ucapi.Monitor, 0, monitorCount)
 	for n := 1; n <= monitorCount; n++ {
@@ -90,18 +128,17 @@ func runAS02(ctx context.Context, env *Env) error {
 		})
 		if err != nil {
 			rep.Check("Five HTTP monitors created", "5 monitors, assignment all", err.Error(), false)
-			return err
+			return nil, "", err
 		}
 		monitors = append(monitors, m)
 	}
 	rep.Check("Five HTTP monitors created", fmt.Sprintf("5 monitors, assignment all, interval %ds", intervalSec),
 		fmt.Sprintf("%d monitors", len(monitors)), len(monitors) == monitorCount)
 
-	// One interval with voter 1 alone: every monitor must have heartbeats of voter 1.
 	node1, err := cl.NodeID(ctx, 1)
 	if err != nil {
 		rep.Check("Node ID of voter 1", "voter lists itself", err.Error(), false)
-		return err
+		return nil, "", err
 	}
 	ok, lastErr := pollUntil(ctx, 2*interval+replicationRound, 2*time.Second, func() (bool, error) {
 		return allMonitorsHaveProducer(ctx, cl, 1, monitors, node1, time.Now().Add(-2*interval))
@@ -109,39 +146,16 @@ func runAS02(ctx context.Context, env *Env) error {
 	rep.Check("Monitors run on voter 1 before the joins", "heartbeats of voter 1 for every monitor",
 		fmt.Sprintf("complete: %v%s", ok, errSuffix(lastErr)), ok)
 	if !ok {
-		return errors.New("monitors produce no heartbeats before the joins")
+		return nil, "", errors.New("monitors produce no heartbeats before the joins")
 	}
 	if sum, err := cl.StatusSummary(ctx, 1, monitors[0].ID, time.Now().Add(-3*interval), time.Now()); err == nil {
 		rep.Info("Check results of "+monitors[0].Name+" on voter 1", "diagnostic", harness.FormatCounts(sum))
 	}
+	return monitors, node1, nil
+}
 
-	// Joins while the monitors keep running.
-	joinStart := time.Now()
-	if err := cl.Join(ctx, 2); err != nil {
-		rep.Check("Voter 2 joins", "listed as voter", err.Error(), false)
-		return err
-	}
-	rep.Check("Voter 2 joins", "listed as voter by the leader",
-		fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
-	if err := requireLogin(ctx, env, cl, 2); err != nil {
-		return err
-	}
-
-	join3Start := time.Now()
-	if err := cl.Join(ctx, 3); err != nil {
-		rep.Check("Voter 3 joins", "listed as voter by the leader", err.Error(), false)
-		return err
-	}
-	joinEnd := time.Now()
-	rep.Check("Voter 3 joins", "listed as voter by the leader",
-		fmt.Sprintf("joined after %s", joinEnd.Sub(join3Start).Round(time.Second)), true)
-	if err := requireLogin(ctx, env, cl, 3); err != nil {
-		return err
-	}
-
-	// No interruption: the largest gap between voter 1's own heartbeats, per
-	// monitor, must stay within 2 x interval. The joins take seconds, so the
-	// window keeps running for two more intervals after the last join.
+func as02CheckNoInterruptionAndReplication(ctx context.Context, env *Env, cl *harness.Cluster, monitors []ucapi.Monitor, node1 string, joinStart, joinEnd time.Time, interval time.Duration) error {
+	rep := env.Rep
 	if err := waitUntil(ctx, joinEnd.Add(2*interval)); err != nil {
 		return err
 	}
@@ -164,9 +178,6 @@ func runAS02(ctx context.Context, env *Env) error {
 		fmt.Sprintf("max gap %s (%s) over a window of %s", worst.Round(time.Second), worstName, windowEnd.Sub(joinStart).Round(time.Second)),
 		worst <= limit)
 
-	// Replication: after about two intervals every voter has heartbeats of
-	// all three producers for every monitor. Replication runs once per round,
-	// so the deadline includes one round.
 	nodes := make([]string, 0, 3)
 	for i := 1; i <= 3; i++ {
 		id, err := cl.NodeID(ctx, i)
@@ -177,14 +188,17 @@ func runAS02(ctx context.Context, env *Env) error {
 		nodes = append(nodes, id)
 	}
 	replStart := time.Now()
-	ok, lastErr = pollUntil(ctx, 2*interval+replicationRound, 2*time.Second, func() (bool, error) {
+	ok, lastErr := pollUntil(ctx, 2*interval+replicationRound, 2*time.Second, func() (bool, error) {
 		return allVotersHaveAllProducers(ctx, cl, monitors, nodes, time.Now().Add(-2*interval))
 	})
 	rep.Check("Heartbeats of all three producers on every voter",
 		fmt.Sprintf("within 2 x interval (%s) plus one replication round (%s)", 2*interval, replicationRound),
 		fmt.Sprintf("complete: %v after %s%s", ok, time.Since(replStart).Round(time.Second), errSuffix(lastErr)), ok)
+	return nil
+}
 
-	// Cluster state: three voters, one leader, no warnings.
+func as02CheckClusterStateAndSnapshots(ctx context.Context, env *Env, cl *harness.Cluster, api *ucapi.Client, monitors []ucapi.Monitor) error {
+	rep := env.Rep
 	list, err := cl.Members(ctx, 1)
 	if err != nil {
 		rep.Check("Three voters listed", "3 voters", err.Error(), false)
@@ -203,8 +217,7 @@ func runAS02(ctx context.Context, env *Env) error {
 		fmt.Sprintf("leader %s%s", leader, errSuffix(err)), err == nil && leader != "")
 	rep.Check("No cluster warnings", "no warnings", fmt.Sprintf("warnings %v", list.Warnings), len(list.Warnings) == 0)
 
-	// Identical data on all voters (volatile fields excluded).
-	ok, lastErr = pollUntil(ctx, 30*time.Second, 2*time.Second, func() (bool, error) {
+	ok, lastErr := pollUntil(ctx, 30*time.Second, 2*time.Second, func() (bool, error) {
 		diffs, err := snapshotDiffs(ctx, cl)
 		if err != nil {
 			return false, err
@@ -221,7 +234,6 @@ func runAS02(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Identical data on all voters", "normalized snapshots of voters 1, 2, 3 equal", measured, ok)
 
-	// The monitors kept checking the target through the joins: all UP.
 	var notUp []string
 	for _, m := range monitors {
 		cur, err := api.GetMonitor(ctx, m.ID)
@@ -235,8 +247,11 @@ func runAS02(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Monitors UP after the joins", "all five monitors UP on voter 1",
 		fmt.Sprintf("%d of %d UP %v", len(monitors)-len(notUp), len(monitors), notUp), len(notUp) == 0)
+	return nil
+}
 
-	// A write through voter 3 is visible on voters 1 and 2 within 5 seconds.
+func as02CheckWriteViaVoter3(ctx context.Context, env *Env, cl *harness.Cluster, suffix string, intervalSec int) error {
+	rep := env.Rep
 	name := fmt.Sprintf("as02-%s-via-v3", suffix)
 	if _, err := cl.Client(3).CreateMonitorInput(ctx, ucapi.MonitorInput{
 		Name:            name,

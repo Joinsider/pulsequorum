@@ -242,24 +242,12 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 	tenantID := cmd.GetTenantId()
 	switch p := cmd.GetPayload().(type) {
 	case *pb.Command_PutEntity:
-		put := p.PutEntity
-		if put.GetKind() == pb.EntityKind_ENTITY_KIND_JOIN_TOKEN && tenantID != "" {
-			return []auditRecord{{tenantID: tenantID, action: "probe.token.create", objectKind: "join_token", objectID: put.GetId()}}
-		}
-		return []auditRecord{entityRecord(tenantID, put.GetKind(), put.GetId(), putVerb(cmd.GetAuditAction(), put.GetExpectedRevision()))}
+		return auditPutRecords(tenantID, cmd.GetAuditAction(), p.PutEntity)
 	case *pb.Command_DeleteEntity:
 		del := p.DeleteEntity
 		return []auditRecord{entityRecord(tenantID, del.GetKind(), del.GetId(), "delete")}
 	case *pb.Command_Batch:
-		records := make([]auditRecord, 0, len(p.Batch.GetOps()))
-		for _, op := range p.Batch.GetOps() {
-			if put := op.GetPutEntity(); put != nil {
-				records = append(records, entityRecord(tenantID, put.GetKind(), put.GetId(), putVerb(op.GetAuditAction(), put.GetExpectedRevision())))
-			} else if del := op.GetDeleteEntity(); del != nil {
-				records = append(records, entityRecord(tenantID, del.GetKind(), del.GetId(), "delete"))
-			}
-		}
-		return records
+		return auditBatchRecords(tenantID, p.Batch)
 
 	case *pb.Command_CreateApiToken:
 		return []auditRecord{{tenantID: tenantID, action: "api_token.create", objectKind: "api_token", objectID: p.CreateApiToken.GetId()}}
@@ -273,11 +261,7 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 	case *pb.Command_UpdateTenant:
 		return []auditRecord{systemRecord("tenant.update", "tenant", p.UpdateTenant.GetTenantId())}
 	case *pb.Command_SetTenantSuspended:
-		verb := "resume"
-		if p.SetTenantSuspended.GetSuspended() {
-			verb = "suspend"
-		}
-		return []auditRecord{systemRecord("tenant."+verb, "tenant", p.SetTenantSuspended.GetTenantId())}
+		return auditSuspendRecords(p.SetTenantSuspended)
 	case *pb.Command_DeleteTenant:
 		return []auditRecord{systemRecord("tenant.delete", "tenant", p.DeleteTenant.GetTenantId())}
 
@@ -291,22 +275,57 @@ func auditRecords(cmd *pb.Command) []auditRecord {
 	case *pb.Command_RevokeCertificate:
 		return []auditRecord{systemRecord("certificate.revoke", "certificate", p.RevokeCertificate.GetSerial())}
 	case *pb.Command_RevokeNode:
-		if tenantID != "" {
-			return []auditRecord{{tenantID: tenantID, action: "probe.revoke", objectKind: "node", objectID: p.RevokeNode.GetNodeId()}}
-		}
-		return []auditRecord{systemRecord("node.revoke", "node", p.RevokeNode.GetNodeId())}
+		return auditRevokeNodeRecords(tenantID, p.RevokeNode)
 	case *pb.Command_RegisterNode:
 		return []auditRecord{systemRecord("node.register", "node", p.RegisterNode.GetNode().GetId())}
 	case *pb.Command_RegisterProbe:
-		t := p.RegisterProbe.GetOwnerTenantId()
-		if t == "" {
-			t = store.SystemTenantID
-		}
-		return []auditRecord{{tenantID: t, action: "probe.register", objectKind: "node", objectID: p.RegisterProbe.GetNode().GetId()}}
+		return auditRegisterProbeRecords(p.RegisterProbe)
 	case *pb.Command_SetFeatureLevel:
 		return []auditRecord{systemRecord("cluster.set_feature_level", "cluster", strconv.FormatUint(uint64(p.SetFeatureLevel.GetLevel()), 10))}
 	}
 	return nil
+}
+
+func auditPutRecords(tenantID, auditAction string, put *pb.PutEntity) []auditRecord {
+	if put.GetKind() == pb.EntityKind_ENTITY_KIND_JOIN_TOKEN && tenantID != "" {
+		return []auditRecord{{tenantID: tenantID, action: "probe.token.create", objectKind: "join_token", objectID: put.GetId()}}
+	}
+	return []auditRecord{entityRecord(tenantID, put.GetKind(), put.GetId(), putVerb(auditAction, put.GetExpectedRevision()))}
+}
+
+func auditBatchRecords(tenantID string, batch *pb.Batch) []auditRecord {
+	records := make([]auditRecord, 0, len(batch.GetOps()))
+	for _, op := range batch.GetOps() {
+		if put := op.GetPutEntity(); put != nil {
+			records = append(records, entityRecord(tenantID, put.GetKind(), put.GetId(), putVerb(op.GetAuditAction(), put.GetExpectedRevision())))
+		} else if del := op.GetDeleteEntity(); del != nil {
+			records = append(records, entityRecord(tenantID, del.GetKind(), del.GetId(), "delete"))
+		}
+	}
+	return records
+}
+
+func auditSuspendRecords(s *pb.SetTenantSuspended) []auditRecord {
+	verb := "resume"
+	if s.GetSuspended() {
+		verb = "suspend"
+	}
+	return []auditRecord{systemRecord("tenant."+verb, "tenant", s.GetTenantId())}
+}
+
+func auditRevokeNodeRecords(tenantID string, r *pb.RevokeNode) []auditRecord {
+	if tenantID != "" {
+		return []auditRecord{{tenantID: tenantID, action: "probe.revoke", objectKind: "node", objectID: r.GetNodeId()}}
+	}
+	return []auditRecord{systemRecord("node.revoke", "node", r.GetNodeId())}
+}
+
+func auditRegisterProbeRecords(r *pb.RegisterProbe) []auditRecord {
+	t := r.GetOwnerTenantId()
+	if t == "" {
+		t = store.SystemTenantID
+	}
+	return []auditRecord{{tenantID: t, action: "probe.register", objectKind: "node", objectID: r.GetNode().GetId()}}
 }
 
 // entityRecord describes a PutEntity or DeleteEntity of kind.

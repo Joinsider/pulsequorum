@@ -78,19 +78,37 @@ func runAS09(ctx context.Context, env *Env) error {
 		return err
 	}
 	rep.Check("Voter 1 bootstraps on the old image", "admin set up", "admin created on "+cl.Names().Voter(1), true)
-	api := cl.Client(1)
 
-	// Notifications and monitors exist before the joins, so the update runs
-	// on replicated data.
 	suffix := randomSuffix()
 	topicPath := "/as09-" + suffix
 	since := time.Now()
-	ch, err := opsCreateChannel(ctx, env, api, "as09-ntfy-"+suffix, "as09-"+suffix)
+	monIDs, monNames, nodes, cmdBefore, err := as09SetupAndJoinOldCluster(ctx, env, cl, suffix, interval)
 	if err != nil {
-		rep.Check("Notification channel with test delivery", "delivered to ntfy", err.Error(), false)
 		return err
 	}
-	rep.Check("Notification channel with test delivery", "delivered to ntfy", "channel "+ch.ID, true)
+
+	all := []int{1, 2, 3}
+	order, err := as09DetermineUpdateOrder(ctx, env, cl, all, nodes)
+	if err != nil {
+		return err
+	}
+
+	if err := as09RunRollingUpdate(ctx, env, cl, all, order, nodes, monIDs, interval); err != nil {
+		return err
+	}
+
+	return as09VerifyPostUpdateState(ctx, env, cl, all, monIDs, monNames, topicPath, suffix, since, cmdBefore)
+}
+
+func as09SetupAndJoinOldCluster(ctx context.Context, env *Env, cl *harness.Cluster, suffix string, interval time.Duration) ([]string, []string, map[int]string, int, error) {
+	rep := env.Rep
+	api := cl.Client(1)
+	ch, err := opsCreateChannel(ctx, env, api, "as09-ntfy-"+suffix, "as09-"+suffix)
+	if err != nil {
+		rep.Check("Notification channel with test delivery", expectDeliveredToNtfy, err.Error(), false)
+		return nil, nil, nil, 0, err
+	}
+	rep.Check("Notification channel with test delivery", expectDeliveredToNtfy, "channel "+ch.ID, true)
 
 	monIDs := make([]string, 0, as09Monitors)
 	monNames := make([]string, 0, as09Monitors)
@@ -99,7 +117,7 @@ func runAS09(ctx context.Context, env *Env) error {
 		m, err := opsHTTPMonitor(ctx, env, api, name, fmt.Sprintf("/as09/%s/m%d", suffix, n), []string{ch.ID})
 		if err != nil {
 			rep.Check("HTTP monitors created", fmt.Sprintf("%d monitors, assignment all, interval %s", as09Monitors, interval), err.Error(), false)
-			return err
+			return nil, nil, nil, 0, err
 		}
 		monIDs = append(monIDs, m.ID)
 		monNames = append(monNames, m.Name)
@@ -110,12 +128,12 @@ func runAS09(ctx context.Context, env *Env) error {
 	for _, i := range []int{2, 3} {
 		joinStart := time.Now()
 		if err := cl.Join(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter", err.Error(), false)
-			return err
+			rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoter, err.Error(), false)
+			return nil, nil, nil, 0, err
 		}
 		if err := opsJoinLogin(ctx, env, cl, i); err != nil {
-			rep.Check(fmt.Sprintf("Login on voter %d after join", i), "login answers", err.Error(), false)
-			return err
+			rep.Check(fmt.Sprintf("Login on voter %d after join", i), expectLoginAnswers, err.Error(), false)
+			return nil, nil, nil, 0, err
 		}
 		rep.Check(fmt.Sprintf("Voter %d joins on the old image", i), "listed as voter, login works",
 			fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
@@ -125,7 +143,7 @@ func runAS09(ctx context.Context, env *Env) error {
 	nodes, err := opsNodeIDs(ctx, cl, all)
 	if err != nil {
 		rep.Check("Node IDs of the voters", "each voter lists itself", err.Error(), false)
-		return err
+		return nil, nil, nil, 0, err
 	}
 	producers := []string{nodes[1], nodes[2], nodes[3]}
 	ok, err := pollUntil(ctx, 2*interval+2*opsReplicationRound, 2*time.Second, func() (bool, error) {
@@ -134,27 +152,29 @@ func runAS09(ctx context.Context, env *Env) error {
 	rep.Check("Heartbeats of all voters on every voter before the update", "all producers on all voters",
 		fmt.Sprintf("complete: %v%s", ok, as09ErrSuffix(err)), ok)
 	if !ok {
-		return errors.New("baseline heartbeats incomplete")
+		return nil, nil, nil, 0, errors.New("baseline heartbeats incomplete")
 	}
 
 	before, err := cl.Members(ctx, 1)
 	if err != nil {
 		rep.Check("Node list before the update", "answers", err.Error(), false)
-		return err
+		return nil, nil, nil, 0, err
 	}
 	oldCount := as09CountVersion(before, as09VersionOld)
 	rep.Check("All voters on the old version before the update", "3 voters on "+as09VersionOld,
 		fmt.Sprintf("%d of %d nodes on %s, %d voters", oldCount, len(before.Nodes), as09VersionOld, opsVoterCount(before)),
 		oldCount == 3 && opsVoterCount(before) == 3)
-	cmdBefore := before.CommandLevel
 	rep.Info("Command level before the update", "commandLevel from the node list",
 		fmt.Sprintf("commandLevel %d, upgradePending %v", before.CommandLevel, before.UpgradePending))
+	return monIDs, monNames, nodes, before.CommandLevel, nil
+}
 
-	// Followers first, in slot order; the leader last.
+func as09DetermineUpdateOrder(ctx context.Context, env *Env, cl *harness.Cluster, all []int, nodes map[int]string) ([]int, error) {
+	rep := env.Rep
 	leaderID, err := cl.LeaderOf(ctx, all)
 	if err != nil {
 		rep.Check("One leader before the update", "identical leader ID", err.Error(), false)
-		return err
+		return nil, err
 	}
 	var order []int
 	leaderSlot := 0
@@ -166,20 +186,18 @@ func runAS09(ctx context.Context, env *Env) error {
 		order = append(order, i)
 	}
 	if leaderSlot == 0 {
-		return errors.New("no leader among the voters")
+		return nil, errors.New("no leader among the voters")
 	}
 	order = append(order, leaderSlot)
 	rep.Info("Update order", "followers first, leader last", fmt.Sprintf("%v (leader was voter %d)", order, leaderSlot))
+	return order, nil
+}
 
-	// Rolling update: one voter at a time.
+func as09RunRollingUpdate(ctx context.Context, env *Env, cl *harness.Cluster, all, order []int, nodes map[int]string, monIDs []string, interval time.Duration) error {
+	rep := env.Rep
 	var failStart time.Time
 	for step, i := range order {
-		others := make([]int, 0, 2)
-		for _, v := range all {
-			if v != i {
-				others = append(others, v)
-			}
-		}
+		others := others2(all, i)
 		if err := opsRefreshLogins(ctx, cl, others); err != nil {
 			rep.Check(fmt.Sprintf("Logins before step %d", step+1), "logins answer", err.Error(), false)
 			return err
@@ -190,72 +208,91 @@ func runAS09(ctx context.Context, env *Env) error {
 			env.Target.SetFailing(true)
 		}
 
-		t0 := time.Now()
-		if err := cl.Stop(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Stop voter %d (SIGTERM)", i), "stopped within grace period", err.Error(), false)
+		if err := as09UpdateSingleVoter(ctx, env, cl, i, step, others, nodes, monIDs, stepStart, failStart, interval); err != nil {
 			return err
 		}
-		stopDur := time.Since(t0)
-
-		t1 := time.Now()
-		if err := cl.Start(ctx, i, harness.StartOptions{Image: as09ImageNew}); err != nil {
-			rep.Check(fmt.Sprintf("Start voter %d on the new image", i), "healthy on "+as09VersionNew, err.Error(), false)
-			return err
-		}
-		startDur := time.Since(t1)
-
-		if err := opsLogin(ctx, cl, i); err != nil {
-			rep.Check(fmt.Sprintf("Login on voter %d after restart", i), "login answers", err.Error(), false)
-			return err
-		}
-		readyOK, lagInfo, lastErr := as09WaitReady(ctx, cl, others, nodes[i])
-		readyDur := time.Since(t0)
-		rep.Check(fmt.Sprintf("Voter %d is back as voter on %s, healthy, replicated", i, as09VersionNew),
-			"node list of the other voters: voter, version, healthy, replication lag present",
-			fmt.Sprintf("%v after %s (%s)%s", readyOK, readyDur.Round(time.Second), lagInfo, as09ErrSuffix(lastErr)), readyOK)
-		if !readyOK {
-			return fmt.Errorf("voter %d did not come back on the new version", i)
-		}
-		rep.Info(fmt.Sprintf("Voter %d restart timing", i), "recorded",
-			fmt.Sprintf("stop %s, start %s, back as voter %s after the stop began", stopDur.Round(time.Millisecond), startDur.Round(time.Millisecond), readyDur.Round(time.Millisecond)))
-
-		if err := opsWaitUntil(ctx, stepStart.Add(2*interval)); err != nil {
-			return err
-		}
-		stepEnd := time.Now()
-		worst, worstAt, own, err := as09Gaps(ctx, cl, others, i, nodes, monIDs, stepStart, stepEnd, interval)
-		if err != nil {
-			rep.Check(fmt.Sprintf("Heartbeat gaps during step %d", step+1), "measurable", err.Error(), false)
-			return err
-		}
-		limit := 2 * interval
-		rep.Check(fmt.Sprintf("No interruption while voter %d is updated", i),
-			fmt.Sprintf("max heartbeat gap <= 2 x interval (%s) for every monitor and producer on the voters that stay up", limit),
-			fmt.Sprintf("max gap %s (%s) over %s", as09Dur(worst), worstAt, as09Dur(stepEnd.Sub(stepStart))),
-			worst <= limit)
-		rep.Info(fmt.Sprintf("Own heartbeat gap of voter %d during its restart", i), "recorded, not limited",
-			fmt.Sprintf("seen by the other voters %s, seen by itself %s", own.bySelf, own.byOthers))
-
-		if step == 0 {
-			if err := opsWaitUntil(ctx, failStart.Add(as09FailIntervals*interval)); err != nil {
-				return err
-			}
-			env.Target.SetFailing(false)
-			rep.Info("Target failure window", "503 from the first step on, then healthy",
-				fmt.Sprintf("503 from %s for %s", failStart.Format("15:04:05"), time.Since(failStart).Round(time.Second)))
-		}
-		upgradePending, pendErr := as09UpgradePending(ctx, cl, others)
-		if pendErr != nil {
-			return pendErr
-		}
-		rep.Info(fmt.Sprintf("upgradePending after step %d", step+1),
-			"recorded; ADR 0018 section 7 derives it from the command level, which stays 2 here",
-			fmt.Sprint(upgradePending))
 	}
 	updateDur := time.Since(failStart)
 	rep.Info("Update duration", "recorded", fmt.Sprintf("from the first stop to the last voter back: %s", updateDur.Round(time.Second)))
+	return nil
+}
 
-	// Final state.
+func as09UpdateSingleVoter(ctx context.Context, env *Env, cl *harness.Cluster, i, step int, others []int, nodes map[int]string, monIDs []string, stepStart, failStart time.Time, interval time.Duration) error {
+	rep := env.Rep
+	t0 := time.Now()
+	if err := cl.Stop(ctx, i); err != nil {
+		rep.Check(fmt.Sprintf("Stop voter %d (SIGTERM)", i), "stopped within grace period", err.Error(), false)
+		return err
+	}
+	stopDur := time.Since(t0)
+
+	t1 := time.Now()
+	if err := cl.Start(ctx, i, harness.StartOptions{Image: as09ImageNew}); err != nil {
+		rep.Check(fmt.Sprintf("Start voter %d on the new image", i), "healthy on "+as09VersionNew, err.Error(), false)
+		return err
+	}
+	startDur := time.Since(t1)
+
+	if err := opsLogin(ctx, cl, i); err != nil {
+		rep.Check(fmt.Sprintf("Login on voter %d after restart", i), expectLoginAnswers, err.Error(), false)
+		return err
+	}
+	readyOK, lagInfo, lastErr := as09WaitReady(ctx, cl, others, nodes[i])
+	readyDur := time.Since(t0)
+	rep.Check(fmt.Sprintf("Voter %d is back as voter on %s, healthy, replicated", i, as09VersionNew),
+		"node list of the other voters: voter, version, healthy, replication lag present",
+		fmt.Sprintf("%v after %s (%s)%s", readyOK, readyDur.Round(time.Second), lagInfo, as09ErrSuffix(lastErr)), readyOK)
+	if !readyOK {
+		return fmt.Errorf("voter %d did not come back on the new version", i)
+	}
+	rep.Info(fmt.Sprintf("Voter %d restart timing", i), "recorded",
+		fmt.Sprintf("stop %s, start %s, back as voter %s after the stop began", stopDur.Round(time.Millisecond), startDur.Round(time.Millisecond), readyDur.Round(time.Millisecond)))
+
+	if err := opsWaitUntil(ctx, stepStart.Add(2*interval)); err != nil {
+		return err
+	}
+	stepEnd := time.Now()
+	worst, worstAt, own, err := as09Gaps(ctx, cl, as09GapsParams{
+		viewers:   others,
+		restarted: i,
+		nodes:     nodes,
+		monIDs:    monIDs,
+		from:      stepStart,
+		to:        stepEnd,
+		interval:  interval,
+	})
+	if err != nil {
+		rep.Check(fmt.Sprintf("Heartbeat gaps during step %d", step+1), "measurable", err.Error(), false)
+		return err
+	}
+	limit := 2 * interval
+	rep.Check(fmt.Sprintf("No interruption while voter %d is updated", i),
+		fmt.Sprintf("max heartbeat gap <= 2 x interval (%s) for every monitor and producer on the voters that stay up", limit),
+		fmt.Sprintf("max gap %s (%s) over %s", as09Dur(worst), worstAt, as09Dur(stepEnd.Sub(stepStart))),
+		worst <= limit)
+	rep.Info(fmt.Sprintf("Own heartbeat gap of voter %d during its restart", i), "recorded, not limited",
+		fmt.Sprintf("seen by the other voters %s, seen by itself %s", own.bySelf, own.byOthers))
+
+	if step == 0 {
+		if err := opsWaitUntil(ctx, failStart.Add(as09FailIntervals*interval)); err != nil {
+			return err
+		}
+		env.Target.SetFailing(false)
+		rep.Info("Target failure window", "503 from the first step on, then healthy",
+			fmt.Sprintf("503 from %s for %s", failStart.Format("15:04:05"), time.Since(failStart).Round(time.Second)))
+	}
+	upgradePending, pendErr := as09UpgradePending(ctx, cl, others)
+	if pendErr != nil {
+		return pendErr
+	}
+	rep.Info(fmt.Sprintf("upgradePending after step %d", step+1),
+		"recorded; ADR 0018 section 7 derives it from the command level, which stays 2 here",
+		fmt.Sprint(upgradePending))
+	return nil
+}
+
+func as09VerifyPostUpdateState(ctx context.Context, env *Env, cl *harness.Cluster, all []int, monIDs, monNames []string, topicPath, suffix string, since time.Time, cmdBefore int) error {
+	rep := env.Rep
 	pending := true
 	_, _ = pollUntil(ctx, 30*time.Second, 2*time.Second, func() (bool, error) {
 		list, err := cl.Members(ctx, 1)
@@ -278,15 +315,14 @@ func runAS09(ctx context.Context, env *Env) error {
 	rep.Info("Command level after the update", "commandLevel from the node list",
 		fmt.Sprintf("before %d, after %d (upgradePending %v)", cmdBefore, after.CommandLevel, after.UpgradePending))
 
-	// One DOWN and one UP per monitor: the target failed once.
 	var counts map[string]int
 	alertsOK, alertErr := pollUntil(ctx, 90*time.Second, 2*time.Second, func() (bool, error) {
 		counts = opsNotifyCounts(env.Ntfy, topicPath, since)
 		for _, name := range monNames {
-			if counts["DOWN: "+name] > 1 || counts["UP: "+name] > 1 {
+			if counts[prefixDown+name] > 1 || counts["UP: "+name] > 1 {
 				return false, fmt.Errorf("duplicate notification for %s", name)
 			}
-			if counts["DOWN: "+name] != 1 || counts["UP: "+name] != 1 {
+			if counts[prefixDown+name] != 1 || counts["UP: "+name] != 1 {
 				return false, nil
 			}
 		}
@@ -294,12 +330,11 @@ func runAS09(ctx context.Context, env *Env) error {
 	})
 	var perMonitor []string
 	for _, name := range monNames {
-		perMonitor = append(perMonitor, fmt.Sprintf("%s: DOWN %d, UP %d", name, counts["DOWN: "+name], counts["UP: "+name]))
+		perMonitor = append(perMonitor, fmt.Sprintf("%s: DOWN %d, UP %d", name, counts[prefixDown+name], counts["UP: "+name]))
 	}
 	rep.Check("Exactly one DOWN and one UP per monitor", "1 DOWN and 1 UP each, no duplicates",
 		strings.Join(perMonitor, "; ")+as09ErrSuffix(alertErr), alertsOK)
 
-	// Monitors still run and report UP.
 	var notUp []string
 	for n, id := range monIDs {
 		cur, err := cl.Client(1).GetMonitor(ctx, id)
@@ -321,14 +356,8 @@ func runAS09(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Identical data on all voters after the update", "normalized snapshots equal", measured, snapOK)
 
-	// Writes work through every voter and are seen by the other two.
 	for _, w := range all {
-		var seen []int
-		for _, v := range all {
-			if v != w {
-				seen = append(seen, v)
-			}
-		}
+		seen := others2(all, w)
 		desc, visible, err := opsWriteVisible(ctx, cl, env, w, seen, fmt.Sprintf("as09-%s-after-w%d", suffix, w), fmt.Sprintf("/as09/%s/after-w%d", suffix, w))
 		if err != nil {
 			rep.Check(fmt.Sprintf("Write through voter %d after the update", w), "201, visible within 5 s", err.Error(), false)
@@ -469,32 +498,42 @@ type as09GapsResult struct {
 	byOthers string
 }
 
+type as09GapsParams struct {
+	viewers   []int
+	restarted int
+	nodes     map[int]string
+	monIDs    []string
+	from      time.Time
+	to        time.Time
+	interval  time.Duration
+}
+
 // as09Gaps measures the largest heartbeat gap per monitor and producer, for
 // every voter that stays up (viewers) and every producer except the one being
 // restarted. Gaps of the restarted voter are returned separately.
-func as09Gaps(ctx context.Context, cl *harness.Cluster, viewers []int, restarted int, nodes map[int]string, monIDs []string, from, to time.Time, interval time.Duration) (time.Duration, string, as09GapsResult, error) {
+func as09Gaps(ctx context.Context, cl *harness.Cluster, p as09GapsParams) (time.Duration, string, as09GapsResult, error) {
 	var worst time.Duration
 	var worstAt string
 	var ownOthers time.Duration
 	var ownSelf time.Duration
-	for _, m := range monIDs {
-		for _, v := range viewers {
-			for p := 1; p <= 3; p++ {
-				gap, err := cl.HeartbeatGap(ctx, v, m, nodes[p], from, to, interval)
+	for _, m := range p.monIDs {
+		for _, v := range p.viewers {
+			for prod := 1; prod <= 3; prod++ {
+				gap, err := cl.HeartbeatGap(ctx, v, m, p.nodes[prod], p.from, p.to, p.interval)
 				if err != nil {
 					return 0, "", as09GapsResult{}, err
 				}
-				if p == restarted {
+				if prod == p.restarted {
 					ownOthers = max(ownOthers, gap)
 					continue
 				}
 				if gap > worst {
 					worst = gap
-					worstAt = fmt.Sprintf("viewer %d, producer %d, monitor %s", v, p, m[:min(8, len(m))])
+					worstAt = fmt.Sprintf("viewer %d, producer %d, monitor %s", v, prod, m[:min(8, len(m))])
 				}
 			}
 		}
-		gap, err := cl.HeartbeatGap(ctx, restarted, m, nodes[restarted], from, to, interval)
+		gap, err := cl.HeartbeatGap(ctx, p.restarted, m, p.nodes[p.restarted], p.from, p.to, p.interval)
 		if err != nil {
 			return 0, "", as09GapsResult{}, err
 		}

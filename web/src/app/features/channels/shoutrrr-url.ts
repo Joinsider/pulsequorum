@@ -152,7 +152,8 @@ function userInfo(username: string, password: string): string {
   if (username === '') {
     return '';
   }
-  return `${encodeComponent(username)}${password === '' ? '' : `:${encodeComponent(password)}`}@`;
+  const passPart = password === '' ? '' : `:${encodeComponent(password)}`;
+  return `${encodeComponent(username)}${passPart}@`;
 }
 
 /**

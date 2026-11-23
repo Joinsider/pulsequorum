@@ -319,50 +319,66 @@ func (a *Aggregator) process(ctx context.Context, w *watch, nowMs int64, registr
 		if !w.due(k, nowMs, responsible) {
 			return
 		}
-
-		// A maintenance round is not evaluated and resets the streaks (FA-MNT-02).
-		if a.opts.Maintenance != nil && a.opts.Maintenance(w.m, time.UnixMilli(w.start(k))) {
-			if w.ready {
-				w.t.resetStreaks()
-				// The controller sets MAINTENANCE meanwhile; marking it here makes
-				// the first round after the window drop the watch, so the rebuild
-				// reloads the replicated status (PENDING once the controller has
-				// left maintenance). A rebuild in this call replays old windows
-				// instead: it keeps the replicated status, or the watch would be
-				// dropped again and the replay would loop.
-				if !rebuilt {
-					w.t.status = store.StatusMaintenance
-				}
-			}
-			w.next = k + 1
+		if a.skipMaintenanceSlot(w, k, rebuilt) {
 			continue
 		}
-
 		if !w.ready {
-			if err := a.rebuild(ctx, w, nowMs); err != nil {
-				if ctx.Err() == nil {
-					a.opts.Logger.Warn("rebuilding the monitor state failed, retrying", "tenant", w.m.TenantID, "monitor", w.m.ID, "err", err)
-				}
+			if !a.tryRebuild(ctx, w, nowMs) {
 				return
 			}
 			rebuilt = true
 			continue
 		}
-
-		// The status is set elsewhere while the monitor is paused or in a
-		// maintenance window; reload it before the next round (see rebuild).
-		if w.t.status == store.StatusMaintenance || w.t.status == store.StatusPaused {
-			w.drop()
+		if !a.advanceReadyWatch(ctx, w, k, responsible) {
 			return
 		}
-
-		if err := a.evaluate(ctx, w, k, responsible); err != nil {
-			w.drop()
-			return
-		}
-		w.next = k + 1
-		w.prune()
 	}
+}
+
+func (a *Aggregator) skipMaintenanceSlot(w *watch, k int64, rebuilt bool) bool {
+	if a.opts.Maintenance == nil || !a.opts.Maintenance(w.m, time.UnixMilli(w.start(k))) {
+		return false
+	}
+	if w.ready {
+		w.t.resetStreaks()
+		// The controller sets MAINTENANCE meanwhile; marking it here makes
+		// the first round after the window drop the watch, so the rebuild
+		// reloads the replicated status (PENDING once the controller has
+		// left maintenance). A rebuild in this call replays old windows
+		// instead: it keeps the replicated status, or the watch would be
+		// dropped again and the replay would loop.
+		if !rebuilt {
+			w.t.status = store.StatusMaintenance
+		}
+	}
+	w.next = k + 1
+	return true
+}
+
+func (a *Aggregator) tryRebuild(ctx context.Context, w *watch, nowMs int64) bool {
+	if err := a.rebuild(ctx, w, nowMs); err != nil {
+		if ctx.Err() == nil {
+			a.opts.Logger.Warn("rebuilding the monitor state failed, retrying", "tenant", w.m.TenantID, "monitor", w.m.ID, "err", err)
+		}
+		return false
+	}
+	return true
+}
+
+func (a *Aggregator) advanceReadyWatch(ctx context.Context, w *watch, k int64, responsible []string) bool {
+	// The status is set elsewhere while the monitor is paused or in a
+	// maintenance window; reload it before the next round (see rebuild).
+	if w.t.status == store.StatusMaintenance || w.t.status == store.StatusPaused {
+		w.drop()
+		return false
+	}
+	if err := a.evaluate(ctx, w, k, responsible); err != nil {
+		w.drop()
+		return false
+	}
+	w.next = k + 1
+	w.prune()
+	return true
 }
 
 // rebuild loads the status and the heartbeats of the open rounds of w: the

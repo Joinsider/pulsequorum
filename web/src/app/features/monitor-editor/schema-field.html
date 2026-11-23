@@ -102,7 +102,7 @@
   @case ('secret') {
     @if (secret(); as sc) {
       @if (secretMode() === 'stored') {
-        <div class="secret" role="group" [attr.aria-label]="title() || null">
+        <div class="secret" [attr.aria-label]="title() || null">
           <span class="secret-title">{{ title() }}</span>
           <div class="secret-state">
             <span>{{ 'monitorEditor.secret.stored' | transloco }}</span>
@@ -127,7 +127,7 @@
           }
         </div>
       } @else if (secretMode() === 'removed') {
-        <div class="secret" role="group" [attr.aria-label]="title() || null">
+        <div class="secret" [attr.aria-label]="title() || null">
           <span class="secret-title">{{ title() }}</span>
           <div class="secret-state">
             <span>{{ 'monitorEditor.secret.removed' | transloco }}</span>
@@ -216,7 +216,7 @@
         <mat-slide-toggle
           class="toggle"
           [checked]="group().enabled"
-          (change)="toggleGroup($event.checked)"
+          (change)="$event.checked ? enableGroup() : disableGroup()"
         >
           {{ 'monitorEditor.fields.enable' | transloco }}
         </mat-slide-toggle>
@@ -241,7 +241,7 @@
   }
 
   @case ('map') {
-    <div class="list" role="group" [attr.aria-label]="title() || null">
+    <div class="list" [attr.aria-label]="title() || null">
       @if (title()) {
         <span class="list-title">{{ title() }}</span>
       }
@@ -290,7 +290,7 @@
   }
 
   @case ('array') {
-    <div class="list" role="group" [attr.aria-label]="title() || null">
+    <div class="list" [attr.aria-label]="title() || null">
       @if (title()) {
         <span class="list-title">{{ title() }}</span>
       }

@@ -15,7 +15,15 @@ import (
 
 // failoverLimit is the time from the loss of the leader to a leader that all
 // survivors agree on (NFA-REL-02, AS-03).
-const failoverLimit = 10 * time.Second
+const (
+	failoverLimit               = 10 * time.Second
+	expectListedAsVoterByLeader = "listed as voter by the leader"
+	prefixDown                  = "DOWN: "
+	prefixRestart               = "Restart "
+	expectHealthyAgain          = "healthy again"
+	expectDeliveredToNtfy       = "delivered to ntfy"
+	expectNetemQdiscInstalled   = "netem qdisc installed"
+)
 
 // bringUp starts an n-voter cluster: voter 1 bootstraps, voters 2..n join one
 // after another, and each joined voter must answer logins.
@@ -30,10 +38,10 @@ func bringUp(ctx context.Context, env *Env, cl *harness.Cluster, n int) error {
 	for i := 2; i <= n; i++ {
 		started := time.Now()
 		if err := cl.Join(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter by the leader", err.Error(), false)
+			rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoterByLeader, err.Error(), false)
 			return err
 		}
-		rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter by the leader",
+		rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoterByLeader,
 			fmt.Sprintf("joined after %s", time.Since(started).Round(time.Second)), true)
 		if err := requireLogin(ctx, env, cl, i); err != nil {
 			return err
@@ -225,7 +233,7 @@ func waitMonitorStatus(ctx context.Context, c *ucapi.Client, ids []string, statu
 
 // waitHeartbeatsOfAll polls until every monitor has heartbeats of every slot
 // (as seen by voter viewer) since since.
-func waitHeartbeatsOfAll(ctx context.Context, cl *harness.Cluster, viewer int, monitorIDs []string, producers []string, since time.Time, timeout time.Duration) (bool, error) {
+func waitHeartbeatsOfAll(ctx context.Context, cl *harness.Cluster, viewer int, monitorIDs, producers []string, since time.Time, timeout time.Duration) (bool, error) {
 	return pollUntil(ctx, timeout, 2*time.Second, func() (bool, error) {
 		for _, id := range monitorIDs {
 			counts, err := cl.ProducerCounts(ctx, viewer, id, since, time.Now())

@@ -93,6 +93,9 @@ import {
       display: grid;
       gap: 0.5rem;
       min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
     }
     .list-title {
       font-weight: 600;
@@ -269,12 +272,12 @@ export class SchemaField {
     return control instanceof SecretControl ? control.mode : null;
   });
 
-  protected toggleGroup(enabled: boolean): void {
-    if (enabled) {
-      this.control().enable();
-    } else {
-      this.control().disable();
-    }
+  protected enableGroup(): void {
+    this.control().enable();
+  }
+
+  protected disableGroup(): void {
+    this.control().disable();
   }
 
   protected addItem(): void {

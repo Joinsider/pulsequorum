@@ -43,6 +43,11 @@ type recRaftInfo struct {
 	} `json:"servers"`
 }
 
+type recSurvivor struct {
+	slot int
+	info recRaftInfo
+}
+
 // runRecovery follows docs/betrieb/recovery.md with three voters that hold
 // data: two voters die (quorum lost), the survivors are inspected with
 // "admin raft-info", the most up-to-date one runs "admin recover", the
@@ -71,19 +76,66 @@ func runRecovery(ctx context.Context, env *Env) error {
 	rep.Check("Voter 1 bootstraps", "admin set up", "admin created on "+cl.Names().Voter(1), true)
 
 	suffix := randomSuffix()
-	ch, err := opsCreateChannel(ctx, env, cl.Client(1), "recovery-ntfy-"+suffix, "recovery-"+suffix)
+	monIDs, monNames, nodes, err := recSetupInitialCluster(ctx, env, cl, all, suffix, interval)
 	if err != nil {
-		rep.Check("Notification channel with test delivery", "delivered to ntfy", err.Error(), false)
 		return err
 	}
-	rep.Check("Notification channel with test delivery", "delivered to ntfy", "channel "+ch.ID, true)
+
+	if err := recSimulateQuorumLossAndStopAll(ctx, env, cl, suffix, interval); err != nil {
+		return err
+	}
+
+	best, others, err := recInspectAndRecoverBestSurvivor(ctx, env, cl, all, nodes, image)
+	if err != nil {
+		return err
+	}
+
+	staleVol := make(map[int]string)
+	for _, i := range all {
+		if i == best.slot {
+			continue
+		}
+		staleVol[i] = prefix + fmt.Sprintf("-stale-v%d-data", i)
+		staleCont := fmt.Sprintf("%s-stale-v%d", prefix, i)
+		defer func(vol, cont string) {
+			if err := opsCleanup(ctx, cl, []string{cont}, []string{vol}); err != nil {
+				env.Log.Error("cleanup recovery copies", "err", err)
+			}
+		}(staleVol[i], staleCont)
+		if err := cl.CopyVolume(ctx, cl.Names().Volume(i), staleVol[i]); err != nil {
+			rep.Check(fmt.Sprintf("Copy the old data of voter %d", i), "copy created", err.Error(), false)
+			return err
+		}
+	}
+	rep.Info("Old volumes of the other survivors copied", "copies kept for the stale-start check",
+		fmt.Sprintf("%s and %s", staleVol[others2(all, best.slot)[0]], staleVol[others2(all, best.slot)[1]]))
+
+	if err := recStartRecoveredAndRejoinOthers(ctx, env, cl, all, best.slot, nodes, others, monIDs, monNames, suffix, interval); err != nil {
+		return err
+	}
+
+	if err := recVerifyStaleCopyRejected(ctx, env, cl, all, best.slot, others, staleVol, prefix); err != nil {
+		return err
+	}
+
+	return recVerifyPasswordReset(ctx, env, cl, best.slot)
+}
+
+func recSetupInitialCluster(ctx context.Context, env *Env, cl *harness.Cluster, all []int, suffix string, interval time.Duration) ([]string, []string, map[int]string, error) {
+	rep := env.Rep
+	ch, err := opsCreateChannel(ctx, env, cl.Client(1), "recovery-ntfy-"+suffix, "recovery-"+suffix)
+	if err != nil {
+		rep.Check("Notification channel with test delivery", expectDeliveredToNtfy, err.Error(), false)
+		return nil, nil, nil, err
+	}
+	rep.Check("Notification channel with test delivery", expectDeliveredToNtfy, "channel "+ch.ID, true)
 	var monIDs, monNames []string
 	for n := 1; n <= 2; n++ {
 		name := fmt.Sprintf("recovery-%s-m%d", suffix, n)
 		m, err := opsHTTPMonitor(ctx, env, cl.Client(1), name, fmt.Sprintf("/recovery/%s/m%d", suffix, n), []string{ch.ID})
 		if err != nil {
 			rep.Check("HTTP monitors created", "2 monitors", err.Error(), false)
-			return err
+			return nil, nil, nil, err
 		}
 		monIDs = append(monIDs, m.ID)
 		monNames = append(monNames, m.Name)
@@ -92,12 +144,12 @@ func runRecovery(ctx context.Context, env *Env) error {
 
 	for _, i := range []int{2, 3} {
 		if err := cl.Join(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Voter %d joins", i), "listed as voter", err.Error(), false)
-			return err
+			rep.Check(fmt.Sprintf("Voter %d joins", i), expectListedAsVoter, err.Error(), false)
+			return nil, nil, nil, err
 		}
 		if err := opsJoinLogin(ctx, env, cl, i); err != nil {
-			rep.Check(fmt.Sprintf("Login on voter %d after join", i), "login answers", err.Error(), false)
-			return err
+			rep.Check(fmt.Sprintf("Login on voter %d after join", i), expectLoginAnswers, err.Error(), false)
+			return nil, nil, nil, err
 		}
 	}
 	rep.Check("Voters 2 and 3 join", "3 voters, logins work", "joined", true)
@@ -105,7 +157,7 @@ func runRecovery(ctx context.Context, env *Env) error {
 	nodes, err := opsNodeIDs(ctx, cl, all)
 	if err != nil {
 		rep.Check("Node IDs of the voters", "each voter lists itself", err.Error(), false)
-		return err
+		return nil, nil, nil, err
 	}
 	producers := []string{nodes[1], nodes[2], nodes[3]}
 	ok, err := pollUntil(ctx, 2*interval+2*opsReplicationRound, 2*time.Second, func() (bool, error) {
@@ -114,18 +166,20 @@ func runRecovery(ctx context.Context, env *Env) error {
 	rep.Check("Data replicated to all voters before the failure", "heartbeats of all producers on all voters",
 		fmt.Sprintf("complete: %v%s", ok, as09ErrSuffix(err)), ok)
 	if !ok {
-		return errors.New("baseline heartbeats incomplete")
+		return nil, nil, nil, errors.New("baseline heartbeats incomplete")
 	}
 	snapOK, _, err := opsAwaitSnapshots(ctx, cl, all, 60*time.Second)
 	rep.Check("Identical data before the failure", "normalized snapshots equal", fmt.Sprintf("equal: %v%s", snapOK, as09ErrSuffix(err)), snapOK)
 
-	// Log in on voter 1 while the quorum still exists.
 	if err := opsRefreshLogins(ctx, cl, []int{1}); err != nil {
-		rep.Check("Login on voter 1", "login answers", err.Error(), false)
-		return err
+		rep.Check("Login on voter 1", expectLoginAnswers, err.Error(), false)
+		return nil, nil, nil, err
 	}
+	return monIDs, monNames, nodes, nil
+}
 
-	// Quorum lost: voters 2 and 3 are killed (SIGKILL).
+func recSimulateQuorumLossAndStopAll(ctx context.Context, env *Env, cl *harness.Cluster, suffix string, interval time.Duration) error {
+	rep := env.Rep
 	killAt := time.Now()
 	if err := cl.Kill(ctx, 2); err != nil {
 		rep.Check("Kill voter 2", "killed", err.Error(), false)
@@ -137,8 +191,6 @@ func runRecovery(ctx context.Context, env *Env) error {
 	}
 	rep.Check("Kill voters 2 and 3 (SIGKILL), quorum lost", "both containers stopped", "killed", true)
 
-	// Writes through voter 1 end with 503, reads still work. The token was
-	// taken before the kill: a login needs the leader and answers 503 without quorum.
 	var s503, sOK, sOther int
 	var firstStatus string
 	probeUntil := time.Now().Add(recFreshWait)
@@ -173,51 +225,43 @@ func runRecovery(ctx context.Context, env *Env) error {
 	rep.Check("Reads through voter 1 without quorum", "200, monitors listed",
 		fmt.Sprintf("%d monitors%s", len(readMons), as09ErrSuffix(readErr)), readErr == nil && len(readMons) >= 2)
 
-	// Voter 1 stops as well: all three are now stopped.
 	if err := cl.Stop(ctx, 1); err != nil {
 		rep.Check("Stop voter 1", "stopped", err.Error(), false)
 		return err
 	}
 	rep.Check("Stop voter 1 (SIGTERM)", "all voters stopped", "stopped", true)
+	return nil
+}
 
-	// Inspect every volume with a one-off container, same environment as the node.
-	type survivor struct {
-		slot int
-		info recRaftInfo
-	}
-	var infos []survivor
+func recInspectAndRecoverBestSurvivor(ctx context.Context, env *Env, cl *harness.Cluster, all []int, nodes map[int]string, image string) (recSurvivor, []string, error) {
+	rep := env.Rep
+	var infos []recSurvivor
 	for _, i := range all {
 		out, err := cl.OneShot(ctx, image, i, "raft-info", "--json")
 		if err != nil {
 			rep.Check(fmt.Sprintf("admin raft-info on voter %d", i), "JSON answer", err.Error(), false)
-			return err
+			return recSurvivor{}, nil, err
 		}
 		var info recRaftInfo
 		if err := json.Unmarshal([]byte(out), &info); err != nil {
 			rep.Check(fmt.Sprintf("admin raft-info on voter %d", i), "JSON answer", err.Error(), false)
-			return err
+			return recSurvivor{}, nil, err
 		}
-		infos = append(infos, survivor{slot: i, info: info})
+		infos = append(infos, recSurvivor{slot: i, info: info})
 		rep.Info(fmt.Sprintf("raft-info voter %d", i), "last term and index of the volume",
 			fmt.Sprintf("term %d, index %d, applied %d, command level %d, node %s",
 				info.LastTerm, info.LastIndex, info.AppliedIndex, info.CommandLevel, info.NodeID))
 	}
 	rep.Check("admin raft-info on all three volumes", "JSON with node ID and log position",
 		fmt.Sprintf("%d volumes read", len(infos)), len(infos) == 3)
-	best := infos[0]
-	for _, s := range infos[1:] {
-		if s.info.LastTerm > best.info.LastTerm || (s.info.LastTerm == best.info.LastTerm && s.info.LastIndex > best.info.LastIndex) {
-			best = s
-		}
-	}
+	best := chooseBestSurvivor(infos)
 	rep.Info("Survivor chosen for recover", "highest last term, then highest last index",
 		fmt.Sprintf("voter %d (term %d, index %d)", best.slot, best.info.LastTerm, best.info.LastIndex))
 
-	// Dry run first: it lists the plan and must change nothing.
 	plan, err := cl.OneShot(ctx, image, best.slot, "recover")
 	if err != nil {
 		rep.Check("admin recover (plan only)", "plan printed", err.Error(), false)
-		return err
+		return recSurvivor{}, nil, err
 	}
 	var others []string
 	for _, i := range all {
@@ -226,62 +270,54 @@ func runRecovery(ctx context.Context, env *Env) error {
 		}
 	}
 	sort.Strings(others)
-	planOK := strings.Contains(plan, "Recovery plan for node") && strings.Contains(plan, "Nothing has been changed")
-	for _, id := range others {
-		planOK = planOK && strings.Contains(plan, id)
-	}
+	planOK := strings.Contains(plan, "Recovery plan for node") && strings.Contains(plan, "Nothing has been changed") && countContained(plan, others) == len(others)
 	rep.Check("admin recover without --yes shows the plan", "plan lists the other two nodes as revoked, nothing changed",
 		fmt.Sprintf("plan %v, lists %d of 2 old nodes", planOK, countContained(plan, others)), planOK)
 
 	applied, err := cl.OneShot(ctx, image, best.slot, "recover", "--yes")
 	if err != nil {
 		rep.Check("admin recover --yes", "recovered", err.Error(), false)
-		return err
+		return recSurvivor{}, nil, err
 	}
-	backupLine := ""
-	for _, line := range strings.Split(applied, "\n") {
-		if strings.HasPrefix(line, "Backup of raft/ and state.db:") {
-			backupLine = strings.TrimSpace(line)
-		}
-	}
+	backupLine := extractBackupLine(applied)
 	rep.Check("admin recover --yes on the chosen survivor", "node is the only voter, backup written",
 		fmt.Sprintf("%s; %s", firstLine(applied), backupLine), strings.Contains(applied, "Recovered: node") && backupLine != "")
+	return best, others, nil
+}
 
-	// The other survivors keep their old volumes as copies; the volumes are
-	// then removed so that they can rejoin with empty directories.
-	staleVol := make(map[int]string)
-	for _, i := range all {
-		if i == best.slot {
-			continue
-		}
-		staleVol[i] = prefix + fmt.Sprintf("-stale-v%d-data", i)
-		staleCont := fmt.Sprintf("%s-stale-v%d", prefix, i)
-		defer func(vol, cont string) {
-			if err := opsCleanup(ctx, cl, []string{cont}, []string{vol}); err != nil {
-				env.Log.Error("cleanup recovery copies", "err", err)
-			}
-		}(staleVol[i], staleCont)
-		if err := cl.CopyVolume(ctx, cl.Names().Volume(i), staleVol[i]); err != nil {
-			rep.Check(fmt.Sprintf("Copy the old data of voter %d", i), "copy created", err.Error(), false)
-			return err
+func chooseBestSurvivor(infos []recSurvivor) recSurvivor {
+	best := infos[0]
+	for _, s := range infos[1:] {
+		if s.info.LastTerm > best.info.LastTerm || (s.info.LastTerm == best.info.LastTerm && s.info.LastIndex > best.info.LastIndex) {
+			best = s
 		}
 	}
-	rep.Info("Old volumes of the other survivors copied", "copies kept for the stale-start check",
-		fmt.Sprintf("%s and %s", staleVol[others2(all, best.slot)[0]], staleVol[others2(all, best.slot)[1]]))
+	return best
+}
 
-	// Start the recovered node: it becomes leader alone and revokes the others.
-	if err := cl.Start(ctx, best.slot, harness.StartOptions{}); err != nil {
-		rep.Check(fmt.Sprintf("Start voter %d after recover", best.slot), "healthy", err.Error(), false)
+func extractBackupLine(applied string) string {
+	for _, line := range strings.Split(applied, "\n") {
+		if strings.HasPrefix(line, "Backup of raft/ and state.db:") {
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
+}
+
+func recStartRecoveredAndRejoinOthers(ctx context.Context, env *Env, cl *harness.Cluster, all []int, bestSlot int, nodes map[int]string, others, monIDs, monNames []string, suffix string, interval time.Duration) error {
+	rep := env.Rep
+	if err := cl.Start(ctx, bestSlot, harness.StartOptions{}); err != nil {
+		rep.Check(fmt.Sprintf("Start voter %d after recover", bestSlot), "healthy", err.Error(), false)
 		return err
 	}
-	if err := opsLogin(ctx, cl, best.slot); err != nil {
-		rep.Check(fmt.Sprintf("Login on voter %d after recover", best.slot), "login answers", err.Error(), false)
+	if err := opsLogin(ctx, cl, bestSlot); err != nil {
+		rep.Check(fmt.Sprintf("Login on voter %d after recover", bestSlot), expectLoginAnswers, err.Error(), false)
 		return err
 	}
 	revokedAt := time.Now()
 	revoked := false
 	_, _ = pollUntil(ctx, 90*time.Second, 2*time.Second, func() (bool, error) {
-		logs, err := cl.ContainerLogs(ctx, cl.Names().Voter(best.slot))
+		logs, err := cl.ContainerLogs(ctx, cl.Names().Voter(bestSlot))
 		if err != nil {
 			return false, err
 		}
@@ -291,18 +327,51 @@ func runRecovery(ctx context.Context, env *Env) error {
 	rep.Check("Old members revoked after recovery", "log line \"old members revoked after recovery\"",
 		fmt.Sprintf("found: %v after %s", revoked, time.Since(revokedAt).Round(time.Second)), revoked)
 
-	after, err := cl.Members(ctx, best.slot)
+	after, err := cl.Members(ctx, bestSlot)
 	if err != nil {
 		rep.Check("Node list after recover", "answers", err.Error(), false)
 		return err
 	}
-	selfLeader := len(after.Nodes) == 1 && after.Nodes[0].ID == nodes[best.slot] && after.Nodes[0].Leader
+	selfLeader := len(after.Nodes) == 1 && after.Nodes[0].ID == nodes[bestSlot] && after.Nodes[0].Leader
 	rep.Check("Node list after recover shows only the recovered node as leader", "1 member, leader",
 		fmt.Sprintf("%d members, leader %v", len(after.Nodes), selfLeader), selfLeader)
 
-	mons, err := cl.Client(best.slot).ListMonitors(ctx)
+	mons, err := cl.Client(bestSlot).ListMonitors(ctx)
+	missing := countMissingMonitorNames(mons, monNames)
+	rep.Check("Data from before the failure present", "all baseline monitors listed",
+		fmt.Sprintf("%d of %d monitors present%s", len(monNames)-missing, len(monNames), as09ErrSuffix(err)), err == nil && missing == 0)
+
+	probe := "recovery-after-" + suffix
+	if _, err := opsHTTPMonitor(ctx, env, cl.Client(bestSlot), probe, "/recovery/"+suffix+"/after", nil); err != nil {
+		rep.Check("Write after recover", "201", err.Error(), false)
+		return err
+	}
+	rep.Check("Write after recover", "201 on the recovered node", "monitor created", true)
+
+	for _, i := range others2(all, bestSlot) {
+		if err := cl.Remove(ctx, i); err != nil {
+			rep.Check(fmt.Sprintf("Move voter %d aside (container and volume)", i), "removed; copy kept", err.Error(), false)
+			return err
+		}
+		joinStart := time.Now()
+		if err := cl.Join(ctx, i); err != nil {
+			rep.Check(fmt.Sprintf("Voter %d rejoins as a new node", i), expectListedAsVoter, err.Error(), false)
+			return err
+		}
+		if err := opsJoinLogin(ctx, env, cl, i); err != nil {
+			rep.Check(fmt.Sprintf("Login on voter %d after rejoin", i), expectLoginAnswers, err.Error(), false)
+			return err
+		}
+		rep.Check(fmt.Sprintf("Voter %d rejoins as a new node", i), "listed as voter with a new node ID",
+			fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
+	}
+
+	return recVerifyPostRejoinCluster(ctx, env, cl, all, bestSlot, others, monIDs, interval)
+}
+
+func countMissingMonitorNames(mons []ucapi.Monitor, names []string) int {
 	missing := 0
-	for _, name := range monNames {
+	for _, name := range names {
 		found := false
 		for _, m := range mons {
 			if m.Name == name {
@@ -313,46 +382,17 @@ func runRecovery(ctx context.Context, env *Env) error {
 			missing++
 		}
 	}
-	rep.Check("Data from before the failure present", "all baseline monitors listed",
-		fmt.Sprintf("%d of %d monitors present%s", len(monNames)-missing, len(monNames), as09ErrSuffix(err)), err == nil && missing == 0)
+	return missing
+}
 
-	probe := "recovery-after-" + suffix
-	if _, err := opsHTTPMonitor(ctx, env, cl.Client(best.slot), probe, "/recovery/"+suffix+"/after", nil); err != nil {
-		rep.Check("Write after recover", "201", err.Error(), false)
-		return err
-	}
-	rep.Check("Write after recover", "201 on the recovered node", "monitor created", true)
-
-	// Join two fresh voters into the emptied slots.
-	for _, i := range others2(all, best.slot) {
-		if err := cl.Remove(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Move voter %d aside (container and volume)", i), "removed; copy kept", err.Error(), false)
-			return err
-		}
-		joinStart := time.Now()
-		if err := cl.Join(ctx, i); err != nil {
-			rep.Check(fmt.Sprintf("Voter %d rejoins as a new node", i), "listed as voter", err.Error(), false)
-			return err
-		}
-		if err := opsJoinLogin(ctx, env, cl, i); err != nil {
-			rep.Check(fmt.Sprintf("Login on voter %d after rejoin", i), "login answers", err.Error(), false)
-			return err
-		}
-		rep.Check(fmt.Sprintf("Voter %d rejoins as a new node", i), "listed as voter with a new node ID",
-			fmt.Sprintf("joined after %s", time.Since(joinStart).Round(time.Second)), true)
-	}
-
-	list, err := cl.Members(ctx, best.slot)
+func recVerifyPostRejoinCluster(ctx context.Context, env *Env, cl *harness.Cluster, all []int, bestSlot int, others, monIDs []string, interval time.Duration) error {
+	rep := env.Rep
+	list, err := cl.Members(ctx, bestSlot)
 	if err != nil {
 		rep.Check("Member list after the rejoins", "answers", err.Error(), false)
 		return err
 	}
-	oldLeft := 0
-	for _, id := range others {
-		if _, ok := as09Find(list, id); ok {
-			oldLeft++
-		}
-	}
+	oldLeft := countListedIDs(list, others)
 	rep.Check("Three voters after the rejoins, old IDs gone", "3 voters, old IDs not listed",
 		fmt.Sprintf("%d voters, old IDs listed: %d", opsVoterCount(list), oldLeft), opsVoterCount(list) == 3 && oldLeft == 0)
 
@@ -362,7 +402,7 @@ func runRecovery(ctx context.Context, env *Env) error {
 		return err
 	}
 	newProducers := []string{newNodes[1], newNodes[2], newNodes[3]}
-	ok, err = pollUntil(ctx, 2*interval+2*opsReplicationRound, 2*time.Second, func() (bool, error) {
+	ok, err := pollUntil(ctx, 2*interval+2*opsReplicationRound, 2*time.Second, func() (bool, error) {
 		return opsAllProducers(ctx, cl, all, monIDs, newProducers, time.Now().Add(-2*interval))
 	})
 	rep.Check("Heartbeats of all three voters on every voter after the rejoins", "all producers on all voters",
@@ -373,10 +413,23 @@ func runRecovery(ctx context.Context, env *Env) error {
 		measured = fmt.Sprintf("%d differences: %v%s", len(diffs), as09First(diffs, 5), as09ErrSuffix(err))
 	}
 	rep.Check("Identical data after the rejoins", "normalized snapshots equal", measured, snapOK)
+	return nil
+}
 
-	// A stale copy of an old data directory is started on the cluster network.
+func countListedIDs(list ucapi.ClusterNodeList, ids []string) int {
+	n := 0
+	for _, id := range ids {
+		if _, ok := as09Find(list, id); ok {
+			n++
+		}
+	}
+	return n
+}
+
+func recVerifyStaleCopyRejected(ctx context.Context, env *Env, cl *harness.Cluster, all []int, bestSlot int, others []string, staleVol map[int]string, prefix string) error {
+	rep := env.Rep
 	leaderBefore, _ := cl.LeaderOf(ctx, all)
-	stale := others2(all, best.slot)[0]
+	stale := others2(all, bestSlot)[0]
 	staleCont := fmt.Sprintf("%s-stale-v%d", prefix, stale)
 	if err := cl.StartStale(ctx, staleCont, staleVol[stale], stale); err != nil {
 		rep.Check("Start the stale copy of the old voter data", "container starts", err.Error(), false)
@@ -388,17 +441,12 @@ func runRecovery(ctx context.Context, env *Env) error {
 	staleRunning, _ := cl.ContainerRunning(ctx, staleCont)
 	staleLogs, _ := cl.ContainerLogs(ctx, staleCont)
 	leaderAfter, leaderErr := cl.LeaderOf(ctx, all)
-	listStale, err := cl.Members(ctx, best.slot)
+	listStale, err := cl.Members(ctx, bestSlot)
 	if err != nil {
 		rep.Check("Member list with the stale copy running", "answers", err.Error(), false)
 		return err
 	}
-	staleIDs := 0
-	for _, id := range others {
-		if _, ok := as09Find(listStale, id); ok {
-			staleIDs++
-		}
-	}
+	staleIDs := countListedIDs(listStale, others)
 	rep.Info("Stale copy of voter "+fmt.Sprint(stale)+" started", "rejected, no disturbance",
 		fmt.Sprintf("still running after 60 s: %v; leader before %s, after %s%s; old IDs listed %d; log: %s",
 			staleRunning, leaderBefore, leaderAfter, as09ErrSuffix(leaderErr), staleIDs, replaceReason(staleLogs)))
@@ -408,23 +456,26 @@ func runRecovery(ctx context.Context, env *Env) error {
 	if err := opsCleanup(ctx, cl, []string{staleCont}, nil); err != nil {
 		rep.Info("Remove the stale container", "removed", err.Error())
 	}
+	return nil
+}
 
-	// Admin password reset in a running voter, read from stdin.
+func recVerifyPasswordReset(ctx context.Context, env *Env, cl *harness.Cluster, bestSlot int) error {
+	rep := env.Rep
 	pw, err := opsRandomSecret(24)
 	if err != nil {
 		return err
 	}
-	out, err := cl.ExecStdin(ctx, best.slot, pw+"\n", "/pulsequorum", "admin", "reset-password", "--username", "admin")
+	out, err := cl.ExecStdin(ctx, bestSlot, pw+"\n", "/pulsequorum", "admin", "reset-password", "--username", "admin")
 	rep.Check("admin reset-password in the running voter (password on stdin)", "password reset, sessions ended",
 		fmt.Sprintf("%s%s", firstLine(out), as09ErrSuffix(err)), err == nil && strings.Contains(out, "Password of"))
 	if err != nil {
 		return err
 	}
-	newClient := ucapi.New(env.Cfg.BaseURL(best.slot), "admin", pw)
+	newClient := ucapi.New(env.Cfg.BaseURL(bestSlot), "admin", pw)
 	loginErr := newClient.Login(ctx)
 	rep.Check("Login with the new password", "login answers 200",
 		fmt.Sprintf("login ok: %v%s", loginErr == nil, as09ErrSuffix(loginErr)), loginErr == nil)
-	oldErr := cl.Client(best.slot).Login(ctx)
+	oldErr := cl.Client(bestSlot).Login(ctx)
 	rep.Check("Login with the old password", "rejected (401)",
 		fmt.Sprintf("status %d", ucapi.StatusCode(oldErr)), ucapi.StatusCode(oldErr) == 401)
 	return nil

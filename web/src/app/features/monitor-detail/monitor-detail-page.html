@@ -70,7 +70,7 @@
     </section>
 
     @if (testBusy()) {
-      <p class="card muted" role="status">{{ t('monitorDetail.test.running') }}</p>
+      <output class="card muted">{{ t('monitorDetail.test.running') }}</output>
     } @else if (testFailed()) {
       <p class="card error" role="alert">{{ t('monitorDetail.test.failed') }}</p>
     } @else if (testResult(); as r) {
@@ -191,7 +191,7 @@
           </button>
         </p>
       } @else {
-        <p class="muted" role="status">{{ t('common.loading') }}</p>
+        <output class="muted">{{ t('common.loading') }}</output>
       }
     </section>
 
@@ -206,7 +206,6 @@
           echarts
           [options]="chart()"
           [autoResize]="true"
-          role="img"
           [attr.aria-label]="t('monitorDetail.chart.ariaLabel')"
         ></div>
       } @else {
@@ -264,7 +263,7 @@
           </button>
         </p>
       } @else if (heartbeatsRes.isLoading()) {
-        <p class="muted" role="status">{{ t('common.loading') }}</p>
+        <output class="muted">{{ t('common.loading') }}</output>
       } @else {
         <p class="muted">{{ t('monitorDetail.nodes.empty') }}</p>
       }
@@ -322,6 +321,6 @@
       <a mat-button routerLink="/">{{ t('common.back') }}</a>
     </p>
   } @else {
-    <p class="muted" role="status">{{ t('common.loading') }}</p>
+    <output class="muted">{{ t('common.loading') }}</output>
   }
 </ng-container>

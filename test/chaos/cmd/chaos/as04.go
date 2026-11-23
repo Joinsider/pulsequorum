@@ -82,59 +82,10 @@ func runAS04(ctx context.Context, env *Env) error {
 		return err
 	}
 
-	api := cl.Client(1)
-	suffix := randomSuffix()
-	ch, err := api.CreateChannel(ctx, "as04-ntfy-"+suffix, env.NtfyURL("as04-"+suffix), []string{"down", "up"})
+	names, ids, nodes, err := as04SetupChannelAndMonitors(ctx, env, cl, slots, interval, intervalSec, n)
 	if err != nil {
-		rep.Check("Notification channel created", "201, events down and up", err.Error(), false)
 		return err
 	}
-	rep.Check("Notification channel created", "201, events down and up", "channel "+ch.ID, true)
-	res, err := api.TestChannel(ctx, ch.ID)
-	if err != nil || !res.Delivered {
-		msg := res.Error
-		if err != nil {
-			msg = err.Error()
-		}
-		rep.Check("Channel test delivery", "delivered to ntfy", msg, false)
-		return errors.New("channel test delivery failed")
-	}
-	rep.Check("Channel test delivery", "delivered to ntfy", fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
-
-	env.Target.SetFailing(false)
-	names := make([]string, 0, as04Monitors)
-	ids := make([]string, 0, as04Monitors)
-	created := time.Now()
-	for k := 1; k <= as04Monitors; k++ {
-		name := fmt.Sprintf("as04-%s-m%d", suffix, k)
-		m, err := createPolicyMonitor(ctx, api, name, env.TargetURL(fmt.Sprintf("/as04/%s/m%d", suffix, k)), intervalSec, []string{ch.ID}, "majority")
-		if err != nil {
-			rep.Check("HTTP monitors created", "201, assignment all, policy majority", err.Error(), false)
-			return err
-		}
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	rep.Check("HTTP monitors created", fmt.Sprintf("%d monitors, assignment all, policy majority, interval %ds, retries %d", as04Monitors, intervalSec, as03Retries),
-		fmt.Sprintf("%d monitors", len(ids)), len(ids) == as04Monitors)
-
-	up, _ := waitMonitorStatus(ctx, api, ids, "UP", 2*interval+replicationRound)
-	rep.Check("Monitors UP before the partition", "all monitors UP", fmt.Sprintf("all UP: %v", up), up)
-	if !up {
-		return errors.New("monitors do not come up")
-	}
-	nodes, err := nodeIDs(ctx, cl, slots)
-	if err != nil {
-		rep.Check("Node IDs of all voters", "every voter lists itself", err.Error(), false)
-		return err
-	}
-	producers := make([]string, 0, n)
-	for _, i := range slots {
-		producers = append(producers, nodes[i])
-	}
-	allSeen, _ := waitHeartbeatsOfAll(ctx, cl, 1, ids, producers, created, 2*interval+replicationRound)
-	rep.Check("Every voter checks every monitor before the partition", "heartbeats of all voters for all monitors",
-		fmt.Sprintf("complete: %v", allSeen), allSeen)
 
 	oldSlot, oldLeader, err := leaderSlot(ctx, cl)
 	if err != nil {
@@ -148,7 +99,82 @@ func runAS04(ctx context.Context, env *Env) error {
 		fmt.Sprintf("leader voter %d (node %s), isolated follower voter %d (node %s), majority %v",
 			oldSlot, oldLeader, minority, minorityID, majority), true)
 
-	// Partition 2|1: the isolated follower loses both directions to the others.
+	if err := as04IsolateAndAwaitDegraded(ctx, env, cl, minority, majority, minorityID, oldLeader); err != nil {
+		return err
+	}
+
+	tFail, err := as04TriggerFailureAndCheckAlerts(ctx, env, cl, names, ids, majority, minorityID, interval)
+	if err != nil {
+		return err
+	}
+
+	if err := as04HealAndCheckJudgement(ctx, env, cl, slots, minority, oldSlot, oldLeader, names, tFail); err != nil {
+		return err
+	}
+
+	return as04RecoverAndCheckUp(ctx, env, cl, names, ids, majority, interval)
+}
+
+func as04SetupChannelAndMonitors(ctx context.Context, env *Env, cl *harness.Cluster, slots []int, interval time.Duration, intervalSec, n int) ([]string, []string, map[int]string, error) {
+	rep := env.Rep
+	api := cl.Client(1)
+	suffix := randomSuffix()
+	ch, err := api.CreateChannel(ctx, "as04-ntfy-"+suffix, env.NtfyURL("as04-"+suffix), []string{"down", "up"})
+	if err != nil {
+		rep.Check("Notification channel created", "201, events down and up", err.Error(), false)
+		return nil, nil, nil, err
+	}
+	rep.Check("Notification channel created", "201, events down and up", "channel "+ch.ID, true)
+	res, err := api.TestChannel(ctx, ch.ID)
+	if err != nil || !res.Delivered {
+		msg := res.Error
+		if err != nil {
+			msg = err.Error()
+		}
+		rep.Check("Channel test delivery", expectDeliveredToNtfy, msg, false)
+		return nil, nil, nil, errors.New("channel test delivery failed")
+	}
+	rep.Check("Channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
+
+	env.Target.SetFailing(false)
+	names := make([]string, 0, as04Monitors)
+	ids := make([]string, 0, as04Monitors)
+	created := time.Now()
+	for k := 1; k <= as04Monitors; k++ {
+		name := fmt.Sprintf("as04-%s-m%d", suffix, k)
+		m, err := createPolicyMonitor(ctx, api, name, env.TargetURL(fmt.Sprintf("/as04/%s/m%d", suffix, k)), intervalSec, []string{ch.ID}, "majority")
+		if err != nil {
+			rep.Check("HTTP monitors created", "201, assignment all, policy majority", err.Error(), false)
+			return nil, nil, nil, err
+		}
+		names = append(names, m.Name)
+		ids = append(ids, m.ID)
+	}
+	rep.Check("HTTP monitors created", fmt.Sprintf("%d monitors, assignment all, policy majority, interval %ds, retries %d", as04Monitors, intervalSec, as03Retries),
+		fmt.Sprintf("%d monitors", len(ids)), len(ids) == as04Monitors)
+
+	up, _ := waitMonitorStatus(ctx, api, ids, "UP", 2*interval+replicationRound)
+	rep.Check("Monitors UP before the partition", "all monitors UP", fmt.Sprintf("all UP: %v", up), up)
+	if !up {
+		return nil, nil, nil, errors.New("monitors do not come up")
+	}
+	nodes, err := nodeIDs(ctx, cl, slots)
+	if err != nil {
+		rep.Check("Node IDs of all voters", "every voter lists itself", err.Error(), false)
+		return nil, nil, nil, err
+	}
+	producers := make([]string, 0, n)
+	for _, i := range slots {
+		producers = append(producers, nodes[i])
+	}
+	allSeen, _ := waitHeartbeatsOfAll(ctx, cl, 1, ids, producers, created, 2*interval+replicationRound)
+	rep.Check("Every voter checks every monitor before the partition", "heartbeats of all voters for all monitors",
+		fmt.Sprintf("complete: %v", allSeen), allSeen)
+	return names, ids, nodes, nil
+}
+
+func as04IsolateAndAwaitDegraded(ctx context.Context, env *Env, cl *harness.Cluster, minority int, majority []int, minorityID, oldLeader string) error {
+	rep := env.Rep
 	t0 := time.Now()
 	if err := cl.Isolate(ctx, minority); err != nil {
 		rep.Check("Isolate follower "+cl.Names().Voter(minority), "DROP rules to the other voters, both directions", err.Error(), false)
@@ -184,30 +210,30 @@ func runAS04(ctx context.Context, env *Env) error {
 	mh, herr := cl.Client(majority[0]).Health(ctx)
 	rep.Check("Majority is not degraded", "degraded false", fmt.Sprintf("degraded %v%s", mh.Degraded, errSuffix(herr)),
 		herr == nil && !mh.Degraded)
+	return nil
+}
 
-	// Failure: the target answers 503 and stays down through the heal.
+func as04TriggerFailureAndCheckAlerts(ctx context.Context, env *Env, cl *harness.Cluster, names, ids []string, majority []int, minorityID string, interval time.Duration) (time.Time, error) {
+	rep := env.Rep
 	tFail := time.Now()
 	env.Target.SetFailing(true)
 	dueBy := tFail.Add(time.Duration(as03Retries+1)*interval + 30*time.Second)
 	allAlerted, _ := pollUntil(ctx, time.Until(dueBy)+5*time.Second, time.Second, func() (bool, error) {
 		for _, name := range names {
-			if c, _ := notifyCount(env.Ntfy, tFail, "DOWN: "+name); c == 0 {
+			if c, _ := notifyCount(env.Ntfy, tFail, prefixDown+name); c == 0 {
 				return false, nil
 			}
-			if c, _ := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+"DOWN: "+name); c == 0 {
+			if c, _ := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+prefixDown+name); c == 0 {
 				return false, nil
 			}
 		}
 		return true, nil
 	})
-	// Give duplicates one more interval to show up.
 	if err := waitUntil(ctx, time.Now().Add(interval)); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	for k, name := range names {
-		c, at := notifyCount(env.Ntfy, tFail, "DOWN: "+name)
-		// Two times for NFA-REL-03: the status change in the replicated state
-		// (StatusSince of the majority's view) and the delivery of the alert.
+		c, at := notifyCount(env.Ntfy, tFail, prefixDown+name)
 		changed := "status change unknown"
 		if mon, err := cl.Client(majority[0]).GetMonitor(ctx, ids[k]); err == nil {
 			changed = fmt.Sprintf("status change %s (status %s)", mon.StatusSince.Sub(tFail).Round(time.Second), mon.Status)
@@ -221,7 +247,7 @@ func runAS04(ctx context.Context, env *Env) error {
 		rep.Info("Alerts of the failure within the due time", "all DOWN alerts by the due time", "not all sent in time")
 	}
 	for _, name := range names {
-		c, at := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+"DOWN: "+name)
+		c, at := notifyCount(env.Ntfy, tFail, as04UnconfirmedPrefix+prefixDown+name)
 		rep.Check("Minority DOWN for "+name+" carries the unconfirmed prefix", "exactly 1, title '"+strings.TrimSuffix(as04UnconfirmedPrefix, " – ")+"', View line of the isolated follower",
 			fmt.Sprintf("%d unconfirmed DOWN, first +%s, view of isolated follower: %v", c, firstSince(at, tFail), viewOf(env.Ntfy, tFail, unconfirmedDown(name), minorityID)),
 			c == 1 && viewOf(env.Ntfy, tFail, unconfirmedDown(name), minorityID))
@@ -229,14 +255,17 @@ func runAS04(ctx context.Context, env *Env) error {
 	viewClash := 0
 	for _, name := range names {
 		k, _ := countWhere(env.Ntfy, tFail, func(m fake.Message) bool {
-			return m.Title == "DOWN: "+name && strings.Contains(m.Body, "View: "+minorityID+" ·")
+			return m.Title == prefixDown+name && strings.Contains(m.Body, "View: "+minorityID+" ·")
 		})
 		viewClash += k
 	}
 	rep.Check("Confirmed DOWN not sent by the isolated follower", "0 confirmed DOWN with the minority's View line",
 		fmt.Sprint(viewClash), viewClash == 0)
+	return tFail, nil
+}
 
-	// Heal: the isolated follower rejoins; the target stays down.
+func as04HealAndCheckJudgement(ctx context.Context, env *Env, cl *harness.Cluster, slots []int, minority, oldSlot int, oldLeader string, names []string, tFail time.Time) error {
+	rep := env.Rep
 	healAt := time.Now()
 	if err := cl.Heal(ctx, minority); err != nil {
 		rep.Check("Heal the isolated follower", "partition rules removed", err.Error(), false)
@@ -253,13 +282,11 @@ func runAS04(ctx context.Context, env *Env) error {
 		if err != nil {
 			return false, err
 		}
-		lastMinorityHealth = h
 		return !h.Degraded, nil
 	})
 	rep.Check("Isolated follower after the heal", "health degraded false",
 		fmt.Sprintf("degraded false: %v after %s", cleared, time.Since(healAt).Round(time.Second)), cleared)
 
-	// The leader judges the unconfirmed alerts once the history covers them.
 	judged, judgedN, errLines := awaitJudgement(ctx, cl, oldSlot, as04HealWait)
 	rep.Check("Leader judges the unconfirmed alerts", fmt.Sprintf("%d judged in total (one per unconfirmed alert)", as04Monitors),
 		fmt.Sprintf("%d judged after %s", judgedN, time.Since(healAt).Round(time.Second)), judged && judgedN == as04Monitors)
@@ -281,19 +308,20 @@ func runAS04(ctx context.Context, env *Env) error {
 	rep.Info("Snapshot scope", "unconfirmed_alerts are not part of the API snapshot",
 		"the snapshot covers monitors, channels, maintenance, users and members; the verdicts are seen through the logs and ntfy")
 
-	// Duplicates after the heal: still exactly one DOWN per monitor.
 	for _, name := range names {
-		c, _ := notifyCount(env.Ntfy, tFail, "DOWN: "+name)
+		c, _ := notifyCount(env.Ntfy, tFail, prefixDown+name)
 		rep.Check("No confirmed DOWN repeated after the heal for "+name, "exactly 1 DOWN in total",
 			fmt.Sprint(c), c == 1)
 	}
+	return nil
+}
 
-	// Target recovers: exactly one UP per monitor, from the majority.
+func as04RecoverAndCheckUp(ctx context.Context, env *Env, cl *harness.Cluster, names, ids []string, majority []int, interval time.Duration) error {
+	rep := env.Rep
 	tRec := time.Now()
 	env.Target.SetFailing(false)
 	recovered, _ := waitMonitorStatus(ctx, cl.Client(majority[0]), ids, "UP", 2*interval+replicationRound)
 	rep.Check("Monitors UP again after recovery", "all monitors UP", fmt.Sprintf("all UP: %v", recovered), recovered)
-	// UP alerts follow the replicated heartbeats, which lag by up to one round.
 	if err := waitUntil(ctx, time.Now().Add(2*interval+replicationRound)); err != nil {
 		return err
 	}
@@ -302,7 +330,7 @@ func runAS04(ctx context.Context, env *Env) error {
 		rep.Check("UP notification for "+name, "exactly 1 after recovery",
 			fmt.Sprintf("%d UP, first +%s", c, firstSince(at, tRec)), c == 1)
 		u, _ := notifyCount(env.Ntfy, tRec, as04UnconfirmedPrefix+"UP: "+name)
-		d, _ := notifyCount(env.Ntfy, tRec, "DOWN: "+name)
+		d, _ := notifyCount(env.Ntfy, tRec, prefixDown+name)
 		rep.Check("No unconfirmed UP and no DOWN after recovery for "+name, "0 and 0",
 			fmt.Sprintf("%d unconfirmed UP, %d DOWN", u, d), u == 0 && d == 0)
 	}
@@ -345,7 +373,7 @@ func countWhere(rec *fake.Recorder, since time.Time, pred func(fake.Message) boo
 // the minority (ADR 0024).
 func unconfirmedDown(name string) func(fake.Message) bool {
 	return func(m fake.Message) bool {
-		return m.Title == as04UnconfirmedPrefix+"DOWN: "+name
+		return m.Title == as04UnconfirmedPrefix+prefixDown+name
 	}
 }
 

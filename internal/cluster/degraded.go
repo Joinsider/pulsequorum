@@ -238,7 +238,9 @@ func enqueueVerdictAlert(ctx context.Context, tx store.StateTx, issuedAt int64, 
 	if err != nil {
 		return err
 	}
-	return enqueueAlertDelivery(ctx, tx, issuedAt, ua.TenantID, ua.MonitorID, ch.ID, key, payload)
+	return enqueueAlertDelivery(ctx, tx, issuedAt, store.AlertDelivery{
+		TenantID: ua.TenantID, AlertKey: key, ChannelID: ch.ID, MonitorID: ua.MonitorID, Payload: payload,
+	})
 }
 
 // applyRecordMonitorHistory replaces the history of a monitor in a gap that was
@@ -249,50 +251,20 @@ func applyRecordMonitorHistory(ctx context.Context, tx store.StateTx, cmd *pb.Co
 	if err := requireDegradedLevel(ctx, tx, "recording monitor history"); err != nil {
 		return nil, err
 	}
+	if err := validateHistoryCommand(cmd.GetTenantId(), r); err != nil {
+		return nil, err
+	}
 	tenantID, monitorID := cmd.GetTenantId(), r.GetMonitorId()
 	from, to := r.GetFromMs(), r.GetToMs()
 	entries := r.GetEntries()
 	expected := store.MonitorStatus(r.GetExpectedStatus())
-	switch {
-	case tenantID == "" || monitorID == "":
-		return nil, invalid("monitor history without tenant or monitor")
-	case from >= to:
-		return nil, invalid("history interval [%d, %d) is empty", from, to)
-	case len(entries) == 0:
-		return nil, invalid("monitor history without entries")
-	case !expected.Valid() || expected == store.StatusPaused || expected == store.StatusMaintenance:
-		return nil, invalid("expected status %q", expected)
-	}
-
-	prev := expected
-	for i, e := range entries {
-		st := store.MonitorStatus(e.GetStatus())
-		switch {
-		case e.GetSinceMs() < from || e.GetSinceMs() >= to:
-			return nil, invalid("history entry at %d outside [%d, %d)", e.GetSinceMs(), from, to)
-		case i > 0 && e.GetSinceMs() <= entries[i-1].GetSinceMs():
-			return nil, invalid("history entries not strictly ascending at %d", e.GetSinceMs())
-		case !st.Valid() || st == store.StatusPaused || st == store.StatusMaintenance:
-			return nil, invalid("history status %q cannot be recorded", st)
-		case st == prev:
-			return nil, invalid("history entry at %d repeats status %s", e.GetSinceMs(), st)
-		case st == store.StatusDown && e.GetIncidentId() == "":
-			return nil, invalid("DOWN history entry at %d without incident", e.GetSinceMs())
-		}
-		prev = st
-	}
 
 	cur, err := tx.GetMonitorState(ctx, tenantID, monitorID)
 	if err != nil {
 		return nil, storeError(err)
 	}
-	switch {
-	case cur.Status == store.StatusPaused || cur.Status == store.StatusMaintenance:
-		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is %s", monitorID, cur.Status)}
-	case cur.Status != expected:
-		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is %s, not %s", monitorID, cur.Status, expected)}
-	case from < cur.SinceMs:
-		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("history starts at %d, before the current state since %d", from, cur.SinceMs)}
+	if err := checkCurrentStateForHistory(monitorID, cur, expected, from); err != nil {
+		return nil, err
 	}
 
 	changes := make([]store.StatusChange, 0, len(entries))
@@ -308,6 +280,89 @@ func applyRecordMonitorHistory(ctx context.Context, tx store.StateTx, cmd *pb.Co
 			return nil, storeError(err)
 		}
 	}
+	if err := openReevaluatedIncidents(ctx, tx, tenantID, monitorID, entries); err != nil {
+		return nil, err
+	}
+
+	last := entries[len(entries)-1]
+	lastStatus := store.MonitorStatus(last.GetStatus())
+	if err := tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{
+		Status: lastStatus, Confirmed: true, SinceMs: last.GetSinceMs(),
+	}); err != nil {
+		return nil, storeError(err)
+	}
+	ev := StateEvent{TenantID: tenantID, MonitorID: monitorID, Status: lastStatus, Confirmed: true,
+		SinceMs: last.GetSinceMs(), IncidentResolved: cur.Status == store.StatusDown}
+	if lastStatus == store.StatusDown {
+		ev.IncidentOpened = last.GetIncidentId()
+	}
+	recordStateEvent(ctx, ev)
+	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
+		return nil, err
+	}
+	return json.Marshal(StateResult{Status: lastStatus})
+}
+
+func validateHistoryCommand(tenantID string, r *pb.RecordMonitorHistory) error {
+	monitorID := r.GetMonitorId()
+	from, to := r.GetFromMs(), r.GetToMs()
+	entries := r.GetEntries()
+	expected := store.MonitorStatus(r.GetExpectedStatus())
+	switch {
+	case tenantID == "" || monitorID == "":
+		return invalid("monitor history without tenant or monitor")
+	case from >= to:
+		return invalid("history interval [%d, %d) is empty", from, to)
+	case len(entries) == 0:
+		return invalid("monitor history without entries")
+	case !expected.Valid() || expected == store.StatusPaused || expected == store.StatusMaintenance:
+		return invalid("expected status %q", expected)
+	}
+	prev := expected
+	for i, e := range entries {
+		var prevMs int64
+		if i > 0 {
+			prevMs = entries[i-1].GetSinceMs()
+		}
+		st, err := validateHistoryEntry(e, i > 0, prevMs, from, to, prev)
+		if err != nil {
+			return err
+		}
+		prev = st
+	}
+	return nil
+}
+
+func validateHistoryEntry(e *pb.HistoryEntry, hasPrev bool, prevMs, from, to int64, prev store.MonitorStatus) (store.MonitorStatus, error) {
+	st := store.MonitorStatus(e.GetStatus())
+	switch {
+	case e.GetSinceMs() < from || e.GetSinceMs() >= to:
+		return "", invalid("history entry at %d outside [%d, %d)", e.GetSinceMs(), from, to)
+	case hasPrev && e.GetSinceMs() <= prevMs:
+		return "", invalid("history entries not strictly ascending at %d", e.GetSinceMs())
+	case !st.Valid() || st == store.StatusPaused || st == store.StatusMaintenance:
+		return "", invalid("history status %q cannot be recorded", st)
+	case st == prev:
+		return "", invalid("history entry at %d repeats status %s", e.GetSinceMs(), st)
+	case st == store.StatusDown && e.GetIncidentId() == "":
+		return "", invalid("DOWN history entry at %d without incident", e.GetSinceMs())
+	}
+	return st, nil
+}
+
+func checkCurrentStateForHistory(monitorID string, cur store.MonitorState, expected store.MonitorStatus, from int64) error {
+	switch {
+	case cur.Status == store.StatusPaused || cur.Status == store.StatusMaintenance:
+		return &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is %s", monitorID, cur.Status)}
+	case cur.Status != expected:
+		return &CommandError{Code: CodeConflict, Message: fmt.Sprintf("monitor %s is %s, not %s", monitorID, cur.Status, expected)}
+	case from < cur.SinceMs:
+		return &CommandError{Code: CodeConflict, Message: fmt.Sprintf("history starts at %d, before the current state since %d", from, cur.SinceMs)}
+	}
+	return nil
+}
+
+func openReevaluatedIncidents(ctx context.Context, tx store.StateTx, tenantID, monitorID string, entries []*pb.HistoryEntry) error {
 	for i, e := range entries {
 		if store.MonitorStatus(e.GetStatus()) != store.StatusDown {
 			continue
@@ -329,25 +384,8 @@ func applyRecordMonitorHistory(ctx context.Context, tx store.StateTx, cmd *pb.Co
 			Reevaluated: true,
 		})
 		if err != nil {
-			return nil, storeError(err)
+			return storeError(err)
 		}
 	}
-
-	last := entries[len(entries)-1]
-	lastStatus := store.MonitorStatus(last.GetStatus())
-	if err := tx.PutMonitorState(ctx, tenantID, monitorID, store.MonitorState{
-		Status: lastStatus, Confirmed: true, SinceMs: last.GetSinceMs(),
-	}); err != nil {
-		return nil, storeError(err)
-	}
-	ev := StateEvent{TenantID: tenantID, MonitorID: monitorID, Status: lastStatus, Confirmed: true,
-		SinceMs: last.GetSinceMs(), IncidentResolved: cur.Status == store.StatusDown}
-	if lastStatus == store.StatusDown {
-		ev.IncidentOpened = last.GetIncidentId()
-	}
-	recordStateEvent(ctx, ev)
-	if err := tx.PruneStatusHistory(ctx, tenantID, monitorID, cmd.GetIssuedAtMs()-statusHistoryRetention.Milliseconds()); err != nil {
-		return nil, err
-	}
-	return json.Marshal(StateResult{Status: lastStatus})
+	return nil
 }

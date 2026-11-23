@@ -162,37 +162,34 @@ func NextVersion(latest, bump, explicit string) (string, error) {
 	if base.major == 0 && bump == "major" {
 		return "", fmt.Errorf("major bump from %s is refused: pass an explicit version 1.0.0 to leave the 0.x line", *base)
 	}
+	return bumpFromBase(*base, bump).String(), nil
+}
 
-	b := *base
-	var next version
+func bumpFromBase(b version, bump string) version {
 	if b.pre == "" {
 		switch bump {
 		case "patch":
-			next = version{major: b.major, minor: b.minor, patch: b.patch + 1}
+			return version{major: b.major, minor: b.minor, patch: b.patch + 1}
 		case "minor":
-			next = version{major: b.major, minor: b.minor + 1}
+			return version{major: b.major, minor: b.minor + 1}
 		default:
-			next = version{major: b.major + 1}
-		}
-	} else {
-		// The pre-release is the pending release of its base version, so the
-		// bump finalizes it and only increments where the base has not moved yet.
-		switch bump {
-		case "patch":
-			next = version{major: b.major, minor: b.minor, patch: b.patch}
-		case "minor":
-			if b.patch == 0 {
-				next = version{major: b.major, minor: b.minor}
-			} else {
-				next = version{major: b.major, minor: b.minor + 1}
-			}
-		default:
-			if b.minor == 0 && b.patch == 0 {
-				next = version{major: b.major}
-			} else {
-				next = version{major: b.major + 1}
-			}
+			return version{major: b.major + 1}
 		}
 	}
-	return next.String(), nil
+	// The pre-release is the pending release of its base version, so the
+	// bump finalizes it and only increments where the base has not moved yet.
+	switch bump {
+	case "patch":
+		return version{major: b.major, minor: b.minor, patch: b.patch}
+	case "minor":
+		if b.patch == 0 {
+			return version{major: b.major, minor: b.minor}
+		}
+		return version{major: b.major, minor: b.minor + 1}
+	default:
+		if b.minor == 0 && b.patch == 0 {
+			return version{major: b.major}
+		}
+		return version{major: b.major + 1}
+	}
 }

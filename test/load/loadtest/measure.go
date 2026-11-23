@@ -153,7 +153,7 @@ func measureLoops(ctx context.Context, opts measureOptions, client *apiClient, m
 	defer stopRun()
 
 	// The stream outlives the probe cycles so that they can finish.
-	streamCtx, cancelStream := context.WithCancel(context.Background())
+	streamCtx, cancelStream := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelStream()
 	stream := newStreamListener(client, log)
 	streamDone := make(chan struct{})

@@ -18,14 +18,13 @@
   <span class="spacer"></span>
 
   @if (liveState() !== 'open') {
-    <span
+    <output
       class="live-indicator"
-      role="status"
       [matTooltip]="'shell.liveDisconnected' | transloco"
       [attr.aria-label]="'shell.liveDisconnected' | transloco"
     >
       <app-icon name="wifiOff" />
-    </span>
+    </output>
   }
 
   <button

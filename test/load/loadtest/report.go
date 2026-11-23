@@ -18,6 +18,12 @@ const (
 	memoryLimitBytes = 512 << 20
 	apiP95LimitMs    = 200.0
 	statusMaxLimitMs = 2000.0
+
+	reqNFAPerf0102       = "NFA-PERF-01/02"
+	critCPUMeanLimit     = "CPU mean < 100 % (50 % of 2 vCPUs)"
+	critNoUnexpectedDown = "no unexpected DOWN"
+	measuredNoSamples    = "no samples"
+	resultNoData         = "NO DATA"
 )
 
 // apiSample is one API timing. Group is "monitors_list" (complete listing
@@ -220,17 +226,17 @@ func resourceStats(opts measureOptions, rec *recorder) resourceSummary {
 func verdicts(r report) []verdict {
 	var out []verdict
 	if r.Resources.Samples == 0 {
-		out = append(out, verdict{"NFA-PERF-01/02", "CPU mean < 100 % (50 % of 2 vCPUs)", "no samples", "NO DATA"})
-		out = append(out, verdict{"NFA-PERF-01/02", "memory < 512 MiB", "no samples", "NO DATA"})
+		out = append(out, verdict{reqNFAPerf0102, critCPUMeanLimit, measuredNoSamples, resultNoData})
+		out = append(out, verdict{reqNFAPerf0102, "memory < 512 MiB", measuredNoSamples, resultNoData})
 	} else {
-		cpu := verdict{"NFA-PERF-01/02", "CPU mean < 100 % (50 % of 2 vCPUs)", "no CPU interval yet", "NO DATA"}
+		cpu := verdict{reqNFAPerf0102, critCPUMeanLimit, "no CPU interval yet", resultNoData}
 		if r.Resources.CPUSamples > 0 {
-			cpu = verdict{"NFA-PERF-01/02", "CPU mean < 100 % (50 % of 2 vCPUs)",
+			cpu = verdict{reqNFAPerf0102, critCPUMeanLimit,
 				fmt.Sprintf("%.1f %% (max %.1f %%, %d samples)", r.Resources.MeanCPUPercent, r.Resources.MaxCPUPercent, r.Resources.CPUSamples),
 				passIf(r.Resources.MeanCPUPercent < cpuMeanLimit)}
 		}
 		out = append(out, cpu)
-		out = append(out, verdict{"NFA-PERF-01/02", "memory < 512 MiB",
+		out = append(out, verdict{reqNFAPerf0102, "memory < 512 MiB",
 			fmt.Sprintf("%.1f MiB max", float64(r.Resources.MaxMemoryBytes)/(1<<20)),
 			passIf(r.Resources.MaxMemoryBytes < memoryLimitBytes)})
 	}
@@ -240,7 +246,7 @@ func verdicts(r report) []verdict {
 			label = "uptime"
 		}
 		if g.Count == 0 {
-			out = append(out, verdict{"NFA-PERF-03", "p95 < 200 ms, " + label, "no samples", "NO DATA"})
+			out = append(out, verdict{"NFA-PERF-03", "p95 < 200 ms, " + label, measuredNoSamples, resultNoData})
 			continue
 		}
 		out = append(out, verdict{"NFA-PERF-03", "p95 < 200 ms, " + label,
@@ -248,7 +254,7 @@ func verdicts(r report) []verdict {
 	}
 	st := r.Status
 	if st.Latency.Count == 0 {
-		out = append(out, verdict{"NFA-PERF-04", "status change visible <= 2 s after commit", "no samples", "NO DATA"})
+		out = append(out, verdict{"NFA-PERF-04", "status change visible <= 2 s after commit", measuredNoSamples, resultNoData})
 	} else {
 		ok := st.Latency.Max <= statusMaxLimitMs && st.Timeouts == 0
 		out = append(out, verdict{"NFA-PERF-04", "status change visible <= 2 s after commit (all samples, no timeouts)",
@@ -256,9 +262,9 @@ func verdicts(r report) []verdict {
 			passIf(ok)})
 	}
 	if r.Status.Connections == 0 {
-		out = append(out, verdict{"-", "no unexpected DOWN", "stream never connected", "NO DATA"})
+		out = append(out, verdict{"-", critNoUnexpectedDown, "stream never connected", resultNoData})
 	} else {
-		out = append(out, verdict{"-", "no unexpected DOWN",
+		out = append(out, verdict{"-", critNoUnexpectedDown,
 			fmt.Sprintf("%d unexpected DOWN, %d PENDING on %d monitors", r.Unexpected.Down, r.Unexpected.Pending, r.Unexpected.Monitors),
 			passIf(r.Unexpected.Down == 0)})
 	}
@@ -322,7 +328,7 @@ func renderMarkdown(r report) string {
 		fmt.Fprintf(&b, "- first: %s %s at event.ts %s (received %s)\n", e.Status, e.MonitorID,
 			e.EventTS.Format(time.RFC3339Nano), e.ReceivedAt.Format(time.RFC3339Nano))
 	}
-	fmt.Fprintf(&b, "- no unexpected DOWN: %s\n", verdictFor(r, "no unexpected DOWN"))
+	fmt.Fprintf(&b, "- no unexpected DOWN: %s\n", verdictFor(r, critNoUnexpectedDown))
 
 	rs := r.Resources
 	b.WriteString("\n## Resource usage\n\n")
@@ -353,5 +359,5 @@ func verdictFor(r report, criterion string) string {
 			return v.Result
 		}
 	}
-	return "NO DATA"
+	return resultNoData
 }

@@ -124,36 +124,10 @@ func (d *Detector) Update(ctx context.Context) {
 
 	now := d.opts.Now()
 	prev := d.State()
-	next := prev
-
-	// Degraded mode (section 1): leaderless for at least After, ends once a
-	// leader is known and its commit index is applied locally.
-	leader := d.opts.LeaderID()
-	if leader == "" {
-		if d.leaderlessSince.IsZero() {
-			d.leaderlessSince = now
-		}
-	} else {
-		d.leaderlessSince = time.Time{}
-	}
-	caughtUp := d.opts.CaughtUp == nil || d.opts.CaughtUp()
-	switch {
-	case leader == "" && !next.Degraded && now.Sub(d.leaderlessSince) >= d.opts.After:
-		next.Degraded = true
-		next.Since = d.leaderlessSince
-	case leader != "" && next.Degraded && caughtUp:
-		next = State{Total: next.Total}
-	}
+	next := d.evaluateDegradedState(prev, now)
 
 	// Registry: keep the last good read if it fails.
-	if d.opts.Voters != nil {
-		voters, err := d.opts.Voters(ctx)
-		if err != nil {
-			d.opts.Logger.Warn("degraded: voter registry unreadable, keeping last known voters", "err", err)
-		} else {
-			d.lastVoters = voters
-		}
-	}
+	d.refreshLastVoters(ctx)
 	next.Total = len(d.lastVoters)
 
 	// Partition and sender (section 2) are only needed while degraded.
@@ -173,6 +147,41 @@ func (d *Detector) Update(ctx context.Context) {
 	d.mu.Unlock()
 
 	d.report(prev, next)
+}
+
+func (d *Detector) evaluateDegradedState(prev State, now time.Time) State {
+	next := prev
+	// Degraded mode (section 1): leaderless for at least After, ends once a
+	// leader is known and its commit index is applied locally.
+	leader := d.opts.LeaderID()
+	if leader == "" {
+		if d.leaderlessSince.IsZero() {
+			d.leaderlessSince = now
+		}
+	} else {
+		d.leaderlessSince = time.Time{}
+	}
+	caughtUp := d.opts.CaughtUp == nil || d.opts.CaughtUp()
+	switch {
+	case leader == "" && !next.Degraded && now.Sub(d.leaderlessSince) >= d.opts.After:
+		next.Degraded = true
+		next.Since = d.leaderlessSince
+	case leader != "" && next.Degraded && caughtUp:
+		next = State{Total: next.Total}
+	}
+	return next
+}
+
+func (d *Detector) refreshLastVoters(ctx context.Context) {
+	if d.opts.Voters == nil {
+		return
+	}
+	voters, err := d.opts.Voters(ctx)
+	if err != nil {
+		d.opts.Logger.Warn("degraded: voter registry unreadable, keeping last known voters", "err", err)
+		return
+	}
+	d.lastVoters = voters
 }
 
 // partition returns the sorted node IDs of this node and every voter peer

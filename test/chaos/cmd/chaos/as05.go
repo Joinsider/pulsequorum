@@ -10,8 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joinsider/pulsequorum/test/chaos/harness"
 	"github.com/joinsider/pulsequorum/test/internal/fake"
 	"github.com/joinsider/pulsequorum/test/internal/ucapi"
+)
+
+const (
+	as05PathHealthz        = "/healthz"
+	as05ExpectRulesRemoved = "rules removed"
 )
 
 // as05SystemLimit bounds the time from the block until the system alert
@@ -49,7 +55,7 @@ func init() {
 func runAS05(ctx context.Context, env *Env) error {
 	rep := env.Rep
 	// Every voter probes the reference target; the blocked node fails it (ADR 0022).
-	env.Cfg.SelfCheckTargets = []string{env.RefURL("/healthz")}
+	env.Cfg.SelfCheckTargets = []string{env.RefURL(as05PathHealthz)}
 	env.RefTarget.SetFailing(false)
 	env.Target.SetFailing(false)
 	cfg := env.Cfg
@@ -74,8 +80,47 @@ func runAS05(ctx context.Context, env *Env) error {
 	api := cl.Client(1)
 	suffix := randomSuffix()
 	sysTopic := "as05-system-" + suffix
-	// The system tenant is created by the leader's system job, a few seconds
-	// after the bootstrap: a 404 before that is expected and measured.
+	ch, err := as05SetupChannels(ctx, env, api, suffix, sysTopic)
+	if err != nil {
+		return err
+	}
+
+	anyName, majNames, ids, nodes, err := as05SetupMonitorsAndBaseline(ctx, env, cl, api, ch.ID, suffix, slots, interval, intervalSec, n)
+	if err != nil {
+		return err
+	}
+
+	// The blocked node is a follower, so the leader stays put.
+	leader, leaderID, err := leaderSlot(ctx, cl)
+	if err != nil {
+		rep.Check("One leader before the fault", "identical leader ID", err.Error(), false)
+		return err
+	}
+	blocked := without(slots, leader)[0]
+	others := without(slots, blocked)
+	blockedID := nodes[blocked]
+	rep.Check("Layout before the fault", "blocked node is a follower",
+		fmt.Sprintf("leader voter %d (node %s), blocked follower voter %d (node %s)", leader, leaderID, blocked, blockedID), true)
+
+	hostIP, err := cl.HostIP(ctx, blocked, cl.CallbackHost())
+	rep.Check("Callback host resolved on the blocked voter", "IPv4 address", fmt.Sprintf("%s%s", hostIP, errSuffix(err)), err == nil)
+	if err != nil {
+		return err
+	}
+	ports := []int{env.TargetPort, env.RefPort}
+
+	t0, err := as05RunBlockPhase(ctx, env, cl, slots, others, blocked, blockedID, leaderID, hostIP, ports, sysTopic, anyName, majNames)
+	if err != nil {
+		return err
+	}
+	if err := as05RunUnblockPhase(ctx, env, cl, api, others, blocked, blockedID, hostIP, ports, sysTopic); err != nil {
+		return err
+	}
+	return as05CheckFinalSummary(ctx, env, cl, api, slots, ids, sysTopic, anyName, majNames, t0, interval)
+}
+
+func as05SetupChannels(ctx context.Context, env *Env, api *ucapi.Client, suffix, sysTopic string) (ucapi.NotificationChannel, error) {
+	rep := env.Rep
 	sysStart := time.Now()
 	var sys ucapi.NotificationChannel
 	sysNotFound, sysUnavailable := 0, 0
@@ -97,39 +142,42 @@ func runAS05(ctx context.Context, env *Env) error {
 		fmt.Sprintf("%d HTTP 404 and %d HTTP 503 answers, created after %s", sysNotFound, sysUnavailable, time.Since(sysStart).Round(time.Second)))
 	if !sysOK {
 		rep.Check("System channel created", "201, event system", errSuffix(sysErr), false)
-		return errors.New("system channel not created")
+		return ucapi.NotificationChannel{}, errors.New("system channel not created")
 	}
 	rep.Check("System channel created", "201, event system", fmt.Sprintf("channel %s, events %v", sys.ID, sys.Events),
 		len(sys.Events) == 1 && sys.Events[0] == "system")
 	sysRes, err := api.TestSystemChannel(ctx, sys.ID)
 	if err != nil || !sysRes.Delivered {
-		rep.Check("System channel test delivery", "delivered to ntfy", fmt.Sprintf("%+v%s", sysRes, errSuffix(err)), false)
-		return errors.New("system channel test delivery failed")
+		rep.Check("System channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("%+v%s", sysRes, errSuffix(err)), false)
+		return ucapi.NotificationChannel{}, errors.New("system channel test delivery failed")
 	}
-	rep.Check("System channel test delivery", "delivered to ntfy", fmt.Sprintf("delivered in %d ms", sysRes.DurationMs), true)
+	rep.Check("System channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("delivered in %d ms", sysRes.DurationMs), true)
 
 	ch, err := api.CreateChannel(ctx, "as05-ntfy-"+suffix, env.NtfyURL("as05-"+suffix), []string{"down", "up"})
 	if err != nil {
 		rep.Check("Notification channel created", "201, events down and up", err.Error(), false)
-		return err
+		return ucapi.NotificationChannel{}, err
 	}
 	res, err := api.TestChannel(ctx, ch.ID)
 	if err != nil || !res.Delivered {
-		rep.Check("Channel test delivery", "delivered to ntfy", fmt.Sprintf("%+v%s", res, errSuffix(err)), false)
-		return errors.New("channel test delivery failed")
+		rep.Check("Channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("%+v%s", res, errSuffix(err)), false)
+		return ucapi.NotificationChannel{}, errors.New("channel test delivery failed")
 	}
-	rep.Check("Channel test delivery", "delivered to ntfy", fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
+	rep.Check("Channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
+	return ch, nil
+}
 
-	// Three monitors: one with policy any, two with policy majority.
+func as05SetupMonitorsAndBaseline(ctx context.Context, env *Env, cl *harness.Cluster, api *ucapi.Client, channelID, suffix string, slots []int, interval time.Duration, intervalSec, n int) (string, []string, []string, map[int]string, error) {
+	rep := env.Rep
 	policies := []struct{ key, policy string }{{"any", "any"}, {"maj1", "majority"}, {"maj2", "majority"}}
 	var names, ids []string
 	created := time.Now()
 	for _, p := range policies {
 		name := fmt.Sprintf("as05-%s-%s", suffix, p.key)
-		m, err := createPolicyMonitor(ctx, api, name, env.TargetURL("/as05/"+suffix+"/"+p.key), intervalSec, []string{ch.ID}, p.policy)
+		m, err := createPolicyMonitor(ctx, api, name, env.TargetURL("/as05/"+suffix+"/"+p.key), intervalSec, []string{channelID}, p.policy)
 		if err != nil {
 			rep.Check("HTTP monitors created", "201, assignment all", err.Error(), false)
-			return err
+			return "", nil, nil, nil, err
 		}
 		names = append(names, m.Name)
 		ids = append(ids, m.ID)
@@ -141,12 +189,12 @@ func runAS05(ctx context.Context, env *Env) error {
 	up, _ := waitMonitorStatus(ctx, api, ids, "UP", 2*interval+replicationRound)
 	rep.Check("Monitors UP before the fault", "all monitors UP", fmt.Sprintf("all UP: %v", up), up)
 	if !up {
-		return errors.New("monitors do not come up")
+		return "", nil, nil, nil, errors.New("monitors do not come up")
 	}
 	nodes, err := nodeIDs(ctx, cl, slots)
 	if err != nil {
 		rep.Check("Node IDs of all voters", "every voter lists itself", err.Error(), false)
-		return err
+		return "", nil, nil, nil, err
 	}
 	producers := make([]string, 0, n)
 	for _, i := range slots {
@@ -156,62 +204,70 @@ func runAS05(ctx context.Context, env *Env) error {
 	rep.Check("Every voter checks every monitor before the fault", "heartbeats of all voters for all monitors",
 		fmt.Sprintf("complete: %v", allSeen), allSeen)
 
-	// Baseline: the self-checks reach the reference target, and nothing is impaired.
-	refBefore := env.RefTarget.Hits("/healthz")
+	refBefore := env.RefTarget.Hits(as05PathHealthz)
 	if err := waitUntil(ctx, time.Now().Add(65*time.Second)); err != nil {
-		return err
+		return "", nil, nil, nil, err
 	}
-	refHits := env.RefTarget.Hits("/healthz") - refBefore
+	refHits := env.RefTarget.Hits(as05PathHealthz) - refBefore
 	rep.Check("Self-checks reach the reference target before the fault", "at least 3 hits on /healthz in 65 s (3 voters, 30 s rounds)",
 		fmt.Sprintf("%d hits", refHits), refHits >= n)
 	pre, err := api.ListClusterNodes(ctx)
 	if err != nil {
 		rep.Check("Cluster nodes before the fault", "answered", err.Error(), false)
-		return err
+		return "", nil, nil, nil, err
 	}
 	impairedBefore := impairedNodes(pre)
 	rep.Check("No node impaired before the fault", "connectivity ok on all voters", fmt.Sprintf("impaired: %v", impairedBefore), len(impairedBefore) == 0)
 	preAlerts, _ := api.ListSystemAlerts(ctx, false)
 	rep.Check("No node_impaired system alert before the fault", "none active", fmt.Sprintf("%d active system alerts", len(preAlerts)),
 		countKind(preAlerts, "node_impaired") == 0)
+	return anyName, majNames, ids, nodes, nil
+}
 
-	// The blocked node is a follower, so the leader stays put.
-	leader, leaderID, err := leaderSlot(ctx, cl)
-	if err != nil {
-		rep.Check("One leader before the fault", "identical leader ID", err.Error(), false)
-		return err
-	}
-	blocked := without(slots, leader)[0]
-	others := without(slots, blocked)
-	blockedID := nodes[blocked]
-	rep.Check("Layout before the fault", "blocked node is a follower",
-		fmt.Sprintf("leader voter %d (node %s), blocked follower voter %d (node %s)", leader, leaderID, blocked, blockedID), true)
-
-	hostIP, err := cl.HostIP(ctx, blocked, cl.CallbackHost())
-	rep.Check("Callback host resolved on the blocked voter", "IPv4 address", fmt.Sprintf("%s%s", hostIP, errSuffix(err)), err == nil)
-	if err != nil {
-		return err
-	}
-	ports := []int{env.TargetPort, env.RefPort}
-
-	// Fault: egress of the follower to the target and the reference target only.
+func as05RunBlockPhase(ctx context.Context, env *Env, cl *harness.Cluster, slots, others []int, blocked int, blockedID, leaderID, hostIP string, ports []int, sysTopic, anyName string, majNames []string) (time.Time, error) {
+	rep := env.Rep
 	t0 := time.Now()
 	if err := cl.BlockEgress(ctx, blocked, hostIP, ports); err != nil {
 		rep.Check("Block egress of "+cl.Names().Voter(blocked), "OUTPUT DROP to the host on target and reference ports", err.Error(), false)
-		return err
+		return time.Time{}, err
 	}
 	rep.Check("Block egress of "+cl.Names().Voter(blocked), "OUTPUT DROP to the host on target and reference ports, cluster traffic kept",
 		fmt.Sprintf("ports %v to %s", ports, hostIP), true)
 
-	// Observe until both signals are seen and at least 90 s have passed, or 2 min.
+	impairedAt, sysAt, reason, err := as05AwaitImpairedAndSystemAlert(ctx, env, cl, others[0], blockedID, sysTopic, t0)
+	if err != nil {
+		return time.Time{}, err
+	}
+	impairedDur := sinceOrNone(impairedAt, t0)
+	rep.Check("Cluster API shows the node connectivity impaired with a reason",
+		fmt.Sprintf("connectivityImpaired true, reason set, within %s", as05ImpairedLimit),
+		fmt.Sprintf("impaired after %s, reason %q", impairedDur, reason), !impairedAt.IsZero() && impairedAt.Sub(t0) <= as05ImpairedLimit && reason != "")
+	rep.Check("System alert node_impaired on the system topic", fmt.Sprintf("within %s (ADR 0022, ADR 0025)", as05SystemLimit),
+		fmt.Sprintf("alert after %s", sinceOrNone(sysAt, t0)), !sysAt.IsZero() && sysAt.Sub(t0) <= as05SystemLimit)
+
+	as05CheckBlockedNodeHealthAndOthers(ctx, rep, cl, others, blockedID)
+	lead, lerr := cl.LeaderOf(ctx, slots)
+	rep.Check("No leader change while the egress is blocked", "leader unchanged "+leaderID,
+		fmt.Sprintf("leader %s%s", lead, errSuffix(lerr)), lerr == nil && lead == leaderID)
+
+	majDown, _ := countWhere(env.Ntfy, t0, downOf(majNames))
+	rep.Check("No DOWN for the majority monitors while the egress is blocked", "0 DOWN (target healthy)", fmt.Sprint(majDown), majDown == 0)
+	anyDown, anyAt := countWhere(env.Ntfy, t0, downOf([]string{anyName}))
+	rep.Info("DOWN for the 'any' monitor during the block",
+		"ADR 0022 Konsequenzen: bei any kann bis zum Ausschluss ein falsches DOWN entstehen; reported, not judged",
+		fmt.Sprintf("%d DOWN, first +%s, impaired at +%s", anyDown, firstSince(anyAt, t0), sinceOrNone(impairedAt, t0)))
+	return t0, nil
+}
+
+func as05AwaitImpairedAndSystemAlert(ctx context.Context, env *Env, cl *harness.Cluster, viewer int, blockedID, sysTopic string, t0 time.Time) (time.Time, time.Time, string, error) {
 	var impairedAt, sysAt time.Time
 	var reason string
 	for {
 		if err := waitUntil(ctx, time.Now().Add(2*time.Second)); err != nil {
-			return err
+			return time.Time{}, time.Time{}, "", err
 		}
 		if impairedAt.IsZero() {
-			if list, err := cl.Client(others[0]).ListClusterNodes(ctx); err == nil {
+			if list, err := cl.Client(viewer).ListClusterNodes(ctx); err == nil {
 				if node, ok := findNode(list, blockedID); ok && node.ConnectivityImpaired {
 					impairedAt, reason = time.Now(), node.ConnectivityReason
 				}
@@ -227,56 +283,61 @@ func runAS05(ctx context.Context, env *Env) error {
 			break
 		}
 	}
-	impairedDur := sinceOrNone(impairedAt, t0)
-	rep.Check("Cluster API shows the node connectivity impaired with a reason",
-		fmt.Sprintf("connectivityImpaired true, reason set, within %s", as05ImpairedLimit),
-		fmt.Sprintf("impaired after %s, reason %q", impairedDur, reason), !impairedAt.IsZero() && impairedAt.Sub(t0) <= as05ImpairedLimit && reason != "")
-	rep.Check("System alert node_impaired on the system topic", fmt.Sprintf("within %s (ADR 0022, ADR 0025)", as05SystemLimit),
-		fmt.Sprintf("alert after %s", sinceOrNone(sysAt, t0)), !sysAt.IsZero() && sysAt.Sub(t0) <= as05SystemLimit)
+	return impairedAt, sysAt, reason, nil
+}
 
+func as05CheckBlockedNodeHealthAndOthers(ctx context.Context, rep *harness.Report, cl *harness.Cluster, others []int, blockedID string) {
 	post, err := cl.Client(others[0]).ListClusterNodes(ctx)
-	if err == nil {
-		b, _ := findNode(post, blockedID)
-		raftOK := b.Healthy != nil && *b.Healthy
-		rep.Check("Raft health of the blocked node unchanged", "healthy true (connectivity is a separate dimension, ADR 0022)",
-			fmt.Sprintf("healthy %v", raftOK), raftOK)
-		otherImpaired := 0
-		for _, o := range others {
-			if list, err := cl.Client(o).ListClusterNodes(ctx); err == nil {
-				for _, nd := range list.Nodes {
-					if nd.ID != blockedID && nd.ConnectivityImpaired {
-						otherImpaired++
-					}
+	if err != nil {
+		return
+	}
+	b, _ := findNode(post, blockedID)
+	raftOK := b.Healthy != nil && *b.Healthy
+	rep.Check("Raft health of the blocked node unchanged", "healthy true (connectivity is a separate dimension, ADR 0022)",
+		fmt.Sprintf("healthy %v", raftOK), raftOK)
+	otherImpaired := 0
+	for _, o := range others {
+		if list, err := cl.Client(o).ListClusterNodes(ctx); err == nil {
+			for _, nd := range list.Nodes {
+				if nd.ID != blockedID && nd.ConnectivityImpaired {
+					otherImpaired++
 				}
 			}
 		}
-		rep.Check("Other voters not excluded", "no other node impaired", fmt.Sprint(otherImpaired), otherImpaired == 0)
 	}
-	lead, lerr := cl.LeaderOf(ctx, slots)
-	rep.Check("No leader change while the egress is blocked", "leader unchanged "+leaderID,
-		fmt.Sprintf("leader %s%s", lead, errSuffix(lerr)), lerr == nil && lead == leaderID)
+	rep.Check("Other voters not excluded", "no other node impaired", fmt.Sprint(otherImpaired), otherImpaired == 0)
+}
 
-	majDown, _ := countWhere(env.Ntfy, t0, downOf(majNames))
-	rep.Check("No DOWN for the majority monitors while the egress is blocked", "0 DOWN (target healthy)", fmt.Sprint(majDown), majDown == 0)
-	anyDown, anyAt := countWhere(env.Ntfy, t0, downOf([]string{anyName}))
-	rep.Info("DOWN for the 'any' monitor during the block",
-		"ADR 0022 Konsequenzen: bei any kann bis zum Ausschluss ein falsches DOWN entstehen; reported, not judged",
-		fmt.Sprintf("%d DOWN, first +%s, impaired at +%s", anyDown, firstSince(anyAt, t0), sinceOrNone(impairedAt, t0)))
-
-	// Recovery: egress back; the impairment and its alert clear.
+func as05RunUnblockPhase(ctx context.Context, env *Env, cl *harness.Cluster, api *ucapi.Client, others []int, blocked int, blockedID, hostIP string, ports []int, sysTopic string) error {
+	rep := env.Rep
 	t1 := time.Now()
 	if err := cl.UnblockEgress(ctx, blocked, hostIP, ports); err != nil {
-		rep.Check("Unblock egress of "+cl.Names().Voter(blocked), "rules removed", err.Error(), false)
+		rep.Check("Unblock egress of "+cl.Names().Voter(blocked), as05ExpectRulesRemoved, err.Error(), false)
 		return err
 	}
-	rep.Check("Unblock egress of "+cl.Names().Voter(blocked), "rules removed", "rules removed", true)
+	rep.Check("Unblock egress of "+cl.Names().Voter(blocked), as05ExpectRulesRemoved, as05ExpectRulesRemoved, true)
+	clearedAt, clearMsgAt, err := as05AwaitCleared(ctx, env, cl, others[0], blockedID, sysTopic, t1)
+	if err != nil {
+		return err
+	}
+	rep.Check("Connectivity impaired cleared", fmt.Sprintf("connectivityImpaired false within %s (hysteresis 2 min)", as05ClearLimit),
+		fmt.Sprintf("cleared after %s", sinceOrNone(clearedAt, t1)), !clearedAt.IsZero())
+	rep.Check("System alert node_impaired cleared on the system topic", fmt.Sprintf("'cleared' message within %s", as05ClearLimit),
+		fmt.Sprintf("cleared message after %s", sinceOrNone(clearMsgAt, t1)), !clearMsgAt.IsZero())
+	active, err := api.ListSystemAlerts(ctx, false)
+	rep.Check("Active system alerts no longer list node_impaired", "0 active node_impaired for the blocked node",
+		fmt.Sprintf("%d%s", countKind(active, "node_impaired"), errSuffix(err)), err == nil && countKind(active, "node_impaired") == 0)
+	return nil
+}
+
+func as05AwaitCleared(ctx context.Context, env *Env, cl *harness.Cluster, viewer int, blockedID, sysTopic string, t1 time.Time) (time.Time, time.Time, error) {
 	var clearedAt, clearMsgAt time.Time
 	for {
 		if err := waitUntil(ctx, time.Now().Add(3*time.Second)); err != nil {
-			return err
+			return time.Time{}, time.Time{}, err
 		}
 		if clearedAt.IsZero() {
-			if list, err := cl.Client(others[0]).ListClusterNodes(ctx); err == nil {
+			if list, err := cl.Client(viewer).ListClusterNodes(ctx); err == nil {
 				if node, ok := findNode(list, blockedID); ok && !node.ConnectivityImpaired {
 					clearedAt = time.Now()
 				}
@@ -291,15 +352,11 @@ func runAS05(ctx context.Context, env *Env) error {
 			break
 		}
 	}
-	rep.Check("Connectivity impaired cleared", fmt.Sprintf("connectivityImpaired false within %s (hysteresis 2 min)", as05ClearLimit),
-		fmt.Sprintf("cleared after %s", sinceOrNone(clearedAt, t1)), !clearedAt.IsZero())
-	rep.Check("System alert node_impaired cleared on the system topic", fmt.Sprintf("'cleared' message within %s", as05ClearLimit),
-		fmt.Sprintf("cleared message after %s", sinceOrNone(clearMsgAt, t1)), !clearMsgAt.IsZero())
-	active, err := api.ListSystemAlerts(ctx, false)
-	rep.Check("Active system alerts no longer list node_impaired", "0 active node_impaired for the blocked node",
-		fmt.Sprintf("%d%s", countKind(active, "node_impaired"), errSuffix(err)), err == nil && countKind(active, "node_impaired") == 0)
+	return clearedAt, clearMsgAt, nil
+}
 
-	// The whole run: no DOWN for the majority monitors, and every monitor back to UP.
+func as05CheckFinalSummary(ctx context.Context, env *Env, cl *harness.Cluster, api *ucapi.Client, slots []int, ids []string, sysTopic, anyName string, majNames []string, t0 time.Time, interval time.Duration) error {
+	rep := env.Rep
 	majDownAll, _ := countWhere(env.Ntfy, t0, downOf(majNames))
 	rep.Check("No DOWN for the majority monitors during the whole run", "0 DOWN", fmt.Sprint(majDownAll), majDownAll == 0)
 	anyDownAll, _ := countWhere(env.Ntfy, t0, downOf([]string{anyName}))
@@ -368,7 +425,7 @@ func nodeImpairedAlert(topic, nodeID string, cleared bool) func(fake.Message) bo
 func downOf(names []string) func(fake.Message) bool {
 	return func(m fake.Message) bool {
 		for _, name := range names {
-			if m.Title == "DOWN: "+name {
+			if m.Title == prefixDown+name {
 				return true
 			}
 		}

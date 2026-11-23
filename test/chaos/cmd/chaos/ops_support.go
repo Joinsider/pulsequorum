@@ -152,7 +152,7 @@ func opsNodeIDs(ctx context.Context, cl *harness.Cluster, voters []int) (map[int
 
 // opsAllProducers reports whether every viewer has heartbeats of every
 // producer for every monitor since since.
-func opsAllProducers(ctx context.Context, cl *harness.Cluster, viewers []int, monitorIDs []string, producers []string, since time.Time) (bool, error) {
+func opsAllProducers(ctx context.Context, cl *harness.Cluster, viewers []int, monitorIDs, producers []string, since time.Time) (bool, error) {
 	for _, v := range viewers {
 		for _, m := range monitorIDs {
 			counts, err := cl.ProducerCounts(ctx, v, m, since, time.Now())

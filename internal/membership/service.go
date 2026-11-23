@@ -318,13 +318,15 @@ func (s *Service) updateAddress(ctx context.Context, peer pki.Identity, info *pb
 	return &pb.JoinResponse{ClusterId: peer.ClusterID}, nil
 }
 
+const errNoLeaderAvailable = "no leader available, retry"
+
 func (s *Service) forwardJoin(ctx context.Context, req *pb.JoinRequest) (*pb.JoinResponse, error) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(forwardedKey)) > 0 {
-		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+		return nil, status.Error(codes.Unavailable, errNoLeaderAvailable)
 	}
 	addr, _ := s.Node.Leader()
 	if addr == "" {
-		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+		return nil, status.Error(codes.Unavailable, errNoLeaderAvailable)
 	}
 	client, done, err := s.DialLeader(addr)
 	if err != nil {
@@ -378,11 +380,11 @@ func (s *Service) RenewCertificate(ctx context.Context, req *pb.RenewCertificate
 
 func (s *Service) forwardRenew(ctx context.Context, peer pki.Identity, req *pb.RenewCertificateRequest) (*pb.RenewCertificateResponse, error) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(forwardedKey)) > 0 {
-		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+		return nil, status.Error(codes.Unavailable, errNoLeaderAvailable)
 	}
 	addr, _ := s.Node.Leader()
 	if addr == "" || s.DialLeader == nil {
-		return nil, status.Error(codes.Unavailable, "no leader available, retry")
+		return nil, status.Error(codes.Unavailable, errNoLeaderAvailable)
 	}
 	client, done, err := s.DialLeader(addr)
 	if err != nil {
@@ -406,34 +408,43 @@ func (s *Service) stillMember(ctx context.Context, peer pki.Identity) error {
 			return status.Error(codes.PermissionDenied, "node was removed from the cluster")
 		}
 	}
-	if peer.Role == pki.RoleProbe {
-		stored, err := s.State.CommandLevel(ctx)
-		if err != nil {
-			return status.Error(codes.Unavailable, err.Error())
-		}
-		if cluster.EffectiveCommandLevel(stored) < cluster.ProbeCommandLevel {
-			return nil
-		}
-		nodes, err := s.State.ListNodes(ctx)
-		if err != nil {
-			return status.Error(codes.Unavailable, err.Error())
-		}
-		for _, n := range nodes {
-			if n.ID == peer.NodeID && n.Role == store.NodeRoleProbe && n.OwnerTenantID == peer.TenantID {
-				return nil
-			}
-		}
-		return status.Error(codes.PermissionDenied, "probe is not registered in the cluster")
-	}
-	if peer.Role != pki.RoleVoter {
+	switch peer.Role {
+	case pki.RoleProbe:
+		return s.stillProbeMember(ctx, peer)
+	case pki.RoleVoter:
+		return s.stillVoterMember(peer.NodeID)
+	default:
 		return status.Error(codes.PermissionDenied, "unknown node role")
 	}
+}
+
+func (s *Service) stillProbeMember(ctx context.Context, peer pki.Identity) error {
+	stored, err := s.State.CommandLevel(ctx)
+	if err != nil {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	if cluster.EffectiveCommandLevel(stored) < cluster.ProbeCommandLevel {
+		return nil
+	}
+	nodes, err := s.State.ListNodes(ctx)
+	if err != nil {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	for _, n := range nodes {
+		if n.ID == peer.NodeID && n.Role == store.NodeRoleProbe && n.OwnerTenantID == peer.TenantID {
+			return nil
+		}
+	}
+	return status.Error(codes.PermissionDenied, "probe is not registered in the cluster")
+}
+
+func (s *Service) stillVoterMember(nodeID string) error {
 	members, _, err := s.Node.Members()
 	if err != nil {
 		return status.Error(codes.Unavailable, err.Error())
 	}
 	for _, m := range members {
-		if m.ID == peer.NodeID {
+		if m.ID == nodeID {
 			return nil
 		}
 	}

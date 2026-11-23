@@ -269,23 +269,8 @@ func (d *LocalDispatcher) runChannel(ctx context.Context, now time.Time, st *cha
 	if now.Before(st.blockedUntil) || ctx.Err() != nil {
 		return
 	}
-	if d.opts.BundleWindow > 0 && d.bundler != nil && entries[0].del.Target.Kind == store.ChannelShoutrrr {
-		// As in the Dispatcher: the first alert goes out at once, alerts due
-		// inside the window wait, and at its end all due alerts go out as one
-		// (ADR 0023). A DOWN alert does not wait: it sends the due alerts now
-		// and keeps the window end (ADR 0026).
-		if now.Before(st.windowEnd) {
-			if !anyLocalDown(entries) || !st.take(now) {
-				return
-			}
-			d.send(ctx, st, entries)
-			return
-		}
-		if !st.take(now) {
-			return
-		}
-		st.windowEnd = now.Add(d.opts.BundleWindow)
-		d.send(ctx, st, entries)
+	if d.shouldBundleLocal(entries) {
+		d.runBundledChannel(ctx, now, st, entries)
 		return
 	}
 	for _, e := range entries {
@@ -294,6 +279,28 @@ func (d *LocalDispatcher) runChannel(ctx context.Context, now time.Time, st *cha
 		}
 		d.send(ctx, st, []*localEntry{e})
 	}
+}
+
+func (d *LocalDispatcher) shouldBundleLocal(entries []*localEntry) bool {
+	return d.opts.BundleWindow > 0 && d.bundler != nil && entries[0].del.Target.Kind == store.ChannelShoutrrr
+}
+
+func (d *LocalDispatcher) runBundledChannel(ctx context.Context, now time.Time, st *channelState, entries []*localEntry) {
+	// As in the Dispatcher: the first alert goes out at once, alerts due
+	// inside the window wait, and at its end all due alerts go out as one
+	// (ADR 0023). A DOWN alert does not wait: it sends the due alerts now
+	// and keeps the window end (ADR 0026).
+	if now.Before(st.windowEnd) {
+		if anyLocalDown(entries) && st.take(now) {
+			d.send(ctx, st, entries)
+		}
+		return
+	}
+	if !st.take(now) {
+		return
+	}
+	st.windowEnd = now.Add(d.opts.BundleWindow)
+	d.send(ctx, st, entries)
 }
 
 // anyLocalDown reports whether one of the deliveries is a DOWN alert (ADR 0026).

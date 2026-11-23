@@ -173,42 +173,39 @@ func (v *VoterList) Update(voters []*pb.NodeInfo) error {
 		v.learned = newLearned
 	}
 
-	allowed := make(map[string]struct{}, len(v.seeds)+len(v.learned))
-	for _, s := range v.seeds {
+	v.candidates = mergeCandidateAddrs(v.candidates, v.seeds, v.learned)
+	return nil
+}
+
+func mergeCandidateAddrs(current, seeds, learned []string) []string {
+	allowed := make(map[string]struct{}, len(seeds)+len(learned))
+	for _, s := range seeds {
 		allowed[s] = struct{}{}
 	}
-	for _, l := range v.learned {
+	for _, l := range learned {
 		allowed[l] = struct{}{}
 	}
 
 	next := make([]string, 0, len(allowed))
 	seen := make(map[string]struct{}, len(allowed))
-	for _, c := range v.candidates {
-		if _, ok := allowed[c]; !ok {
-			continue
+	appendUnique := func(items []string, checkAllowed bool) {
+		for _, item := range items {
+			if checkAllowed {
+				if _, ok := allowed[item]; !ok {
+					continue
+				}
+			}
+			if _, dup := seen[item]; dup {
+				continue
+			}
+			seen[item] = struct{}{}
+			next = append(next, item)
 		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		next = append(next, c)
 	}
-	for _, s := range v.seeds {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		next = append(next, s)
-	}
-	for _, l := range v.learned {
-		if _, ok := seen[l]; ok {
-			continue
-		}
-		seen[l] = struct{}{}
-		next = append(next, l)
-	}
-	v.candidates = next
-	return nil
+	appendUnique(current, true)
+	appendUnique(seeds, false)
+	appendUnique(learned, false)
+	return next
 }
 
 func extractSortedAddrs(voters []*pb.NodeInfo) []string {

@@ -102,6 +102,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+output {
+  display: block;
+}
+
 /* Visually hidden, still announced by screen readers. */
 .visually-hidden {
   position: absolute !important;

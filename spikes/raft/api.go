@@ -16,6 +16,11 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+const (
+	schemeHTTPS = "https://"
+	headerXHops = "X-Hops"
+)
+
 type writeResult struct {
 	Status    int          `json:"-"`
 	Result    *ApplyResult `json:"result,omitempty"`
@@ -67,8 +72,8 @@ func (n *Node) writeInner(ctx context.Context, cmd Command, hops int) writeResul
 		return writeResult{Status: http.StatusServiceUnavailable, Error: "no leader (minority partition or election running)"}
 	}
 	body, _ := json.Marshal(cmd)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+string(addr)+"/cluster/apply", bytes.NewReader(body))
-	req.Header.Set("X-Hops", strconv.Itoa(hops+1))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, schemeHTTPS+string(addr)+"/cluster/apply", bytes.NewReader(body))
+	req.Header.Set(headerXHops, strconv.Itoa(hops+1))
 	resp, err := n.client.Do(req)
 	if err != nil {
 		// The request may or may not have reached the leader.
@@ -98,7 +103,7 @@ func (n *Node) clusterHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		hops, _ := strconv.Atoi(r.Header.Get("X-Hops"))
+		hops, _ := strconv.Atoi(r.Header.Get(headerXHops))
 		res := n.write(r.Context(), cmd, hops)
 		writeJSON(w, res.Status, res)
 	})
@@ -169,22 +174,7 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n.raft.State() != raft.Leader {
-		addr, _ := n.raft.LeaderWithID()
-		if addr == "" || r.Header.Get("X-Hops") != "" {
-			writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: "no leader"})
-			return
-		}
-		body, _ := json.Marshal(req)
-		fr, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://"+string(addr)+"/cluster/join", bytes.NewReader(body))
-		fr.Header.Set("X-Hops", "1")
-		resp, err := n.client.Do(fr)
-		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: err.Error()})
-			return
-		}
-		defer resp.Body.Close()
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+		n.forwardJoin(w, r, req)
 		return
 	}
 
@@ -194,29 +184,9 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	res := joinResponse{LeaderName: n.cfg.Name, WaitedMutexMs: time.Since(t0).Milliseconds()}
 	slog.Info("join: start", "joiner", req.Name, "id", req.ID, "waited_mutex_ms", res.WaitedMutexMs)
 
-	cf := n.raft.GetConfiguration()
-	if err := cf.Error(); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: err.Error()})
+	isMember, done := n.checkExistingMember(w, req, &res)
+	if done {
 		return
-	}
-	isMember := false
-	for _, s := range cf.Configuration().Servers {
-		if string(s.ID) == req.ID {
-			if s.Suffrage == raft.Voter {
-				res.AlreadyMember = true
-				writeJSON(w, http.StatusOK, res)
-				return
-			}
-			isMember = true
-		} else if string(s.Address) == req.Addr {
-			// Same address, different ID: a wiped node. raft rejects duplicate
-			// addresses; never remove automatically (FA-CLU-08) -> operator.
-			res.Error = "address already used by another server id; remove it first"
-			res.ConflictID = string(s.ID)
-			slog.Warn("join: address conflict", "joiner", req.Name, "new_id", req.ID, "old_id", s.ID)
-			writeJSON(w, http.StatusConflict, res)
-			return
-		}
 	}
 
 	t1 := time.Now()
@@ -234,29 +204,9 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	res.LeaderStartLag = n.raft.LastIndex()
 	slog.Info("join: nonvoter added", "joiner", req.Name, "ms", res.NonvoterMs)
 
-	// hashicorp/raft does not expose per-follower match index, so ask the joiner.
-	// A pure "lag < N entries" check is not enough: with a short log (or one
-	// big entry / pending InstallSnapshot) an empty joiner passes immediately.
-	// Require the joiner to have applied at least its own AddNonvoter entry.
-	t2 := time.Now()
-	deadline := time.Now().Add(2 * time.Minute)
-	for {
-		applied, err := n.remoteApplied(r.Context(), req.Addr)
-		if err == nil && applied >= addIndex && applied+n.cfg.CatchUpLag >= n.raft.LastIndex() {
-			res.JoinerApplied = applied
-			break
-		}
-		if time.Now().After(deadline) || n.raft.State() != raft.Leader {
-			res.Error = fmt.Sprintf("catch-up failed (err=%v)", err)
-			writeJSON(w, http.StatusServiceUnavailable, res)
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
+	if !n.waitForJoinerCatchUp(r.Context(), w, req, addIndex, &res) {
+		return
 	}
-	if d := n.cfg.JoinHold - time.Since(t2); d > 0 {
-		time.Sleep(d)
-	}
-	res.CatchUpMs = time.Since(t2).Milliseconds()
 
 	t3 := time.Now()
 	if err := n.raft.AddVoter(raft.ServerID(req.ID), raft.ServerAddress(req.Addr), 0, 10*time.Second).Error(); err != nil {
@@ -269,8 +219,81 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (n *Node) forwardJoin(w http.ResponseWriter, r *http.Request, req joinRequest) {
+	addr, _ := n.raft.LeaderWithID()
+	if addr == "" || r.Header.Get(headerXHops) != "" {
+		writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: "no leader"})
+		return
+	}
+	body, _ := json.Marshal(req)
+	fr, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, schemeHTTPS+string(addr)+"/cluster/join", bytes.NewReader(body))
+	fr.Header.Set(headerXHops, "1")
+	resp, err := n.client.Do(fr)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (n *Node) checkExistingMember(w http.ResponseWriter, req joinRequest, res *joinResponse) (isMember, done bool) {
+	cf := n.raft.GetConfiguration()
+	if err := cf.Error(); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, joinResponse{Error: err.Error()})
+		return false, true
+	}
+	for _, s := range cf.Configuration().Servers {
+		if string(s.ID) == req.ID {
+			if s.Suffrage == raft.Voter {
+				res.AlreadyMember = true
+				writeJSON(w, http.StatusOK, *res)
+				return false, true
+			}
+			isMember = true
+		} else if string(s.Address) == req.Addr {
+			// Same address, different ID: a wiped node. raft rejects duplicate
+			// addresses; never remove automatically (FA-CLU-08) -> operator.
+			res.Error = "address already used by another server id; remove it first"
+			res.ConflictID = string(s.ID)
+			slog.Warn("join: address conflict", "joiner", req.Name, "new_id", req.ID, "old_id", s.ID)
+			writeJSON(w, http.StatusConflict, *res)
+			return false, true
+		}
+	}
+	return isMember, false
+}
+
+func (n *Node) waitForJoinerCatchUp(ctx context.Context, w http.ResponseWriter, req joinRequest, addIndex uint64, res *joinResponse) bool {
+	// hashicorp/raft does not expose per-follower match index, so ask the joiner.
+	// A pure "lag < N entries" check is not enough: with a short log (or one
+	// big entry / pending InstallSnapshot) an empty joiner passes immediately.
+	// Require the joiner to have applied at least its own AddNonvoter entry.
+	t2 := time.Now()
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		applied, err := n.remoteApplied(ctx, req.Addr)
+		if err == nil && applied >= addIndex && applied+n.cfg.CatchUpLag >= n.raft.LastIndex() {
+			res.JoinerApplied = applied
+			break
+		}
+		if time.Now().After(deadline) || n.raft.State() != raft.Leader {
+			res.Error = fmt.Sprintf("catch-up failed (err=%v)", err)
+			writeJSON(w, http.StatusServiceUnavailable, *res)
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if d := n.cfg.JoinHold - time.Since(t2); d > 0 {
+		time.Sleep(d)
+	}
+	res.CatchUpMs = time.Since(t2).Milliseconds()
+	return true
+}
+
 func (n *Node) remoteApplied(ctx context.Context, addr string) (uint64, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+addr+"/cluster/status", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, schemeHTTPS+addr+"/cluster/status", nil)
 	resp, err := n.client.Do(req)
 	if err != nil {
 		return 0, err
@@ -286,7 +309,7 @@ func (n *Node) remoteApplied(ctx context.Context, addr string) (uint64, error) {
 func (n *Node) joinLoop() {
 	body, _ := json.Marshal(joinRequest{ID: n.nodeID, Addr: n.cfg.Advertise, Name: n.cfg.Name})
 	for attempt := 1; ; attempt++ {
-		req, _ := http.NewRequest(http.MethodPost, "https://"+n.cfg.Join+"/cluster/join", bytes.NewReader(body))
+		req, _ := http.NewRequest(http.MethodPost, schemeHTTPS+n.cfg.Join+"/cluster/join", bytes.NewReader(body))
 		c := *n.client
 		c.Timeout = 3 * time.Minute
 		resp, err := c.Do(req)
