@@ -146,19 +146,25 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
   checksums.txt
 ```
 
-**4. Signatur des Images:**
+**4. Signatur der Images** (Hauptimage und Probe-Image, ADR 0043):
 
 ```bash
 cosign verify \
   --certificate-identity https://github.com/Joinsider/pulsequorum/.github/workflows/release.yml@refs/tags/vX.Y.Z \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/joinsider/pulsequorum:X.Y.Z
+
+cosign verify \
+  --certificate-identity https://github.com/Joinsider/pulsequorum/.github/workflows/release.yml@refs/tags/vX.Y.Z \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/joinsider/pulsequorum-probe:X.Y.Z
 ```
 
-**5. Herkunftsnachweis des Images:**
+**5. Herkunftsnachweis der Images:**
 
 ```bash
 gh attestation verify oci://ghcr.io/joinsider/pulsequorum:X.Y.Z --repo Joinsider/pulsequorum
+gh attestation verify oci://ghcr.io/joinsider/pulsequorum-probe:X.Y.Z --repo Joinsider/pulsequorum
 ```
 
 **6. Release-Attestation von GitHub** (nur für veröffentlichte Releases):

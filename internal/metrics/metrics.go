@@ -62,6 +62,7 @@ type Metrics struct {
 	checksRunning   prometheus.Gauge
 	alertDeliveries *prometheus.CounterVec
 	probeRejected   *prometheus.CounterVec
+	probeBlocked    *prometheus.CounterVec
 	jwksFailures    prometheus.Counter
 	userInfoCalls   prometheus.Counter
 	userInfoFails   prometheus.Counter
@@ -101,6 +102,10 @@ func New(src Sources) *Metrics {
 			Name: "pulsequorum_probe_rejected_total",
 			Help: "Probe gateway requests or assignments rejected by reason.",
 		}, []string{"reason"}),
+		probeBlocked: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "pulsequorum_probe_policy_blocked_total",
+			Help: "Checks blocked by the local probe policy by reason (ADR 0044).",
+		}, []string{"reason"}),
 		jwksFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "pulsequorum_auth_jwks_fetch_failures_total",
 			Help: "Failed fetches of the identity provider's signing keys (ADR 0027).",
@@ -114,7 +119,7 @@ func New(src Sources) *Metrics {
 			Help: "Failed userinfo lookups at the identity provider (ADR 0028).",
 		}),
 	}
-	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.probeRejected, m.jwksFailures, m.userInfoCalls, m.userInfoFails)
+	m.reg.MustRegister(m.checks, m.checkDuration, m.checksRunning, m.alertDeliveries, m.probeRejected, m.probeBlocked, m.jwksFailures, m.userInfoCalls, m.userInfoFails)
 	m.reg.MustRegister(newCollector(src))
 	return m
 }
@@ -143,6 +148,15 @@ func (m *Metrics) ProbeRejected(reason string) {
 		return
 	}
 	m.probeRejected.WithLabelValues(reason).Inc()
+}
+
+// ProbePolicyBlocked counts one check blocked by the local probe policy.
+// reason is "target", "method" or "type" (ADR 0044, section 4).
+func (m *Metrics) ProbePolicyBlocked(reason string) {
+	if m == nil {
+		return
+	}
+	m.probeBlocked.WithLabelValues(reason).Inc()
 }
 
 // JWKSFetchFailed counts one failed fetch of the identity provider's keys.

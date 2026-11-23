@@ -1103,3 +1103,79 @@ func TestProbeSettings(t *testing.T) {
 		})
 	}
 }
+
+// ADR 0044: the local policy of a probe is read from four variables.
+func TestProbePolicySettings(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg, err := Load(env(map[string]string{"NODE_NAME": "n1"}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.ProbeAllowTargets != nil {
+			t.Errorf("ProbeAllowTargets = %v, want nil", cfg.ProbeAllowTargets)
+		}
+		if cfg.ProbeAllowMethods != nil {
+			t.Errorf("ProbeAllowMethods = %v, want nil", cfg.ProbeAllowMethods)
+		}
+		if cfg.ProbeAllowTypes != nil {
+			t.Errorf("ProbeAllowTypes = %v, want nil", cfg.ProbeAllowTypes)
+		}
+		if cfg.ProbeResultDetail != "full" {
+			t.Errorf("ProbeResultDetail = %q, want full", cfg.ProbeResultDetail)
+		}
+	})
+
+	t.Run("valid values", func(t *testing.T) {
+		cfg, err := Load(env(map[string]string{
+			"NODE_NAME":                 "n1",
+			"PROBE_ALLOW_TARGETS":       "10.0.0.0/8:443,[2001:db8::/48]:443",
+			"PROBE_ALLOW_HTTP_METHODS":  "get,head",
+			"PROBE_ALLOW_MONITOR_TYPES": "http,tcp",
+			"PROBE_RESULT_DETAIL":       "minimal",
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := cfg.ProbeAllowTargets.String(); got != "10.0.0.0/8:443,[2001:db8::/48]:443" {
+			t.Errorf("ProbeAllowTargets = %q", got)
+		}
+		if got := cfg.ProbeAllowMethods.String(); got != "GET,HEAD" {
+			t.Errorf("ProbeAllowMethods = %q, want GET,HEAD", got)
+		}
+		if !slices.Equal(cfg.ProbeAllowTypes, []string{"http", "tcp"}) {
+			t.Errorf("ProbeAllowTypes = %v", cfg.ProbeAllowTypes)
+		}
+		if cfg.ProbeResultDetail != "minimal" {
+			t.Errorf("ProbeResultDetail = %q, want minimal", cfg.ProbeResultDetail)
+		}
+	})
+
+	t.Run("any targets", func(t *testing.T) {
+		cfg, err := Load(env(map[string]string{"NODE_NAME": "n1", "PROBE_ALLOW_TARGETS": "any"}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.ProbeAllowTargets == nil || !cfg.ProbeAllowTargets.Any() {
+			t.Errorf("ProbeAllowTargets = %v, want any", cfg.ProbeAllowTargets)
+		}
+	})
+
+	invalid := []struct {
+		key string
+		val string
+	}{
+		{"PROBE_ALLOW_TARGETS", "example.com"},
+		{"PROBE_ALLOW_TARGETS", "10.0.0.5/16"},
+		{"PROBE_ALLOW_HTTP_METHODS", "TRACE"},
+		{"PROBE_ALLOW_MONITOR_TYPES", "HTTP!"},
+		{"PROBE_RESULT_DETAIL", "verbose"},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.key+"="+tt.val, func(t *testing.T) {
+			_, err := Load(env(map[string]string{"NODE_NAME": "n1", tt.key: tt.val}))
+			if err == nil || !strings.Contains(err.Error(), tt.key) {
+				t.Errorf("Load error = %v, want one naming %s", err, tt.key)
+			}
+		})
+	}
+}

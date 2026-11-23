@@ -20,7 +20,10 @@
     "lastContact": "Last contact",
     "buffer": "Buffer",
     "bufferValue": "{{ unacked }} unacked, {{ bytes }}, {{ dropped }} dropped",
-    "bufferOldest": "oldest {{ oldest }}"
+    "bufferOldest": "oldest {{ oldest }}",
+    "targetPolicyActive": "Target policy active",
+    "targetPolicyMissing": "No target policy",
+    "targetPolicyHint": "The probe restricts locally which targets it may reach (PROBE_ALLOW_TARGETS)."
   },
   "actions": {
     "remove": "Remove"

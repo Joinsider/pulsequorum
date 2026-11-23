@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-import { ChangeDetectionStrategy, Component, inject, OnDestroy, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnDestroy,
+  signal,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CdkCopyToClipboard } from '@angular/cdk/clipboard';
 import { DatePipe } from '@angular/common';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -10,14 +18,30 @@ import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dial
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { firstValueFrom } from 'rxjs';
+import { catchError, firstValueFrom, map, of } from 'rxjs';
 import { ProbesService } from '../../api/gen/endpoints/probes/probes.service';
+import { SystemService } from '../../api/gen/endpoints/system/system.service';
 import { Icon } from '../../shared/icon/icon';
 import { problemOf } from '../../shared/problem';
 
 export const PROBE_TOKEN_TTL_MIN = 1;
 export const PROBE_TOKEN_TTL_MAX = 1440;
 export const PROBE_TOKEN_TTL_DEFAULT = 60;
+
+/** Placeholder shown in the quick-start snippet when the server version is unknown. */
+export const PROBE_IMAGE_TAG_PLACEHOLDER = '<version>';
+
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+
+/**
+ * Returns the tag of the probe image that matches the server version.
+ * Development builds ("dev", empty or unknown) yield the placeholder, because
+ * no image is published for them.
+ */
+export function probeImageTagFor(version: string | null | undefined): string {
+  const v = (version ?? '').trim().replace(/^v/, '');
+  return RELEASE_VERSION.test(v) ? v : PROBE_IMAGE_TAG_PLACEHOLDER;
+}
 
 /**
  * Issues a single-use private probe join token bound to the caller's tenant
@@ -43,7 +67,19 @@ export const PROBE_TOKEN_TTL_DEFAULT = 60;
 })
 export class ProbeTokenDialog implements OnDestroy {
   private readonly api = inject(ProbesService);
+  private readonly system = inject(SystemService);
   private readonly ref = inject<MatDialogRef<ProbeTokenDialog, boolean>>(MatDialogRef);
+
+  /** Server version from the public health endpoint; null when it cannot be read. */
+  private readonly serverVersion = toSignal(
+    this.system.getHealth().pipe(
+      map((health) => health.version),
+      catchError(() => of(null)),
+    ),
+    { initialValue: null },
+  );
+  /** Tag of the probe image in the quick-start snippet, matching the server version. */
+  protected readonly probeImageTag = computed(() => probeImageTagFor(this.serverVersion()));
 
   protected readonly form = inject(NonNullableFormBuilder).group({
     ttlMinutes: [

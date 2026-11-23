@@ -34,6 +34,25 @@ builds:
     ignore:
       - goos: darwin
         goarch: amd64
+  # Probe-only binary without SPA, REST API, OIDC and Shoutrrr (ADR 0043).
+  - id: pulsequorum-probe
+    main: ./cmd/pulsequorum-probe
+    binary: pulsequorum-probe
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/joinsider/pulsequorum/internal/version.Version={{.Version}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - id: pulsequorum
@@ -42,6 +61,17 @@ archives:
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - LICENSING.md
+      - THIRD_PARTY_NOTICES.md
+
+  - id: pulsequorum-probe
+    ids:
+      - pulsequorum-probe
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}-probe_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - LICENSING.md
@@ -76,6 +106,30 @@ dockers_v2:
       - THIRD_PARTY_NOTICES.md
     labels:
       org.opencontainers.image.title: pulsequorum
+      org.opencontainers.image.source: https://github.com/Joinsider/pulsequorum
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: AGPL-3.0-only
+  # Probe image (ADR 0043); same tag rules as the main image.
+  - id: pulsequorum-probe
+    ids:
+      - pulsequorum-probe
+    dockerfile: Dockerfile.probe.release
+    images:
+      - ghcr.io/joinsider/pulsequorum-probe
+    tags:
+      - "{{ .Version }}"
+      - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if and (not .Prerelease) (ge .Major 1) }}latest{{ end }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    # Copied into the build context; Dockerfile.probe.release COPYs them to /licenses.
+    extra_files:
+      - LICENSE
+      - THIRD_PARTY_NOTICES.md
+    labels:
+      org.opencontainers.image.title: pulsequorum-probe
       org.opencontainers.image.source: https://github.com/Joinsider/pulsequorum
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"

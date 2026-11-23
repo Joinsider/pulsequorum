@@ -89,6 +89,39 @@ describe('ProbesPage', () => {
     expect(fixture.componentInstance['quota']()).toEqual({ used: 2, max: 2, reached: true });
   });
 
+  it('shows a warning badge when the probe announces no target-policy capability', async () => {
+    fixture = TestBed.createComponent(ProbesPage);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const badge = fixture.nativeElement.querySelector(
+      '[data-testid="probe-target-policy-badge"]',
+    ) as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute('data-policy')).toBe('none');
+    expect(badge.classList).toContain('badge--warn');
+    expect(badge.classList).not.toContain('badge--policy');
+  });
+
+  it('shows a neutral badge when the probe announces the target-policy capability', async () => {
+    api.listPrivateProbes.mockReturnValue(
+      of([{ ...PROBES[0], capabilities: ['http', 'target-policy'] }]),
+    );
+    fixture = TestBed.createComponent(ProbesPage);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const badge = fixture.nativeElement.querySelector(
+      '[data-testid="probe-target-policy-badge"]',
+    ) as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute('data-policy')).toBe('active');
+    expect(badge.classList).toContain('badge--policy');
+    expect(badge.classList).not.toContain('badge--warn');
+  });
+
   it('confirms removal before deleting a private probe and reloads list', async () => {
     fixture = TestBed.createComponent(ProbesPage);
     fixture.detectChanges();
