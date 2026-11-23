@@ -65,9 +65,12 @@ export function orderedProperties(schema: JsonSchema): SchemaProperty[] {
 
   const order = schema['x-order'];
   // Array.prototype.sort is stable, so ties keep the original order.
-  const sorted = Array.isArray(order)
-    ? entries.sort((a, b) => rankOf(a.key, order) - rankOf(b.key, order))
-    : entries.sort((a, b) => Number(!a.required) - Number(!b.required));
+  if (Array.isArray(order)) {
+    entries.sort((a, b) => rankOf(a.key, order) - rankOf(b.key, order));
+  } else {
+    entries.sort((a, b) => Number(!a.required) - Number(!b.required));
+  }
+  const sorted = entries;
 
   const isComposite = (p: SchemaProperty) =>
     !p.required && ['object', 'map', 'array'].includes(fieldKind(p.schema));
@@ -134,14 +137,16 @@ export function isSecretSchema(schema: JsonSchema): boolean {
  */
 export type SecretMode = 'stored' | 'entered' | 'removed';
 
+const StringFormControl: new (
+  value: string,
+  opts: FormControlOptions & { nonNullable: true },
+) => FormControl<string> = FormControl;
+
 /**
  * Control of a secret leaf. Keeps the secret state next to the value: a stored
  * secret is never prefilled into an input, and only `entered` values are typed.
  */
-export class SecretControl extends (FormControl as new (
-  value: string,
-  options: FormControlOptions & { nonNullable: true },
-) => FormControl<string>) {
+export class SecretControl extends StringFormControl {
   mode: SecretMode;
   /** Loaded from the server with a stored secret, so {@link restore} can bring it back. */
   readonly stored: boolean;
@@ -567,7 +572,10 @@ function arrayValidators(schema: JsonSchema, required: boolean): ValidatorFn[] {
     const min = schema.minItems;
     validators.push((c) => {
       const n = Array.isArray(c.value) ? c.value.length : 0;
-      return n === 0 && !required ? null : n < min ? { minItems: { min } } : null;
+      if (n === 0 && !required) {
+        return null;
+      }
+      return n < min ? { minItems: { min } } : null;
     });
   }
   if (typeof schema.maxItems === 'number') {

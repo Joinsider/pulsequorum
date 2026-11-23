@@ -415,4 +415,28 @@ func TestBufferStartAfterAndStatus(t *testing.T) {
 	if st.Bytes <= 0 {
 		t.Fatalf("Status.Bytes = %d, want > 0", st.Bytes)
 	}
+
+	// RunCleanup runs periodically and exits when ctx is cancelled.
+	runCtx, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
+	defer cancel()
+	buf.RunCleanup(runCtx, 5*time.Millisecond)
+}
+
+func TestBufferValidationAndDefaults(t *testing.T) {
+	ctx := context.Background()
+	if _, err := NewBuffer(ctx, BufferOptions{NodeID: "n1"}); err == nil {
+		t.Fatal("expected error for nil Store")
+	}
+	m := openTestMetricsStore(t)
+	if _, err := NewBuffer(ctx, BufferOptions{Store: m}); err == nil {
+		t.Fatal("expected error for empty NodeID")
+	}
+	// Defaults for AckRetain, MaxAge, MaxBytes, Now, Log.
+	buf, err := NewBuffer(ctx, BufferOptions{Store: m, NodeID: "n1"})
+	if err != nil {
+		t.Fatalf("NewBuffer with defaults: %v", err)
+	}
+	if buf.ackRetain != defaultAckRetain || buf.maxAge != defaultMaxAge || buf.maxBytes != defaultMaxBytes {
+		t.Fatalf("unexpected defaults: %+v", buf)
+	}
 }

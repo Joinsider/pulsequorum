@@ -95,28 +95,39 @@ func lookup(body []byte, path string) (string, error) {
 		return "", fmt.Errorf("response is not JSON: %w", err)
 	}
 	for _, s := range segs {
-		switch cur := v.(type) {
-		case map[string]any:
-			if s.isIdx {
-				return "", fmt.Errorf("index [%d] used on an object", s.index)
-			}
-			next, ok := cur[s.key]
-			if !ok {
-				return "", fmt.Errorf("key %q not found", s.key)
-			}
-			v = next
-		case []any:
-			if !s.isIdx {
-				return "", fmt.Errorf("key %q used on an array", s.key)
-			}
-			if s.index >= len(cur) {
-				return "", fmt.Errorf("index [%d] out of range (length %d)", s.index, len(cur))
-			}
-			v = cur[s.index]
-		default:
-			return "", errors.New("path continues below a scalar value")
+		v, err = stepSegment(v, s)
+		if err != nil {
+			return "", err
 		}
 	}
+	return formatJSONValue(v)
+}
+
+func stepSegment(v any, s segment) (any, error) {
+	switch cur := v.(type) {
+	case map[string]any:
+		if s.isIdx {
+			return nil, fmt.Errorf("index [%d] used on an object", s.index)
+		}
+		next, ok := cur[s.key]
+		if !ok {
+			return nil, fmt.Errorf("key %q not found", s.key)
+		}
+		return next, nil
+	case []any:
+		if !s.isIdx {
+			return nil, fmt.Errorf("key %q used on an array", s.key)
+		}
+		if s.index >= len(cur) {
+			return nil, fmt.Errorf("index [%d] out of range (length %d)", s.index, len(cur))
+		}
+		return cur[s.index], nil
+	default:
+		return nil, errors.New("path continues below a scalar value")
+	}
+}
+
+func formatJSONValue(v any) (string, error) {
 	switch val := v.(type) {
 	case string:
 		return val, nil

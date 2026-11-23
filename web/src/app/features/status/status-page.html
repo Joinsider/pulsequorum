@@ -4,7 +4,7 @@
 
   @switch (state()) {
     @case ('loading') {
-      <p class="status__message" role="status">Loading node status&hellip;</p>
+      <output class="status__message">Loading node status&hellip;</output>
     }
     @case ('error') {
       <p class="status__message status__message--error" role="alert">

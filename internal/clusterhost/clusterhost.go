@@ -50,8 +50,9 @@ const (
 
 // JoinOptions describe how this node joins, if it does.
 type JoinOptions struct {
-	Seeds []string
-	Token string
+	Seeds   []string
+	Token   string
+	Version string
 	// ExternalKEK is set when MASTER_KEY or MASTER_KEY_FILE is configured;
 	// then the cluster's key is never installed, only compared.
 	ExternalKEK bool
@@ -78,7 +79,7 @@ type Prepared struct {
 // A node bootstraps only without Raft state, without join seeds and without
 // a cluster certificate: a node that joined before but crashed before Raft
 // stored anything must not found a cluster of its own.
-func Prepare(ctx context.Context, dataDir, nodeID, name, advertise, version string, join JoinOptions, log *slog.Logger) (Prepared, error) {
+func Prepare(ctx context.Context, dataDir, nodeID, name, advertise string, join JoinOptions, log *slog.Logger) (Prepared, error) {
 	cert := &clusterpki.NodeCert{DataDir: dataDir, NodeID: nodeID, Now: join.Clock}
 	if err := cert.Load(); err != nil {
 		return Prepared{}, err
@@ -96,7 +97,7 @@ func Prepare(ctx context.Context, dataDir, nodeID, name, advertise, version stri
 	}
 	log.Info("joining the cluster", "seeds", join.Seeds, "node_id", nodeID, "advertise", advertise)
 	joined, err := membership.Join(ctx, membership.JoinOptions{
-		Seeds: join.Seeds, Token: join.Token, NodeID: nodeID, Name: name, Address: advertise, Version: version, Cert: cert, Log: log,
+		Seeds: join.Seeds, Token: join.Token, NodeID: nodeID, Name: name, Address: advertise, Version: join.Version, Cert: cert, Log: log,
 		MaxCommandVersion: join.MaxCommandVersion, Clock: join.Clock,
 	})
 	if err != nil {

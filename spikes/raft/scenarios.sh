@@ -23,15 +23,16 @@ TMP=results/logs/.resp
 
 # ---------- helpers ----------
 now() { perl -MTime::HiRes=time -e 'printf "%d\n", time*1000'; }
-port() { echo $((18000 + ${1#n})); }
-st() { curl -s -m 2 "localhost:$(port "$1")/status"; }
-field() { st "$1" | jq -r "$2" 2>/dev/null; }
-leader_of() { local a; a=$(field "$1" .leader_addr); a=${a#raft-}; echo "${a%%:*}"; }
+port() { local node="$1"; echo $((18000 + ${node#n})); }
+st() { local node="$1"; curl -s -m 2 "localhost:$(port "$node")/status"; }
+field() { local node="$1" filter="$2"; st "$node" | jq -r "$filter" 2>/dev/null; }
+leader_of() { local node="$1" a; a=$(field "$node" .leader_addr); a=${a#raft-}; echo "${a%%:*}"; }
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 hdr() { printf '\n==================== %s ====================\n' "$*"; }
 
 wait_until() { # timeout_s cmd...  (polls every 50 ms)
-	local deadline=$(($(now) + $1 * 1000))
+	local timeout_s="$1"
+	local deadline=$(($(now) + timeout_s * 1000))
 	shift
 	while (($(now) < deadline)); do
 		"$@" && return 0
@@ -42,12 +43,12 @@ wait_until() { # timeout_s cmd...  (polls every 50 ms)
 
 # put node key value [request-id]  -> sets CODE and BODY
 put() {
-	local rid=${4:-}
+	local node="$1" key="$2" value="$3" rid="${4:-}"
 	CODE=$(curl -s -m 8 -o "$TMP" -w '%{http_code}' -X PUT ${rid:+-H "X-Request-ID: $rid"} \
-		"localhost:$(port "$1")/kv/$2?value=$3")
+		"localhost:$(port "$node")/kv/$key?value=$value")
 	BODY=$(cat "$TMP" 2>/dev/null)
 }
-put_ok() { put "$1" "$2" "$3" && [[ $CODE == 200 ]]; }
+put_ok() { local node="$1" key="$2" value="$3"; put "$node" "$key" "$value" && [[ $CODE == 200 ]]; }
 
 all_agree_leader() { # nodes... -> all report the same non-empty leader
 	local first="" l
@@ -65,17 +66,17 @@ new_leader_among() { # old nodes...
 	all_agree_leader "$@" && [[ $LEADER != "$old" ]]
 }
 current_leader() { for n in n1 n2 n3; do l=$(leader_of $n) && [[ -n $l ]] && echo "$l" && return; done; }
-voters() { field "$1" '[.servers[] | select(.suffrage=="Voter")] | length'; }
+voters() { local node="$1"; field "$node" '[.servers[] | select(.suffrage=="Voter")] | length'; }
 is_follower_caught_up() { # node leader
-	[[ $(field "$1" .state) == Follower ]] && [[ $(field "$1" .fsm.fingerprint) == $(field "$2" .fsm.fingerprint) ]]
+	local node="$1" leader="$2"
+	[[ $(field "$node" .state) == Follower ]] && [[ $(field "$node" .fsm.fingerprint) == $(field "$leader" .fsm.fingerprint) ]]
 }
 fingerprints() { for n in "$@"; do printf '%s=%s(rows=%s,applied=%s) ' "$n" "$(field $n .fsm.fingerprint)" "$(field $n .fsm.rows)" "$(field $n .fsm.applied_index)"; done; echo; }
-same_fp() { local a; a=$(field "$1" .fsm.fingerprint); shift; for n in "$@"; do [[ $(field $n .fsm.fingerprint) == "$a" ]] || return 1; done; }
+same_fp() { local first_node="$1" a; a=$(field "$first_node" .fsm.fingerprint); shift; for n in "$@"; do [[ $(field $n .fsm.fingerprint) == "$a" ]] || return 1; done; }
 terms() { for n in "$@"; do printf '%s:term=%s/%s ' "$n" "$(field $n .term)" "$(field $n .state)"; done; echo; }
 
 # hb_table nodes... : per stream (node_id/incarnation) contig and max as seen by each node
 hb_table() {
-	local f
 	for n in "$@"; do curl -s -m 2 "localhost:$(port $n)/hb/summary" >"results/logs/.hb_$n"; done
 	jq -rn --args '
 	  [ $ARGS.positional[] as $n | (input | to_entries[] | {node:$n, k:.key, c:.value.contig, m:.value.max}) ]
@@ -83,8 +84,8 @@ hb_table() {
 	' "$@" < <(for n in "$@"; do cat "results/logs/.hb_$n"; done)
 }
 # hb_contig node stream-prefix -> contig of that stream on node
-hb_contig() { curl -s -m 2 "localhost:$(port $1)/hb/summary" | jq -r --arg k "$2" '[to_entries[] | select(.key | startswith($k)) | .value.contig] | max // 0'; }
-hb_ge() { [[ $(hb_contig "$1" "$2") -ge $3 ]]; }
+hb_contig() { local node="$1" prefix="$2"; curl -s -m 2 "localhost:$(port "$node")/hb/summary" | jq -r --arg k "$prefix" '[to_entries[] | select(.key | startswith($k)) | .value.contig] | max // 0'; }
+hb_ge() { local node="$1" prefix="$2" min_val="$3"; [[ $(hb_contig "$node" "$prefix") -ge $min_val ]]; }
 
 recreate() { # node [ENV=VAL...]  (keeps the volume)
 	local n=$1

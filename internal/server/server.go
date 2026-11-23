@@ -117,7 +117,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 
 	s.ready.Store(false)
 	s.log.Info("shutting down http server", "timeout", s.cfg.ShutdownTimeout)
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("http server shutdown: %w", err)

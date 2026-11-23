@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver" // Register the ncruces sqlite3 driver with database/sql.
+	_ "modernc.org/sqlite"                   // Register the modernc sqlite driver with database/sql.
 )
 
 type result struct {
@@ -88,7 +88,16 @@ func main() {
 		fmt.Println("wrote", *resultsMD)
 		return
 	}
-	if err := run(*driver, *variant, *rows, time.Duration(*concSec)*time.Second, time.Duration(*thinkMs)*time.Millisecond, *dir, *keep, *resultsDir); err != nil {
+	if err := run(runOptions{
+		driver:     *driver,
+		variant:    *variant,
+		rows:       *rows,
+		concDur:    time.Duration(*concSec) * time.Second,
+		think:      time.Duration(*thinkMs) * time.Millisecond,
+		dir:        *dir,
+		keep:       *keep,
+		resultsDir: *resultsDir,
+	}); err != nil {
 		fatal(err)
 	}
 }
@@ -98,7 +107,19 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func run(driver, variant string, rows int64, concDur, think time.Duration, dir string, keep bool, resultsDir string) error {
+type runOptions struct {
+	driver     string
+	variant    string
+	rows       int64
+	concDur    time.Duration
+	think      time.Duration
+	dir        string
+	keep       bool
+	resultsDir string
+}
+
+func run(opts runOptions) error {
+	driver, variant, rows, concDur, think, dir, keep, resultsDir := opts.driver, opts.variant, opts.rows, opts.concDur, opts.think, opts.dir, opts.keep, opts.resultsDir
 	ctx := context.Background()
 	cfg, err := configFor(driver)
 	if err != nil {
@@ -221,7 +242,16 @@ func run(driver, variant string, rows int64, concDur, think time.Duration, dir s
 	monitors := g.monitors[:]
 	var lastTs atomic.Int64
 	lastTs.Store(epochMs + intervals*intervalMs)
-	cs := concurrentPhase(ctx, w, r, g, monitors, concDur, think, &lastTs, dbPath)
+	cs := concurrentPhase(ctx, concParams{
+		w:        w,
+		r:        r,
+		g:        g,
+		monitors: monitors,
+		dur:      concDur,
+		think:    think,
+		lastTs:   &lastTs,
+		dbPath:   dbPath,
+	})
 	res.ConcMaxWALMB = cs.maxWALMB
 	res.ThinkMs = think.Milliseconds()
 	res.ConcSec = cs.sec

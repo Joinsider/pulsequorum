@@ -108,47 +108,14 @@ type Client struct {
 	renewMu sync.Mutex
 }
 
+const msgUploadStreamEnded = "heartbeat upload stream ended"
+
 // NewClient constructs a probe Client.
 func NewClient(opts ClientOptions) (*Client, error) {
-	if opts.NodeID == "" {
-		return nil, errors.New("probe client: nodeID is required")
+	if err := validateClientOptions(opts); err != nil {
+		return nil, err
 	}
-	if opts.Cert == nil {
-		return nil, errors.New("probe client: cert is required")
-	}
-	if opts.Voters == nil {
-		return nil, errors.New("probe client: voters is required")
-	}
-	if opts.Buffer == nil {
-		return nil, errors.New("probe client: buffer is required")
-	}
-	if opts.Metrics == nil {
-		return nil, errors.New("probe client: metrics store is required")
-	}
-	if opts.SessionTimeout <= 0 {
-		opts.SessionTimeout = defaultSessionTimeout
-	}
-	if opts.ConnectTimeout <= 0 {
-		opts.ConnectTimeout = defaultConnectTimeout
-	}
-	if opts.BackoffMin <= 0 {
-		opts.BackoffMin = defaultMinBackoff
-	}
-	if opts.BackoffMax <= 0 {
-		opts.BackoffMax = defaultMaxBackoff
-	}
-	if opts.MaxUploadWindow <= 0 {
-		opts.MaxUploadWindow = defaultMaxUploadWindow
-	}
-	if opts.UploadBatchSize <= 0 {
-		opts.UploadBatchSize = defaultUploadBatchSize
-	}
-	if opts.RenewalCheckInterval <= 0 {
-		opts.RenewalCheckInterval = defaultRenewalCheckInterval
-	}
-	if opts.Clock == nil {
-		opts.Clock = time.Now
-	}
+	opts = applyClientDefaults(opts)
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -173,6 +140,50 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		notifyCh: make(chan struct{}, 1),
 		assigned: make(map[string]assignedMonitor),
 	}, nil
+}
+
+func validateClientOptions(opts ClientOptions) error {
+	switch {
+	case opts.NodeID == "":
+		return errors.New("probe client: nodeID is required")
+	case opts.Cert == nil:
+		return errors.New("probe client: cert is required")
+	case opts.Voters == nil:
+		return errors.New("probe client: voters is required")
+	case opts.Buffer == nil:
+		return errors.New("probe client: buffer is required")
+	case opts.Metrics == nil:
+		return errors.New("probe client: metrics store is required")
+	}
+	return nil
+}
+
+func applyClientDefaults(opts ClientOptions) ClientOptions {
+	if opts.SessionTimeout <= 0 {
+		opts.SessionTimeout = defaultSessionTimeout
+	}
+	if opts.ConnectTimeout <= 0 {
+		opts.ConnectTimeout = defaultConnectTimeout
+	}
+	if opts.BackoffMin <= 0 {
+		opts.BackoffMin = defaultMinBackoff
+	}
+	if opts.BackoffMax <= 0 {
+		opts.BackoffMax = defaultMaxBackoff
+	}
+	if opts.MaxUploadWindow <= 0 {
+		opts.MaxUploadWindow = defaultMaxUploadWindow
+	}
+	if opts.UploadBatchSize <= 0 {
+		opts.UploadBatchSize = defaultUploadBatchSize
+	}
+	if opts.RenewalCheckInterval <= 0 {
+		opts.RenewalCheckInterval = defaultRenewalCheckInterval
+	}
+	if opts.Clock == nil {
+		opts.Clock = time.Now
+	}
+	return opts
 }
 
 // Ready reports whether the probe has an active voter session and received its
@@ -208,9 +219,7 @@ func (c *Client) dial(ctx context.Context, addr string) (*grpc.ClientConn, error
 // or the cluster permanently rejects the probe certificate (ErrCertRejected).
 func (c *Client) Run(ctx context.Context) error {
 	bo := backoff.FullJitter(c.opts.BackoffMin, c.opts.BackoffMax, c.opts.RandIntN)
-	idx := 0
-	roundAttempts := 0
-	roundRejected := 0
+	var st runRoundState
 
 	for {
 		if ctx.Err() != nil {
@@ -224,50 +233,63 @@ func (c *Client) Run(ctx context.Context) error {
 			continue
 		}
 
-		addr := candidates[idx%len(candidates)]
-		idx++
+		addr := candidates[st.idx%len(candidates)]
+		st.idx++
 
 		established, err := c.runSession(ctx, addr)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-
-		if established {
-			bo.Reset()
-			roundAttempts = 0
-			roundRejected = 0
-			if isCertRejected(err) {
-				roundRejected = 1
-				roundAttempts = 1
-				if len(candidates) <= 1 {
-					c.log.Error("probe certificate rejected by cluster; re-join required", "voter", addr, "err", err)
-					return ErrCertRejected
-				}
-			}
-			c.log.Info("probe session ended, reconnecting", "voter", addr, "err", err)
-			continue
-		}
-
-		roundAttempts++
-		if isCertRejected(err) {
-			roundRejected++
-		}
-		c.log.Warn("connecting to voter failed", "voter", addr, "err", err)
-
-		if roundAttempts >= len(candidates) {
-			if roundRejected > len(candidates)/2 {
-				c.log.Error("probe certificate rejected by a quorum of candidate voters; re-join required", "err", err)
-				return ErrCertRejected
-			}
-			roundAttempts = 0
-			roundRejected = 0
-			delay := bo.Wait()
-			c.log.Debug("all candidate voters failed, backing off", "delay", delay)
-			if !backoff.Sleep(ctx, delay) {
-				return ctx.Err()
-			}
+		if err := c.afterSessionAttempt(ctx, bo, &st, addr, len(candidates), established, err); err != nil {
+			return err
 		}
 	}
+}
+
+type runRoundState struct {
+	idx           int
+	roundAttempts int
+	roundRejected int
+}
+
+func (c *Client) afterSessionAttempt(ctx context.Context, bo *backoff.Backoff, st *runRoundState, addr string, numCandidates int, established bool, err error) error {
+	if established {
+		bo.Reset()
+		st.roundAttempts = 0
+		st.roundRejected = 0
+		if isCertRejected(err) {
+			st.roundRejected = 1
+			st.roundAttempts = 1
+			if numCandidates <= 1 {
+				c.log.Error("probe certificate rejected by cluster; re-join required", "voter", addr, "err", err)
+				return ErrCertRejected
+			}
+		}
+		c.log.Info("probe session ended, reconnecting", "voter", addr, "err", err)
+		return nil
+	}
+
+	st.roundAttempts++
+	if isCertRejected(err) {
+		st.roundRejected++
+	}
+	c.log.Warn("connecting to voter failed", "voter", addr, "err", err)
+
+	if st.roundAttempts < numCandidates {
+		return nil
+	}
+	if st.roundRejected > numCandidates/2 {
+		c.log.Error("probe certificate rejected by a quorum of candidate voters; re-join required", "err", err)
+		return ErrCertRejected
+	}
+	st.roundAttempts = 0
+	st.roundRejected = 0
+	delay := bo.Wait()
+	c.log.Debug("all candidate voters failed, backing off", "delay", delay)
+	if !backoff.Sleep(ctx, delay) {
+		return ctx.Err()
+	}
+	return nil
 }
 
 func (c *Client) runSession(ctx context.Context, addr string) (bool, error) {
@@ -394,43 +416,57 @@ func (c *Client) applyAssignment(resp *pb.SubscribeResponse) {
 	defer c.assignMu.Unlock()
 
 	if resp.GetFullSnapshot() {
-		next := make(map[string]assignedMonitor, len(resp.GetUpserts()))
-		for _, pm := range resp.GetUpserts() {
-			if !c.allowMonitor(probeTenant, pm) {
-				continue
-			}
-			rev := uint64(1)
-			if prev, ok := c.assigned[pm.GetId()]; ok {
-				if probeMonitorEqual(prev.proto, pm) {
-					rev = prev.store.Revision
-				} else {
-					rev = prev.store.Revision + 1
-				}
-			}
-			next[pm.GetId()] = assignedMonitor{proto: pm, store: toStoreMonitor(pm, rev)}
-		}
-		c.assigned = next
+		c.replaceAssignedLocked(probeTenant, resp.GetUpserts())
 	} else {
-		for _, id := range resp.GetRemovedMonitorIds() {
-			delete(c.assigned, id)
-		}
-		for _, pm := range resp.GetUpserts() {
-			if !c.allowMonitor(probeTenant, pm) {
-				continue
-			}
-			rev := uint64(1)
-			if prev, ok := c.assigned[pm.GetId()]; ok {
-				if probeMonitorEqual(prev.proto, pm) {
-					rev = prev.store.Revision
-				} else {
-					rev = prev.store.Revision + 1
-				}
-			}
-			c.assigned[pm.GetId()] = assignedMonitor{proto: pm, store: toStoreMonitor(pm, rev)}
-		}
+		c.updateAssignedLocked(probeTenant, resp.GetRemovedMonitorIds(), resp.GetUpserts())
 	}
 	c.localRev++
 
+	monitors, anySSRF := c.collectAssignedMonitorsLocked()
+	if c.opts.Policy != nil {
+		c.opts.Policy.SetRemote(anySSRF)
+	}
+	if c.opts.Sync != nil {
+		c.opts.Sync.Sync(monitors)
+	}
+}
+
+func (c *Client) replaceAssignedLocked(probeTenant string, upserts []*pb.ProbeMonitor) {
+	next := make(map[string]assignedMonitor, len(upserts))
+	for _, pm := range upserts {
+		if !c.allowMonitor(probeTenant, pm) {
+			continue
+		}
+		next[pm.GetId()] = c.nextAssignedMonitorLocked(pm)
+	}
+	c.assigned = next
+}
+
+func (c *Client) updateAssignedLocked(probeTenant string, removed []string, upserts []*pb.ProbeMonitor) {
+	for _, id := range removed {
+		delete(c.assigned, id)
+	}
+	for _, pm := range upserts {
+		if !c.allowMonitor(probeTenant, pm) {
+			continue
+		}
+		c.assigned[pm.GetId()] = c.nextAssignedMonitorLocked(pm)
+	}
+}
+
+func (c *Client) nextAssignedMonitorLocked(pm *pb.ProbeMonitor) assignedMonitor {
+	rev := uint64(1)
+	if prev, ok := c.assigned[pm.GetId()]; ok {
+		if probeMonitorEqual(prev.proto, pm) {
+			rev = prev.store.Revision
+		} else {
+			rev = prev.store.Revision + 1
+		}
+	}
+	return assignedMonitor{proto: pm, store: toStoreMonitor(pm, rev)}
+}
+
+func (c *Client) collectAssignedMonitorsLocked() ([]store.Monitor, bool) {
 	monitors := make([]store.Monitor, 0, len(c.assigned))
 	anySSRF := false
 	for _, id := range slices.Sorted(maps.Keys(c.assigned)) {
@@ -440,12 +476,7 @@ func (c *Client) applyAssignment(resp *pb.SubscribeResponse) {
 			anySSRF = true
 		}
 	}
-	if c.opts.Policy != nil {
-		c.opts.Policy.SetRemote(anySSRF)
-	}
-	if c.opts.Sync != nil {
-		c.opts.Sync.Sync(monitors)
-	}
+	return monitors, anySSRF
 }
 
 // Defense-in-depth D6: a private probe discards monitors of other tenants.
@@ -518,7 +549,7 @@ func (c *Client) renewCert(ctx context.Context, conn *grpc.ClientConn) {
 	defer c.renewMu.Unlock()
 
 	issue := membership.RenewViaLeader(func() string { return "connected-voter" }, func(string) (pb.ClusterServiceClient, func(), error) {
-		return pb.NewClusterServiceClient(conn), func() {}, nil
+		return pb.NewClusterServiceClient(conn), func() { /* connection is owned by runSession */ }, nil
 	})
 	callCtx, cancel := context.WithTimeout(ctx, renewCallTimeout)
 	defer cancel()
@@ -532,40 +563,17 @@ func (c *Client) renewCert(ctx context.Context, conn *grpc.ClientConn) {
 func (c *Client) runUploadLoop(ctx context.Context, client pb.ProbeServiceClient, voterPos uint64, cancelSession context.CancelFunc) {
 	stream, err := client.UploadHeartbeats(ctx)
 	if err != nil {
-		if ctx.Err() == nil {
-			c.log.Warn("opening heartbeat upload stream failed", "err", err)
-			cancelSession()
-		}
+		c.abortUploadOnErr(ctx, cancelSession, "opening heartbeat upload stream failed", err)
 		return
 	}
 
 	inflight := make(chan struct{}, c.opts.MaxUploadWindow)
 	recvErr := make(chan error, 1)
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err != nil {
-				recvErr <- err
-				return
-			}
-			select {
-			case <-inflight:
-			default:
-			}
-			if pos := resp.GetPersisted(); pos != nil {
-				if err := c.opts.Buffer.RecordAck(ctx, pos.GetSeq()); err != nil && ctx.Err() == nil {
-					c.log.Warn("recording heartbeat ack failed", "seq", pos.GetSeq(), "err", err)
-				}
-			}
-		}
-	}()
+	go c.receiveUploadAcks(ctx, stream, inflight, recvErr)
 
 	sentUpTo, err := c.opts.Buffer.StartAfter(ctx, voterPos)
 	if err != nil {
-		if ctx.Err() == nil {
-			c.log.Warn("reading probe buffer start seq failed", "err", err)
-			cancelSession()
-		}
+		c.abortUploadOnErr(ctx, cancelSession, "reading probe buffer start seq failed", err)
 		return
 	}
 
@@ -573,73 +581,108 @@ func (c *Client) runUploadLoop(ctx context.Context, client pb.ProbeServiceClient
 	lostSent := lost == 0 || voterPos >= lost-1
 
 	for {
-		if ctx.Err() != nil {
+		if !c.checkUploadAlive(ctx, recvErr, cancelSession) {
 			return
 		}
-		select {
-		case err := <-recvErr:
-			if ctx.Err() == nil {
-				c.log.Warn("heartbeat upload stream ended", "err", err)
-				cancelSession()
-			}
-			return
-		default:
-		}
-
 		hbs, _, err := c.opts.Metrics.HeartbeatsAfter(ctx, c.opts.NodeID, c.opts.Buffer.incarnation, sentUpTo, 0, c.opts.UploadBatchSize)
 		if err != nil {
-			if ctx.Err() == nil {
-				c.log.Warn("reading buffered heartbeats failed", "err", err)
-				cancelSession()
-			}
+			c.abortUploadOnErr(ctx, cancelSession, "reading buffered heartbeats failed", err)
 			return
 		}
-
 		if len(hbs) == 0 && lostSent {
-			select {
-			case <-ctx.Done():
+			if !c.waitForNewHeartbeats(ctx, recvErr, cancelSession) {
 				return
-			case err := <-recvErr:
-				if ctx.Err() == nil {
-					c.log.Warn("heartbeat upload stream ended", "err", err)
-					cancelSession()
-				}
-				return
-			case <-c.notifyCh:
 			}
 			continue
 		}
-
-		select {
-		case inflight <- struct{}{}:
-		case <-ctx.Done():
-			return
-		case err := <-recvErr:
-			if ctx.Err() == nil {
-				c.log.Warn("heartbeat upload stream ended", "err", err)
-				cancelSession()
-			}
+		if !c.acquireUploadSlot(ctx, inflight, recvErr, cancelSession) {
 			return
 		}
-
-		req := &pb.UploadHeartbeatsRequest{
-			Heartbeats: heartbeatsToPB(hbs),
-		}
-		if !lostSent {
-			req.LostBelow = lost
-			lostSent = true
-		}
-		if err := stream.Send(req); err != nil {
-			if ctx.Err() == nil {
-				c.log.Warn("sending heartbeats failed", "err", err)
-				cancelSession()
-			}
+		if !c.sendUploadBatch(ctx, stream, hbs, lost, &lostSent, &sentUpTo, cancelSession) {
 			return
-		}
-		if len(hbs) > 0 {
-			sentUpTo = hbs[len(hbs)-1].Seq
 		}
 	}
+}
+
+func (c *Client) abortUploadOnErr(ctx context.Context, cancelSession context.CancelFunc, msg string, err error) {
+	if ctx.Err() == nil {
+		c.log.Warn(msg, "err", err)
+		cancelSession()
+	}
+}
+
+func (c *Client) receiveUploadAcks(ctx context.Context, stream pb.ProbeService_UploadHeartbeatsClient, inflight <-chan struct{}, recvErr chan<- error) {
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			recvErr <- err
+			return
+		}
+		select {
+		case <-inflight:
+		default:
+		}
+		if pos := resp.GetPersisted(); pos != nil {
+			if err := c.opts.Buffer.RecordAck(ctx, pos.GetSeq()); err != nil && ctx.Err() == nil {
+				c.log.Warn("recording heartbeat ack failed", "seq", pos.GetSeq(), "err", err)
+			}
+		}
+	}
+}
+
+func (c *Client) checkUploadAlive(ctx context.Context, recvErr <-chan error, cancelSession context.CancelFunc) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	select {
+	case err := <-recvErr:
+		c.abortUploadOnErr(ctx, cancelSession, msgUploadStreamEnded, err)
+		return false
+	default:
+		return true
+	}
+}
+
+func (c *Client) waitForNewHeartbeats(ctx context.Context, recvErr <-chan error, cancelSession context.CancelFunc) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case err := <-recvErr:
+		c.abortUploadOnErr(ctx, cancelSession, msgUploadStreamEnded, err)
+		return false
+	case <-c.notifyCh:
+		return true
+	}
+}
+
+func (c *Client) acquireUploadSlot(ctx context.Context, inflight chan<- struct{}, recvErr <-chan error, cancelSession context.CancelFunc) bool {
+	select {
+	case inflight <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	case err := <-recvErr:
+		c.abortUploadOnErr(ctx, cancelSession, msgUploadStreamEnded, err)
+		return false
+	}
+}
+
+func (c *Client) sendUploadBatch(ctx context.Context, stream pb.ProbeService_UploadHeartbeatsClient, hbs []store.Heartbeat, lost uint64, lostSent *bool, sentUpTo *uint64, cancelSession context.CancelFunc) bool {
+	req := &pb.UploadHeartbeatsRequest{
+		Heartbeats: heartbeatsToPB(hbs),
+	}
+	if !*lostSent {
+		req.LostBelow = lost
+		*lostSent = true
+	}
+	if err := stream.Send(req); err != nil {
+		c.abortUploadOnErr(ctx, cancelSession, "sending heartbeats failed", err)
+		return false
+	}
+	if len(hbs) > 0 {
+		*sentUpTo = hbs[len(hbs)-1].Seq
+	}
+	return true
 }
 
 func toStoreMonitor(pm *pb.ProbeMonitor, rev uint64) store.Monitor {

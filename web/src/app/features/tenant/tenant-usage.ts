@@ -25,6 +25,12 @@ export interface UsageRow {
   readonly state: UsageState;
 }
 
+const LIMIT_NAMES: Record<'monitors' | 'channels' | 'privateProbes', string> = {
+  monitors: 'maxMonitors',
+  channels: 'maxChannels',
+  privateProbes: 'maxPrivateProbes',
+};
+
 /** The usage rows of a tenant, in display order. */
 export function usageRows(tenant: OwnTenant): UsageRow[] {
   const exceeded = new Set<string>(tenant.exceeded.map((e) => e.limit));
@@ -32,17 +38,21 @@ export function usageRows(tenant: OwnTenant): UsageRow[] {
   const counted = (
     key: 'monitors' | 'channels' | 'privateProbes',
     used: number,
-    limit: number | null | undefined,
+    limit: number | null = null,
   ) => {
-    const max = limit ?? null;
-    const limitName =
-      key === 'monitors' ? 'maxMonitors' : key === 'channels' ? 'maxChannels' : 'maxPrivateProbes';
+    const limitName = LIMIT_NAMES[key];
     const exceededHere = exceeded.has(limitName);
+    let state: UsageState = 'ok';
+    if (exceededHere) {
+      state = 'exceeded';
+    } else if (limit !== null && used >= limit) {
+      state = 'reached';
+    }
     return {
       key,
       used,
-      limit: max,
-      state: exceededHere ? 'exceeded' : max !== null && used >= max ? 'reached' : 'ok',
+      limit,
+      state,
     } satisfies UsageRow;
   };
   const rows: UsageRow[] = [

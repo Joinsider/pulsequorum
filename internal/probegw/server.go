@@ -238,43 +238,57 @@ func (s *Server) verifyProbe(ctx context.Context) (pki.Identity, uint32, error) 
 		s.log.Warn("probe gateway rejected non-probe caller", "node_id", id.NodeID, "role", id.Role)
 		return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe certificate required")
 	}
-	revoked, err := s.opts.State.ListRevokedNodes(ctx)
-	if err != nil {
-		return pki.Identity{}, 0, status.Errorf(codes.Unavailable, "check revocations: %v", err)
-	}
-	for _, r := range revoked {
-		if r.NodeID == id.NodeID {
-			s.rejected("revoked")
-			s.log.Warn("probe rejected: node is revoked", "node_id", id.NodeID, "tenant_id", id.TenantID)
-			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe was removed from the cluster")
-		}
+	if err := s.checkProbeNotRevoked(ctx, id); err != nil {
+		return pki.Identity{}, 0, err
 	}
 	level, err := s.effectiveLevel(ctx)
 	if err != nil {
 		return pki.Identity{}, 0, status.Errorf(codes.Unavailable, "read command level: %v", err)
 	}
 	if level >= cluster.ProbeCommandLevel {
-		nodes, err := s.opts.State.ListNodes(ctx)
-		if err != nil {
-			return pki.Identity{}, 0, status.Errorf(codes.Unavailable, "read node registry: %v", err)
-		}
-		var reg *store.Node
-		for i := range nodes {
-			if nodes[i].ID == id.NodeID {
-				reg = &nodes[i]
-				break
-			}
-		}
-		if reg == nil {
-			s.rejected("unregistered")
-			s.log.Warn("probe rejected: not in node registry", "node_id", id.NodeID, "tenant_id", id.TenantID)
-			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe is not registered")
-		}
-		if reg.Role != store.NodeRoleProbe || reg.OwnerTenantID != id.TenantID {
-			s.rejected("owner_mismatch")
-			s.log.Warn("probe rejected: registry owner mismatch", "node_id", id.NodeID, "cert_tenant", id.TenantID, "reg_tenant", reg.OwnerTenantID, "reg_role", reg.Role)
-			return pki.Identity{}, 0, status.Error(codes.PermissionDenied, "probe identity does not match cluster registry")
+		if err := s.checkProbeInRegistry(ctx, id); err != nil {
+			return pki.Identity{}, 0, err
 		}
 	}
 	return id, level, nil
+}
+
+func (s *Server) checkProbeNotRevoked(ctx context.Context, id pki.Identity) error {
+	revoked, err := s.opts.State.ListRevokedNodes(ctx)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "check revocations: %v", err)
+	}
+	for _, r := range revoked {
+		if r.NodeID == id.NodeID {
+			s.rejected("revoked")
+			s.log.Warn("probe rejected: node is revoked", "node_id", id.NodeID, "tenant_id", id.TenantID)
+			return status.Error(codes.PermissionDenied, "probe was removed from the cluster")
+		}
+	}
+	return nil
+}
+
+func (s *Server) checkProbeInRegistry(ctx context.Context, id pki.Identity) error {
+	nodes, err := s.opts.State.ListNodes(ctx)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "read node registry: %v", err)
+	}
+	var reg *store.Node
+	for i := range nodes {
+		if nodes[i].ID == id.NodeID {
+			reg = &nodes[i]
+			break
+		}
+	}
+	if reg == nil {
+		s.rejected("unregistered")
+		s.log.Warn("probe rejected: not in node registry", "node_id", id.NodeID, "tenant_id", id.TenantID)
+		return status.Error(codes.PermissionDenied, "probe is not registered")
+	}
+	if reg.Role != store.NodeRoleProbe || reg.OwnerTenantID != id.TenantID {
+		s.rejected("owner_mismatch")
+		s.log.Warn("probe rejected: registry owner mismatch", "node_id", id.NodeID, "cert_tenant", id.TenantID, "reg_tenant", reg.OwnerTenantID, "reg_role", reg.Role)
+		return status.Error(codes.PermissionDenied, "probe identity does not match cluster registry")
+	}
+	return nil
 }

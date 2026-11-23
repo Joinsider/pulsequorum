@@ -122,19 +122,7 @@ func (s *Server) runSubscribeLoop(
 	var debounce *time.Timer
 	var debounceC <-chan time.Time
 	scheduleRecompute := func() {
-		if debounce == nil {
-			debounce = time.NewTimer(s.opts.DebounceInterval)
-			debounceC = debounce.C
-			return
-		}
-		if !debounce.Stop() {
-			select {
-			case <-debounce.C:
-			default:
-			}
-		}
-		debounce.Reset(s.opts.DebounceInterval)
-		debounceC = debounce.C
+		debounce, debounceC = resetDebounceTimer(debounce, s.opts.DebounceInterval)
 	}
 	defer func() {
 		if debounce != nil {
@@ -152,42 +140,84 @@ func (s *Server) runSubscribeLoop(
 			scheduleRecompute()
 		case <-debounceC:
 			debounceC = nil
-			if _, _, err := s.verifyProbe(ctx); err != nil {
-				return err
-			}
-			snap, voters, err := s.buildSnapshot(ctx, caller)
+			var err error
+			lastHashes, lastVoters, err = s.handleRecompute(ctx, caller, lastHashes, lastVoters, stream)
 			if err != nil {
-				s.log.Warn("recomputing probe snapshot failed", "node_id", caller.NodeID, "err", err)
-				continue
-			}
-			s.sessions.setExpectedRate(caller.NodeID, snap.totalRate)
-			var voterDelta []*pb.NodeInfo
-			if sig := voterSignature(voters); sig != lastVoters {
-				lastVoters = sig
-				voterDelta = voters
-			}
-			upserts, removed, nextHashes := diffMonitors(lastHashes, snap.monitors)
-			if len(upserts) == 0 && len(removed) == 0 && len(voterDelta) == 0 {
-				continue
-			}
-			if err := s.sendDeltas(ctx, snap.revision, upserts, removed, voterDelta, stream); err != nil {
 				return err
 			}
-			lastHashes = nextHashes
-			s.sessions.touch(caller.NodeID, s.now().UnixMilli())
 		case <-tick.C:
-			var voterDelta []*pb.NodeInfo
-			voters := s.currentVoters()
-			if sig := voterSignature(voters); sig != lastVoters {
-				lastVoters = sig
-				voterDelta = voters
-			}
-			if err := stream.Send(s.tickResponse(ctx, voterDelta)); err != nil {
+			var err error
+			lastVoters, err = s.handleSubscribeTick(ctx, caller.NodeID, lastVoters, stream)
+			if err != nil {
 				return err
 			}
-			s.sessions.touch(caller.NodeID, s.now().UnixMilli())
 		}
 	}
+}
+
+func resetDebounceTimer(debounce *time.Timer, d time.Duration) (*time.Timer, <-chan time.Time) {
+	if debounce == nil {
+		t := time.NewTimer(d)
+		return t, t.C
+	}
+	if !debounce.Stop() {
+		select {
+		case <-debounce.C:
+		default:
+		}
+	}
+	debounce.Reset(d)
+	return debounce, debounce.C
+}
+
+func (s *Server) handleRecompute(
+	ctx context.Context,
+	caller pki.Identity,
+	lastHashes map[string]string,
+	lastVoters string,
+	stream pb.ProbeService_SubscribeServer,
+) (map[string]string, string, error) {
+	if _, _, err := s.verifyProbe(ctx); err != nil {
+		return lastHashes, lastVoters, err
+	}
+	snap, voters, err := s.buildSnapshot(ctx, caller)
+	if err != nil {
+		s.log.Warn("recomputing probe snapshot failed", "node_id", caller.NodeID, "err", err)
+		return lastHashes, lastVoters, nil
+	}
+	s.sessions.setExpectedRate(caller.NodeID, snap.totalRate)
+	var voterDelta []*pb.NodeInfo
+	if sig := voterSignature(voters); sig != lastVoters {
+		lastVoters = sig
+		voterDelta = voters
+	}
+	upserts, removed, nextHashes := diffMonitors(lastHashes, snap.monitors)
+	if len(upserts) == 0 && len(removed) == 0 && len(voterDelta) == 0 {
+		return lastHashes, lastVoters, nil
+	}
+	if err := s.sendDeltas(ctx, snap.revision, upserts, removed, voterDelta, stream); err != nil {
+		return lastHashes, lastVoters, err
+	}
+	s.sessions.touch(caller.NodeID, s.now().UnixMilli())
+	return nextHashes, lastVoters, nil
+}
+
+func (s *Server) handleSubscribeTick(
+	ctx context.Context,
+	nodeID, lastVoters string,
+	stream pb.ProbeService_SubscribeServer,
+) (string, error) {
+	var voterDelta []*pb.NodeInfo
+	voters := s.currentVoters()
+	if sig := voterSignature(voters); sig != lastVoters {
+		lastVoters = sig
+		voterDelta = voters
+	}
+	if err := stream.Send(s.tickResponse(ctx, voterDelta)); err != nil {
+		return lastVoters, err
+	}
+	s.sessions.touch(nodeID, s.now().UnixMilli())
+	return lastVoters, nil
 }
 
 func (s *Server) syncProbeRegistration(ctx context.Context, caller pki.Identity, req *pb.SubscribeRequest) {
@@ -284,44 +314,46 @@ func (s *Server) collectTenantMonitors(ctx context.Context, caller pki.Identity,
 			return status.Errorf(codes.Unavailable, "list monitors for tenant %s: %v", tenantID, err)
 		}
 		for _, m := range page.Items {
-			// Defense-in-depth D3: never deliver a foreign tenant's monitor to a private probe.
-			if caller.TenantID != "" && m.TenantID != caller.TenantID {
-				s.rejected("foreign_monitor")
-				s.log.Error("tenant boundary check dropped foreign monitor for private probe", "node_id", caller.NodeID, "probe_tenant", caller.TenantID, "monitor_tenant", m.TenantID, "monitor_id", m.ID)
-				continue
-			}
-			if m.Paused || m.IntervalSeconds <= 0 {
-				continue
-			}
-			if !s.opts.Assigner.Runs(m, registry, caller.NodeID) {
-				continue
-			}
-			cfg, err := configsecret.ResolveMonitor(ctx, s.opts.Keyring, m)
-			if err != nil {
-				s.log.Warn("resolving monitor secrets for probe failed", "node_id", caller.NodeID, "monitor_id", m.ID, "err", err)
-				continue
-			}
-			pm := &pb.ProbeMonitor{
-				Id:              m.ID,
-				TenantId:        m.TenantID,
-				Type:            m.Type,
-				ConfigJson:      cfg,
-				IntervalSeconds: uint32(m.IntervalSeconds),        //nolint:gosec // G115: validated positive
-				TimeoutSeconds:  uint32(max(m.TimeoutSeconds, 0)), //nolint:gosec // G115: clamped non-negative
-				SsrfProtection:  s.opts.SSRFProtection,
-			}
-			out.monitors[m.ID] = resolvedMonitor{
-				hash:  hashProbeMonitor(pm),
-				proto: pm,
-				rate:  1.0 / float64(m.IntervalSeconds),
-			}
-			out.totalRate += 1.0 / float64(m.IntervalSeconds)
+			s.addAssignedMonitor(ctx, caller, m, registry, out)
 		}
 		if page.NextAfterID == "" {
 			return nil
 		}
 		after = page.NextAfterID
 	}
+}
+
+func (s *Server) addAssignedMonitor(ctx context.Context, caller pki.Identity, m store.Monitor, registry []store.Node, out *snapshot) {
+	// Defense-in-depth D3: never deliver a foreign tenant's monitor to a private probe.
+	if caller.TenantID != "" && m.TenantID != caller.TenantID {
+		s.rejected("foreign_monitor")
+		s.log.Error("tenant boundary check dropped foreign monitor for private probe", "node_id", caller.NodeID, "probe_tenant", caller.TenantID, "monitor_tenant", m.TenantID, "monitor_id", m.ID)
+		return
+	}
+	if m.Paused || m.IntervalSeconds <= 0 || !s.opts.Assigner.Runs(m, registry, caller.NodeID) {
+		return
+	}
+	cfg, err := configsecret.ResolveMonitor(ctx, s.opts.Keyring, m)
+	if err != nil {
+		s.log.Warn("resolving monitor secrets for probe failed", "node_id", caller.NodeID, "monitor_id", m.ID, "err", err)
+		return
+	}
+	pm := &pb.ProbeMonitor{
+		Id:              m.ID,
+		TenantId:        m.TenantID,
+		Type:            m.Type,
+		ConfigJson:      cfg,
+		IntervalSeconds: uint32(m.IntervalSeconds),        //nolint:gosec // G115: validated positive
+		TimeoutSeconds:  uint32(max(m.TimeoutSeconds, 0)), //nolint:gosec // G115: clamped non-negative
+		SsrfProtection:  s.opts.SSRFProtection,
+	}
+	rate := 1.0 / float64(m.IntervalSeconds)
+	out.monitors[m.ID] = resolvedMonitor{
+		hash:  hashProbeMonitor(pm),
+		proto: pm,
+		rate:  rate,
+	}
+	out.totalRate += rate
 }
 
 func (s *Server) sendSnapshot(

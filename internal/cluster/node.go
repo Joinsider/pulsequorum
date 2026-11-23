@@ -147,63 +147,17 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 		Output:     os.Stderr,
 	})
 
-	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, raftDBFilename))
+	bolt, snaps, err := openRaftStores(dir, hlog)
 	if err != nil {
-		return nil, fmt.Errorf("open raft log store: %w", err)
+		return nil, err
 	}
-	snaps, err := raft.NewFileSnapshotStoreWithLogger(dir, retainedSnapshots, hlog)
-	if err != nil {
-		_ = bolt.Close()
-		return nil, fmt.Errorf("open snapshot store: %w", err)
-	}
-	fsm, err := NewFSM(ctx, state, cfg.Logger, onFatal)
+	fsm, err := initCompatibleFSM(ctx, cfg, state, onFatal)
 	if err != nil {
 		_ = bolt.Close()
 		return nil, err
 	}
-	if cfg.MaxCommandVersion != 0 {
-		fsm.maxVersion = cfg.MaxCommandVersion
-	}
-	// A binary must not start on state that needs a newer version, and must not
-	// start on state older than the oldest version it can still apply (ADR 0018).
-	storedLevel, err := state.CommandLevel(ctx)
-	if err != nil {
-		_ = bolt.Close()
-		return nil, fmt.Errorf("read command level: %w", err)
-	}
-	level := EffectiveCommandLevel(storedLevel)
-	if level > fsm.maxVersion {
-		_ = bolt.Close()
-		return nil, fmt.Errorf("%w: state requires command version %d, this binary supports up to %d: upgrade the binary (ADR 0018)",
-			ErrIncompatibleVersion, level, fsm.maxVersion)
-	}
-	if level < MinCommandLevel {
-		_ = bolt.Close()
-		return nil, fmt.Errorf("%w: cluster command level %d is older than %d, the oldest this binary supports: upgrade through the previous minor version first (ADR 0018)",
-			ErrIncompatibleVersion, level, MinCommandLevel)
-	}
 
-	rc := raft.DefaultConfig()
-	rc.LocalID = raft.ServerID(cfg.NodeID)
-	rc.Logger = hlog
-	if cfg.Timeout > 0 {
-		rc.HeartbeatTimeout = cfg.Timeout
-		rc.ElectionTimeout = cfg.Timeout
-		rc.LeaderLeaseTimeout = cfg.Timeout / 2
-	}
-	rc.SnapshotThreshold = orDefault(cfg.SnapshotThreshold, DefaultSnapshotThreshold)
-	rc.TrailingLogs = orDefault(cfg.TrailingLogs, DefaultTrailingLogs)
-	rc.SnapshotInterval = DefaultSnapshotInterval
-	if cfg.SnapshotInterval > 0 {
-		rc.SnapshotInterval = cfg.SnapshotInterval
-	}
-
-	// Skip restoring the latest snapshot if state.db is already at least as new
-	// (ADR 0012 A2); Raft then replays the log and the FSM skips old entries.
-	if latest, err := snaps.List(); err == nil && len(latest) > 0 && fsm.AppliedIndex() >= latest[0].Index {
-		rc.NoSnapshotRestoreOnStart = true
-	}
-
+	rc := buildRaftConfig(cfg, hlog, snaps, fsm)
 	existing, err := raft.HasExistingState(bolt, bolt, snaps)
 	if err != nil {
 		_ = bolt.Close()
@@ -225,18 +179,83 @@ func Start(ctx context.Context, cfg Config, state StateStore, onFatal func(error
 	if n.clock == nil {
 		n.clock = time.Now
 	}
+	return finishRaftStart(n, cfg, log, trans, existing, rc.NoSnapshotRestoreOnStart)
+}
+
+func openRaftStores(dir string, hlog hclog.Logger) (*raftboltdb.BoltStore, *raft.FileSnapshotStore, error) {
+	bolt, err := raftboltdb.NewBoltStore(filepath.Join(dir, raftDBFilename))
+	if err != nil {
+		return nil, nil, fmt.Errorf("open raft log store: %w", err)
+	}
+	snaps, err := raft.NewFileSnapshotStoreWithLogger(dir, retainedSnapshots, hlog)
+	if err != nil {
+		_ = bolt.Close()
+		return nil, nil, fmt.Errorf("open snapshot store: %w", err)
+	}
+	return bolt, snaps, nil
+}
+
+func initCompatibleFSM(ctx context.Context, cfg Config, state StateStore, onFatal func(error)) (*FSM, error) {
+	fsm, err := NewFSM(ctx, state, cfg.Logger, onFatal)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.MaxCommandVersion != 0 {
+		fsm.maxVersion = cfg.MaxCommandVersion
+	}
+	// A binary must not start on state that needs a newer version, and must not
+	// start on state older than the oldest version it can still apply (ADR 0018).
+	storedLevel, err := state.CommandLevel(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read command level: %w", err)
+	}
+	level := EffectiveCommandLevel(storedLevel)
+	if level > fsm.maxVersion {
+		return nil, fmt.Errorf("%w: state requires command version %d, this binary supports up to %d: upgrade the binary (ADR 0018)",
+			ErrIncompatibleVersion, level, fsm.maxVersion)
+	}
+	if level < MinCommandLevel {
+		return nil, fmt.Errorf("%w: cluster command level %d is older than %d, the oldest this binary supports: upgrade through the previous minor version first (ADR 0018)",
+			ErrIncompatibleVersion, level, MinCommandLevel)
+	}
+	return fsm, nil
+}
+
+func buildRaftConfig(cfg Config, hlog hclog.Logger, snaps *raft.FileSnapshotStore, fsm *FSM) *raft.Config {
+	rc := raft.DefaultConfig()
+	rc.LocalID = raft.ServerID(cfg.NodeID)
+	rc.Logger = hlog
+	if cfg.Timeout > 0 {
+		rc.HeartbeatTimeout = cfg.Timeout
+		rc.ElectionTimeout = cfg.Timeout
+		rc.LeaderLeaseTimeout = cfg.Timeout / 2
+	}
+	rc.SnapshotThreshold = orDefault(cfg.SnapshotThreshold, DefaultSnapshotThreshold)
+	rc.TrailingLogs = orDefault(cfg.TrailingLogs, DefaultTrailingLogs)
+	rc.SnapshotInterval = DefaultSnapshotInterval
+	if cfg.SnapshotInterval > 0 {
+		rc.SnapshotInterval = cfg.SnapshotInterval
+	}
+	// Skip restoring the latest snapshot if state.db is already at least as new
+	// (ADR 0012 A2); Raft then replays the log and the FSM skips old entries.
+	if latest, err := snaps.List(); err == nil && len(latest) > 0 && fsm.AppliedIndex() >= latest[0].Index {
+		rc.NoSnapshotRestoreOnStart = true
+	}
+	return rc
+}
+
+func finishRaftStart(n *Node, cfg Config, log *slog.Logger, trans raft.Transport, existing, skipSnapshotRestore bool) (*Node, error) {
 	if existing {
 		log.Info("resuming from existing raft state", "node_id", cfg.NodeID,
-			"applied_index", fsm.AppliedIndex(), "skip_snapshot_restore", rc.NoSnapshotRestoreOnStart)
+			"applied_index", n.fsm.AppliedIndex(), "skip_snapshot_restore", skipSnapshotRestore)
 		return n, nil
 	}
-
 	if cfg.Join {
 		log.Info("no raft state found, waiting to be added to the cluster", "node_id", cfg.NodeID, "address", cfg.Advertise)
 		return n, nil
 	}
 	log.Info("no raft state found, bootstrapping a single-member cluster", "node_id", cfg.NodeID, "address", cfg.Advertise)
-	err = r.BootstrapCluster(raft.Configuration{Servers: []raft.Server{{
+	err := n.raft.BootstrapCluster(raft.Configuration{Servers: []raft.Server{{
 		Suffrage: raft.Voter,
 		ID:       raft.ServerID(cfg.NodeID),
 		Address:  trans.LocalAddr(),
@@ -357,8 +376,11 @@ func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) 
 	if n.cfg.Forwarder == nil {
 		return ApplyResult{}, fmt.Errorf("%w: not the leader", ErrNotApplied)
 	}
+	return n.forwardLoop(ctx, cmd)
+}
 
-	ctx, cancel := context.WithTimeout(ctx, forwardTimeout)
+func (n *Node) forwardLoop(parent context.Context, cmd *pb.Command) (ApplyResult, error) {
+	ctx, cancel := context.WithTimeout(parent, forwardTimeout)
 	defer cancel()
 	backoff := forwardBackoffStart
 	for {
@@ -372,30 +394,32 @@ func (n *Node) Apply(ctx context.Context, cmd *pb.Command) (ApplyResult, error) 
 		}
 
 		addr, _ := n.raft.LeaderWithID()
-		if addr == "" {
-			if !sleepContext(ctx, backoff) {
-				return ApplyResult{}, forwardTimeoutError(ctx)
+		if addr != "" {
+			res, done, err := n.tryForwardOnce(ctx, string(addr), cmd)
+			if done {
+				return res, err
 			}
-			backoff = nextBackoff(backoff)
-			continue
 		}
+		if !sleepContext(ctx, backoff) {
+			return ApplyResult{}, forwardTimeoutError(ctx)
+		}
+		backoff = nextBackoff(backoff)
+	}
+}
 
-		res, err := n.cfg.Forwarder.Forward(ctx, string(addr), cmd)
-		var cmdErr *CommandError
-		switch {
-		case err == nil, errors.As(err, &cmdErr):
-			// Committed, or rejected by the FSM on the leader: either way
-			// the entry is in the log and this node must apply it too.
-			n.waitApplied(ctx, res.Index)
-			return res, err
-		case errors.Is(err, ErrNotApplied):
-			if !sleepContext(ctx, backoff) {
-				return ApplyResult{}, forwardTimeoutError(ctx)
-			}
-			backoff = nextBackoff(backoff)
-		default:
-			return ApplyResult{}, err
-		}
+func (n *Node) tryForwardOnce(ctx context.Context, addr string, cmd *pb.Command) (ApplyResult, bool, error) {
+	res, err := n.cfg.Forwarder.Forward(ctx, addr, cmd)
+	var cmdErr *CommandError
+	switch {
+	case err == nil, errors.As(err, &cmdErr):
+		// Committed, or rejected by the FSM on the leader: either way
+		// the entry is in the log and this node must apply it too.
+		n.waitApplied(ctx, res.Index)
+		return res, true, err
+	case errors.Is(err, ErrNotApplied):
+		return ApplyResult{}, false, nil
+	default:
+		return ApplyResult{}, true, err
 	}
 }
 

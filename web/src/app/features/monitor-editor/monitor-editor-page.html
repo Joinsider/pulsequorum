@@ -6,7 +6,7 @@
 
   @switch (loadState()) {
     @case ('loading') {
-      <p class="state" role="status">{{ t('common.loading') }}</p>
+      <output class="state">{{ t('common.loading') }}</output>
     }
     @case ('error') {
       <div class="state" role="alert">
@@ -254,16 +254,16 @@
                 <mat-error>{{ messageOf('assignmentNodes') }}</mat-error>
               </mat-form-field>
               @if (privateOnlySelected()) {
-                <p class="hint span-all" role="status" data-testid="private-probe-ssrf-hint">
+                <output class="hint span-all" data-testid="private-probe-ssrf-hint">
                   {{ t('monitorEditor.fields.privateProbeTargetsHint') }}
-                </p>
+                </output>
               }
             }
           </div>
         </mat-expansion-panel>
 
         @if (!canEdit()) {
-          <p class="hint" role="status">{{ t('monitorEditor.errors.readOnly') }}</p>
+          <output class="hint">{{ t('monitorEditor.errors.readOnly') }}</output>
         }
         <div class="actions">
           <button mat-button type="button" (click)="cancel()">{{ t('common.cancel') }}</button>

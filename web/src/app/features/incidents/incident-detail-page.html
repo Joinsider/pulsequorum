@@ -11,7 +11,7 @@
 
   @switch (state()) {
     @case ('loading') {
-      <p class="status" role="status">{{ t('common.loading') }}</p>
+      <output class="status">{{ t('common.loading') }}</output>
     }
     @case ('notFound') {
       <p class="status" role="alert">{{ t('incidents.detail.notFound') }}</p>

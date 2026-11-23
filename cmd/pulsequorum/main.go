@@ -322,8 +322,8 @@ func initClusterCredentials(ctx context.Context, cfg config.Config, clock func()
 	}
 	// Join before the master key is loaded: a joining voter takes the
 	// cluster's key instead of generating its own (ADR 0011).
-	prepared, err := clusterhost.Prepare(ctx, cfg.DataDir, nodeID, cfg.NodeName, cfg.ClusterAdvertise, version.Version,
-		clusterhost.JoinOptions{Seeds: cfg.ClusterJoin, Token: joinToken, ExternalKEK: cfg.MasterKey != "" || cfg.MasterKeyFile != "", Clock: clock}, log)
+	prepared, err := clusterhost.Prepare(ctx, cfg.DataDir, nodeID, cfg.NodeName, cfg.ClusterAdvertise,
+		clusterhost.JoinOptions{Seeds: cfg.ClusterJoin, Token: joinToken, Version: version.Version, ExternalKEK: cfg.MasterKey != "" || cfg.MasterKeyFile != "", Clock: clock}, log)
 	if err != nil {
 		return voterCreds{}, err
 	}
@@ -413,7 +413,7 @@ func startCoreBackgroundJobs(ctx context.Context, bg *sync.WaitGroup, deps voter
 
 func runBootstrapAndKeyMaintenance(ctx context.Context, deps voterRuntimeDeps, stop context.CancelCauseFunc) {
 	raftNode := deps.host.Node
-	if bootstrapCluster(ctx, deps.log, raftNode, deps.state, deps.creds.kek, deps.keyring, deps.local, stop) {
+	if bootstrapCluster(ctx, deps, stop) {
 		bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		if err := deps.host.Bootstrap(bootCtx); err != nil && ctx.Err() == nil {
 			deps.log.Error("cluster PKI setup failed", "err", err)
@@ -850,8 +850,9 @@ func disabledIfZero(after time.Duration) time.Duration {
 // leader exists, then loads the keyring. A master key that does not match the
 // cluster stops the node (ADR 0011). It reports whether the keys are
 // available, which everything that encrypts depends on.
-func bootstrapCluster(ctx context.Context, log *slog.Logger, n *cluster.Node,
-	state *sqlite.StateStore, kek *secrets.KEK, keyring *secrets.Keyring, local *auth.Local, stop context.CancelCauseFunc) bool {
+func bootstrapCluster(ctx context.Context, deps voterRuntimeDeps, stop context.CancelCauseFunc) bool {
+	log, n, state := deps.log, deps.host.Node, deps.state
+	kek, keyring, local := deps.creds.kek, deps.keyring, deps.local
 	bootCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// Every mode needs the default tenant: local users, the generic OIDC

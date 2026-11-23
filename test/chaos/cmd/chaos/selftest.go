@@ -18,7 +18,10 @@ const selftestPort = 9443
 
 // replicationLagLimit is the lag from which voter 1 counts a peer as cut off
 // from replication. A healthy peer is replicated within one round.
-const replicationLagLimit = 60 * time.Second
+const (
+	replicationLagLimit = 60 * time.Second
+	expectGetAnswers    = "GET answers"
+)
 
 func init() {
 	register(Scenario{
@@ -151,7 +154,7 @@ func runSelftest(ctx context.Context, env *Env) error {
 	// this rootless setup; it is reported as information.
 	before, err := medianTimeHTTP(ctx, cl, 1, 2)
 	if err != nil {
-		rep.Check("Baseline request from voter 1 to voter 2", "GET answers", err.Error(), false)
+		rep.Check("Baseline request from voter 1 to voter 2", expectGetAnswers, err.Error(), false)
 		return err
 	}
 	if err := cl.Latency(ctx, 2, harness.LatencySpec{Delay: 200 * time.Millisecond, Jitter: 10 * time.Millisecond}); err != nil {
@@ -162,7 +165,7 @@ func runSelftest(ctx context.Context, env *Env) error {
 	rep.Check("Latency on voter 2", "netem qdisc installed", fmt.Sprintf("qdisc active: %v", active), active)
 	delayed, err := medianTimeHTTP(ctx, cl, 1, 2)
 	if err != nil {
-		rep.Check("Request with latency", "GET answers", err.Error(), false)
+		rep.Check("Request with latency", expectGetAnswers, err.Error(), false)
 		return err
 	}
 	added := delayed - before
@@ -183,7 +186,7 @@ func runSelftest(ctx context.Context, env *Env) error {
 	active, _ = cl.LatencyActive(ctx, 2)
 	cleared, err := medianTimeHTTP(ctx, cl, 1, 2)
 	if err != nil {
-		rep.Check("Request after clearing latency", "GET answers", err.Error(), false)
+		rep.Check("Request after clearing latency", expectGetAnswers, err.Error(), false)
 		return err
 	}
 	rep.Check("Clear latency on voter 2", "netem removed, request back near the baseline (within 100 ms)",

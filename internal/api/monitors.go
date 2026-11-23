@@ -578,7 +578,7 @@ func validateMonitorTiming(in *gen.MonitorInput, doc *cluster.MonitorDocument, a
 	}
 }
 
-func checkOptionalRange(val *int, dst *int, lo, hi int, field, msg string, add func(string, string)) {
+func checkOptionalRange(val, dst *int, lo, hi int, field, msg string, add func(string, string)) {
 	if val == nil {
 		return
 	}

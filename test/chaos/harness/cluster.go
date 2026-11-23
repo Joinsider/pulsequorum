@@ -404,12 +404,19 @@ func (c *Cluster) RunningVoters(ctx context.Context) ([]int, error) {
 // Purge removes every container, volume and the network that belong to this
 // prefix, including ones left by an earlier run. Sidecars go first.
 func (c *Cluster) Purge(ctx context.Context) error {
-	var errs []error
 	containers, err := c.rt.ListContainers(ctx)
 	if err != nil {
 		return err
 	}
 	cre, vre, netName := stalePatterns(c.cfg.Prefix)
+	errs := c.purgeContainers(ctx, containers, cre)
+	errs = append(errs, c.purgeVolumes(ctx, vre)...)
+	errs = append(errs, c.purgeNetwork(ctx, netName)...)
+	return errors.Join(errs...)
+}
+
+func (c *Cluster) purgeContainers(ctx context.Context, containers []string, cre *regexp.Regexp) []error {
+	var errs []error
 	matched := matchNames(containers, cre)
 	sort.SliceStable(matched, func(a, b int) bool {
 		return strings.HasSuffix(matched[a], "-netem") && !strings.HasSuffix(matched[b], "-netem")
@@ -419,29 +426,37 @@ func (c *Cluster) Purge(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
+	return errs
+}
+
+func (c *Cluster) purgeVolumes(ctx context.Context, vre *regexp.Regexp) []error {
 	volumes, err := c.rt.ListVolumes(ctx)
 	if err != nil {
-		errs = append(errs, err)
-	} else {
-		for _, name := range matchNames(volumes, vre) {
-			if err := c.rt.VolumeRemove(ctx, name); err != nil && !IsNotFound(err) {
+		return []error{err}
+	}
+	var errs []error
+	for _, name := range matchNames(volumes, vre) {
+		if err := c.rt.VolumeRemove(ctx, name); err != nil && !IsNotFound(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+func (c *Cluster) purgeNetwork(ctx context.Context, netName string) []error {
+	networks, err := c.rt.ListNetworks(ctx)
+	if err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, name := range networks {
+		if name == netName {
+			if err := c.rt.NetworkRemove(ctx, name); err != nil && !IsNotFound(err) {
 				errs = append(errs, err)
 			}
 		}
 	}
-	networks, err := c.rt.ListNetworks(ctx)
-	if err != nil {
-		errs = append(errs, err)
-	} else {
-		for _, name := range networks {
-			if name == netName {
-				if err := c.rt.NetworkRemove(ctx, name); err != nil && !IsNotFound(err) {
-					errs = append(errs, err)
-				}
-			}
-		}
-	}
-	return errors.Join(errs...)
+	return errs
 }
 
 // Teardown removes everything the run created and the temp directory. With

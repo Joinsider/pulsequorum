@@ -45,7 +45,7 @@ func startVoter(ctx context.Context, t *testing.T) (*clusterhost.Host, string) {
 	nodeID := uuid.NewString()
 	log := slog.New(slog.DiscardHandler)
 
-	prepared, err := clusterhost.Prepare(ctx, dir, nodeID, "voter", addr, "test", clusterhost.JoinOptions{}, log)
+	prepared, err := clusterhost.Prepare(ctx, dir, nodeID, "voter", addr, clusterhost.JoinOptions{Version: "test"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}

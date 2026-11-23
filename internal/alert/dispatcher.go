@@ -368,22 +368,7 @@ func (d *Dispatcher) planChannel(now time.Time, k channelKey, ch store.Notificat
 		return nil
 	}
 	if d.opts.BundleWindow > 0 && d.bundler != nil && ch.Kind == store.ChannelShoutrrr {
-		// The first alerts go out at once. Alerts due inside the window wait;
-		// when it ends, all due alerts go out as one message (ADR 0023). A
-		// bundle of one alert is sent as a normal message.
-		if now.Before(st.windowEnd) {
-			// A DOWN alert never waits for the window (ADR 0026): it sends all
-			// due alerts of the channel now. The window keeps its end.
-			if !anyDown(due) || !st.take(now) {
-				return nil
-			}
-			return []job{{key: k, ch: ch, entries: due}}
-		}
-		if !st.take(now) {
-			return nil
-		}
-		st.windowEnd = now.Add(d.opts.BundleWindow)
-		return []job{{key: k, ch: ch, entries: due}}
+		return d.planBundledChannel(now, k, ch, st, due)
 	}
 	var jobs []job
 	for _, a := range due {
@@ -393,6 +378,25 @@ func (d *Dispatcher) planChannel(now time.Time, k channelKey, ch store.Notificat
 		jobs = append(jobs, job{key: k, ch: ch, entries: []store.AlertDelivery{a}})
 	}
 	return jobs
+}
+
+func (d *Dispatcher) planBundledChannel(now time.Time, k channelKey, ch store.NotificationChannel, st *channelState, due []store.AlertDelivery) []job {
+	// The first alerts go out at once. Alerts due inside the window wait;
+	// when it ends, all due alerts go out as one message (ADR 0023). A
+	// bundle of one alert is sent as a normal message.
+	if now.Before(st.windowEnd) {
+		// A DOWN alert never waits for the window (ADR 0026): it sends all
+		// due alerts of the channel now. The window keeps its end.
+		if !anyDown(due) || !st.take(now) {
+			return nil
+		}
+		return []job{{key: k, ch: ch, entries: due}}
+	}
+	if !st.take(now) {
+		return nil
+	}
+	st.windowEnd = now.Add(d.opts.BundleWindow)
+	return []job{{key: k, ch: ch, entries: due}}
 }
 
 // run sends the planned messages. The messages of one channel go one after

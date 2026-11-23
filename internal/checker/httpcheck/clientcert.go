@@ -47,6 +47,8 @@ const (
 	fieldCertificate = "/clientCertificate/certificate"
 	fieldPrivateKey  = "/clientCertificate/privateKey"
 
+	pemPrivateKey = "PRIVATE KEY"
+
 	opensslHint = "decrypt or convert it first, e.g. openssl pkey -in key.pem -out key-plain.pem"
 )
 
@@ -77,7 +79,7 @@ func parseChain(data string) ([]*x509.Certificate, error) {
 			break
 		}
 		switch {
-		case strings.Contains(block.Type, "PRIVATE KEY"):
+		case strings.Contains(block.Type, pemPrivateKey):
 			return nil, certErr(fieldCertificate, "contains a private key; put it into privateKey")
 		case block.Type != "CERTIFICATE":
 			return nil, certErr(fieldCertificate, "only PEM blocks of type CERTIFICATE are allowed")
@@ -130,7 +132,7 @@ func parseKey(data string) (crypto.Signer, error) {
 			continue
 		case block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED"):
 			return nil, certErr(fieldPrivateKey, "encrypted private keys are not supported; "+opensslHint)
-		case !strings.HasSuffix(block.Type, "PRIVATE KEY"):
+		case !strings.HasSuffix(block.Type, pemPrivateKey):
 			return nil, certErr(fieldPrivateKey, "only a PEM private key is allowed")
 		case key != nil:
 			return nil, certErr(fieldPrivateKey, "must contain exactly one private key")
@@ -149,7 +151,7 @@ func parseKey(data string) (crypto.Signer, error) {
 		err    error
 	)
 	switch key.Type {
-	case "PRIVATE KEY":
+	case pemPrivateKey:
 		parsed, err = x509.ParsePKCS8PrivateKey(key.Bytes)
 	case "RSA PRIVATE KEY":
 		parsed, err = x509.ParsePKCS1PrivateKey(key.Bytes)

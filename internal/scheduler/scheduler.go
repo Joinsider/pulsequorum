@@ -92,7 +92,7 @@ type Scheduler struct {
 
 	mu      sync.Mutex
 	entries map[string]*entry
-	ctx     context.Context
+	start   func(*entry)
 	wg      sync.WaitGroup
 
 	started, skipped, running atomic.Int64
@@ -126,9 +126,9 @@ func New(opts Options) *Scheduler {
 // timers and waits for running checks, whose contexts are cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
 	s.mu.Lock()
-	s.ctx = ctx
+	s.start = func(e *entry) { s.startLocked(ctx, e) }
 	for _, e := range s.entries {
-		s.startLocked(e)
+		s.startLocked(ctx, e)
 	}
 	s.mu.Unlock()
 
@@ -149,28 +149,37 @@ func (s *Scheduler) Sync(monitors []store.Monitor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	wanted := make(map[string]store.Monitor, len(monitors))
-	for _, m := range monitors {
-		if !m.Paused && m.IntervalSeconds > 0 {
-			wanted[m.ID] = m
-		}
-	}
-	for id, e := range s.entries {
-		if m, ok := wanted[id]; !ok || m.Revision != e.monitor.Revision {
-			if e.cancel != nil {
-				e.cancel()
-			}
-			delete(s.entries, id)
-		}
-	}
+	wanted := activeMonitors(monitors)
+	s.stopObsoleteLocked(wanted)
 	for id, m := range wanted {
 		if _, ok := s.entries[id]; ok {
 			continue
 		}
 		e := &entry{monitor: m}
 		s.entries[id] = e
-		if s.ctx != nil {
-			s.startLocked(e)
+		if s.start != nil {
+			s.start(e)
+		}
+	}
+}
+
+func activeMonitors(monitors []store.Monitor) map[string]store.Monitor {
+	wanted := make(map[string]store.Monitor, len(monitors))
+	for _, m := range monitors {
+		if !m.Paused && m.IntervalSeconds > 0 {
+			wanted[m.ID] = m
+		}
+	}
+	return wanted
+}
+
+func (s *Scheduler) stopObsoleteLocked(wanted map[string]store.Monitor) {
+	for id, e := range s.entries {
+		if m, ok := wanted[id]; !ok || m.Revision != e.monitor.Revision {
+			if e.cancel != nil {
+				e.cancel()
+			}
+			delete(s.entries, id)
 		}
 	}
 }
@@ -187,8 +196,8 @@ func (s *Scheduler) Len() int {
 	return len(s.entries)
 }
 
-func (s *Scheduler) startLocked(e *entry) {
-	ctx, cancel := context.WithCancel(s.ctx)
+func (s *Scheduler) startLocked(parent context.Context, e *entry) {
+	ctx, cancel := context.WithCancel(parent)
 	e.cancel = cancel
 	e.done = make(chan struct{})
 	s.wg.Add(1)

@@ -29,6 +29,8 @@ const maxResponseBody = 4 << 20
 // pathAuthLogin is the login endpoint; it is exempt from the re-login on 401.
 const pathAuthLogin = "/auth/login"
 
+const pathMonitorsPrefix = "/monitors/"
+
 // Client talks to one node. Token is the access token; when it is empty and a
 // password is known, the client logs in before the first authenticated call
 // and again after a 401 (the access token is short-lived).
@@ -474,7 +476,7 @@ func (c *Client) CreateMonitorInput(ctx context.Context, in MonitorInput) (Monit
 // GetMonitor reads one monitor including its consensus status.
 func (c *Client) GetMonitor(ctx context.Context, id string) (Monitor, error) {
 	var m Monitor
-	_, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(id), nil, nil, &m)
+	_, err := c.Do(ctx, http.MethodGet, pathMonitorsPrefix+url.PathEscape(id), nil, nil, &m)
 	return m, err
 }
 
@@ -520,7 +522,7 @@ func (c *Client) ListHeartbeats(ctx context.Context, monitorID string, hq Heartb
 			q.Set("cursor", cursor)
 		}
 		var page HeartbeatPage
-		if _, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(monitorID)+"/heartbeats", q, nil, &page); err != nil {
+		if _, err := c.Do(ctx, http.MethodGet, pathMonitorsPrefix+url.PathEscape(monitorID)+"/heartbeats", q, nil, &page); err != nil {
 			return nil, err
 		}
 		all = append(all, page.Items...)
@@ -563,7 +565,7 @@ func (c *Client) GetIncident(ctx context.Context, id string) (Incident, error) {
 func (c *Client) Uptime24h(ctx context.Context, monitorID string) (*float64, error) {
 	var st UptimeStats
 	q := url.Values{"range": {"24h"}}
-	_, err := c.Do(ctx, http.MethodGet, "/monitors/"+url.PathEscape(monitorID)+"/uptime", q, nil, &st)
+	_, err := c.Do(ctx, http.MethodGet, pathMonitorsPrefix+url.PathEscape(monitorID)+"/uptime", q, nil, &st)
 	return st.UptimePercent, err
 }
 
@@ -642,13 +644,13 @@ func StatusCode(err error) int {
 // UpdateMonitor replaces the writable part of a monitor (PUT /monitors/{id}).
 func (c *Client) UpdateMonitor(ctx context.Context, id string, in MonitorInput) (Monitor, error) {
 	var m Monitor
-	_, err := c.Do(ctx, http.MethodPut, "/monitors/"+url.PathEscape(id), nil, in, &m)
+	_, err := c.Do(ctx, http.MethodPut, pathMonitorsPrefix+url.PathEscape(id), nil, in, &m)
 	return m, err
 }
 
 // DeleteMonitor deletes a monitor (DELETE /monitors/{id}, 204).
 func (c *Client) DeleteMonitor(ctx context.Context, id string) error {
-	_, err := c.Do(ctx, http.MethodDelete, "/monitors/"+url.PathEscape(id), nil, nil, nil)
+	_, err := c.Do(ctx, http.MethodDelete, pathMonitorsPrefix+url.PathEscape(id), nil, nil, nil)
 	return err
 }
 

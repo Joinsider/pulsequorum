@@ -30,6 +30,7 @@ const (
 	defaultCallTimeout = 2 * time.Minute
 	buildTimeout       = 30 * time.Minute
 	maxStderrInError   = 400
+	flagFormat         = "--format"
 )
 
 // execFunc runs bin with args and returns stdout and stderr.
@@ -158,7 +159,7 @@ func (r *Runtime) Cmd(ctx context.Context, args ...string) (string, error) {
 // Check verifies that the runtime answers (for example that the podman
 // machine is running).
 func (r *Runtime) Check(ctx context.Context) error {
-	if _, err := r.Cmd(ctx, "version", "--format", "{{.Client.Version}}"); err != nil {
+	if _, err := r.Cmd(ctx, "version", flagFormat, "{{.Client.Version}}"); err != nil {
 		return fmt.Errorf("%s is not usable: %w", r.Name, err)
 	}
 	return nil
@@ -341,7 +342,7 @@ func (r *Runtime) Running(ctx context.Context, name string) (bool, error) {
 
 // Inspect returns one format-template field of a container.
 func (r *Runtime) Inspect(ctx context.Context, name, format string) (string, error) {
-	out, _, err := r.run(ctx, defaultCallTimeout, "inspect", "--format", format, name)
+	out, _, err := r.run(ctx, defaultCallTimeout, "inspect", flagFormat, format, name)
 	return strings.TrimSpace(out), err
 }
 
@@ -364,17 +365,17 @@ func (r *Runtime) Exec(ctx context.Context, name string, args ...string) (string
 
 // ListContainers returns the names of all containers, running or not.
 func (r *Runtime) ListContainers(ctx context.Context) ([]string, error) {
-	return r.listNames(ctx, "ps", "--all", "--format", "{{.Names}}")
+	return r.listNames(ctx, "ps", "--all", flagFormat, "{{.Names}}")
 }
 
 // ListVolumes returns the names of all volumes.
 func (r *Runtime) ListVolumes(ctx context.Context) ([]string, error) {
-	return r.listNames(ctx, "volume", "ls", "--format", "{{.Name}}")
+	return r.listNames(ctx, "volume", "ls", flagFormat, "{{.Name}}")
 }
 
 // ListNetworks returns the names of all networks.
 func (r *Runtime) ListNetworks(ctx context.Context) ([]string, error) {
-	return r.listNames(ctx, "network", "ls", "--format", "{{.Name}}")
+	return r.listNames(ctx, "network", "ls", flagFormat, "{{.Name}}")
 }
 
 func (r *Runtime) listNames(ctx context.Context, args ...string) ([]string, error) {

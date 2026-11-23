@@ -286,42 +286,9 @@ func (h *Handlers) UpdateTenant(ctx context.Context, req gen.UpdateTenantRequest
 	if err != nil {
 		return nil, err
 	}
-	in := req.Body
-	var fields []checker.FieldError
-	upd := &pb.UpdateTenant{TenantId: current.ID}
-	if in.Name != nil {
-		if tenant.ValidName(*in.Name) {
-			upd.Name = in.Name
-		} else {
-			fields = append(fields, fieldError("/name", tenantNameRule))
-		}
-	}
-	if in.Plan != nil {
-		msg, err := h.planFieldError(ctx, *in.Plan)
-		if err != nil {
-			return nil, err
-		}
-		if msg != "" {
-			fields = append(fields, fieldError("/plan", msg))
-		} else {
-			upd.PlanId = in.Plan
-		}
-	}
-	if in.Limits != nil {
-		s, err := overridesJSON(*in.Limits)
-		if err != nil {
-			fields = append(fields, fieldError(fieldLimits, limitMessage(err)))
-		} else {
-			upd.LimitsJson = &s
-		}
-	}
-	if in.OrgId != nil {
-		// An empty organization ID unbinds the tenant.
-		if *in.OrgId == "" || tenant.ValidOrgID(*in.OrgId) {
-			upd.OrgId = in.OrgId
-		} else {
-			fields = append(fields, fieldError("/orgId", tenant.OrgIDRule))
-		}
+	upd, fields, err := h.buildUpdateTenant(ctx, current.ID, req.Body)
+	if err != nil {
+		return nil, err
 	}
 	if err := validationProblem(fields, "the tenant change is invalid"); err != nil {
 		return nil, err
@@ -338,6 +305,45 @@ func (h *Handlers) UpdateTenant(ctx context.Context, req gen.UpdateTenantRequest
 		return nil, err
 	}
 	return gen.UpdateTenant200JSONResponse(apiTenant(v)), nil
+}
+
+func (h *Handlers) buildUpdateTenant(ctx context.Context, tenantID string, in *gen.UpdateTenantJSONRequestBody) (*pb.UpdateTenant, []checker.FieldError, error) {
+	var fields []checker.FieldError
+	upd := &pb.UpdateTenant{TenantId: tenantID}
+	if in.Name != nil {
+		if tenant.ValidName(*in.Name) {
+			upd.Name = in.Name
+		} else {
+			fields = append(fields, fieldError("/name", tenantNameRule))
+		}
+	}
+	if in.Plan != nil {
+		msg, err := h.planFieldError(ctx, *in.Plan)
+		if err != nil {
+			return nil, nil, err
+		}
+		if msg != "" {
+			fields = append(fields, fieldError("/plan", msg))
+		} else {
+			upd.PlanId = in.Plan
+		}
+	}
+	if in.Limits != nil {
+		if s, err := overridesJSON(*in.Limits); err != nil {
+			fields = append(fields, fieldError(fieldLimits, limitMessage(err)))
+		} else {
+			upd.LimitsJson = &s
+		}
+	}
+	if in.OrgId != nil {
+		// An empty organization ID unbinds the tenant.
+		if *in.OrgId == "" || tenant.ValidOrgID(*in.OrgId) {
+			upd.OrgId = in.OrgId
+		} else {
+			fields = append(fields, fieldError("/orgId", tenant.OrgIDRule))
+		}
+	}
+	return upd, fields, nil
 }
 
 // SuspendTenant suspends a tenant (ADR 0029). Its users are rejected, its

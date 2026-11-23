@@ -41,6 +41,7 @@ const (
 	insertBatch = 5000
 	// seedStream selects the PCG stream, so that the seed alone gives a stable sequence.
 	seedStream = 0x67656e64617461
+	errPrefix  = "gendata:"
 )
 
 type options struct {
@@ -87,11 +88,11 @@ func main() {
 	if opts.CPUProfile != "" {
 		f, err := os.Create(opts.CPUProfile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "gendata:", err)
+			fmt.Fprintln(os.Stderr, errPrefix, err)
 			os.Exit(1)
 		}
 		if err := pprof.StartCPUProfile(f); err != nil {
-			fmt.Fprintln(os.Stderr, "gendata:", err)
+			fmt.Fprintln(os.Stderr, errPrefix, err)
 			os.Exit(1)
 		}
 		defer func() { pprof.StopCPUProfile(); _ = f.Close() }()
@@ -103,7 +104,7 @@ func main() {
 
 	sum, err := run(ctx, opts, time.Now(), os.Stdout, log)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gendata:", err)
+		fmt.Fprintln(os.Stderr, errPrefix, err)
 		os.Exit(1)
 	}
 	fmt.Printf("done: %d monitors, %d heartbeats in %s\n", sum.Monitors, sum.Rows, sum.Elapsed.Round(time.Second))
@@ -170,7 +171,7 @@ func run(ctx context.Context, opts options, end time.Time, out io.Writer, log *s
 		Now:        func() time.Time { return clock },
 		Vacuum:     func(ctx context.Context) error { return metrics.DB().IncrementalVacuum(ctx, 0) },
 	})
-	w := &heartbeatWriter{ctx: ctx, metrics: metrics, nodeID: nodeID, incarnation: metrics.Incarnation(), size: insertBatch}
+	w := &heartbeatWriter{metrics: metrics, nodeID: nodeID, incarnation: metrics.Incarnation(), size: insertBatch}
 
 	if _, err := fmt.Fprintf(out, "generating %d days for %d monitors of tenant %s (%d paused skipped), node %s, down-rate %g, seed %d\n",
 		opts.Days, len(gens), opts.Tenant, sum.Skipped, nodeID, opts.DownRate, opts.Seed); err != nil {
@@ -184,10 +185,12 @@ func run(ctx context.Context, opts options, end time.Time, out io.Writer, log *s
 			return summary{}, err
 		}
 		from, to := windowBounds(startMs, h, store.BucketHour)
-		if err := generateWindow(gens, from, to, rng, opts.DownRate, w.add); err != nil {
+		if err := generateWindow(gens, from, to, rng, opts.DownRate, func(g *monitorGen, tsMs int64, o outcome) error {
+			return w.add(ctx, g, tsMs, o)
+		}); err != nil {
 			return summary{}, fmt.Errorf("hour %d: %w", h+1, err)
 		}
-		if err := w.flush(); err != nil {
+		if err := w.flush(ctx); err != nil {
 			return summary{}, fmt.Errorf("hour %d: %w", h+1, err)
 		}
 		clock = time.UnixMilli(to)

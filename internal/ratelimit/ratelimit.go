@@ -103,7 +103,7 @@ func (l *Limiter) now() time.Time {
 
 // rate returns the refill rate, or 0 if it is not positive.
 func (l *Limiter) rate() float64 {
-	if !(l.Rate > 0) {
+	if math.IsNaN(l.Rate) || l.Rate <= 0 {
 		return 0
 	}
 	return l.Rate

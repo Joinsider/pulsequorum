@@ -32,10 +32,10 @@
       <p class="hint">{{ t('account.password.hint', { min: minLength }) }}</p>
 
       @if (changed()) {
-        <p class="notice" role="status">
+        <output class="notice">
           <app-icon name="checkCircle" size="1.125rem" />
           {{ t('account.password.changed') }}
-        </p>
+        </output>
       }
       @if (failure(); as f) {
         <p class="error" role="alert">{{ t(f.key, { seconds: f.retryAfter ?? '' }) }}</p>

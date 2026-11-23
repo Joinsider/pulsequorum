@@ -15,7 +15,7 @@
 
   @if (!data()) {
     @if (loading()) {
-      <p class="state" role="status">{{ t('common.loading') }}</p>
+      <output class="state">{{ t('common.loading') }}</output>
     } @else if (loadError(); as key) {
       <p class="state state--error" role="alert">
         {{ t(key) }}
@@ -39,7 +39,7 @@
     }
 
     @if (list.upgradePending) {
-      <p class="banner banner--info" role="status">{{ t('admin.cluster.upgradePending') }}</p>
+      <output class="banner banner--info">{{ t('admin.cluster.upgradePending') }}</output>
     }
     @if (!list.leaderId) {
       <p class="banner banner--warn" role="alert">{{ t('admin.cluster.noLeader') }}</p>

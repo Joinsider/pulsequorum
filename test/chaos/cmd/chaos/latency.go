@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joinsider/pulsequorum/test/chaos/harness"
+	"github.com/joinsider/pulsequorum/test/internal/ucapi"
 )
 
 // latencyDelay and latencyJitter are the egress shaping of every voter.
@@ -68,7 +69,7 @@ func runLatency(ctx context.Context, env *Env) error {
 		return err
 	}
 	if err := applyLatency(ctx, cl, slots); err != nil {
-		rep.Check("Latency on all voters", "netem qdisc installed", err.Error(), false)
+		rep.Check("Latency on all voters", expectNetemQdiscInstalled, err.Error(), false)
 		return err
 	}
 	var active []int
@@ -127,11 +128,11 @@ func runLatency(ctx context.Context, env *Env) error {
 
 	// Restart the killed voter. Its sidecar is new, so the latency is set again.
 	if err := cl.Start(ctx, leader, harness.StartOptions{}); err != nil {
-		rep.Check("Restart "+cl.Names().Voter(leader), "healthy again", err.Error(), false)
+		rep.Check(prefixRestart+cl.Names().Voter(leader), expectHealthyAgain, err.Error(), false)
 		return err
 	}
 	if err := setLatency(ctx, cl, leader); err != nil {
-		rep.Check("Latency on restarted voter "+fmt.Sprint(leader), "netem qdisc installed", err.Error(), false)
+		rep.Check("Latency on restarted voter "+fmt.Sprint(leader), expectNetemQdiscInstalled, err.Error(), false)
 		return err
 	}
 	if err := requireLogin(ctx, env, cl, leader); err != nil {
@@ -157,11 +158,11 @@ func runLatency(ctx context.Context, env *Env) error {
 		return err
 	}
 	if err := cl.Start(ctx, second, harness.StartOptions{}); err != nil {
-		rep.Check("Restart "+cl.Names().Voter(second), "healthy again", err.Error(), false)
+		rep.Check(prefixRestart+cl.Names().Voter(second), expectHealthyAgain, err.Error(), false)
 		return err
 	}
 	if err := setLatency(ctx, cl, second); err != nil {
-		rep.Check("Latency on restarted voter "+fmt.Sprint(second), "netem qdisc installed", err.Error(), false)
+		rep.Check("Latency on restarted voter "+fmt.Sprint(second), expectNetemQdiscInstalled, err.Error(), false)
 		return err
 	}
 	if err := requireLogin(ctx, env, cl, second); err != nil {
@@ -220,25 +221,34 @@ func writeAfterFailover(ctx context.Context, env *Env, cl *harness.Cluster, surv
 	}
 	var missing []int
 	ok, _ := pollUntil(ctx, 30*time.Second, time.Second, func() (bool, error) {
-		missing = missing[:0]
-		for _, i := range survivors {
-			mons, err := cl.Client(i).ListMonitors(ctx)
-			if err != nil {
-				return false, err
-			}
-			found := false
-			for _, mm := range mons {
-				if mm.ID == m.ID {
-					found = true
-				}
-			}
-			if !found {
-				missing = append(missing, i)
-			}
-		}
-		return len(missing) == 0, nil
+		var err error
+		missing, err = survivorsMissingMonitor(ctx, cl, survivors, m.ID)
+		return err == nil && len(missing) == 0, err
 	})
 	rep.Check(fmt.Sprintf("Write after failover %d visible on all survivors", round), "listed on every survivor",
 		fmt.Sprintf("complete: %v, missing on %v", ok, missing), ok)
 	return nil
+}
+
+func survivorsMissingMonitor(ctx context.Context, cl *harness.Cluster, survivors []int, monitorID string) ([]int, error) {
+	var missing []int
+	for _, i := range survivors {
+		mons, err := cl.Client(i).ListMonitors(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !containsMonitorID(mons, monitorID) {
+			missing = append(missing, i)
+		}
+	}
+	return missing, nil
+}
+
+func containsMonitorID(mons []ucapi.Monitor, monitorID string) bool {
+	for _, mm := range mons {
+		if mm.ID == monitorID {
+			return true
+		}
+	}
+	return false
 }

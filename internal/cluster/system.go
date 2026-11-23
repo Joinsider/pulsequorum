@@ -213,7 +213,9 @@ func applySetSystemAlert(ctx context.Context, tx store.StateTx, cmd *pb.Command,
 			continue
 		}
 		// A system alert has no monitor; the outbox stores NULL for it.
-		if err := enqueueAlertDelivery(ctx, tx, cmd.GetIssuedAtMs(), store.SystemTenantID, "", ch.ID, key, payload); err != nil {
+		if err := enqueueAlertDelivery(ctx, tx, cmd.GetIssuedAtMs(), store.AlertDelivery{
+			TenantID: store.SystemTenantID, AlertKey: key, ChannelID: ch.ID, Payload: payload,
+		}); err != nil {
 			return nil, storeError(err)
 		}
 	}

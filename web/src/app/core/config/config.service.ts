@@ -48,7 +48,10 @@ export class ConfigService {
 
   /** Base URL for API calls without trailing slash, or `''` for same-origin requests. */
   apiBaseUrl(): string {
-    const first = this.configSignal().nodes[0];
-    return first ? first.replace(/\/+$/, '') : '';
+    let url = this.configSignal().nodes[0] ?? '';
+    while (url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+    return url;
   }
 }

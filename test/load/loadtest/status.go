@@ -414,7 +414,7 @@ func newStatusProbe(client *apiClient, stream *streamListener, control string, t
 // ctx ends, running cycles get grace to finish before they are cancelled
 // (immediately if interrupt ends).
 func (p *statusProbe) schedule(ctx, interrupt context.Context, interval, grace time.Duration) {
-	cycleCtx, cancelCycles := context.WithCancel(context.Background())
+	cycleCtx, cancelCycles := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelCycles()
 	var wg sync.WaitGroup
 	ticker := time.NewTicker(interval)

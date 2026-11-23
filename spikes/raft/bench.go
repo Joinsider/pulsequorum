@@ -31,6 +31,7 @@ func vacuumBench(dir string, hbRows int) error {
 		if err != nil {
 			return err
 		}
+		defer func() { _ = tx.Rollback() }()
 		stmt, err := tx.Prepare(q)
 		if err != nil {
 			return err

@@ -12,7 +12,7 @@
   <app-own-tenant-panel />
 
   <div class="toolbar">
-    <div class="chips" role="group" [attr.aria-label]="t('dashboard.filterByStatus')">
+    <div class="chips" [attr.aria-label]="t('dashboard.filterByStatus')">
       <button
         type="button"
         class="chip"
@@ -53,7 +53,7 @@
   }
 
   @if (loadState() === 'loading' && total() === 0) {
-    <p class="state" role="status">{{ t('common.loading') }}</p>
+    <output class="state">{{ t('common.loading') }}</output>
   } @else if (loadState() === 'error' && total() === 0) {
     <div class="state" role="alert">
       <p>{{ t('dashboard.loadFailed') }}</p>

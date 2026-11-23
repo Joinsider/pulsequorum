@@ -55,61 +55,10 @@ func runAS03(ctx context.Context, env *Env) error {
 		return err
 	}
 
-	// Notification channel with a synchronous test delivery to the fake ntfy.
-	api := cl.Client(1)
-	suffix := randomSuffix()
-	ch, err := api.CreateChannel(ctx, "as03-ntfy-"+suffix, env.NtfyURL("as03-"+suffix), []string{"down", "up"})
+	names, ids, err := as03SetupChannelAndMonitors(ctx, env, cl, slots, interval, intervalSec, n)
 	if err != nil {
-		rep.Check("Notification channel created", "201, kind shoutrrr", err.Error(), false)
 		return err
 	}
-	rep.Check("Notification channel created", "201, kind shoutrrr", "channel "+ch.ID, true)
-	res, err := api.TestChannel(ctx, ch.ID)
-	if err != nil || !res.Delivered {
-		msg := res.Error
-		if err != nil {
-			msg = err.Error()
-		}
-		rep.Check("Channel test delivery", "delivered to ntfy", msg, false)
-		return errors.New("channel test delivery failed")
-	}
-	rep.Check("Channel test delivery", "delivered to ntfy", fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
-
-	// Monitors against the fake target (healthy until the failure is injected).
-	env.Target.SetFailing(false)
-	names := make([]string, 0, as03Monitors)
-	ids := make([]string, 0, as03Monitors)
-	created := time.Now()
-	for k := 1; k <= as03Monitors; k++ {
-		name := fmt.Sprintf("as03-%s-m%d", suffix, k)
-		m, err := createHTTPMonitor(ctx, api, name, env.TargetURL(fmt.Sprintf("/as03/%s/m%d", suffix, k)), intervalSec, []string{ch.ID})
-		if err != nil {
-			rep.Check("HTTP monitors created", "201, assignment all", err.Error(), false)
-			return err
-		}
-		names = append(names, m.Name)
-		ids = append(ids, m.ID)
-	}
-	rep.Check("HTTP monitors created", fmt.Sprintf("%d monitors, assignment all, interval %ds, retries %d", as03Monitors, intervalSec, as03Retries),
-		fmt.Sprintf("%d monitors", len(ids)), len(ids) == as03Monitors)
-
-	up, _ := waitMonitorStatus(ctx, api, ids, "UP", 2*interval+replicationRound)
-	rep.Check("Monitors UP before the failure", "all monitors UP", fmt.Sprintf("all UP: %v", up), up)
-	if !up {
-		return errors.New("monitors do not come up")
-	}
-	nodes, err := nodeIDs(ctx, cl, slots)
-	if err != nil {
-		rep.Check("Node IDs of all voters", "every voter lists itself", err.Error(), false)
-		return err
-	}
-	producers := make([]string, 0, n)
-	for _, i := range slots {
-		producers = append(producers, nodes[i])
-	}
-	allSeen, _ := waitHeartbeatsOfAll(ctx, cl, 1, ids, producers, created, 2*interval+replicationRound)
-	rep.Check("Every voter checks every monitor before the failure", "heartbeats of all voters for all monitors",
-		fmt.Sprintf("complete: %v", allSeen), allSeen)
 
 	oldSlot, oldLeader, err := leaderSlot(ctx, cl)
 	rep.Check("One leader before the failure", "identical leader ID on all voters",
@@ -138,12 +87,80 @@ func runAS03(ctx context.Context, env *Env) error {
 		return err
 	}
 
-	// One DOWN per monitor, due within (retries+1) intervals + 30 s + election time.
-	downBy := t0.Add(time.Duration(as03Retries+1)*interval + 30*time.Second + elect)
 	alive := survivors[0]
+	if err := as03VerifyDownAndRecoveryAlerts(ctx, env, cl, names, ids, alive, t0, elect, interval); err != nil {
+		return err
+	}
+	if err := as03RestartKilledVoter(ctx, env, cl, slots, oldSlot, alive, newLeader, n); err != nil {
+		return err
+	}
+	return as03SecondFailover(ctx, env, cl, slots, names, ids, interval)
+}
+
+func as03SetupChannelAndMonitors(ctx context.Context, env *Env, cl *harness.Cluster, slots []int, interval time.Duration, intervalSec, n int) ([]string, []string, error) {
+	rep := env.Rep
+	api := cl.Client(1)
+	suffix := randomSuffix()
+	ch, err := api.CreateChannel(ctx, "as03-ntfy-"+suffix, env.NtfyURL("as03-"+suffix), []string{"down", "up"})
+	if err != nil {
+		rep.Check("Notification channel created", "201, kind shoutrrr", err.Error(), false)
+		return nil, nil, err
+	}
+	rep.Check("Notification channel created", "201, kind shoutrrr", "channel "+ch.ID, true)
+	res, err := api.TestChannel(ctx, ch.ID)
+	if err != nil || !res.Delivered {
+		msg := res.Error
+		if err != nil {
+			msg = err.Error()
+		}
+		rep.Check("Channel test delivery", expectDeliveredToNtfy, msg, false)
+		return nil, nil, errors.New("channel test delivery failed")
+	}
+	rep.Check("Channel test delivery", expectDeliveredToNtfy, fmt.Sprintf("delivered in %d ms", res.DurationMs), true)
+
+	env.Target.SetFailing(false)
+	names := make([]string, 0, as03Monitors)
+	ids := make([]string, 0, as03Monitors)
+	created := time.Now()
+	for k := 1; k <= as03Monitors; k++ {
+		name := fmt.Sprintf("as03-%s-m%d", suffix, k)
+		m, err := createHTTPMonitor(ctx, api, name, env.TargetURL(fmt.Sprintf("/as03/%s/m%d", suffix, k)), intervalSec, []string{ch.ID})
+		if err != nil {
+			rep.Check("HTTP monitors created", "201, assignment all", err.Error(), false)
+			return nil, nil, err
+		}
+		names = append(names, m.Name)
+		ids = append(ids, m.ID)
+	}
+	rep.Check("HTTP monitors created", fmt.Sprintf("%d monitors, assignment all, interval %ds, retries %d", as03Monitors, intervalSec, as03Retries),
+		fmt.Sprintf("%d monitors", len(ids)), len(ids) == as03Monitors)
+
+	up, _ := waitMonitorStatus(ctx, api, ids, "UP", 2*interval+replicationRound)
+	rep.Check("Monitors UP before the failure", "all monitors UP", fmt.Sprintf("all UP: %v", up), up)
+	if !up {
+		return nil, nil, errors.New("monitors do not come up")
+	}
+	nodes, err := nodeIDs(ctx, cl, slots)
+	if err != nil {
+		rep.Check("Node IDs of all voters", "every voter lists itself", err.Error(), false)
+		return nil, nil, err
+	}
+	producers := make([]string, 0, n)
+	for _, i := range slots {
+		producers = append(producers, nodes[i])
+	}
+	allSeen, _ := waitHeartbeatsOfAll(ctx, cl, 1, ids, producers, created, 2*interval+replicationRound)
+	rep.Check("Every voter checks every monitor before the failure", "heartbeats of all voters for all monitors",
+		fmt.Sprintf("complete: %v", allSeen), allSeen)
+	return names, ids, nil
+}
+
+func as03VerifyDownAndRecoveryAlerts(ctx context.Context, env *Env, cl *harness.Cluster, names, ids []string, alive int, t0 time.Time, elect, interval time.Duration) error {
+	rep := env.Rep
+	downBy := t0.Add(time.Duration(as03Retries+1)*interval + 30*time.Second + elect)
 	if _, err := pollUntil(ctx, time.Until(downBy), time.Second, func() (bool, error) {
 		for _, name := range names {
-			if c, _ := notifyCount(env.Ntfy, t0, "DOWN: "+name); c == 0 {
+			if c, _ := notifyCount(env.Ntfy, t0, prefixDown+name); c == 0 {
 				return false, nil
 			}
 		}
@@ -151,12 +168,11 @@ func runAS03(ctx context.Context, env *Env) error {
 	}); err != nil {
 		return err
 	}
-	// Give duplicates one more interval to show up.
 	if err := waitUntil(ctx, time.Now().Add(interval)); err != nil {
 		return err
 	}
 	for _, name := range names {
-		c, at := notifyCount(env.Ntfy, t0, "DOWN: "+name)
+		c, at := notifyCount(env.Ntfy, t0, prefixDown+name)
 		first := "none"
 		if len(at) > 0 {
 			first = "+" + at[0].Sub(t0).Round(time.Second).String()
@@ -165,7 +181,6 @@ func runAS03(ctx context.Context, env *Env) error {
 			fmt.Sprintf("%d DOWN, first %s", c, first), c == 1 && len(at) > 0 && !at[0].After(downBy))
 	}
 
-	// Recovery: the target answers 200 again; exactly one UP per monitor.
 	t1 := time.Now()
 	env.Target.SetFailing(false)
 	recovered, _ := waitMonitorStatus(ctx, cl.Client(alive), ids, "UP", 2*interval+30*time.Second)
@@ -179,17 +194,20 @@ func runAS03(ctx context.Context, env *Env) error {
 			fmt.Sprintf("%d UP, first +%s", c, firstSince(at, t1)), c == 1)
 	}
 	for _, name := range names {
-		c, _ := notifyCount(env.Ntfy, t1, "DOWN: "+name)
+		c, _ := notifyCount(env.Ntfy, t1, prefixDown+name)
 		rep.Check("No further DOWN for "+name+" after recovery", "0 DOWN after recovery", fmt.Sprintf("%d", c), c == 0)
 	}
+	return nil
+}
 
-	// Restart the killed voter: it rejoins with its data and agrees on the leader.
+func as03RestartKilledVoter(ctx context.Context, env *Env, cl *harness.Cluster, slots []int, oldSlot, alive int, newLeader string, n int) error {
+	rep := env.Rep
 	restartAt := time.Now()
 	if err := cl.Start(ctx, oldSlot, harness.StartOptions{}); err != nil {
-		rep.Check("Restart "+cl.Names().Voter(oldSlot), "healthy again", err.Error(), false)
+		rep.Check(prefixRestart+cl.Names().Voter(oldSlot), expectHealthyAgain, err.Error(), false)
 		return err
 	}
-	rep.Check("Restart "+cl.Names().Voter(oldSlot), "healthy again", fmt.Sprintf("healthy after %s", time.Since(restartAt).Round(time.Second)), true)
+	rep.Check(prefixRestart+cl.Names().Voter(oldSlot), expectHealthyAgain, fmt.Sprintf("healthy after %s", time.Since(restartAt).Round(time.Second)), true)
 	if err := requireLogin(ctx, env, cl, oldSlot); err != nil {
 		return err
 	}
@@ -211,9 +229,11 @@ func runAS03(ctx context.Context, env *Env) error {
 	equal, diffs, _ := awaitSnapshots(ctx, cl, slots, 90*time.Second)
 	rep.Check("Snapshots of all voters equal after the restart", "normalized snapshots equal",
 		snapshotSummary(equal, diffs), equal)
+	return nil
+}
 
-	// Second failover while the target is healthy: the new leader is killed.
-	// Neither DOWN nor UP may be sent.
+func as03SecondFailover(ctx context.Context, env *Env, cl *harness.Cluster, slots []int, names, ids []string, interval time.Duration) error {
+	rep := env.Rep
 	secondSlot, secondLeader, err := leaderSlot(ctx, cl)
 	if err != nil {
 		rep.Check("Leader before the second failover", "one leader agreed", err.Error(), false)
@@ -233,7 +253,7 @@ func runAS03(ctx context.Context, env *Env) error {
 	}
 	alerts := 0
 	for _, name := range names {
-		c1, _ := notifyCount(env.Ntfy, killAt2, "DOWN: "+name)
+		c1, _ := notifyCount(env.Ntfy, killAt2, prefixDown+name)
 		c2, _ := notifyCount(env.Ntfy, killAt2, "UP: "+name)
 		alerts += c1 + c2
 	}
@@ -241,13 +261,13 @@ func runAS03(ctx context.Context, env *Env) error {
 	stillUp, _ := waitMonitorStatus(ctx, cl.Client(survivors2[0]), ids, "UP", 30*time.Second)
 	rep.Check("Monitors stay UP during the second failover", "all monitors UP", fmt.Sprintf("all UP: %v", stillUp), stillUp)
 	if err := cl.Start(ctx, secondSlot, harness.StartOptions{}); err != nil {
-		rep.Check("Restart "+cl.Names().Voter(secondSlot), "healthy again", err.Error(), false)
+		rep.Check(prefixRestart+cl.Names().Voter(secondSlot), expectHealthyAgain, err.Error(), false)
 		return err
 	}
 	if err := requireLogin(ctx, env, cl, secondSlot); err != nil {
 		return err
 	}
-	equal, diffs, _ = awaitSnapshots(ctx, cl, slots, 90*time.Second)
+	equal, diffs, _ := awaitSnapshots(ctx, cl, slots, 90*time.Second)
 	rep.Check("Snapshots of all voters equal after the second restart", "normalized snapshots equal",
 		snapshotSummary(equal, diffs), equal)
 	return nil

@@ -29,6 +29,7 @@
     #fileInput
     type="file"
     accept=".pem,.crt,.cer,.key,.txt"
+    [attr.aria-label]="'monitorEditor.pem.loadFile' | transloco"
     hidden
     (change)="onFile($event)"
   />

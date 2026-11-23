@@ -106,52 +106,11 @@ func applyCreateTenant(ctx context.Context, tx store.StateTx, cmd *pb.Command, c
 	}
 	id, orgID := c.GetTenantId(), c.GetOrgId()
 	source := c.GetSource()
-	switch source {
-	case tenant.SourceAdmin:
-	case tenant.SourceAuto:
-		if cmd.GetActor().GetKind() != pb.Actor_KIND_SYSTEM {
-			return nil, invalid("only the system provisions tenants automatically")
-		}
-		if orgID == "" {
-			return nil, invalid("automatic provisioning needs an organization")
-		}
-		if tenant.ValidOrgID(orgID) {
-			existing, err := tx.GetTenantByOrg(ctx, orgID)
-			switch {
-			case err == nil:
-				return json.Marshal(TenantResult{TenantID: existing.ID, Existing: true})
-			case !errors.Is(err, store.ErrNotFound):
-				return nil, storeError(err)
-			}
-		}
-		n, err := tx.CountTenants(ctx, tenant.SourceAuto)
-		if err != nil {
-			return nil, storeError(err)
-		}
-		if n >= int(c.GetMaxAutoTenants()) {
-			return nil, &CommandError{Code: CodeLimitExceeded, Message: fmt.Sprintf("automatic provisioning is limited to %d tenants", c.GetMaxAutoTenants())}
-		}
-	default:
-		return nil, invalid("tenant source must be %s or %s", tenant.SourceAdmin, tenant.SourceAuto)
+	if res, done, err := checkCreateTenantSource(ctx, tx, cmd, c, source, orgID); done || err != nil {
+		return res, err
 	}
-
-	switch {
-	case !tenant.ValidID(id):
-		return nil, invalid("tenant ID must be 1 to 64 characters of a-z, 0-9 and '-'")
-	case !tenant.ValidName(c.GetName()):
-		return nil, invalid("tenant name must be 1 to 100 characters without control characters or surrounding spaces")
-	}
-	deleted, err := tx.IsTenantDeleted(ctx, id)
-	if err != nil {
-		return nil, storeError(err)
-	}
-	if deleted {
-		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("tenant ID %s belonged to a deleted tenant and is not reused", id)}
-	}
-	if _, err := tx.GetTenant(ctx, id); err == nil {
-		return nil, &CommandError{Code: CodeConflict, Message: fmt.Sprintf("tenant %s already exists", id)}
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return nil, storeError(err)
+	if err := validateNewTenantIdentity(ctx, tx, id, c.GetName()); err != nil {
+		return nil, err
 	}
 	if err := checkAssignablePlan(ctx, tx, c.GetPlanId()); err != nil {
 		return nil, err
@@ -174,6 +133,62 @@ func applyCreateTenant(ctx context.Context, tx store.StateTx, cmd *pb.Command, c
 		return nil, storeError(err)
 	}
 	return json.Marshal(TenantResult{TenantID: id})
+}
+
+func checkCreateTenantSource(ctx context.Context, tx store.StateTx, cmd *pb.Command, c *pb.CreateTenant, source, orgID string) (json.RawMessage, bool, error) {
+	switch source {
+	case tenant.SourceAdmin:
+		return nil, false, nil
+	case tenant.SourceAuto:
+		if cmd.GetActor().GetKind() != pb.Actor_KIND_SYSTEM {
+			return nil, false, invalid("only the system provisions tenants automatically")
+		}
+		if orgID == "" {
+			return nil, false, invalid("automatic provisioning needs an organization")
+		}
+		if tenant.ValidOrgID(orgID) {
+			existing, err := tx.GetTenantByOrg(ctx, orgID)
+			switch {
+			case err == nil:
+				res, merr := json.Marshal(TenantResult{TenantID: existing.ID, Existing: true})
+				return res, true, merr
+			case !errors.Is(err, store.ErrNotFound):
+				return nil, false, storeError(err)
+			}
+		}
+		n, err := tx.CountTenants(ctx, tenant.SourceAuto)
+		if err != nil {
+			return nil, false, storeError(err)
+		}
+		if n >= int(c.GetMaxAutoTenants()) {
+			return nil, false, &CommandError{Code: CodeLimitExceeded, Message: fmt.Sprintf("automatic provisioning is limited to %d tenants", c.GetMaxAutoTenants())}
+		}
+		return nil, false, nil
+	default:
+		return nil, false, invalid("tenant source must be %s or %s", tenant.SourceAdmin, tenant.SourceAuto)
+	}
+}
+
+func validateNewTenantIdentity(ctx context.Context, tx store.StateTx, id, name string) error {
+	switch {
+	case !tenant.ValidID(id):
+		return invalid("tenant ID must be 1 to 64 characters of a-z, 0-9 and '-'")
+	case !tenant.ValidName(name):
+		return invalid("tenant name must be 1 to 100 characters without control characters or surrounding spaces")
+	}
+	deleted, err := tx.IsTenantDeleted(ctx, id)
+	if err != nil {
+		return storeError(err)
+	}
+	if deleted {
+		return &CommandError{Code: CodeConflict, Message: fmt.Sprintf("tenant ID %s belonged to a deleted tenant and is not reused", id)}
+	}
+	if _, err := tx.GetTenant(ctx, id); err == nil {
+		return &CommandError{Code: CodeConflict, Message: fmt.Sprintf("tenant %s already exists", id)}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return storeError(err)
+	}
+	return nil
 }
 
 // applyUpdateTenant changes the set fields of a tenant (ADR 0029). The system

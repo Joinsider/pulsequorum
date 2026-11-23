@@ -21,6 +21,35 @@ import (
 const (
 	tenantA = "tenant-a"
 	tenantB = "tenant-b"
+	tenantC = "tenant-c"
+
+	errFmtCreate                = "create: %v"
+	errFmtDuplicateCreate       = "duplicate create error = %v, want ErrConflict"
+	errFmtDelete                = "delete: %v"
+	errFmtGetAfterDelete        = "get after delete error = %v, want ErrNotFound"
+	errFmtSecondDelete          = "second delete error = %v, want ErrNotFound"
+	errFmtUpdateAtRevision1     = "update at revision 1: %v"
+	errFmtAfterUpdate           = "after update: %+v"
+	errFmtStaleUpdate           = "stale update error = %v, want ErrConflict"
+	errFmtUpdateAcrossTenants   = "update across tenants error = %v, want ErrNotFound"
+	errFmtDeleteAcrossTenants   = "delete across tenants error = %v, want ErrNotFound"
+	errFmtPrune                 = "prune: %v"
+	errFmtBatchSizeZeroAccepted = "batch size 0 accepted"
+	errFmtNoIDs                 = "no IDs = %+v, %v"
+
+	alertKeyM1_1000Down = "m1:1000:DOWN"
+	alertKeyM1_2000Down = "m1:2000:DOWN"
+	alertKeyM1_1000Up   = "m1:1000:UP"
+
+	planNameStarter2 = "Starter 2"
+	tenantIDAdmin    = "t-admin"
+	incarnationN1    = "inc-n1"
+	roleTenantAdmin  = "tenant-admin"
+
+	nodeIDA = "node-a"
+	nodeIDB = "node-b"
+	nodeIDC = "node-c"
+	nodeIDX = "node-x"
 )
 
 // RunState runs the suite against a fresh, empty store.State per subtest.
@@ -191,7 +220,6 @@ func testTenants(t *testing.T, s store.State) {
 // the organization of one tenant never finds another tenant.
 func testTenantByOrg(t *testing.T, s store.State) {
 	ctx := context.Background()
-	const tenantC = "tenant-c"
 	err := s.Update(ctx, func(tx store.StateTx) error {
 		for _, tn := range []store.Tenant{
 			{ID: tenantA, Name: tenantA, Plan: "default", ZitadelOrgID: "org-a", CreatedMs: 1, UpdatedMs: 1},
@@ -208,32 +236,7 @@ func testTenantByOrg(t *testing.T, s store.State) {
 		t.Fatalf("seed tenants: %v", err)
 	}
 
-	tests := []struct {
-		name   string
-		orgID  string
-		wantID string
-		err    error
-	}{
-		{"bound organization A", "org-a", tenantA, nil},
-		{"bound organization B", "org-b", tenantB, nil},
-		{"empty organization is not found", "", "", store.ErrNotFound},
-		{"unknown organization is not found", "org-unknown", "", store.ErrNotFound},
-		{"organization is case-sensitive", "ORG-A", "", store.ErrNotFound},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := s.GetTenantByOrg(ctx, tt.orgID)
-			if !errors.Is(err, tt.err) {
-				t.Fatalf("GetTenantByOrg(%q) error = %v, want %v", tt.orgID, err, tt.err)
-			}
-			if got.ID != tt.wantID {
-				t.Errorf("GetTenantByOrg(%q) ID = %q, want %q", tt.orgID, got.ID, tt.wantID)
-			}
-			if tt.err == nil && got.ZitadelOrgID != tt.orgID {
-				t.Errorf("GetTenantByOrg(%q) org = %q", tt.orgID, got.ZitadelOrgID)
-			}
-		})
-	}
+	assertTenantByOrgLookups(ctx, t, s)
 
 	// Tenant isolation: the organization of A never resolves to B or C, and the
 	// same answer comes from a read transaction.
@@ -263,6 +266,36 @@ func testTenantByOrg(t *testing.T, s store.State) {
 	}
 }
 
+func assertTenantByOrgLookups(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
+	tests := []struct {
+		name   string
+		orgID  string
+		wantID string
+		err    error
+	}{
+		{"bound organization A", "org-a", tenantA, nil},
+		{"bound organization B", "org-b", tenantB, nil},
+		{"empty organization is not found", "", "", store.ErrNotFound},
+		{"unknown organization is not found", "org-unknown", "", store.ErrNotFound},
+		{"organization is case-sensitive", "ORG-A", "", store.ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := s.GetTenantByOrg(ctx, tt.orgID)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("GetTenantByOrg(%q) error = %v, want %v", tt.orgID, err, tt.err)
+			}
+			if got.ID != tt.wantID {
+				t.Errorf("GetTenantByOrg(%q) ID = %q, want %q", tt.orgID, got.ID, tt.wantID)
+			}
+			if tt.err == nil && got.ZitadelOrgID != tt.orgID {
+				t.Errorf("GetTenantByOrg(%q) org = %q", tt.orgID, got.ZitadelOrgID)
+			}
+		})
+	}
+}
+
 func testMonitorLifecycle(t *testing.T, s store.State) {
 	ctx := context.Background()
 	seedTenants(t, s, tenantA)
@@ -271,7 +304,7 @@ func testMonitorLifecycle(t *testing.T, s store.State) {
 	m.Tags = []string{"prod", "", "api", "prod"}
 	m.Paused = true
 	if err := put(t, s, m, 0); err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatalf(errFmtCreate, err)
 	}
 
 	got, err := s.GetMonitor(ctx, tenantA, "m1")
@@ -291,17 +324,17 @@ func testMonitorLifecycle(t *testing.T, s store.State) {
 	}
 
 	if err := put(t, s, m, 0); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("duplicate create error = %v, want ErrConflict", err)
+		t.Errorf(errFmtDuplicateCreate, err)
 	}
 
 	if err := del(t, s, tenantA, "m1"); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf(errFmtDelete, err)
 	}
 	if _, err := s.GetMonitor(ctx, tenantA, "m1"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtGetAfterDelete, err)
 	}
 	if err := del(t, s, tenantA, "m1"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("second delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtSecondDelete, err)
 	}
 }
 
@@ -318,18 +351,18 @@ func testMonitorRevisions(t *testing.T, s store.State) {
 	m.Tags = []string{"new"}
 	m.UpdatedMs = 2000
 	if err := put(t, s, m, 1); err != nil {
-		t.Fatalf("update at revision 1: %v", err)
+		t.Fatalf(errFmtUpdateAtRevision1, err)
 	}
 	got, _ := s.GetMonitor(ctx, tenantA, "m1")
 	if got.Revision != 2 || got.Name != "Updated" || got.UpdatedMs != 2000 || got.CreatedMs != 1000 {
-		t.Errorf("after update: %+v", got)
+		t.Errorf(errFmtAfterUpdate, got)
 	}
 	if !slices.Equal(got.Tags, []string{"new"}) {
 		t.Errorf("tags = %v, want [new]", got.Tags)
 	}
 
 	if err := put(t, s, m, 1); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("stale update error = %v, want ErrConflict", err)
+		t.Errorf(errFmtStaleUpdate, err)
 	}
 	if err := put(t, s, newMonitor(tenantA, "missing"), 1); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("update of missing monitor error = %v, want ErrNotFound", err)
@@ -357,24 +390,7 @@ func testMonitorList(t *testing.T, s store.State) {
 		}
 	}
 
-	var ids []string
-	q := store.MonitorQuery{Limit: 2}
-	for pages := 0; ; pages++ {
-		page, err := s.ListMonitors(ctx, tenantA, q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, m := range page.Items {
-			ids = append(ids, m.ID)
-		}
-		if page.NextAfterID == "" {
-			break
-		}
-		if pages > 5 {
-			t.Fatal("paging does not terminate")
-		}
-		q.AfterID = page.NextAfterID
-	}
+	ids := collectPagedMonitorIDs(ctx, t, s, tenantA, 2)
 	if !slices.Equal(ids, []string{"m1", "m2", "m3", "m4", "m5"}) {
 		t.Errorf("paged IDs = %v", ids)
 	}
@@ -391,6 +407,29 @@ func testMonitorList(t *testing.T, s store.State) {
 	if err != nil || len(page.Items) != 0 || page.NextAfterID != "" {
 		t.Errorf("empty search = %+v, %v", page, err)
 	}
+}
+
+func collectPagedMonitorIDs(ctx context.Context, t *testing.T, s store.State, tenantID string, limit int) []string {
+	t.Helper()
+	var ids []string
+	q := store.MonitorQuery{Limit: limit}
+	for pages := 0; ; pages++ {
+		page, err := s.ListMonitors(ctx, tenantID, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range page.Items {
+			ids = append(ids, m.ID)
+		}
+		if page.NextAfterID == "" {
+			break
+		}
+		if pages > 5 {
+			t.Fatal("paging does not terminate")
+		}
+		q.AfterID = page.NextAfterID
+	}
+	return ids
 }
 
 func testUpdateRollback(t *testing.T, s store.State) {
@@ -435,13 +474,13 @@ func testStateTenantIsolation(t *testing.T, s store.State) {
 	hijack := newMonitor(tenantB, "m-a")
 	hijack.Name = "hijacked"
 	if err := put(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtUpdateAcrossTenants, err)
 	}
 	if err := put(t, s, hijack, 0); err == nil {
 		t.Error("creating a monitor with another tenant's monitor ID succeeded")
 	}
 	if err := del(t, s, tenantB, "m-a"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtDeleteAcrossTenants, err)
 	}
 
 	got, err := s.GetMonitor(ctx, tenantA, "m-a")
@@ -477,26 +516,7 @@ func testDedupAndAppliedIndex(t *testing.T, s store.State) {
 		t.Errorf("AppliedIndex = %d, %v; want 6", idx, err)
 	}
 
-	err = s.Update(ctx, func(tx store.StateTx) error {
-		got, err := tx.GetDedup(ctx, "req-1")
-		if err != nil {
-			return err
-		}
-		if got.AppliedIndex != 5 || string(got.Result) != `{"id":"m1"}` || got.ErrorCode != "" {
-			return fmt.Errorf("GetDedup = %+v", got)
-		}
-		got, err = tx.GetDedup(ctx, "req-2")
-		if err != nil || got.ErrorCode != "conflict" || got.ErrorMessage != "revision mismatch" {
-			return fmt.Errorf("GetDedup(req-2) = %+v, %w", got, err)
-		}
-		if err := tx.PutDedup(ctx, entry); !errors.Is(err, store.ErrConflict) {
-			return fmt.Errorf("duplicate PutDedup error = %w, want ErrConflict", err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	assertStoredDedupEntries(ctx, t, s, entry)
 
 	err = s.Update(ctx, func(tx store.StateTx) error {
 		if err := tx.PruneDedup(ctx, 50_000_000); err != nil {
@@ -515,6 +535,30 @@ func testDedupAndAppliedIndex(t *testing.T, s store.State) {
 	}
 	if idx, _ := s.AppliedIndex(ctx); idx != 9 {
 		t.Errorf("AppliedIndex after second update = %d, want 9", idx)
+	}
+}
+
+func assertStoredDedupEntries(ctx context.Context, t *testing.T, s store.State, entry store.DedupEntry) {
+	t.Helper()
+	err := s.Update(ctx, func(tx store.StateTx) error {
+		got, err := tx.GetDedup(ctx, "req-1")
+		if err != nil {
+			return err
+		}
+		if got.AppliedIndex != 5 || string(got.Result) != `{"id":"m1"}` || got.ErrorCode != "" {
+			return fmt.Errorf("GetDedup = %+v", got)
+		}
+		got, err = tx.GetDedup(ctx, "req-2")
+		if err != nil || got.ErrorCode != "conflict" || got.ErrorMessage != "revision mismatch" {
+			return fmt.Errorf("GetDedup(req-2) = %+v, %w", got, err)
+		}
+		if err := tx.PutDedup(ctx, entry); !errors.Is(err, store.ErrConflict) {
+			return fmt.Errorf("duplicate PutDedup error = %w, want ErrConflict", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -655,19 +699,7 @@ func testIncidents(t *testing.T, s store.State) {
 			t.Fatal(err)
 		}
 	}
-	// m1: [1000, 2000], [3000, 4000], [5000, open); m2: [2500, open)
-	for _, step := range []struct {
-		monitor, id string
-		started     int64
-		resolved    int64
-	}{{"m1", "i1", 1000, 2000}, {"m1", "i2", 3000, 4000}, {"m1", "i3", 5000, 0}, {"m2", "i4", 2500, 0}} {
-		if err := openIncident(t, s, tenantA, step.monitor, step.id, step.started); err != nil {
-			t.Fatal(err)
-		}
-		if step.resolved != 0 {
-			resolveIncident(t, s, tenantA, step.monitor, step.resolved)
-		}
-	}
+	seedTestIncidents(t, s)
 	if err := openIncident(t, s, tenantA, "m1", "i5", 6000); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("second open incident: err = %v, want ErrConflict", err)
 	}
@@ -700,19 +732,7 @@ func testIncidents(t *testing.T, s store.State) {
 		}
 	}
 
-	var all []string
-	q := store.IncidentQuery{Limit: 3}
-	for {
-		page, err := s.ListIncidents(ctx, tenantA, q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		all = append(all, incidentIDs(page)...)
-		if page.Next == nil {
-			break
-		}
-		q.After = page.Next
-	}
+	all := collectPagedIncidentIDs(ctx, t, s, tenantA, 3)
 	if !slices.Equal(all, []string{"i3", "i2", "i4", "i1"}) {
 		t.Fatalf("paged incidents = %v", all)
 	}
@@ -723,6 +743,41 @@ func testIncidents(t *testing.T, s store.State) {
 	if page, _ := s.ListIncidents(ctx, tenantA, store.IncidentQuery{}); !slices.Equal(incidentIDs(page), []string{"i4"}) {
 		t.Fatalf("incidents after deleting m1 = %v", incidentIDs(page))
 	}
+}
+
+func seedTestIncidents(t *testing.T, s store.State) {
+	t.Helper()
+	// m1: [1000, 2000], [3000, 4000], [5000, open); m2: [2500, open)
+	for _, step := range []struct {
+		monitor, id string
+		started     int64
+		resolved    int64
+	}{{"m1", "i1", 1000, 2000}, {"m1", "i2", 3000, 4000}, {"m1", "i3", 5000, 0}, {"m2", "i4", 2500, 0}} {
+		if err := openIncident(t, s, tenantA, step.monitor, step.id, step.started); err != nil {
+			t.Fatal(err)
+		}
+		if step.resolved != 0 {
+			resolveIncident(t, s, tenantA, step.monitor, step.resolved)
+		}
+	}
+}
+
+func collectPagedIncidentIDs(ctx context.Context, t *testing.T, s store.State, tenantID string, limit int) []string {
+	t.Helper()
+	var all []string
+	q := store.IncidentQuery{Limit: limit}
+	for {
+		page, err := s.ListIncidents(ctx, tenantID, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, incidentIDs(page)...)
+		if page.Next == nil {
+			break
+		}
+		q.After = page.Next
+	}
+	return all
 }
 
 func testIncidentTenantIsolation(t *testing.T, s store.State) {
@@ -905,7 +960,7 @@ func testChannels(t *testing.T, s store.State) {
 	c.Events = []string{"up", "down", "up"}
 	c.IsDefault = true
 	if err := putChannel(t, s, c, 0); err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatalf(errFmtCreate, err)
 	}
 	got, err := s.GetChannel(ctx, tenantA, "ch-b")
 	if err != nil {
@@ -925,7 +980,7 @@ func testChannels(t *testing.T, s store.State) {
 	}
 
 	if err := putChannel(t, s, c, 0); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("duplicate create error = %v, want ErrConflict", err)
+		t.Errorf(errFmtDuplicateCreate, err)
 	}
 
 	// An update repairs a failing channel: the delivery state is reset.
@@ -937,7 +992,7 @@ func testChannels(t *testing.T, s store.State) {
 	c.Name = "Beta"
 	c.UpdatedMs = 2000
 	if err := putChannel(t, s, c, 1); err != nil {
-		t.Fatalf("update at revision 1: %v", err)
+		t.Fatalf(errFmtUpdateAtRevision1, err)
 	}
 	got, err = s.GetChannel(ctx, tenantA, "ch-b")
 	if err != nil {
@@ -945,10 +1000,10 @@ func testChannels(t *testing.T, s store.State) {
 	}
 	if got.Revision != 2 || got.Name != "Beta" || got.UpdatedMs != 2000 || got.CreatedMs != 1000 ||
 		got.State != store.ChannelOK || got.LastError != "" {
-		t.Errorf("after update: %+v", got)
+		t.Errorf(errFmtAfterUpdate, got)
 	}
 	if err := putChannel(t, s, c, 1); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("stale update error = %v, want ErrConflict", err)
+		t.Errorf(errFmtStaleUpdate, err)
 	}
 	if err := putChannel(t, s, newChannel(tenantA, "missing"), 1); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("update of missing channel error = %v, want ErrNotFound", err)
@@ -977,13 +1032,13 @@ func testChannels(t *testing.T, s store.State) {
 	}
 
 	if err := delChannel(t, s, tenantA, "ch-b"); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf(errFmtDelete, err)
 	}
 	if _, err := s.GetChannel(ctx, tenantA, "ch-b"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtGetAfterDelete, err)
 	}
 	if err := delChannel(t, s, tenantA, "ch-b"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("second delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtSecondDelete, err)
 	}
 }
 
@@ -1045,6 +1100,57 @@ func testMonitorChannels(t *testing.T, s store.State) {
 
 func testOutbox(t *testing.T, s store.State) {
 	ctx := context.Background()
+	seedOutboxFixtures(t, s)
+
+	first := alertEntry("m1", alertKeyM1_1000Down, "c1", 1000)
+	if err := enqueueAlert(t, s, first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAlert(ctx, alertKeyM1_1000Down, "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != tenantA || got.MonitorID != "m1" || string(got.Payload) != `{"event":"down"}` ||
+		got.Attempts != 0 || got.NextAttemptMs != 1000 || got.State != store.AlertPending ||
+		got.LastError != "" || got.CreatedMs != 1000 {
+		t.Errorf("unexpected entry: %+v", got)
+	}
+
+	// The same alert for the same channel is enqueued once: the first payload wins.
+	again := alertEntry("m1", alertKeyM1_1000Down, "c1", 5000)
+	again.Payload = json.RawMessage(`{"event":"other"}`)
+	if err := enqueueAlert(t, s, again); err != nil {
+		t.Fatalf("repeated enqueue: %v", err)
+	}
+	if got, err = s.GetAlert(ctx, alertKeyM1_1000Down, "c1"); err != nil || string(got.Payload) != `{"event":"down"}` || got.NextAttemptMs != 1000 {
+		t.Errorf("repeated enqueue changed the entry: %+v, %v", got, err)
+	}
+
+	for _, a := range []store.AlertDelivery{
+		alertEntry("m1", alertKeyM1_1000Down, "c2", 3000),
+		alertEntry("m1", alertKeyM1_2000Down, "c1", 1000), // same time as first, sorted after it by key
+		alertEntry("m1", alertKeyM1_1000Up, "c1", 500),
+		alertEntry("m2", "m2:5:DOWN", "c3", 2000),
+	} {
+		if err := enqueueAlert(t, s, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wantDue := []string{alertKeyM1_1000Up + "/c1", alertKeyM1_1000Down + "/c1", alertKeyM1_2000Down + "/c1"}
+	if got := dueKeys(t, s, 1000, 10); !slices.Equal(got, wantDue) {
+		t.Errorf("DueAlerts(1000) = %v, want %v", got, wantDue)
+	}
+	if got := dueKeys(t, s, 1000, 2); !slices.Equal(got, wantDue[:2]) {
+		t.Errorf("DueAlerts(1000, limit 2) = %v, want %v", got, wantDue[:2])
+	}
+
+	assertOutboxUpdatesAndPruning(ctx, t, s)
+	assertOutboxCascadeDeletes(ctx, t, s)
+}
+
+func seedOutboxFixtures(t *testing.T, s store.State) {
+	t.Helper()
 	seedTenants(t, s, tenantA)
 	for _, id := range []string{"m1", "m2"} {
 		if err := put(t, s, newMonitor(tenantA, id), 0); err != nil {
@@ -1056,60 +1162,20 @@ func testOutbox(t *testing.T, s store.State) {
 			t.Fatal(err)
 		}
 	}
+}
 
-	first := alertEntry("m1", "m1:1000:DOWN", "c1", 1000)
-	if err := enqueueAlert(t, s, first); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.TenantID != tenantA || got.MonitorID != "m1" || string(got.Payload) != `{"event":"down"}` ||
-		got.Attempts != 0 || got.NextAttemptMs != 1000 || got.State != store.AlertPending ||
-		got.LastError != "" || got.CreatedMs != 1000 {
-		t.Errorf("unexpected entry: %+v", got)
-	}
-
-	// The same alert for the same channel is enqueued once: the first payload wins.
-	again := alertEntry("m1", "m1:1000:DOWN", "c1", 5000)
-	again.Payload = json.RawMessage(`{"event":"other"}`)
-	if err := enqueueAlert(t, s, again); err != nil {
-		t.Fatalf("repeated enqueue: %v", err)
-	}
-	if got, err = s.GetAlert(ctx, "m1:1000:DOWN", "c1"); err != nil || string(got.Payload) != `{"event":"down"}` || got.NextAttemptMs != 1000 {
-		t.Errorf("repeated enqueue changed the entry: %+v, %v", got, err)
-	}
-
-	for _, a := range []store.AlertDelivery{
-		alertEntry("m1", "m1:1000:DOWN", "c2", 3000),
-		alertEntry("m1", "m1:2000:DOWN", "c1", 1000), // same time as first, sorted after it by key
-		alertEntry("m1", "m1:1000:UP", "c1", 500),
-		alertEntry("m2", "m2:5:DOWN", "c3", 2000),
-	} {
-		if err := enqueueAlert(t, s, a); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	wantDue := []string{"m1:1000:UP/c1", "m1:1000:DOWN/c1", "m1:2000:DOWN/c1"}
-	if got := dueKeys(t, s, 1000, 10); !slices.Equal(got, wantDue) {
-		t.Errorf("DueAlerts(1000) = %v, want %v", got, wantDue)
-	}
-	if got := dueKeys(t, s, 1000, 2); !slices.Equal(got, wantDue[:2]) {
-		t.Errorf("DueAlerts(1000, limit 2) = %v, want %v", got, wantDue[:2])
-	}
-
-	editAlert(t, s, "m1:1000:DOWN", "c1", func(a *store.AlertDelivery) {
+func assertOutboxUpdatesAndPruning(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
+	editAlert(t, s, alertKeyM1_1000Down, "c1", func(a *store.AlertDelivery) {
 		a.Attempts, a.NextAttemptMs, a.LastError, a.UpdatedMs = 1, 9000, "timeout", 1500
 	})
-	editAlert(t, s, "m1:1000:UP", "c1", func(a *store.AlertDelivery) {
+	editAlert(t, s, alertKeyM1_1000Up, "c1", func(a *store.AlertDelivery) {
 		a.State, a.Attempts, a.UpdatedMs = store.AlertDelivered, 1, 1700
 	})
-	editAlert(t, s, "m1:2000:DOWN", "c1", func(a *store.AlertDelivery) {
+	editAlert(t, s, alertKeyM1_2000Down, "c1", func(a *store.AlertDelivery) {
 		a.State, a.Attempts, a.LastError, a.UpdatedMs = store.AlertFailed, 3, "gave up", 1600
 	})
-	got, err = s.GetAlert(ctx, "m1:1000:DOWN", "c1")
+	got, err := s.GetAlert(ctx, alertKeyM1_1000Down, "c1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1117,7 +1183,7 @@ func testOutbox(t *testing.T, s store.State) {
 		t.Errorf("after UpdateAlert: %+v", got)
 	}
 	// Only pending entries are due.
-	if got := dueKeys(t, s, 10_000, 10); !slices.Equal(got, []string{"m2:5:DOWN/c3", "m1:1000:DOWN/c2", "m1:1000:DOWN/c1"}) {
+	if got := dueKeys(t, s, 10_000, 10); !slices.Equal(got, []string{"m2:5:DOWN/c3", alertKeyM1_1000Down + "/c2", alertKeyM1_1000Down + "/c1"}) {
 		t.Errorf("DueAlerts(10000) = %v, want pending entries ordered by time", got)
 	}
 
@@ -1127,13 +1193,13 @@ func testOutbox(t *testing.T, s store.State) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:2000:DOWN", "c1"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetAlert(ctx, alertKeyM1_2000Down, "c1"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("failed entry before cut-off survived pruning: %v", err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); err != nil {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Up, "c1"); err != nil {
 		t.Errorf("delivered entry after cut-off pruned: %v", err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1"); err != nil {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Down, "c1"); err != nil {
 		t.Errorf("old pending entry pruned: %v", err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
@@ -1141,7 +1207,7 @@ func testOutbox(t *testing.T, s store.State) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); err != nil {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Up, "c1"); err != nil {
 		t.Errorf("entry updated at the cut-off pruned: %v", err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
@@ -1149,21 +1215,24 @@ func testOutbox(t *testing.T, s store.State) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:UP", "c1"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Up, "c1"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("delivered entry before cut-off survived pruning: %v", err)
 	}
+}
 
+func assertOutboxCascadeDeletes(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	// Deleting a channel or a monitor removes its outbox entries.
 	if err := delChannel(t, s, tenantA, "c2"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c2"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Down, "c2"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("entry of deleted channel: %v, want ErrNotFound", err)
 	}
 	if err := delChannel(t, s, tenantA, "c1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetAlert(ctx, "m1:1000:DOWN", "c1"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetAlert(ctx, alertKeyM1_1000Down, "c1"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("pending entry of deleted channel: %v, want ErrNotFound", err)
 	}
 	if err := del(t, s, tenantA, "m2"); err != nil {
@@ -1191,7 +1260,7 @@ func testChannelTenantIsolation(t *testing.T, s store.State) {
 		t.Errorf("ListChannels for other tenant = %d channels, %v", len(list), err)
 	}
 	if err := delChannel(t, s, tenantB, "ch-a"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtDeleteAcrossTenants, err)
 	}
 	if _, err := s.GetChannel(ctx, tenantA, "ch-a"); err != nil {
 		t.Errorf("owner's channel gone after foreign delete: %v", err)
@@ -1203,7 +1272,7 @@ func testChannelTenantIsolation(t *testing.T, s store.State) {
 	hijack := newChannel(tenantB, "ch-a")
 	hijack.Name = "hijacked"
 	if err := putChannel(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtUpdateAcrossTenants, err)
 	}
 	got, err := s.GetChannel(ctx, tenantA, "ch-a")
 	if err != nil || got.Name != "Channel ch-a" || got.Revision != 1 {
@@ -1252,7 +1321,7 @@ func testMaintenanceWindows(t *testing.T, s store.State) {
 
 	w := newWindow(tenantA, "mw-b")
 	if err := putWindow(t, s, w, 0); err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatalf(errFmtCreate, err)
 	}
 	got, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-b")
 	if err != nil {
@@ -1285,7 +1354,7 @@ func testMaintenanceWindows(t *testing.T, s store.State) {
 	}
 
 	if err := putWindow(t, s, w, 0); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("duplicate create error = %v, want ErrConflict", err)
+		t.Errorf(errFmtDuplicateCreate, err)
 	}
 
 	w.Name = "Beta"
@@ -1294,7 +1363,7 @@ func testMaintenanceWindows(t *testing.T, s store.State) {
 	w.UpdatedMs = 2000
 	w.CreatedMs = 9999 // must be ignored on update
 	if err := putWindow(t, s, w, 1); err != nil {
-		t.Fatalf("update at revision 1: %v", err)
+		t.Fatalf(errFmtUpdateAtRevision1, err)
 	}
 	got, err = s.GetMaintenanceWindow(ctx, tenantA, "mw-b")
 	if err != nil {
@@ -1302,15 +1371,30 @@ func testMaintenanceWindows(t *testing.T, s store.State) {
 	}
 	if got.Revision != 2 || got.Name != "Beta" || got.Active || len(got.MonitorIDs) != 0 ||
 		got.UpdatedMs != 2000 || got.CreatedMs != 1000 {
-		t.Errorf("after update: %+v", got)
+		t.Errorf(errFmtAfterUpdate, got)
 	}
 	if err := putWindow(t, s, w, 1); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("stale update error = %v, want ErrConflict", err)
+		t.Errorf(errFmtStaleUpdate, err)
 	}
 	if err := putWindow(t, s, newWindow(tenantA, "missing"), 1); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("update of missing window error = %v, want ErrNotFound", err)
 	}
 
+	assertMaintenanceWindowLists(ctx, t, s)
+
+	if err := delWindow(t, s, tenantA, "mw-b"); err != nil {
+		t.Fatalf(errFmtDelete, err)
+	}
+	if _, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf(errFmtGetAfterDelete, err)
+	}
+	if err := delWindow(t, s, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf(errFmtSecondDelete, err)
+	}
+}
+
+func assertMaintenanceWindowLists(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	// The list is ordered by name, not by creation time.
 	gamma := newWindow(tenantA, "mw-c")
 	gamma.Name = "Gamma"
@@ -1350,16 +1434,6 @@ func testMaintenanceWindows(t *testing.T, s store.State) {
 	if !slices.Equal(keys, want) {
 		t.Errorf("ListAll = %v, want %v", keys, want)
 	}
-
-	if err := delWindow(t, s, tenantA, "mw-b"); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if _, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("get after delete error = %v, want ErrNotFound", err)
-	}
-	if err := delWindow(t, s, tenantA, "mw-b"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("second delete error = %v, want ErrNotFound", err)
-	}
 }
 
 func testMaintenanceTenantIsolation(t *testing.T, s store.State) {
@@ -1376,7 +1450,7 @@ func testMaintenanceTenantIsolation(t *testing.T, s store.State) {
 		t.Errorf("ListMaintenanceWindows for other tenant = %d windows, %v", len(list), err)
 	}
 	if err := delWindow(t, s, tenantB, "mw-a"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtDeleteAcrossTenants, err)
 	}
 	if _, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-a"); err != nil {
 		t.Errorf("owner's window gone after foreign delete: %v", err)
@@ -1388,7 +1462,7 @@ func testMaintenanceTenantIsolation(t *testing.T, s store.State) {
 	hijack := newWindow(tenantB, "mw-a")
 	hijack.Name = "hijacked"
 	if err := putWindow(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtUpdateAcrossTenants, err)
 	}
 	got, err := s.GetMaintenanceWindow(ctx, tenantA, "mw-a")
 	if err != nil || got.Name != "Window mw-a" || got.Revision != 1 {
@@ -1432,7 +1506,7 @@ func testUsers(t *testing.T, s store.State) {
 	u := newUser(tenantA, "u1", "alice")
 	u.Role = "platform-admin"
 	if err := putUser(t, s, u, 0); err != nil {
-		t.Fatalf("create: %v", err)
+		t.Fatalf(errFmtCreate, err)
 	}
 	got, err := s.GetUser(ctx, tenantA, "u1")
 	if err != nil {
@@ -1459,6 +1533,12 @@ func testUsers(t *testing.T, s store.State) {
 		t.Errorf("GetUserByUsername(missing) error = %v, want ErrNotFound", err)
 	}
 
+	assertUserUpdates(ctx, t, s, u)
+	assertUserListAndDeletion(ctx, t, s)
+}
+
+func assertUserUpdates(ctx context.Context, t *testing.T, s store.State, u store.User) {
+	t.Helper()
 	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantA, "u1", 5000) }); err != nil {
 		t.Fatalf("set last login: %v", err)
 	}
@@ -1468,18 +1548,18 @@ func testUsers(t *testing.T, s store.State) {
 	u.CreatedMs = 9999 // must be ignored on update
 	u.LastLoginMs = 0  // must be ignored on update
 	if err := putUser(t, s, u, 1); err != nil {
-		t.Fatalf("update at revision 1: %v", err)
+		t.Fatalf(errFmtUpdateAtRevision1, err)
 	}
-	got, err = s.GetUser(ctx, tenantA, "u1")
+	got, err := s.GetUser(ctx, tenantA, "u1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Revision != 2 || got.Role != "viewer" || !got.Disabled || got.UpdatedMs != 2000 ||
 		got.CreatedMs != 1000 || got.LastLoginMs != 5000 {
-		t.Errorf("after update: %+v", got)
+		t.Errorf(errFmtAfterUpdate, got)
 	}
 	if err := putUser(t, s, u, 1); !errors.Is(err, store.ErrConflict) {
-		t.Errorf("stale update error = %v, want ErrConflict", err)
+		t.Errorf(errFmtStaleUpdate, err)
 	}
 	if err := putUser(t, s, newUser(tenantA, "missing", "nobody"), 3); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("update of missing user error = %v, want ErrNotFound", err)
@@ -1487,7 +1567,10 @@ func testUsers(t *testing.T, s store.State) {
 	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantA, "missing", 1) }); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("last login of missing user error = %v, want ErrNotFound", err)
 	}
+}
 
+func assertUserListAndDeletion(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	// The list is ordered by username, not by creation time.
 	if err := putUser(t, s, newUser(tenantA, "u3", "carol"), 0); err != nil {
 		t.Fatal(err)
@@ -1511,13 +1594,13 @@ func testUsers(t *testing.T, s store.State) {
 	}
 
 	if err := delUser(t, s, tenantA, "u4"); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf(errFmtDelete, err)
 	}
 	if _, err := s.GetUser(ctx, tenantA, "u4"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("get after delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtGetAfterDelete, err)
 	}
 	if err := delUser(t, s, tenantA, "u4"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("second delete error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtSecondDelete, err)
 	}
 	if n, err := countUsers(t, s); err != nil || n != 2 {
 		t.Errorf("CountUsers after delete = %d, %v; want 2", n, err)
@@ -1547,7 +1630,7 @@ func testUserTenantIsolation(t *testing.T, s store.State) {
 		t.Errorf("ListUsers for other tenant = %d users, %v", len(list), err)
 	}
 	if err := delUser(t, s, tenantB, "u1"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("delete across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtDeleteAcrossTenants, err)
 	}
 	if err := s.Update(ctx, func(tx store.StateTx) error { return tx.SetLastLogin(ctx, tenantB, "u1", 1) }); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("last login across tenants error = %v, want ErrNotFound", err)
@@ -1561,7 +1644,7 @@ func testUserTenantIsolation(t *testing.T, s store.State) {
 	}
 	hijack := newUser(tenantB, "u1", "hijacked")
 	if err := putUser(t, s, hijack, 1); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("update across tenants error = %v, want ErrNotFound", err)
+		t.Errorf(errFmtUpdateAcrossTenants, err)
 	}
 	got, err := s.GetUser(ctx, tenantA, "u1")
 	if err != nil || got.Username != "alice" || got.Revision != 1 {
@@ -1692,6 +1775,12 @@ func testSessions(t *testing.T, s store.State) {
 		}
 	}
 
+	assertSessionMarkUsedAndRevocations(ctx, t, s)
+	assertSessionPruneAndCascadeDelete(ctx, t, s)
+}
+
+func assertSessionMarkUsedAndRevocations(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	// The first use is kept; a missing token is ErrNotFound.
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.MarkSessionUsed(ctx, "h1", 1500) }); err != nil {
 		t.Fatalf("mark used: %v", err)
@@ -1745,10 +1834,13 @@ func testSessions(t *testing.T, s store.State) {
 	if got := sessionRevoked(t, s, "h2"); got != 2000 {
 		t.Errorf("h2 revoked = %d, want earlier 2000 kept", got)
 	}
+}
 
+func assertSessionPruneAndCascadeDelete(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	// Pruning removes expired tokens only.
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneSessions(ctx, 4500) }); err != nil {
-		t.Fatalf("prune: %v", err)
+		t.Fatalf(errFmtPrune, err)
 	}
 	if _, err := s.GetSession(ctx, "h3"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("expired session after prune error = %v, want ErrNotFound", err)
@@ -1817,18 +1909,7 @@ func putPlan(t *testing.T, s store.State, p store.Plan) error {
 // testPlans covers the seeded plans and plan CRUD (ADR 0029).
 func testPlans(t *testing.T, s store.State) {
 	ctx := context.Background()
-	for _, id := range []string{"default", "system"} {
-		p, err := s.GetPlan(ctx, id)
-		if err != nil {
-			t.Fatalf("seeded plan %s: %v", id, err)
-		}
-		if string(p.Limits) != "{}" {
-			t.Errorf("seeded plan %s limits = %s, want {}", id, p.Limits)
-		}
-	}
-	if plans, err := s.ListPlans(ctx); err != nil || len(plans) != 2 || plans[0].ID != "default" || plans[1].ID != "system" {
-		t.Fatalf("seeded plans = %+v, %v", plans, err)
-	}
+	assertSeededPlans(ctx, t, s)
 
 	if err := putPlan(t, s, store.Plan{ID: "starter", Name: "Starter", Limits: json.RawMessage(`{"maxMonitors":10}`), CreatedMs: 100, UpdatedMs: 100}); err != nil {
 		t.Fatalf("put plan: %v", err)
@@ -1840,11 +1921,11 @@ func testPlans(t *testing.T, s store.State) {
 
 	// Replacing keeps created_ms; empty limits are stored as {}.
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-		if err := tx.PutPlan(ctx, store.Plan{ID: "starter", Name: "Starter 2", CreatedMs: 999, UpdatedMs: 200}); err != nil {
+		if err := tx.PutPlan(ctx, store.Plan{ID: "starter", Name: planNameStarter2, CreatedMs: 999, UpdatedMs: 200}); err != nil {
 			return err
 		}
 		p, err := tx.GetPlan(ctx, "starter")
-		if err != nil || p.Name != "Starter 2" {
+		if err != nil || p.Name != planNameStarter2 {
 			return fmt.Errorf("GetPlan in transaction = %+v, %w", p, err)
 		}
 		return nil
@@ -1852,7 +1933,7 @@ func testPlans(t *testing.T, s store.State) {
 		t.Fatal(err)
 	}
 	got, _ = s.GetPlan(ctx, "starter")
-	if got.Name != "Starter 2" || string(got.Limits) != "{}" || got.CreatedMs != 100 || got.UpdatedMs != 200 {
+	if got.Name != planNameStarter2 || string(got.Limits) != "{}" || got.CreatedMs != 100 || got.UpdatedMs != 200 {
 		t.Errorf("replaced plan = %+v, want name Starter 2, limits {}, created 100, updated 200", got)
 	}
 
@@ -1872,6 +1953,22 @@ func testPlans(t *testing.T, s store.State) {
 	}
 }
 
+func assertSeededPlans(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
+	for _, id := range []string{"default", "system"} {
+		p, err := s.GetPlan(ctx, id)
+		if err != nil {
+			t.Fatalf("seeded plan %s: %v", id, err)
+		}
+		if string(p.Limits) != "{}" {
+			t.Errorf("seeded plan %s limits = %s, want {}", id, p.Limits)
+		}
+	}
+	if plans, err := s.ListPlans(ctx); err != nil || len(plans) != 2 || plans[0].ID != "default" || plans[1].ID != "system" {
+		t.Fatalf("seeded plans = %+v, %v", plans, err)
+	}
+}
+
 // testTenantSource covers the source column: default, round trip, and that
 // an upsert keeps created_ms and source.
 func testTenantSource(t *testing.T, s store.State) {
@@ -1884,16 +1981,16 @@ func testTenantSource(t *testing.T, s store.State) {
 	put := func(tn store.Tenant) error {
 		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutTenant(ctx, tn) })
 	}
-	if err := put(store.Tenant{ID: "t-admin", Name: "admin", Plan: "default", Source: "admin", CreatedMs: 5, UpdatedMs: 5}); err != nil {
+	if err := put(store.Tenant{ID: tenantIDAdmin, Name: "admin", Plan: "default", Source: "admin", CreatedMs: 5, UpdatedMs: 5}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.GetTenant(ctx, "t-admin"); got.Source != "admin" {
+	if got, _ := s.GetTenant(ctx, tenantIDAdmin); got.Source != "admin" {
 		t.Errorf("source = %q, want admin", got.Source)
 	}
-	if err := put(store.Tenant{ID: "t-admin", Name: "renamed", Plan: "default", Source: "auto", CreatedMs: 999, UpdatedMs: 6}); err != nil {
+	if err := put(store.Tenant{ID: tenantIDAdmin, Name: "renamed", Plan: "default", Source: "auto", CreatedMs: 999, UpdatedMs: 6}); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := s.GetTenant(ctx, "t-admin")
+	got, _ := s.GetTenant(ctx, tenantIDAdmin)
 	if got.Name != "renamed" || got.CreatedMs != 5 || got.Source != "admin" || got.UpdatedMs != 6 {
 		t.Errorf("upserted tenant = %+v, want created 5 and source admin kept", got)
 	}
@@ -1976,50 +2073,7 @@ func testDeleteTenant(t *testing.T, s store.State) {
 	ctx := context.Background()
 	seedTenants(t, s, tenantA, tenantB)
 	for _, tid := range []string{tenantA, tenantB} {
-		suffix := tid[len(tid)-1:] // "a" or "b"
-		if err := putChannel(t, s, newChannel(tid, "c"+suffix), 0); err != nil {
-			t.Fatal(err)
-		}
-		m := newMonitor(tid, "m"+suffix)
-		m.Tags = []string{"web"}
-		m.ChannelIDs = []string{"c" + suffix}
-		if err := put(t, s, m, 0); err != nil {
-			t.Fatal(err)
-		}
-		setState(t, s, tid, "m"+suffix, store.StatusDown, 2000)
-		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-			return tx.OpenIncident(ctx, store.Incident{TenantID: tid, ID: "inc-" + suffix, MonitorID: "m" + suffix, StartedMs: 2000,
-				Cause: "refused", AffectedNodes: []string{"n1"}, Confirmed: true})
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-			return tx.EnqueueAlert(ctx, store.AlertDelivery{TenantID: tid, AlertKey: "key-" + suffix, ChannelID: "c" + suffix,
-				MonitorID: "m" + suffix, Payload: json.RawMessage(`{"event":"down"}`), NextAttemptMs: 3000,
-				State: store.AlertPending, CreatedMs: 3000, UpdatedMs: 3000})
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if err := putWindow(t, s, newWindow(tid, "w"+suffix), 0); err != nil {
-			t.Fatal(err)
-		}
-		if err := putUser(t, s, newUser(tid, "u"+suffix, "user-"+suffix), 0); err != nil {
-			t.Fatal(err)
-		}
-		if err := putSession(t, s, store.Session{TokenHash: "s" + suffix, FamilyID: "f" + suffix, TenantID: tid,
-			UserID: "u" + suffix, CreatedMs: 1000, ExpiresMs: 9000}); err != nil {
-			t.Fatal(err)
-		}
-		if err := putJoinToken(t, s, newJoinToken("j"+suffix, "probe", tid, 1000, 9000)); err != nil {
-			t.Fatal(err)
-		}
-		if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-			return tx.InsertUnconfirmedAlerts(ctx, []store.UnconfirmedAlert{{NodeID: "n" + suffix, LocalID: 1, TenantID: tid,
-				MonitorID: "m" + suffix, ChannelID: "c" + suffix, Status: "DOWN", SinceMs: 2000, SentMs: 2100,
-				Outcome: "sent", Reachable: 1, Total: 3, Reporters: []string{"n" + suffix}, ReportedMs: 2200}})
-		}); err != nil {
-			t.Fatal(err)
-		}
+		seedTenantAllTables(t, s, tid)
 	}
 
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
@@ -2031,6 +2085,61 @@ func testDeleteTenant(t *testing.T, s store.State) {
 		t.Fatalf("delete tenant A: %v", err)
 	}
 
+	assertDeletedTenantDataGone(ctx, t, s)
+	assertOtherTenantDataIntact(ctx, t, s)
+	assertTenantDeletionTombstones(ctx, t, s)
+}
+
+func seedTenantAllTables(t *testing.T, s store.State, tid string) {
+	t.Helper()
+	suffix := tid[len(tid)-1:] // "a" or "b"
+	if err := putChannel(t, s, newChannel(tid, "c"+suffix), 0); err != nil {
+		t.Fatal(err)
+	}
+	m := newMonitor(tid, "m"+suffix)
+	m.Tags = []string{"web"}
+	m.ChannelIDs = []string{"c" + suffix}
+	if err := put(t, s, m, 0); err != nil {
+		t.Fatal(err)
+	}
+	setState(t, s, tid, "m"+suffix, store.StatusDown, 2000)
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.OpenIncident(ctx, store.Incident{TenantID: tid, ID: "inc-" + suffix, MonitorID: "m" + suffix, StartedMs: 2000,
+			Cause: "refused", AffectedNodes: []string{"n1"}, Confirmed: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.EnqueueAlert(ctx, store.AlertDelivery{TenantID: tid, AlertKey: "key-" + suffix, ChannelID: "c" + suffix,
+			MonitorID: "m" + suffix, Payload: json.RawMessage(`{"event":"down"}`), NextAttemptMs: 3000,
+			State: store.AlertPending, CreatedMs: 3000, UpdatedMs: 3000})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putWindow(t, s, newWindow(tid, "w"+suffix), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := putUser(t, s, newUser(tid, "u"+suffix, "user-"+suffix), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := putSession(t, s, store.Session{TokenHash: "s" + suffix, FamilyID: "f" + suffix, TenantID: tid,
+		UserID: "u" + suffix, CreatedMs: 1000, ExpiresMs: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putJoinToken(t, s, newJoinToken("j"+suffix, "probe", tid, 1000, 9000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
+		return tx.InsertUnconfirmedAlerts(ctx, []store.UnconfirmedAlert{{NodeID: "n" + suffix, LocalID: 1, TenantID: tid,
+			MonitorID: "m" + suffix, ChannelID: "c" + suffix, Status: "DOWN", SinceMs: 2000, SentMs: 2100,
+			Outcome: "sent", Reachable: 1, Total: 3, Reporters: []string{"n" + suffix}, ReportedMs: 2200}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertDeletedTenantDataGone(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	if _, err := s.GetTenant(ctx, tenantA); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("tenant A error = %v, want ErrNotFound", err)
 	}
@@ -2058,8 +2167,10 @@ func testDeleteTenant(t *testing.T, s store.State) {
 	if u, _ := s.TenantUsage(ctx, tenantA); u != (store.TenantUsage{}) {
 		t.Errorf("usage of deleted A = %+v, want zero", u)
 	}
+}
 
-	// B keeps everything.
+func assertOtherTenantDataIntact(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	if _, err := s.GetMonitor(ctx, tenantB, "mb"); err != nil {
 		t.Errorf("monitor of B: %v", err)
 	}
@@ -2087,7 +2198,10 @@ func testDeleteTenant(t *testing.T, s store.State) {
 	if tn, err := s.GetTenant(ctx, tenantB); err != nil || tn.Name != tenantB {
 		t.Errorf("tenant B = %+v, %v", tn, err)
 	}
+}
 
+func assertTenantDeletionTombstones(ctx context.Context, t *testing.T, s store.State) {
+	t.Helper()
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		deleted, err := tx.IsTenantDeleted(ctx, tenantA)
 		if err != nil || !deleted {
@@ -2166,7 +2280,7 @@ func testInsertIdempotent(t *testing.T, m store.Metrics) {
 		t.Errorf("empty insert = %d, %v", n, err)
 	}
 
-	if seq, err := m.LastSeq(ctx, "n1", "inc-n1"); err != nil || seq != 4 {
+	if seq, err := m.LastSeq(ctx, "n1", incarnationN1); err != nil || seq != 4 {
 		t.Errorf("LastSeq = %d, %v; want 4", seq, err)
 	}
 	if seq, err := m.LastSeq(ctx, "n9", "unknown"); err != nil || seq != 0 {
@@ -2189,22 +2303,7 @@ func testHeartbeatList(t *testing.T, m store.Metrics) {
 	insert(t, m, heartbeats(tenantA, "mon", "n2", 1, 10, 0))
 	insert(t, m, heartbeats(tenantA, "other", "n1", 11, 5, 0))
 
-	var got []store.Heartbeat
-	q := store.HeartbeatQuery{MonitorID: "mon", FromMs: 2000, ToMs: 7000, Limit: 3}
-	for pages := 0; ; pages++ {
-		page, err := m.ListHeartbeats(ctx, tenantA, q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, page.Items...)
-		if page.Next == nil {
-			break
-		}
-		if pages > 10 {
-			t.Fatal("paging does not terminate")
-		}
-		q.After = page.Next
-	}
+	got := collectPagedHeartbeats(ctx, t, m, tenantA, store.HeartbeatQuery{MonitorID: "mon", FromMs: 2000, ToMs: 7000, Limit: 3}, 10)
 	if len(got) != 12 { // ts 2000..7000 inclusive = 6 timestamps × 2 nodes
 		t.Fatalf("got %d heartbeats, want 12", len(got))
 	}
@@ -2229,6 +2328,26 @@ func testHeartbeatList(t *testing.T, m store.Metrics) {
 	}
 }
 
+func collectPagedHeartbeats(ctx context.Context, t *testing.T, m store.Metrics, tenantID string, q store.HeartbeatQuery, maxPages int) []store.Heartbeat {
+	t.Helper()
+	var got []store.Heartbeat
+	for pages := 0; ; pages++ {
+		page, err := m.ListHeartbeats(ctx, tenantID, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, page.Items...)
+		if page.Next == nil {
+			break
+		}
+		if pages > maxPages {
+			t.Fatalf("limit %d: paging does not terminate", q.Limit)
+		}
+		q.After = page.Next
+	}
+	return got
+}
+
 // testHeartbeatPagingMatchesFullRead pages through a tie-heavy range with several
 // page sizes and checks that the concatenated pages equal one unpaged read, so
 // the keyset cursor neither skips nor repeats rows when ts_ms values collide.
@@ -2250,30 +2369,20 @@ func testHeartbeatPagingMatchesFullRead(t *testing.T, m store.Metrics) {
 		t.Fatalf("full read = %d items, next=%v, %v", len(full.Items), full.Next, err)
 	}
 	for _, limit := range []int{1, 2, 3, 5, 7} {
-		var got []store.Heartbeat
-		q := withLimit(base, limit)
-		for pages := 0; ; pages++ {
-			page, err := m.ListHeartbeats(ctx, tenantA, q)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got = append(got, page.Items...)
-			if page.Next == nil {
-				break
-			}
-			if pages > len(full.Items) {
-				t.Fatalf("limit %d: paging does not terminate", limit)
-			}
-			q.After = page.Next
-		}
-		if len(got) != len(full.Items) {
-			t.Fatalf("limit %d: %d items, full read has %d", limit, len(got), len(full.Items))
-		}
-		for i := range got {
-			a, b := got[i], full.Items[i]
-			if a.NodeID != b.NodeID || a.Incarnation != b.Incarnation || a.Seq != b.Seq || a.TsMs != b.TsMs {
-				t.Fatalf("limit %d: item %d = %+v, full read has %+v", limit, i, a, b)
-			}
+		got := collectPagedHeartbeats(ctx, t, m, tenantA, withLimit(base, limit), len(full.Items))
+		assertHeartbeatsEqual(t, limit, got, full.Items)
+	}
+}
+
+func assertHeartbeatsEqual(t *testing.T, limit int, got, want []store.Heartbeat) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("limit %d: %d items, full read has %d", limit, len(got), len(want))
+	}
+	for i := range got {
+		a, b := got[i], want[i]
+		if a.NodeID != b.NodeID || a.Incarnation != b.Incarnation || a.Seq != b.Seq || a.TsMs != b.TsMs {
+			t.Fatalf("limit %d: item %d = %+v, full read has %+v", limit, i, a, b)
 		}
 	}
 }
@@ -2309,7 +2418,7 @@ func testDeleteBefore(t *testing.T, m store.Metrics) {
 		t.Errorf("remaining = %d items (first ts %v), %v", len(page.Items), firstTs(page.Items), err)
 	}
 	if _, err := m.DeleteHeartbeatsBefore(ctx, 1, 0); err == nil {
-		t.Error("batch size 0 accepted")
+		t.Error(errFmtBatchSizeZeroAccepted)
 	}
 }
 
@@ -2419,7 +2528,7 @@ func testCompaction(t *testing.T, m store.Metrics) {
 	ctx := context.Background()
 	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 4, 0))
 	minute := store.LatencyMinute{TenantID: tenantA, MonitorID: "m1", NodeID: "n1", MinuteMs: 0, Min: 10, Max: 13, Avg: 11.5, P95: 13, OKCount: 4}
-	keys := []store.HeartbeatKey{{NodeID: "n1", Incarnation: "inc-n1", Seq: 2}, {NodeID: "n1", Incarnation: "inc-n1", Seq: 3}}
+	keys := []store.HeartbeatKey{{NodeID: "n1", Incarnation: incarnationN1, Seq: 2}, {NodeID: "n1", Incarnation: incarnationN1, Seq: 3}}
 	if err := m.CompactHeartbeats(ctx, []store.LatencyMinute{minute}, keys); err != nil {
 		t.Fatal(err)
 	}
@@ -2441,14 +2550,14 @@ func testEnabledUsersWithRole(t *testing.T, s store.State) {
 	ctx := context.Background()
 	seedTenants(t, s, tenantA, tenantB)
 	admin1 := newUser(tenantA, "a1", "admin1")
-	admin1.Role = "tenant-admin"
+	admin1.Role = roleTenantAdmin
 	admin2 := newUser(tenantA, "a2", "admin2")
-	admin2.Role = "tenant-admin"
+	admin2.Role = roleTenantAdmin
 	admin2.Disabled = true
 	editor := newUser(tenantA, "e1", "editor")
 	editor.Role = "tenant-editor"
 	other := newUser(tenantB, "b1", "other")
-	other.Role = "tenant-admin"
+	other.Role = roleTenantAdmin
 	for _, u := range []store.User{admin1, admin2, editor, other} {
 		if err := putUser(t, s, u, 0); err != nil {
 			t.Fatalf("create %s: %v", u.ID, err)
@@ -2473,10 +2582,10 @@ func testEnabledUsersWithRole(t *testing.T, s store.State) {
 		tenantID, role, exclude string
 		want                    int
 	}{
-		{"enabled admin counted, disabled one not", tenantA, "tenant-admin", "", 1},
-		{"excluded user not counted", tenantA, "tenant-admin", "a1", 0},
-		{"excluding a disabled user changes nothing", tenantA, "tenant-admin", "a2", 1},
-		{"other tenant not counted", tenantB, "tenant-admin", "", 1},
+		{"enabled admin counted, disabled one not", tenantA, roleTenantAdmin, "", 1},
+		{"excluded user not counted", tenantA, roleTenantAdmin, "a1", 0},
+		{"excluding a disabled user changes nothing", tenantA, roleTenantAdmin, "a2", 1},
+		{"other tenant not counted", tenantB, roleTenantAdmin, "", 1},
 		{"other role not counted", tenantA, "tenant-editor", "", 1},
 		{"role without users", tenantA, "tenant-viewer", "", 0},
 		{"unknown role", tenantA, "root", "", 0},
@@ -2532,7 +2641,7 @@ func testStatusHistoryBatch(t *testing.T, s store.State) {
 		t.Errorf("tenant B's own changes = %+v, %v", got, err)
 	}
 	if got, err := s.StatusHistoryBatch(ctx, tenantA, nil, 0, 100_000); err != nil || len(got) != 0 {
-		t.Errorf("no IDs = %+v, %v", got, err)
+		t.Errorf(errFmtNoIDs, got, err)
 	}
 }
 
@@ -2545,7 +2654,7 @@ func testLatestHeartbeatsByMonitor(t *testing.T, m store.Metrics) {
 	insert(t, m, heartbeats(tenantB, "m9", "n1", 100, 1, 90_000)) // only tenant B; seq must not clash with A
 	// A tie at the newest instant: the higher seq is the latest.
 	insert(t, m, []store.Heartbeat{
-		{NodeID: "n1", Incarnation: "inc-n1", Seq: 40, TenantID: tenantA, MonitorID: "m4", TsMs: 50_000, Status: store.CheckUp},
+		{NodeID: "n1", Incarnation: incarnationN1, Seq: 40, TenantID: tenantA, MonitorID: "m4", TsMs: 50_000, Status: store.CheckUp},
 		{NodeID: "n2", Incarnation: "inc-n2", Seq: 7, TenantID: tenantA, MonitorID: "m4", TsMs: 50_000, Status: store.CheckUp},
 	})
 
@@ -2572,7 +2681,7 @@ func testLatestHeartbeatsByMonitor(t *testing.T, m store.Metrics) {
 		t.Errorf("tenant B = %+v, %v", got, err)
 	}
 	if got, err := m.LatestHeartbeatsByMonitor(ctx, tenantA, nil); err != nil || len(got) != 0 {
-		t.Errorf("no IDs = %+v, %v", got, err)
+		t.Errorf(errFmtNoIDs, got, err)
 	}
 }
 
@@ -2607,7 +2716,7 @@ func testListRollupsBatch(t *testing.T, m store.Metrics) {
 		t.Fatalf("tenant B rollups = %+v, %v", got, err)
 	}
 	if got, err := m.ListRollupsBatch(ctx, tenantA, store.RollupBatchQuery{BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
-		t.Fatalf("no IDs = %+v, %v", got, err)
+		t.Fatalf(errFmtNoIDs, got, err)
 	}
 }
 
@@ -2677,10 +2786,10 @@ func testSeriesTenantIsolation(t *testing.T, m store.Metrics) {
 			t.Errorf("ListRollupsBatch(%s) = %+v, %v", tc.tenant, batch, err)
 		}
 	}
-	if got, err := m.ListRollups(ctx, "tenant-c", q); err != nil || len(got) != 0 {
+	if got, err := m.ListRollups(ctx, tenantC, q); err != nil || len(got) != 0 {
 		t.Errorf("unknown tenant sees %+v, %v", got, err)
 	}
-	if got, err := m.ListRollupsBatch(ctx, "tenant-c", store.RollupBatchQuery{MonitorIDs: []string{"m1"}, NodeID: "n1", BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
+	if got, err := m.ListRollupsBatch(ctx, tenantC, store.RollupBatchQuery{MonitorIDs: []string{"m1"}, NodeID: "n1", BucketMs: store.BucketHour, ToMs: 1 << 62}); err != nil || len(got) != 0 {
 		t.Errorf("unknown tenant batch sees %+v, %v", got, err)
 	}
 	// Both tenants' minutes exist: retention visits both series.
@@ -2696,6 +2805,28 @@ func testSeriesTenantIsolation(t *testing.T, m store.Metrics) {
 func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	ctx := context.Background()
 	const oldPerSeries, batch = 5, 3
+	seedRetentionSeries(ctx, t, m)
+	cutoff := int64(oldPerSeries * store.BucketHour)
+
+	// Hourly: 4 monitors x 2 nodes x 5 old hours. Minutes: 4 monitors x 5 old minutes.
+	runRetentionBatchDelete(t, "hourly", 4*2*oldPerSeries, batch, func() (int64, error) {
+		return m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch)
+	})
+	runRetentionBatchDelete(t, "minutes", 4*oldPerSeries, batch, func() (int64, error) {
+		return m.DeleteLatencyMinutesBefore(ctx, oldPerSeries*60_000, batch)
+	})
+
+	assertRetentionSurvivors(ctx, t, m, cutoff)
+	if n, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch); err != nil || n != 0 {
+		t.Errorf("finished retention deleted %d, %v", n, err)
+	}
+	if _, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, 0); err == nil {
+		t.Error(errFmtBatchSizeZeroAccepted)
+	}
+}
+
+func seedRetentionSeries(ctx context.Context, t *testing.T, m store.Metrics) {
+	t.Helper()
 	var rollups []store.Rollup
 	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
 		for _, node := range []string{"", "n1"} {
@@ -2708,7 +2839,6 @@ func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	if err := m.PutRollups(ctx, rollups, nil); err != nil {
 		t.Fatal(err)
 	}
-	cutoff := oldPerSeries * store.BucketHour
 	var minutes []store.LatencyMinute
 	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
 		for i := int64(0); i < 7; i++ {
@@ -2718,38 +2848,32 @@ func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	if err := m.CompactHeartbeats(ctx, minutes, nil); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	// Hourly: 4 monitors x 2 nodes x 5 old hours. Minutes: 4 monitors x 5 old minutes.
-	for _, tc := range []struct {
-		name  string
-		total int
-		del   func() (int64, error)
-	}{
-		{"hourly", 4 * 2 * oldPerSeries, func() (int64, error) { return m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch) }},
-		{"minutes", 4 * oldPerSeries, func() (int64, error) {
-			return m.DeleteLatencyMinutesBefore(ctx, oldPerSeries*60_000, batch)
-		}},
-	} {
-		sum, calls := 0, 0
-		for {
-			n, err := tc.del()
-			if err != nil {
-				t.Fatalf("%s batch: %v", tc.name, err)
-			}
-			if n > batch {
-				t.Fatalf("%s batch deleted %d rows, limit %d", tc.name, n, batch)
-			}
-			sum += int(n)
-			calls++
-			if n < batch || calls > 100 {
-				break
-			}
+func runRetentionBatchDelete(t *testing.T, name string, total, batch int, del func() (int64, error)) {
+	t.Helper()
+	sum, calls := 0, 0
+	for {
+		n, err := del()
+		if err != nil {
+			t.Fatalf("%s batch: %v", name, err)
 		}
-		if sum != tc.total {
-			t.Errorf("%s: deleted %d rows in %d batches, want %d", tc.name, sum, calls, tc.total)
+		if int(n) > batch {
+			t.Fatalf("%s batch deleted %d rows, limit %d", name, n, batch)
+		}
+		sum += int(n)
+		calls++
+		if int(n) < batch || calls > 100 {
+			break
 		}
 	}
+	if sum != total {
+		t.Errorf("%s: deleted %d rows in %d batches, want %d", name, sum, calls, total)
+	}
+}
 
+func assertRetentionSurvivors(ctx context.Context, t *testing.T, m store.Metrics, cutoff int64) {
+	t.Helper()
 	for _, mon := range []string{"m1", "m2", "m3", "m4"} {
 		got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: mon, AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62})
 		if err != nil || len(got) != 2*2 {
@@ -2763,12 +2887,6 @@ func testRetentionInBatches(t *testing.T, m store.Metrics) {
 	}
 	if got, err := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", BucketMs: store.BucketDay, ToMs: 1 << 62}); err != nil || len(got) != 1 {
 		t.Errorf("daily rollups touched by hourly retention: %+v, %v", got, err)
-	}
-	if n, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, batch); err != nil || n != 0 {
-		t.Errorf("finished retention deleted %d, %v", n, err)
-	}
-	if _, err := m.DeleteRollupsBefore(ctx, store.BucketHour, cutoff, 0); err == nil {
-		t.Error("batch size 0 accepted")
 	}
 }
 
@@ -3060,14 +3178,14 @@ func testJoinTokens(t *testing.T, s store.State) {
 		t.Fatal(err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneJoinTokens(ctx, 2000) }); err != nil {
-		t.Fatalf("prune: %v", err)
+		t.Fatalf(errFmtPrune, err)
 	}
 	if _, err := s.GetJoinToken(ctx, "t3"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("expired token after prune error = %v, want ErrNotFound", err)
 	}
 
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeleteJoinToken(ctx, "t2") }); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf(errFmtDelete, err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.DeleteJoinToken(ctx, "t2") }); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("delete unknown error = %v, want ErrNotFound", err)
@@ -3084,17 +3202,17 @@ func testRevokedNodes(t *testing.T, s store.State) {
 	put := func(n store.RevokedNode) error {
 		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutRevokedNode(ctx, n) })
 	}
-	if err := put(store.RevokedNode{NodeID: "node-b", RevokedMs: 200}); err != nil {
+	if err := put(store.RevokedNode{NodeID: nodeIDB, RevokedMs: 200}); err != nil {
 		t.Fatal(err)
 	}
-	if err := put(store.RevokedNode{NodeID: "node-a", RevokedMs: 100}); err != nil {
+	if err := put(store.RevokedNode{NodeID: nodeIDA, RevokedMs: 100}); err != nil {
 		t.Fatal(err)
 	}
 	// A repeated revocation keeps the later time, whatever the order.
-	if err := put(store.RevokedNode{NodeID: "node-a", RevokedMs: 300}); err != nil {
+	if err := put(store.RevokedNode{NodeID: nodeIDA, RevokedMs: 300}); err != nil {
 		t.Fatalf("second revocation: %v", err)
 	}
-	if err := put(store.RevokedNode{NodeID: "node-b", RevokedMs: 150}); err != nil {
+	if err := put(store.RevokedNode{NodeID: nodeIDB, RevokedMs: 150}); err != nil {
 		t.Fatalf("earlier revocation: %v", err)
 	}
 	if err := put(store.RevokedNode{RevokedMs: 400}); err == nil {
@@ -3105,7 +3223,7 @@ func testRevokedNodes(t *testing.T, s store.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []store.RevokedNode{{NodeID: "node-a", RevokedMs: 300}, {NodeID: "node-b", RevokedMs: 200}}
+	want := []store.RevokedNode{{NodeID: nodeIDA, RevokedMs: 300}, {NodeID: nodeIDB, RevokedMs: 200}}
 	if len(list) != len(want) {
 		t.Fatalf("revoked nodes = %+v, want %+v", list, want)
 	}
@@ -3133,7 +3251,7 @@ func nodeFields(a, b store.Node) bool {
 func testNodeConnectivity(t *testing.T, s store.State) {
 	ctx := context.Background()
 	node := store.Node{
-		ID:                    "node-c",
+		ID:                    nodeIDC,
 		Role:                  store.NodeRoleVoter,
 		Healthy:               true,
 		HealthChangedMs:       100,
@@ -3158,7 +3276,7 @@ func testNodeConnectivity(t *testing.T, s store.State) {
 		}
 		return got
 	}
-	if got := get("node-c"); !nodeFields(got, node) {
+	if got := get(nodeIDC); !nodeFields(got, node) {
 		t.Errorf("connectivity did not round-trip: got %+v, want %+v", got, node)
 	}
 	list, err := s.ListNodes(ctx)
@@ -3171,13 +3289,13 @@ func testNodeConnectivity(t *testing.T, s store.State) {
 
 	set := func(impaired bool, reason string, atMs int64) error {
 		return update(t, s, func(ctx context.Context, tx store.StateTx) error {
-			return tx.SetNodeConnectivity(ctx, "node-c", impaired, reason, atMs)
+			return tx.SetNodeConnectivity(ctx, nodeIDC, impaired, reason, atMs)
 		})
 	}
 	if err := set(true, "deviation", 400); err != nil {
 		t.Fatal(err)
 	}
-	got := get("node-c")
+	got := get(nodeIDC)
 	if !got.ConnectivityImpaired || got.ConnectivityReason != "deviation" || got.ConnectivityChangedMs != 400 || got.UpdatedMs != 400 {
 		t.Errorf("after SetNodeConnectivity: %+v", got)
 	}
@@ -3187,7 +3305,7 @@ func testNodeConnectivity(t *testing.T, s store.State) {
 	if err := set(false, "", 500); err != nil {
 		t.Fatal(err)
 	}
-	got = get("node-c")
+	got = get(nodeIDC)
 	if got.ConnectivityImpaired || got.ConnectivityReason != "" || got.ConnectivityChangedMs != 500 {
 		t.Errorf("after recovery: %+v", got)
 	}
@@ -3195,7 +3313,7 @@ func testNodeConnectivity(t *testing.T, s store.State) {
 		t.Fatal(err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-		return tx.SetNodeConnectivity(ctx, "node-x", true, "reference", 700)
+		return tx.SetNodeConnectivity(ctx, nodeIDX, true, "reference", 700)
 	}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetNodeConnectivity unknown node: err = %v, want ErrNotFound", err)
 	}
@@ -3207,7 +3325,7 @@ func testNodes(t *testing.T, s store.State) {
 		return update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PutNode(ctx, n) })
 	}
 	nodeB := store.Node{
-		ID:                "node-b",
+		ID:                nodeIDB,
 		Name:              "Berlin",
 		Role:              store.NodeRoleVoter,
 		Capabilities:      []string{"icmp", "http"},
@@ -3221,7 +3339,7 @@ func testNodes(t *testing.T, s store.State) {
 		UpdatedMs:         100,
 	}
 	nodeA := store.Node{
-		ID:              "node-a",
+		ID:              nodeIDA,
 		Name:            "Amsterdam",
 		Role:            store.NodeRoleProbe,
 		HealthChangedMs: 200,
@@ -3266,7 +3384,7 @@ func testNodes(t *testing.T, s store.State) {
 	var got store.Node
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		var err error
-		got, err = tx.GetNode(ctx, "node-b")
+		got, err = tx.GetNode(ctx, nodeIDB)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -3288,7 +3406,7 @@ func testNodes(t *testing.T, s store.State) {
 	}
 	err = update(t, s, func(ctx context.Context, tx store.StateTx) error {
 		var err error
-		got, err = tx.GetNode(ctx, "node-b")
+		got, err = tx.GetNode(ctx, nodeIDB)
 		return err
 	})
 	if err != nil {
@@ -3303,19 +3421,19 @@ func testNodes(t *testing.T, s store.State) {
 
 	// Unknown IDs are not found on read, but not an error on delete.
 	err = update(t, s, func(ctx context.Context, tx store.StateTx) error {
-		_, err := tx.GetNode(ctx, "node-x")
+		_, err := tx.GetNode(ctx, nodeIDX)
 		return err
 	})
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("GetNode unknown: err = %v, want ErrNotFound", err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-		return tx.DeleteNode(ctx, "node-a")
+		return tx.DeleteNode(ctx, nodeIDA)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error {
-		return tx.DeleteNode(ctx, "node-x")
+		return tx.DeleteNode(ctx, nodeIDX)
 	}); err != nil {
 		t.Errorf("delete unknown node: %v", err)
 	}
@@ -3323,7 +3441,7 @@ func testNodes(t *testing.T, s store.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].ID != "node-b" || list[0].Version != "1.3.0" {
+	if len(list) != 1 || list[0].ID != nodeIDB || list[0].Version != "1.3.0" {
 		t.Errorf("nodes after delete = %+v, want only node-b at 1.3.0", list)
 	}
 }
@@ -3360,7 +3478,7 @@ func testRevokedCerts(t *testing.T, s store.State) {
 
 	// Pruning removes entries of certificates that expired before the cut-off.
 	if err := update(t, s, func(ctx context.Context, tx store.StateTx) error { return tx.PruneRevokedCerts(ctx, 2000) }); err != nil {
-		t.Fatalf("prune: %v", err)
+		t.Fatalf(errFmtPrune, err)
 	}
 	list, err = s.ListRevokedCerts(ctx)
 	if err != nil || len(list) != 1 || list[0].Serial != "b2" {
@@ -3372,6 +3490,37 @@ func testRevokedCerts(t *testing.T, s store.State) {
 // checks that B keeps its data and that the purge markers are kept (ADR 0029).
 func testPurgeTenant(t *testing.T, m store.Metrics) {
 	ctx := context.Background()
+	seedPurgeTenantData(ctx, t, m)
+
+	if _, err := m.PurgeTenant(ctx, tenantA, 0); err == nil {
+		t.Error(errFmtBatchSizeZeroAccepted)
+	}
+	batches := runPurgeTenantLoop(ctx, t, m, tenantA, 4)
+	if batches < 2 {
+		t.Errorf("purge finished in %d batches, want several", batches)
+	}
+
+	if page, _ := m.ListHeartbeats(ctx, tenantA, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 0 {
+		t.Errorf("heartbeats of A left = %d", len(page.Items))
+	}
+	if got, _ := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 0 {
+		t.Errorf("rollups of A left = %+v", got)
+	}
+	if page, _ := m.ListHeartbeats(ctx, tenantB, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 10 {
+		t.Errorf("heartbeats of B = %d, want 10", len(page.Items))
+	}
+	if got, _ := m.ListRollups(ctx, tenantB, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 1 {
+		t.Errorf("rollups of B = %+v, want 1", got)
+	}
+	if alerts, _ := m.ListUnreportedDegradedAlerts(ctx, 10); len(alerts) != 1 || alerts[0].TenantID != tenantB {
+		t.Errorf("degraded alerts = %+v, want only B's", alerts)
+	}
+
+	assertPurgeTenantMarkers(ctx, t, m)
+}
+
+func seedPurgeTenantData(ctx context.Context, t *testing.T, m store.Metrics) {
+	t.Helper()
 	insert(t, m, heartbeats(tenantA, "m1", "n1", 1, 25, 0))
 	insert(t, m, heartbeats(tenantB, "m1", "n2", 1, 10, 0)) // own node: heartbeats are unique by node, incarnation and seq
 	if err := m.PutRollups(ctx, []store.Rollup{
@@ -3397,13 +3546,13 @@ func testPurgeTenant(t *testing.T, m store.Metrics) {
 		SinceMs: 1, SentMs: 1, Outcome: "sent", Reachable: 1, Total: 3}); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	if _, err := m.PurgeTenant(ctx, tenantA, 0); err == nil {
-		t.Error("batch size 0 accepted")
-	}
+func runPurgeTenantLoop(ctx context.Context, t *testing.T, m store.Metrics, tenantID string, batchSize int) int {
+	t.Helper()
 	batches := 0
 	for {
-		n, err := m.PurgeTenant(ctx, tenantA, 4)
+		n, err := m.PurgeTenant(ctx, tenantID, batchSize)
 		if err != nil {
 			t.Fatalf("purge: %v", err)
 		}
@@ -3414,26 +3563,11 @@ func testPurgeTenant(t *testing.T, m store.Metrics) {
 			t.Fatal("purge does not finish")
 		}
 	}
-	if batches < 2 {
-		t.Errorf("purge finished in %d batches, want several", batches)
-	}
+	return batches
+}
 
-	if page, _ := m.ListHeartbeats(ctx, tenantA, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 0 {
-		t.Errorf("heartbeats of A left = %d", len(page.Items))
-	}
-	if got, _ := m.ListRollups(ctx, tenantA, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 0 {
-		t.Errorf("rollups of A left = %+v", got)
-	}
-	if page, _ := m.ListHeartbeats(ctx, tenantB, store.HeartbeatQuery{MonitorID: "m1", ToMs: 1 << 62}); len(page.Items) != 10 {
-		t.Errorf("heartbeats of B = %d, want 10", len(page.Items))
-	}
-	if got, _ := m.ListRollups(ctx, tenantB, store.RollupQuery{MonitorID: "m1", AllNodes: true, BucketMs: store.BucketHour, ToMs: 1 << 62}); len(got) != 1 {
-		t.Errorf("rollups of B = %+v, want 1", got)
-	}
-	if alerts, _ := m.ListUnreportedDegradedAlerts(ctx, 10); len(alerts) != 1 || alerts[0].TenantID != tenantB {
-		t.Errorf("degraded alerts = %+v, want only B's", alerts)
-	}
-
+func assertPurgeTenantMarkers(ctx context.Context, t *testing.T, m store.Metrics) {
+	t.Helper()
 	if purged, err := m.PurgedTenants(ctx); err != nil || len(purged) != 0 {
 		t.Fatalf("purged before marking = %v, %v", purged, err)
 	}
