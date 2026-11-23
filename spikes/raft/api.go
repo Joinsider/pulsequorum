@@ -174,10 +174,6 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, joinResponse{Error: err.Error()})
 		return
 	}
-	// The joiner's name and ID are logged; strip line breaks so a request
-	// cannot forge log entries.
-	req.Name = stripLineBreaks(req.Name)
-	req.ID = stripLineBreaks(req.ID)
 	if n.raft.State() != raft.Leader {
 		n.forwardJoin(w, r, req)
 		return
@@ -187,7 +183,7 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	n.memberMu.Lock()
 	defer n.memberMu.Unlock()
 	res := joinResponse{LeaderName: n.cfg.Name, WaitedMutexMs: time.Since(t0).Milliseconds()}
-	slog.Info("join: start", "joiner", req.Name, "id", req.ID, "waited_mutex_ms", res.WaitedMutexMs)
+	slog.Info("join: start", "joiner", stripLineBreaks(req.Name), "id", stripLineBreaks(req.ID), "waited_mutex_ms", res.WaitedMutexMs)
 
 	isMember, done := n.checkExistingMember(w, req, &res)
 	if done {
@@ -207,7 +203,7 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	res.NonvoterMs = time.Since(t1).Milliseconds()
 	res.LeaderStartLag = n.raft.LastIndex()
-	slog.Info("join: nonvoter added", "joiner", req.Name, "ms", res.NonvoterMs)
+	slog.Info("join: nonvoter added", "joiner", stripLineBreaks(req.Name), "ms", res.NonvoterMs)
 
 	if !n.waitForJoinerCatchUp(r.Context(), w, req, addIndex, &res) {
 		return
@@ -220,10 +216,12 @@ func (n *Node) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.PromoteMs = time.Since(t3).Milliseconds()
-	slog.Info("join: promoted to voter", "joiner", req.Name, "catch_up_ms", res.CatchUpMs, "promote_ms", res.PromoteMs)
+	slog.Info("join: promoted to voter", "joiner", stripLineBreaks(req.Name), "catch_up_ms", res.CatchUpMs, "promote_ms", res.PromoteMs)
 	writeJSON(w, http.StatusOK, res)
 }
 
+// stripLineBreaks removes CR and LF from a request value before it is logged,
+// so a request cannot forge log entries.
 func stripLineBreaks(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }
@@ -266,7 +264,7 @@ func (n *Node) checkExistingMember(w http.ResponseWriter, req joinRequest, res *
 			// addresses; never remove automatically (FA-CLU-08) -> operator.
 			res.Error = "address already used by another server id; remove it first"
 			res.ConflictID = string(s.ID)
-			slog.Warn("join: address conflict", "joiner", req.Name, "new_id", req.ID, "old_id", s.ID)
+			slog.Warn("join: address conflict", "joiner", stripLineBreaks(req.Name), "new_id", stripLineBreaks(req.ID), "old_id", s.ID)
 			writeJSON(w, http.StatusConflict, *res)
 			return false, true
 		}
