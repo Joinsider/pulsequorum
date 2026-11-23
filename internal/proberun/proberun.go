@@ -280,7 +280,8 @@ func serveProbeHTTP(ctx context.Context, cfg config.Config, ready func() error, 
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	// ctx is already cancelled here; keep its values but not its cancellation.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err

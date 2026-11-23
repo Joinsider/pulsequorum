@@ -95,7 +95,7 @@ jobs:
       - name: npm audit with reviewed exceptions
         working-directory: web
         run: |
-          npm ci
+          npm ci --ignore-scripts
           node scripts/audit.mjs
 
   goreleaser:

@@ -38,7 +38,7 @@
           {{ t('probes.tokenDialog.copy') }}
         </button>
         @if (copied()) {
-          <span class="copied" role="status">{{ t('probes.tokenDialog.copied') }}</span>
+          <output class="copied">{{ t('probes.tokenDialog.copied') }}</output>
         }
       </div>
       @if (expiresAt(); as exp) {

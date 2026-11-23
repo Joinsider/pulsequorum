@@ -17,7 +17,7 @@
   </app-page-header>
 
   @if (quota(); as q) {
-    <p class="banner" [class.banner--warn]="q.reached" role="status" data-testid="probes-quota">
+    <output class="banner" [class.banner--warn]="q.reached" data-testid="probes-quota">
       {{
         t('probes.quota', {
           used: q.used,
@@ -27,7 +27,7 @@
       @if (q.reached) {
         <span>— {{ t('probes.limitReached') }}</span>
       }
-    </p>
+    </output>
   }
 
   @if (actionError(); as err) {
@@ -35,7 +35,7 @@
   }
 
   @if (loading() && probes() === null) {
-    <p class="state" role="status">{{ t('common.loading') }}</p>
+    <output class="state">{{ t('common.loading') }}</output>
   } @else if (loadError()) {
     <div class="state state--error" role="alert">
       <p>{{ t('probes.loadError') }}</p>
