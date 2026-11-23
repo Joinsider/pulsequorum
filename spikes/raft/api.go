@@ -278,9 +278,17 @@ func (n *Node) waitForJoinerCatchUp(ctx context.Context, w http.ResponseWriter, 
 	// big entry / pending InstallSnapshot) an empty joiner passes immediately.
 	// Require the joiner to have applied at least its own AddNonvoter entry.
 	t2 := time.Now()
+	// Ask the address raft has for the joiner, not the one from the request:
+	// the leader only contacts servers of its own configuration.
+	addr, err := n.memberAddr(raft.ServerID(req.ID))
+	if err != nil {
+		res.Error = "catch-up: " + err.Error()
+		writeJSON(w, http.StatusServiceUnavailable, *res)
+		return false
+	}
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		applied, err := n.remoteApplied(ctx, req.Addr)
+		applied, err := n.remoteApplied(ctx, addr)
 		if err == nil && applied >= addIndex && applied+n.cfg.CatchUpLag >= n.raft.LastIndex() {
 			res.JoinerApplied = applied
 			break
@@ -297,6 +305,20 @@ func (n *Node) waitForJoinerCatchUp(ctx context.Context, w http.ResponseWriter, 
 	}
 	res.CatchUpMs = time.Since(t2).Milliseconds()
 	return true
+}
+
+// memberAddr returns the address of server id in the current raft configuration.
+func (n *Node) memberAddr(id raft.ServerID) (string, error) {
+	f := n.raft.GetConfiguration()
+	if err := f.Error(); err != nil {
+		return "", fmt.Errorf("read configuration: %w", err)
+	}
+	for _, srv := range f.Configuration().Servers {
+		if srv.ID == id {
+			return string(srv.Address), nil
+		}
+	}
+	return "", errors.New("joiner is not in the raft configuration")
 }
 
 func (n *Node) remoteApplied(ctx context.Context, addr string) (uint64, error) {
