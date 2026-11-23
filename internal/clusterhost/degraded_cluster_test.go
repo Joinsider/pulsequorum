@@ -495,17 +495,19 @@ func TestDegradedModeAlertsAndCorrects(t *testing.T) {
 		return p.Status == string(store.StatusDown) && !p.Confirmed && p.Sender != nil &&
 			p.Sender.ReachableVoters == 1 && p.Sender.TotalVoters == 3
 	})
+	// The applier writes the log row after the delivery, so the row may lag
+	// behind the webhook.
 	var localID int64
 	var sinceOfAlert int64
-	for _, row := range degradedAlerts(ctx, t, remaining) {
-		if row.MonitorID == degMonitorID && row.Status == string(store.StatusDown) {
-			localID = row.ID
-			sinceOfAlert = row.SinceMs
+	eventually(t, "DOWN row in the degraded alert log of the remaining voter", 10*time.Second, func() bool {
+		for _, row := range degradedAlerts(ctx, t, remaining) {
+			if row.MonitorID == degMonitorID && row.Status == string(store.StatusDown) {
+				localID = row.ID
+				sinceOfAlert = row.SinceMs
+			}
 		}
-	}
-	if localID == 0 {
-		t.Fatal("no DOWN row in the degraded alert log of the remaining voter")
-	}
+		return localID != 0
+	})
 
 	// Step 5: the stopped voters return with their data; all feeds report DOWN.
 	for _, cn := range stopped {
