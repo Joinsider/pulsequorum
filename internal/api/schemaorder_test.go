@@ -10,6 +10,7 @@ import (
 )
 
 func TestSchemaWithOrder(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   string
@@ -77,6 +78,7 @@ func TestSchemaWithOrder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := schemaWithOrder(json.RawMessage(tt.in))
 			if err != nil {
 				t.Fatalf("schemaWithOrder: %v", err)
@@ -90,6 +92,7 @@ func TestSchemaWithOrder(t *testing.T) {
 }
 
 func TestSchemaWithOrderErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   string
@@ -101,6 +104,7 @@ func TestSchemaWithOrderErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if _, err := schemaWithOrder(json.RawMessage(tt.in)); err == nil {
 				t.Errorf("schemaWithOrder(%q) returned no error", tt.in)
 			}

@@ -13,6 +13,7 @@ import (
 // ADR 0018: every payload of the oneof has a minimum version, so a new payload
 // cannot silently get the version of the binary that adds it.
 func TestMinVersionCoversEveryPayload(t *testing.T) {
+	t.Parallel()
 	oneof := (&pb.Command{}).ProtoReflect().Descriptor().Oneofs().ByName("payload")
 	if oneof == nil {
 		t.Fatal("Command has no payload oneof")
@@ -21,6 +22,7 @@ func TestMinVersionCoversEveryPayload(t *testing.T) {
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		t.Run(string(fd.Name()), func(t *testing.T) {
+			t.Parallel()
 			m := (&pb.Command{}).ProtoReflect()
 			m.Set(fd, m.NewField(fd))
 			cmd := m.Interface().(*pb.Command)
@@ -35,6 +37,7 @@ func TestMinVersionCoversEveryPayload(t *testing.T) {
 }
 
 func TestMinVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  *pb.Command
@@ -67,6 +70,7 @@ func TestMinVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := minVersion(tt.cmd); got != tt.want {
 				t.Errorf("minVersion() = %d, want %d", got, tt.want)
 			}
@@ -75,6 +79,7 @@ func TestMinVersion(t *testing.T) {
 }
 
 func TestStampSetsVersionFromPayload(t *testing.T) {
+	t.Parallel()
 	cmd := stamp(&pb.Command{Version: 9, Payload: &pb.Command_SetFeatureLevel{SetFeatureLevel: &pb.SetFeatureLevel{Level: 2}}})
 	if cmd.GetVersion() != 2 {
 		t.Errorf("stamped version = %d, want 2", cmd.GetVersion())

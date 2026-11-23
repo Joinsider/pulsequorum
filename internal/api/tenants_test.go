@@ -64,6 +64,7 @@ func principalFor(tenantID, role string) string { return tenantID + ":" + role }
 // anonymous callers and 403 to everyone below platform admin, tenant admins
 // included (ADR 0029). /tenant is open to every role.
 func TestTenantAdminRequiresPlatformAdmin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	missing := uuid.NewString()
@@ -108,6 +109,7 @@ func TestTenantAdminRequiresPlatformAdmin(t *testing.T) {
 // TestTenantLifecycle: create, patch, suspend, delete with the name
 // confirmation, and the 404 afterwards. The ID of a deleted tenant is never reused.
 func TestTenantLifecycle(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 
@@ -164,6 +166,7 @@ func TestTenantLifecycle(t *testing.T) {
 // TestTenantCreateIsIdempotent: a retry with the same Idempotency-Key returns
 // the tenant of the first attempt.
 func TestTenantCreateIsIdempotent(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	key := uuid.NewString()
@@ -179,6 +182,7 @@ func TestTenantCreateIsIdempotent(t *testing.T) {
 
 // TestTenantValidation: field errors come back as 422 before anything is proposed.
 func TestTenantValidation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	tests := []struct {
@@ -200,6 +204,7 @@ func TestTenantValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do(tt.method, tt.path, platformAdmin, tt.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Fatalf("= %d, want 422: %s", res.code, res.body)
@@ -214,6 +219,7 @@ func TestTenantValidation(t *testing.T) {
 // TestSystemPlanAndTenantAreHidden: the system plan and the system tenant are
 // neither listed nor served, and the protected tenants cannot be suspended or deleted.
 func TestSystemPlanAndTenantAreHidden(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	enableTenantAdmin(t, e)
@@ -259,6 +265,7 @@ func TestSystemPlanAndTenantAreHidden(t *testing.T) {
 // TestPlanInUseCannotBeDeleted: a plan used by a tenant answers 409; the
 // default plan cannot be deleted; a freed plan can.
 func TestPlanInUseCannotBeDeleted(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 
@@ -289,6 +296,7 @@ func TestPlanInUseCannotBeDeleted(t *testing.T) {
 
 // TestPlanValidation: name, ID and limit values are checked before proposing.
 func TestPlanValidation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	tests := []struct {
@@ -305,6 +313,7 @@ func TestPlanValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do("PUT", plansPath+"/"+tt.id, platformAdmin, tt.body)
 			if res.code != http.StatusUnprocessableEntity || !strings.Contains(string(res.body), `"field":"`+tt.field+`"`) {
 				t.Fatalf("= %d, want 422 at %s: %s", res.code, tt.field, res.body)
@@ -319,6 +328,7 @@ func TestPlanValidation(t *testing.T) {
 // TestMonitorLimitEnforcement: maxMonitors and minIntervalSeconds of the
 // tenant's plan are enforced on create, update and clone with 403 and the message.
 func TestMonitorLimitEnforcement(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	putPlan(t, e, "starter", map[string]any{"name": "Starter",
@@ -374,6 +384,7 @@ func TestMonitorLimitEnforcement(t *testing.T) {
 
 // TestChannelLimitEnforcement: maxChannels is enforced on channel creation.
 func TestChannelLimitEnforcement(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	putPlan(t, e, "chat", map[string]any{"name": "Chat", "limits": map[string]any{"maxChannels": 1}})
@@ -395,6 +406,7 @@ func TestChannelLimitEnforcement(t *testing.T) {
 // TestOwnTenantShowsUsageAndExceeded: after a plan is lowered below the stock,
 // GET /tenant reports the usage and the exceeded limit, and new monitors are rejected.
 func TestOwnTenantShowsUsageAndExceeded(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	putPlan(t, e, "roomy", map[string]any{"name": "Roomy", "limits": map[string]any{"maxMonitors": 5}})
@@ -442,6 +454,7 @@ func TestOwnTenantShowsUsageAndExceeded(t *testing.T) {
 // TestOwnTenantIsOnlyOwnTenant: /tenant always answers with the caller's tenant
 // and hides the organization, the overrides and the source.
 func TestOwnTenantIsOnlyOwnTenant(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableTenantAdmin(t, e)
 	tn := createTenant(t, e, map[string]any{"name": "Mine", "limits": map[string]any{"maxMonitors": 3}})

@@ -13,6 +13,7 @@ import (
 // (NFA-PERF-03): every monitor must be served by a seek on heartbeats_monitor_ts,
 // never by a scan of the heartbeats.
 func TestLatestHeartbeatsByMonitorPlan(t *testing.T) {
+	t.Parallel()
 	m := openMetrics(t, t.TempDir())
 	ctx := context.Background()
 	rows, err := m.db.reader.QueryContext(ctx, "EXPLAIN QUERY PLAN "+latestHeartbeatsByMonitorSQL, `["a","b"]`, "t", "t")

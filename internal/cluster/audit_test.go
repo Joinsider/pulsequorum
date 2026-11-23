@@ -28,6 +28,7 @@ func hinted(cmd *pb.Command, hint string) *pb.Command {
 // TestAuditEntryFields checks every field of one audit entry (ADR 0031,
 // section 2): index, command time, tenant, actor, action, object and request ID.
 func TestAuditEntryFields(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	cmd := withActor(must(NewPutMonitor("req-create-m1", "t1", "m1", monitorDoc("Web m1"), 0)), &pb.Actor{
 		Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada",
@@ -59,6 +60,7 @@ func TestAuditEntryFields(t *testing.T) {
 // Each step is applied and the newest audit entry is compared with the expected
 // values.
 func TestAuditActions(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
 	system := &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
@@ -142,6 +144,7 @@ func TestAuditActions(t *testing.T) {
 // TestAuditNotAtLowerLevels covers ADR 0031, section 4: below level 9 no audit
 // entries are written, not even for user changes.
 func TestAuditNotAtLowerLevels(t *testing.T) {
+	t.Parallel()
 	h := tokenFSMAt(t, AuditCommandLevel-1)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
 	res := h.apply(withActor(must(NewPutMonitor("l8", "t1", "m1", monitorDoc("Web m1"), 0)), user), 2000)
@@ -154,6 +157,7 @@ func TestAuditNotAtLowerLevels(t *testing.T) {
 // TestAuditNeverPolicies covers the operational commands: they change state,
 // but they write no audit entry.
 func TestAuditNeverPolicies(t *testing.T) {
+	t.Parallel()
 	h := batchFSM(t)
 	before := len(auditEntries(t, h))
 	cmds := []*pb.Command{
@@ -172,6 +176,7 @@ func TestAuditNeverPolicies(t *testing.T) {
 // TestAuditNotForRejectedOrReplayed covers the rules "rejected commands write
 // nothing" and "a deduplicated replay writes nothing".
 func TestAuditNotForRejectedOrReplayed(t *testing.T) {
+	t.Parallel()
 	h := batchFSM(t)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
 	before := len(auditEntries(t, h))
@@ -204,6 +209,7 @@ func TestAuditNotForRejectedOrReplayed(t *testing.T) {
 // TestAuditBatchEntries covers one entry per operation of a batch, numbered by
 // the position, with the shared index and request ID and the hints per operation.
 func TestAuditBatchEntries(t *testing.T) {
+	t.Parallel()
 	h := batchFSM(t)
 	actor := &pb.Actor{Kind: pb.Actor_KIND_API_TOKEN, Id: tokID(1), Name: "ci"}
 	paused := monitorDoc("Web m1")
@@ -245,6 +251,7 @@ func TestAuditBatchEntries(t *testing.T) {
 // verb of a monitor put, and any other value rejects the command before it
 // changes state.
 func TestAuditHints(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  func(*testing.T) *pb.Command
@@ -272,6 +279,7 @@ func TestAuditHints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := batchFSM(t)
 			before := len(auditEntries(t, h))
 			res := h.apply(tt.cmd(t), 2000)
@@ -290,6 +298,7 @@ func TestAuditHints(t *testing.T) {
 // tenant removes its audit entries, and the entry of the deletion itself is
 // recorded under the system tenant and survives.
 func TestAuditTenantDeleteKeepsSystemEntry(t *testing.T) {
+	t.Parallel()
 	h := tokenFSM(t)
 	system := &pb.Actor{Kind: pb.Actor_KIND_SYSTEM}
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin", Name: "Ada"}
@@ -322,6 +331,7 @@ func TestAuditTenantDeleteKeepsSystemEntry(t *testing.T) {
 // without an audit policy, the same way TestMinVersionCoversEveryPayload does
 // for versions (ADR 0031, section 2).
 func TestAuditPolicyCoversEveryPayload(t *testing.T) {
+	t.Parallel()
 	oneof := (&pb.Command{}).ProtoReflect().Descriptor().Oneofs().ByName("payload")
 	if oneof == nil {
 		t.Fatal("Command has no payload oneof")
@@ -330,6 +340,7 @@ func TestAuditPolicyCoversEveryPayload(t *testing.T) {
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		t.Run(string(fd.Name()), func(t *testing.T) {
+			t.Parallel()
 			m := (&pb.Command{}).ProtoReflect()
 			m.Set(fd, m.NewField(fd))
 			cmd := m.Interface().(*pb.Command)
@@ -347,6 +358,7 @@ func TestAuditPolicyCoversEveryPayload(t *testing.T) {
 // know audit_action and the token actor rules and apply such commands, so a
 // level-9 binary must do the same below level 9, or mixed voters diverge.
 func TestLevel9RulesOffBelowLevel9(t *testing.T) {
+	t.Parallel()
 	h := tokenFSMAt(t, AuditCommandLevel-1)
 	user := &pb.Actor{Kind: pb.Actor_KIND_USER, Id: "u-admin"}
 	res := h.apply(hinted(withActor(must(NewPutMonitor("l8h", "t1", "m1", monitorDoc("Web m1"), 0)), user), "archive"), 2000)

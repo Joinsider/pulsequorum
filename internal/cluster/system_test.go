@@ -67,6 +67,7 @@ func (h *alertFSM) setAlert(issuedAt int64, kind, subject string, active bool, l
 // TestSystemCommandsNeedLevel6 covers ADR 0025 and ADR 0018: the three commands
 // are rejected below command level 6 and write nothing.
 func TestSystemCommandsNeedLevel6(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  func() *pb.Command
@@ -79,6 +80,7 @@ func TestSystemCommandsNeedLevel6(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := newAlertFSM(t, t.TempDir())
 			h.setLevel(SystemAlertCommandLevel - 1)
 			h.putSystemTenant(1000)
@@ -97,6 +99,7 @@ func TestSystemCommandsNeedLevel6(t *testing.T) {
 	}
 
 	t.Run("accepted at level 6", func(t *testing.T) {
+		t.Parallel()
 		h := sysSetup(t)
 		h.do(NewRecordIncarnation("n2", "inc-1"), 2000, nil)
 		h.do(NewCheckpoint(), 3000, nil)
@@ -106,6 +109,7 @@ func TestSystemCommandsNeedLevel6(t *testing.T) {
 
 // TestSetSystemAlertValidation covers the checks of a SetSystemAlert command.
 func TestSetSystemAlertValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		kind    string
@@ -127,6 +131,7 @@ func TestSetSystemAlertValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := sysSetup(t)
 			var raw json.RawMessage
 			if tt.details != "" {
@@ -137,6 +142,7 @@ func TestSetSystemAlertValidation(t *testing.T) {
 	}
 
 	t.Run("details are compacted", func(t *testing.T) {
+		t.Parallel()
 		h := sysSetup(t)
 		h.setAlert(2000, "disk_low", "n1", true, 0, "{ \"freeRatio\" :\n 0.1 }")
 		a, err := h.systemAlert("disk_low", "n1")
@@ -152,6 +158,7 @@ func TestSetSystemAlertValidation(t *testing.T) {
 // TestSystemAlertTransitions covers the rules of SetSystemAlert: no-op on a
 // repeat, since time and key on activation, level change and clear.
 func TestSystemAlertTransitions(t *testing.T) {
+	t.Parallel()
 	h := sysSetup(t)
 	const kind, subject = "replication_lag", "n2"
 	since := func() int64 {
@@ -231,6 +238,7 @@ func TestSystemAlertTransitions(t *testing.T) {
 // a system alert reaches only enabled channels of the system tenant that
 // subscribe to "system", never a tenant channel.
 func TestSystemAlertOnlyToSystemChannels(t *testing.T) {
+	t.Parallel()
 	h := sysSetup(t)
 	h.putTenant(1000, "t1")
 	h.putChannel(1000, "t1", "a", channel(store.EventDown, store.EventUp), nil)
@@ -256,6 +264,7 @@ func TestSystemAlertOnlyToSystemChannels(t *testing.T) {
 
 // TestSystemChannelEventNeedsLevel6 covers the level gate of the system event.
 func TestSystemChannelEventNeedsLevel6(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(SystemAlertCommandLevel - 1)
 	h.putSystemTenant(1000)
@@ -265,6 +274,7 @@ func TestSystemChannelEventNeedsLevel6(t *testing.T) {
 // TestRecordIncarnation covers FA-REP-06: the last reported incarnation of a
 // node is stored, and a return to an older one is a change too.
 func TestRecordIncarnation(t *testing.T) {
+	t.Parallel()
 	h := sysSetup(t)
 	h.do(NewRecordIncarnation("n2", "inc-1"), 2000, nil)
 	h.do(NewRecordIncarnation("n2", "inc-2"), 3000, nil)
@@ -300,6 +310,7 @@ func replay(h *alertFSM, entries []replayEntry) {
 // that applied the same log compute the same fingerprint at a checkpoint, a
 // replica that diverged does not, and the value equals the committed state.
 func TestCheckpointAgreesAcrossReplicas(t *testing.T) {
+	t.Parallel()
 	// The commands are built once, so that every replica gets the same bytes.
 	log := []replayEntry{
 		{NewSetFeatureLevel("level-6", SystemAlertCommandLevel), 1000},
@@ -378,6 +389,7 @@ func mustPutTenant(t *testing.T, id string) *pb.Command {
 // TestCheckpointWritesNoAlert covers the promise of a checkpoint: it changes no
 // alert and enqueues nothing, and it records the index of its own command.
 func TestCheckpointWritesNoAlert(t *testing.T) {
+	t.Parallel()
 	h := sysSetup(t)
 	h.setAlert(2000, "disk_low", "n1", true, 0, "")
 	outboxBefore := len(h.outbox(t))

@@ -19,6 +19,7 @@ import (
 // TestSystemAlertRoundTrip covers ADR 0025: rows are written with their details,
 // read back by key, listed in order, and an active-only listing filters them.
 func TestSystemAlertRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	if err := s.Update(ctx, func(tx store.StateTx) error {
@@ -72,6 +73,7 @@ func TestSystemAlertRoundTrip(t *testing.T) {
 
 // TestSystemAlertUpsertReplaces covers the replacement of a row by its key.
 func TestSystemAlertUpsertReplaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	put := func(a store.SystemAlert) {
@@ -94,6 +96,7 @@ func TestSystemAlertUpsertReplaces(t *testing.T) {
 
 // TestSystemAlertValidation covers the required fields of a system alert row.
 func TestSystemAlertValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	for _, a := range []store.SystemAlert{{Subject: "n1"}, {Kind: "disk_low"}} {
@@ -106,6 +109,7 @@ func TestSystemAlertValidation(t *testing.T) {
 
 // TestNodeIncarnationRoundTrip covers node_incarnations (FA-REP-06, ADR 0025).
 func TestNodeIncarnationRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	put := func(n store.NodeIncarnation) {
@@ -142,6 +146,7 @@ func TestNodeIncarnationRoundTrip(t *testing.T) {
 // value computed inside the write transaction equals the one of the committed
 // state, so a checkpoint and a later comparison agree.
 func TestTxFingerprintMatchesCommitted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	var inTx string
@@ -185,6 +190,7 @@ func TestTxFingerprintMatchesCommitted(t *testing.T) {
 // without monitor is stored with NULL and read back with an empty monitor ID,
 // while a delivery that names a missing monitor is still rejected.
 func TestEnqueueAlertWithoutMonitor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	if err := s.Update(ctx, func(tx store.StateTx) error {
@@ -235,6 +241,7 @@ func TestEnqueueAlertWithoutMonitor(t *testing.T) {
 // their monitor and its foreign key, the new tables appear, and the down
 // migration restores the NOT NULL column.
 func TestSystemAlertMigration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), StateFile)
 	migrations, err := fs.Sub(stateMigrationFiles, "migrations/state")

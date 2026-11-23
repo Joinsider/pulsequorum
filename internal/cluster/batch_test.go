@@ -72,6 +72,7 @@ func (h *alertFSM) intervalOf(id string) int {
 // a pause with a hint, an update and a delete apply together, and the result
 // lists one PutResult per operation in order.
 func TestBatchAppliesEveryOperation(t *testing.T) {
+	t.Parallel()
 	h := batchFSM(t)
 	paused := monitorDoc("Web m1")
 	paused.Paused = true
@@ -111,6 +112,7 @@ func TestBatchAppliesEveryOperation(t *testing.T) {
 // missing monitor in any operation applies none of them, and the error names
 // the operation and the monitor.
 func TestBatchIsAtomic(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		ops     []*pb.BatchOp
@@ -129,6 +131,7 @@ func TestBatchIsAtomic(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := batchFSM(t)
 			res := h.apply(NewBatch("batch-atomic", "t1", userActor(), tt.ops), 2000)
 			checkCode(t, res.Err, tt.code)
@@ -148,6 +151,7 @@ func TestBatchIsAtomic(t *testing.T) {
 // TestBatchValidation covers the rules checked before any operation runs.
 // Nothing changes in any case.
 func TestBatchValidation(t *testing.T) {
+	t.Parallel()
 	tooMany := make([]*pb.BatchOp, MaxBatchOps+1)
 	for i := range tooMany {
 		tooMany[i] = monitorDeleteOp("m1")
@@ -176,6 +180,7 @@ func TestBatchValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := batchFSM(t)
 			cmd := NewBatch("batch-invalid", tt.tn, tt.actor, tt.ops)
 			cmd.AuditAction = tt.batchHint
@@ -191,6 +196,7 @@ func TestBatchValidation(t *testing.T) {
 // TestBatchAcceptsAPITokenActor covers ADR 0031, section 1: a token may change
 // monitors, also in a batch.
 func TestBatchAcceptsAPITokenActor(t *testing.T) {
+	t.Parallel()
 	h := batchFSM(t)
 	actor := &pb.Actor{Kind: pb.Actor_KIND_API_TOKEN, Id: tokID(1), Name: "ci"}
 	res := h.apply(NewBatch("batch-token", "t1", actor, []*pb.BatchOp{monitorOp("m1", 300, 1)}), 2000)

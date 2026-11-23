@@ -85,6 +85,7 @@ func validNodeInfo() *pb.NodeInfo {
 }
 
 func TestRegisterNodeValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		mutate  func(n *pb.NodeInfo)
@@ -136,6 +137,7 @@ func TestRegisterNodeValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newNodeFSM(t)
 			info := validNodeInfo()
 			tt.mutate(info)
@@ -158,6 +160,7 @@ func TestRegisterNodeValidation(t *testing.T) {
 }
 
 func TestRegisterNodeUpsertKeepsHealth(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	first := f.apply(NewRegisterNode("", store.Node{
 		ID: "node-1", Name: "one", Role: store.NodeRoleVoter,
@@ -208,6 +211,7 @@ func TestRegisterNodeUpsertKeepsHealth(t *testing.T) {
 }
 
 func TestSetNodeHealth(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewSetNodeHealth("", "node-x", false), 500); !errors.Is(r.Err, store.ErrNotFound) {
 		t.Errorf("unknown node: err = %v, want ErrNotFound", r.Err)
@@ -238,6 +242,7 @@ func TestSetNodeHealth(t *testing.T) {
 }
 
 func TestRevokeNodeRemovesRegistration(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
 		t.Fatal(r.Err)
@@ -277,6 +282,7 @@ func nodeEqual(a, b store.Node) bool {
 // ADR 0022: SetNodeConnectivity validates the reason, changes only on a change
 // and reports unknown nodes.
 func TestSetNodeConnectivity(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		nodeID  string
@@ -300,6 +306,7 @@ func TestSetNodeConnectivity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newNodeFSM(t)
 			if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
 				t.Fatal(r.Err)
@@ -340,6 +347,7 @@ func TestSetNodeConnectivity(t *testing.T) {
 
 // ADR 0022: recovery clears the reason, and the result shows the new state.
 func TestSetNodeConnectivityRecovery(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
 		t.Fatal(r.Err)
@@ -366,6 +374,7 @@ func TestSetNodeConnectivityRecovery(t *testing.T) {
 
 // ADR 0022: the connectivity columns are replicated state, so a change moves the fingerprint.
 func TestSetNodeConnectivityChangesFingerprint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newNodeFSM(t)
 	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter}), 1_000); r.Err != nil {
@@ -389,6 +398,7 @@ func TestSetNodeConnectivityChangesFingerprint(t *testing.T) {
 
 // ADR 0022: a registration keeps the connectivity the leader decided.
 func TestRegisterNodeKeepsConnectivity(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewRegisterNode("", store.Node{ID: "node-1", Role: store.NodeRoleVoter, Version: "1.0.0"}), 1_000); r.Err != nil {
 		t.Fatal(r.Err)
@@ -409,6 +419,7 @@ func TestRegisterNodeKeepsConnectivity(t *testing.T) {
 }
 
 func TestRegisterProbePublicAndPrivate(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	putTenantCmd, err := NewPutTenant("", "t1", TenantDocument{Name: "t1", Plan: "default"})
 	if err != nil {
@@ -460,6 +471,7 @@ func TestRegisterProbePublicAndPrivate(t *testing.T) {
 }
 
 func TestRegisterProbeUpdatePreservesHealthAndConnectivity(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewRegisterProbe("", store.Node{
 		ID:          "probe-1",
@@ -503,6 +515,7 @@ func TestRegisterProbeUpdatePreservesHealthAndConnectivity(t *testing.T) {
 }
 
 func TestRegisterProbeRejections(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	if r := f.apply(NewSetFeatureLevel("", TenantAdminCommandLevel), 100); r.Err != nil {
 		t.Fatal(r.Err)
@@ -601,6 +614,7 @@ func TestRegisterProbeRejections(t *testing.T) {
 }
 
 func TestSubscribeChanges(t *testing.T) {
+	t.Parallel()
 	f := newNodeFSM(t)
 	ch1, unsub1 := f.fsm.SubscribeChanges()
 	ch2, unsub2 := f.fsm.SubscribeChanges()

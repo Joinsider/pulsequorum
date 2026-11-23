@@ -12,6 +12,7 @@ import (
 )
 
 func TestProbeAlertsAndTenantCounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 

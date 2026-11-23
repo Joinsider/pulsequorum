@@ -55,6 +55,7 @@ func seedPrivateProbesTestNodes(t *testing.T, e *env) {
 }
 
 func TestPrivateProbeEndpointsAuthzAndAPITokenBlock(t *testing.T) {
+	t.Parallel()
 	fake := &fakeClusterAdmin{token: "secret-tok", expires: time.Now().Add(time.Hour), selfID: "voter-1", leaderID: "voter-1"}
 	e := newEnvTweaked(t, true, func(d *Deps) {
 		d.ClusterAdmin = fake
@@ -108,6 +109,7 @@ func TestPrivateProbeEndpointsAuthzAndAPITokenBlock(t *testing.T) {
 }
 
 func TestPrivateProbeCRUDAndIsolation(t *testing.T) {
+	t.Parallel()
 	fake := &fakeClusterAdmin{token: "one-time-tok", expires: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
 	var lastMsgMs int64 = 1_700_000_050_000
 	e := newEnvTweaked(t, false, func(d *Deps) {
@@ -220,6 +222,7 @@ func TestPrivateProbeCRUDAndIsolation(t *testing.T) {
 }
 
 func TestPrivateProbeLimitAndUsage(t *testing.T) {
+	t.Parallel()
 	fake := &fakeClusterAdmin{token: "tok", expires: time.Now().Add(time.Hour)}
 	e := newEnvTweaked(t, false, func(d *Deps) { d.ClusterAdmin = fake })
 	seedPrivateProbesTestNodes(t, e)
@@ -284,6 +287,7 @@ func TestPrivateProbeLimitAndUsage(t *testing.T) {
 }
 
 func TestMonitorAssignmentD2AndSSRFRelaxation(t *testing.T) {
+	t.Parallel()
 	e := newEnvTweaked(t, false, func(d *Deps) { d.SSRFPolicy = checker.BlockPrivate{} })
 	seedPrivateProbesTestNodes(t, e)
 
@@ -345,6 +349,7 @@ func TestMonitorAssignmentD2AndSSRFRelaxation(t *testing.T) {
 }
 
 func TestChannelRejectsProbeOfflineOnSystemTenant(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	enableSystemChannels(t, e)
 	res := e.do("POST", "/api/v1/admin/system-channels", platformAdmin, map[string]any{

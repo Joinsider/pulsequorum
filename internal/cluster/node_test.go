@@ -14,6 +14,7 @@ import (
 
 // FA-CLU-05: a follower forwards only while its leader was heard recently.
 func TestLeaderContactStale(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
 	const heartbeat = time.Second
 
@@ -31,6 +32,7 @@ func TestLeaderContactStale(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			if got := leaderContactStale(tc.last, now, heartbeat); got != tc.want {
 				t.Errorf("leaderContactStale() = %v, want %v", got, tc.want)
 			}
@@ -41,6 +43,7 @@ func TestLeaderContactStale(t *testing.T) {
 // ADR 0020: the leader stamps commands with the clock of its node, so a node
 // whose clock is skewed records its own time in the replicated state.
 func TestNodeStampsCommandsWithItsClock(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()

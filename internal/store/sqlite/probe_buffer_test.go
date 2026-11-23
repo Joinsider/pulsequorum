@@ -56,6 +56,7 @@ func assertSeqsEqual(t *testing.T, got, want []uint64) {
 }
 
 func TestProbeBufferLastSeqAndMinSeq(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 
@@ -156,6 +157,7 @@ func TestProbeBufferLastSeqAndMinSeq(t *testing.T) {
 }
 
 func TestProbeBufferUnackedStats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 
@@ -205,6 +207,7 @@ func TestProbeBufferUnackedStats(t *testing.T) {
 }
 
 func TestProbeBufferDeleteStreamHeartbeatsUpTo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 
@@ -253,6 +256,7 @@ func TestProbeBufferDeleteStreamHeartbeatsUpTo(t *testing.T) {
 }
 
 func TestProbeBufferDeleteStreamHeartbeatsOlderThan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 
@@ -304,6 +308,7 @@ func TestProbeBufferDeleteStreamHeartbeatsOlderThan(t *testing.T) {
 }
 
 func TestProbeBufferDeleteOldestStreamHeartbeats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 
@@ -364,6 +369,7 @@ func TestProbeBufferDeleteOldestStreamHeartbeats(t *testing.T) {
 }
 
 func TestProbeBufferDBSizeBytesAndIncrementalVacuum(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 

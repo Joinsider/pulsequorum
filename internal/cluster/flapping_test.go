@@ -62,6 +62,7 @@ func flapChanges(h *alertFSM, statuses ...store.MonitorStatus) int64 {
 // TestFlappingStartsAtSixthChange covers FA-ALR-06: five changes notify
 // normally, the sixth starts flapping with one summary and no normal alert.
 func TestFlappingStartsAtSixthChange(t *testing.T) {
+	t.Parallel()
 	h := flapSetup(t, 4)
 	// UP(10s, silent), DOWN, UP, DOWN, UP: five counted changes.
 	flapChanges(h, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown, store.StatusUp)
@@ -87,6 +88,7 @@ func TestFlappingStartsAtSixthChange(t *testing.T) {
 // TestFlappingSuppressesAlertsAndReminders covers FA-ALR-06: while flapping no
 // change and no reminder produces an alert, but the status is still written.
 func TestFlappingSuppressesAlertsAndReminders(t *testing.T) {
+	t.Parallel()
 	h := flapSetup(t, 4)
 	flapChanges(h, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown)
 	// Flapping since 60100 (the sixth change at 60 s).
@@ -110,6 +112,7 @@ func TestFlappingSuppressesAlertsAndReminders(t *testing.T) {
 // TestClearMonitorFlapping covers FA-ALR-06: the leader ends the period with
 // the start it saw; another start is a conflict.
 func TestClearMonitorFlapping(t *testing.T) {
+	t.Parallel()
 	h := flapSetup(t, 4)
 	flapChanges(h, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown)
 	h.changeState(70_100, "t1", "m1", store.StatusDown, store.StatusUp, 70_000, "")
@@ -140,8 +143,10 @@ func TestClearMonitorFlapping(t *testing.T) {
 // TestFlappingNeedsLevelFour covers ADR 0023: below command level 4 the FSM
 // behaves as before, and the new commands and events are rejected.
 func TestFlappingNeedsLevelFour(t *testing.T) {
+	t.Parallel()
 	for _, level := range []uint32{0, 3} {
 		t.Run(fmt.Sprintf("stored level %d", level), func(t *testing.T) {
+			t.Parallel()
 			h := newAlertFSM(t, t.TempDir())
 			if level != 0 {
 				h.setLevel(level)
@@ -178,6 +183,7 @@ func TestFlappingNeedsLevelFour(t *testing.T) {
 // TestChannelFailedAlert covers FA-ALR-05: a channel that turns disabled or
 // failing alerts the other default channels that subscribe to channel_failed.
 func TestChannelFailedAlert(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(4)
 	h.putTenant(1000, "t1")
@@ -242,6 +248,7 @@ func TestChannelFailedAlert(t *testing.T) {
 // TestFlappingSurvivesPause: pausing and resuming keep the flapping period,
 // because they write the state without the flapping fields.
 func TestFlappingSurvivesPause(t *testing.T) {
+	t.Parallel()
 	h := flapSetup(t, 4)
 	flapChanges(h, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown)
 	if !h.monitorState("m1").Flapping {
@@ -264,6 +271,7 @@ func TestFlappingSurvivesPause(t *testing.T) {
 // state, so replicas that flapped alike have the same fingerprint, and a
 // different flapping state a different one (ADR 0005, FA-CLU-07).
 func TestFlappingFingerprint(t *testing.T) {
+	t.Parallel()
 	run := func(t *testing.T) *alertFSM {
 		h := flapSetup(t, 4)
 		flapChanges(h, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown, store.StatusUp, store.StatusDown)

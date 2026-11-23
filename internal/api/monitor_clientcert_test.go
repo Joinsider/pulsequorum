@@ -78,6 +78,7 @@ func registerClusterNode(t *testing.T, e *env, id, role string, caps ...string) 
 // ADR 0042, section 1 and 8: the key is stored encrypted and shown masked;
 // the certificate is shown in clear.
 func TestClientCertCreateMasksKey(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	certPEM, keyPEM := clientIdentityPEM(t)
 
@@ -97,9 +98,11 @@ func TestClientCertCreateMasksKey(t *testing.T) {
 // ADR 0042, section 10 as amended: while a voter lacks the capability, the
 // API refuses the configuration and names the voter.
 func TestClientCertCapabilityGate(t *testing.T) {
+	t.Parallel()
 	certPEM, keyPEM := clientIdentityPEM(t)
 
 	t.Run("voter without the capability blocks", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t)
 		registerClusterNode(t, e, "voter-new", store.NodeRoleVoter, clientCapability)
 		registerClusterNode(t, e, "voter-old", store.NodeRoleVoter, "icmp")
@@ -120,6 +123,7 @@ func TestClientCertCapabilityGate(t *testing.T) {
 	})
 
 	t.Run("probes without the capability do not block", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t)
 		registerClusterNode(t, e, "voter-new", store.NodeRoleVoter, clientCapability)
 		registerClusterNode(t, e, "probe-old", store.NodeRoleProbe)
@@ -130,6 +134,7 @@ func TestClientCertCapabilityGate(t *testing.T) {
 	})
 
 	t.Run("all voters with the capability accept it", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t)
 		registerClusterNode(t, e, "voter-a", store.NodeRoleVoter, clientCapability, "icmp")
 		registerClusterNode(t, e, "voter-b", store.NodeRoleVoter, clientCapability)
@@ -140,6 +145,7 @@ func TestClientCertCapabilityGate(t *testing.T) {
 	})
 
 	t.Run("monitors without a client certificate are unaffected", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t)
 		registerClusterNode(t, e, "voter-old", store.NodeRoleVoter, "icmp")
 
@@ -152,6 +158,7 @@ func TestClientCertCapabilityGate(t *testing.T) {
 // ADR 0015 and 0042, section 3: a masked key on update keeps the stored key,
 // and the stored key is checked against the new certificate.
 func TestClientCertUpdateKeepsOrReplacesKey(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	certPEM, keyPEM := clientIdentityPEM(t)

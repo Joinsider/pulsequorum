@@ -41,14 +41,17 @@ func openMetrics(t *testing.T, dir string) *MetricsStore {
 }
 
 func TestStateSuite(t *testing.T) {
+	t.Parallel()
 	storetest.RunState(t, func(t *testing.T) store.State { return openState(t, t.TempDir()) })
 }
 
 func TestMetricsSuite(t *testing.T) {
+	t.Parallel()
 	storetest.RunMetrics(t, func(t *testing.T) store.Metrics { return openMetrics(t, t.TempDir()) })
 }
 
 func TestOpenAppliesPragmas(t *testing.T) {
+	t.Parallel()
 	s := openState(t, t.TempDir())
 	ctx := context.Background()
 	for pragma, want := range map[string]string{"journal_mode": "wal", "auto_vacuum": "2", "synchronous": "2"} {
@@ -67,6 +70,7 @@ func TestOpenAppliesPragmas(t *testing.T) {
 }
 
 func TestReadersAreReadOnly(t *testing.T) {
+	t.Parallel()
 	s := openState(t, t.TempDir())
 	_, err := s.db.reader.ExecContext(context.Background(), "INSERT INTO tenants (id, name, created_ms, updated_ms) VALUES ('x', 'x', 1, 1)")
 	if err == nil {
@@ -75,6 +79,7 @@ func TestReadersAreReadOnly(t *testing.T) {
 }
 
 func TestSelfTestDetectsWrongPragma(t *testing.T) {
+	t.Parallel()
 	s := openState(t, t.TempDir())
 	ctx := context.Background()
 	// The writer pool has exactly one connection, so this change sticks.
@@ -88,6 +93,7 @@ func TestSelfTestDetectsWrongPragma(t *testing.T) {
 }
 
 func TestOpenRejectsDSNCharacters(t *testing.T) {
+	t.Parallel()
 	_, err := Open(context.Background(), Options{Path: filepath.Join(t.TempDir(), "a?b.db"), Synchronous: SyncNormal})
 	if err == nil {
 		t.Fatal("path with '?' accepted")
@@ -95,6 +101,7 @@ func TestOpenRejectsDSNCharacters(t *testing.T) {
 }
 
 func TestMigrationsAreIdempotent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	s := openState(t, dir)
 	ctx := context.Background()
@@ -115,6 +122,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 // TestIncarnation covers ADR 0012 B4: stable across restarts, new when
 // metrics.db is recreated (PF-12).
 func TestIncarnation(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m := openMetrics(t, dir)
 	first := m.Incarnation()
@@ -140,6 +148,7 @@ func TestIncarnation(t *testing.T) {
 // TestConcurrentWritersNoBusy runs writers and readers in parallel; the single
 // writer connection must serialize them without SQLITE_BUSY (PF-22).
 func TestConcurrentWritersNoBusy(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	s := openState(t, dir)
 	m := openMetrics(t, dir)
@@ -191,6 +200,7 @@ func TestConcurrentWritersNoBusy(t *testing.T) {
 }
 
 func TestMaintenance(t *testing.T) {
+	t.Parallel()
 	m := openMetrics(t, t.TempDir())
 	ctx := context.Background()
 	hbs := make([]store.Heartbeat, 0, 2000)
@@ -252,6 +262,7 @@ func seedForSnapshot(t *testing.T, s *StateStore, tenant string, applied uint64)
 // TestSnapshotRestore covers ADR 0012 A1: VACUUM INTO on the read pool and
 // restore by swapping the file.
 func TestSnapshotRestore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	src := openState(t, t.TempDir())
 	seedForSnapshot(t, src, "a", 7)
@@ -303,6 +314,7 @@ func TestSnapshotRestore(t *testing.T) {
 }
 
 func TestRestoreRejectsGarbageAndKeepsState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	seedForSnapshot(t, s, "a", 4)
@@ -321,6 +333,7 @@ func TestRestoreRejectsGarbageAndKeepsState(t *testing.T) {
 // TestMonitorSecretsRoundTrip covers ADR 0015: the secret map survives insert,
 // update and clearing, and it is read back only for the monitor's own tenant.
 func TestMonitorSecretsRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	secretsA := map[string]string{"/auth/password": "enc:v1:key:AAAA", "/headers/X-Api-Key": "enc:v1:key:BBBB"} //nolint:gosec // G101: fake ciphertexts
@@ -410,6 +423,7 @@ func listHeartbeatsSQL(t *testing.T) string {
 // condition must give the planner a ts_ms range on both sides so that the
 // monitor_ts index only visits the requested window, not every retained row.
 func TestListHeartbeatsPlanUsesTsRange(t *testing.T) {
+	t.Parallel()
 	m := openMetrics(t, t.TempDir())
 	ctx := context.Background()
 	// Parameter order: tenant, monitor, node, to_ms, after_ts, after_node, after_inc, after_seq, row_limit.

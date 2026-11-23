@@ -16,6 +16,7 @@ import (
 
 // ADR 0018: SetFeatureLevel raises the stored command level and never lowers it.
 func TestApplySetFeatureLevel(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		steps      []uint32
@@ -30,6 +31,7 @@ func TestApplySetFeatureLevel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newNodeFSM(t)
 			var res ApplyResult
 			for _, level := range tt.steps {
@@ -94,6 +96,7 @@ func notEnabled(err error) bool {
 // ADR 0018: a command needing a version the cluster does not have yet is
 // rejected before it is proposed.
 func TestCommandLevelGate(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -133,6 +136,7 @@ func TestCommandLevelGate(t *testing.T) {
 
 // ADR 0018: a binary refuses to start on state that needs a newer version.
 func TestStartRefusesNewerCommandLevel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()

@@ -188,6 +188,7 @@ func httpMonitor(name, url string) map[string]any {
 }
 
 func TestMonitorCRUD(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 
 	res := e.do("POST", "/api/v1/monitors", editor, map[string]any{
@@ -243,6 +244,7 @@ func TestMonitorCRUD(t *testing.T) {
 }
 
 func TestValidationErrors(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	tests := []struct {
 		name  string
@@ -262,6 +264,7 @@ func TestValidationErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do("POST", "/api/v1/monitors", editor, tt.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d %s", res.code, res.body)
@@ -279,6 +282,7 @@ func TestValidationErrors(t *testing.T) {
 }
 
 func TestAuthorization(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	if res := e.do("GET", "/api/v1/monitors", "", nil); res.code != http.StatusUnauthorized {
 		t.Errorf("anonymous list = %d", res.code)
@@ -297,6 +301,7 @@ func TestAuthorization(t *testing.T) {
 // TestTenantIsolation checks every monitor endpoint with another tenant
 // (FA-TEN-01/02, AS-06).
 func TestTenantIsolation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	m := decode[gen.Monitor](t, e.do("POST", "/api/v1/monitors", editor, httpMonitor("secret", "https://a")))
 	id := m.Id.String()
@@ -329,6 +334,7 @@ func TestTenantIsolation(t *testing.T) {
 }
 
 func TestIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	key := "0192d5e0-1111-7000-8000-000000000001"
 	first := decode[gen.Monitor](t, e.do("POST", "/api/v1/monitors", editor, httpMonitor("once", "https://a"), "Idempotency-Key", key))
@@ -348,6 +354,7 @@ func TestIdempotencyKey(t *testing.T) {
 }
 
 func TestListPagingAndFilters(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	for i := range 5 {
 		body := httpMonitor(fmt.Sprintf("svc-%d", i), "https://a")
@@ -389,6 +396,7 @@ func TestListPagingAndFilters(t *testing.T) {
 }
 
 func TestHeartbeatsAndTypesAndTestRun(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
 	defer target.Close()
@@ -442,6 +450,7 @@ func TestHeartbeatsAndTypesAndTestRun(t *testing.T) {
 // TestAssignmentNodesAreRegistered checks that mode nodes names only nodes of
 // the registry, once there is one (ADR 0017).
 func TestAssignmentNodesAreRegistered(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	create := func(nodes ...string) response {
 		return e.do("POST", "/api/v1/monitors", editor, map[string]any{

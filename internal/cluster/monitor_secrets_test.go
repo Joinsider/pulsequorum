@@ -15,6 +15,7 @@ import (
 // ciphertexts under JSON pointers into the config and rejects anything else
 // without writing the monitor.
 func TestMonitorSecrets(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.putTenant(1000, "t1")
 

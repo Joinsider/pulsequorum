@@ -72,6 +72,7 @@ func commandLog(t *testing.T) []*raft.Log {
 // TestFSMDeterminism applies the same log to two FSMs and compares the
 // resulting state (FA-CLU-07).
 func TestFSMDeterminism(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var prints []string
 	for range 2 {
@@ -116,6 +117,7 @@ func TestFSMDeterminism(t *testing.T) {
 }
 
 func TestFSMHaltsOnStoreFailure(t *testing.T) {
+	t.Parallel()
 	st := openStore(t, t.TempDir())
 	halted := make(chan error, 1)
 	fsm, err := NewFSM(context.Background(), st, slog.New(slog.DiscardHandler), func(err error) { halted <- err })
@@ -139,6 +141,7 @@ func TestFSMHaltsOnStoreFailure(t *testing.T) {
 
 // TestNodeBootstrapAndRestart covers FA-CLU-01/02 and the snapshot path.
 func TestNodeBootstrapAndRestart(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -191,6 +194,7 @@ func TestNodeBootstrapAndRestart(t *testing.T) {
 }
 
 func TestEnsureDefaultTenantAndReady(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	dir := t.TempDir()

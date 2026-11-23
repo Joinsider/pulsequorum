@@ -14,6 +14,7 @@ import (
 // TestSSRFPolicyOnRejectsBlockedTarget checks that a monitor whose host is
 // blocked by the address policy is refused when it is saved (ADR 0030).
 func TestSSRFPolicyOnRejectsBlockedTarget(t *testing.T) {
+	t.Parallel()
 	e := newEnvTweaked(t, false, func(d *Deps) { d.SSRFPolicy = checker.BlockPrivate{} })
 
 	res := e.do("POST", "/api/v1/monitors", editor, httpMonitor("x", "http://169.254.169.254/"))
@@ -30,6 +31,7 @@ func TestSSRFPolicyOnRejectsBlockedTarget(t *testing.T) {
 // TestSSRFPolicyOffAcceptsBlockedTarget checks that without a policy the same
 // host is accepted, while the notation rules still apply.
 func TestSSRFPolicyOffAcceptsBlockedTarget(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 
 	if res := e.do("POST", "/api/v1/monitors", editor, httpMonitor("x", "http://169.254.169.254/")); res.code != http.StatusCreated {

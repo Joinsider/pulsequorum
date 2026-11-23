@@ -35,6 +35,7 @@ func verdictPayload(t *testing.T, a store.AlertDelivery) AlertPayload {
 // TestDegradedCommandsNeedLevel5 covers ADR 0024: the three commands are
 // rejected below command level 5 and do not touch state.
 func TestDegradedCommandsNeedLevel5(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  *pb.Command
@@ -46,6 +47,7 @@ func TestDegradedCommandsNeedLevel5(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := flapSetup(t, 4)
 			h.changeState(10100, "t1", "m1", store.StatusPending, store.StatusUp, 10000, "")
 			h.do(tt.cmd, 3000, ErrInvalidCommand)
@@ -58,6 +60,7 @@ func TestDegradedCommandsNeedLevel5(t *testing.T) {
 
 // TestReportDegradedAlertsValidation covers the checks of a report (FA-ALR-10).
 func TestReportDegradedAlertsValidation(t *testing.T) {
+	t.Parallel()
 	many := make([]store.DegradedAlert, 501)
 	for i := range many {
 		many[i] = reportAlert(int64(i+1), "m1", "a", store.StatusDown, 1500)
@@ -86,6 +89,7 @@ func TestReportDegradedAlertsValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := newAlertFSM(t, t.TempDir())
 			h.setLevel(5)
 			h.do(NewReportDegradedAlerts(tt.nodeID, tt.alerts), 2000, tt.want)
@@ -96,6 +100,7 @@ func TestReportDegradedAlertsValidation(t *testing.T) {
 // TestReportDegradedAlertsIdempotent: a repeated command is a duplicate, and a
 // repeated entry under a new request ID leaves the stored alert unchanged.
 func TestReportDegradedAlertsIdempotent(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(5)
 	first := NewReportDegradedAlerts("n2", []store.DegradedAlert{reportAlert(1, "m1", "a", store.StatusDown, 1500)})
@@ -126,6 +131,7 @@ func TestReportDegradedAlertsIdempotent(t *testing.T) {
 // outbox entry for one channel, none for unverifiable, notify=false, disabled
 // or unsubscribed channels, and a second verdict is skipped.
 func TestResolveUnconfirmedAlerts(t *testing.T) {
+	t.Parallel()
 	h := newAlertFSM(t, t.TempDir())
 	h.setLevel(5)
 	h.putTenant(1000, "t1")
@@ -257,6 +263,7 @@ func TestResolveUnconfirmedAlerts(t *testing.T) {
 // TestRecordMonitorHistoryValidation covers the checks of a re-evaluated gap
 // (FA-UPT-07, ADR 0024). m1 is UP since 10 s, m2 is paused.
 func TestRecordMonitorHistoryValidation(t *testing.T) {
+	t.Parallel()
 	const tenant = "t1"
 	down := func(since int64, inc string) HistoryChange {
 		return HistoryChange{SinceMs: since, Status: store.StatusDown, IncidentID: inc, Cause: "timeout", ErrorClass: "timeout"}
@@ -290,6 +297,7 @@ func TestRecordMonitorHistoryValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			h := flapSetup(t, 5)
 			h.changeState(10100, tenant, "m1", store.StatusPending, store.StatusUp, 10000, "")
 			paused := monitorDoc("Web m2")
@@ -307,7 +315,9 @@ func TestRecordMonitorHistoryValidation(t *testing.T) {
 // TestRecordMonitorHistoryEffects covers the stored history, the reevaluated
 // incidents, the state and the absence of notifications (FA-UPT-07, ADR 0024).
 func TestRecordMonitorHistoryEffects(t *testing.T) {
+	t.Parallel()
 	t.Run("up gap with DOWN, UP and open DOWN", func(t *testing.T) {
+		t.Parallel()
 		h := flapSetup(t, 5)
 		h.changeState(10100, "t1", "m1", store.StatusPending, store.StatusUp, 10000, "")
 		h.do(NewRecordMonitorHistory("t1", "m1", store.StatusUp, 20000, 60000, []HistoryChange{
@@ -356,6 +366,7 @@ func TestRecordMonitorHistoryEffects(t *testing.T) {
 	})
 
 	t.Run("gap after DOWN resolves the open incident", func(t *testing.T) {
+		t.Parallel()
 		h := flapSetup(t, 5)
 		h.changeState(10100, "t1", "m1", store.StatusPending, store.StatusDown, 10000, "i0")
 		h.do(NewRecordMonitorHistory("t1", "m1", store.StatusDown, 20000, 60000, []HistoryChange{
@@ -379,6 +390,7 @@ func TestRecordMonitorHistoryEffects(t *testing.T) {
 // TestLastIssuedAtFromLevel5 covers ADR 0024: the command time of the last
 // applied command is stored from level 5 on, and only by applied commands.
 func TestLastIssuedAtFromLevel5(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	h4 := flapSetup(t, 4)
@@ -406,6 +418,7 @@ func TestLastIssuedAtFromLevel5(t *testing.T) {
 // TestDegradedDeterminism: the same commands applied to two fresh stores give
 // the same fingerprint (FA-CLU-07, ADR 0024).
 func TestDegradedDeterminism(t *testing.T) {
+	t.Parallel()
 	// The commands are built once: the request ID of a verdict is random, and
 	// in a cluster every replica applies the same bytes (request_dedup is hashed).
 	verdict := func(v string) *pb.Command {
@@ -446,6 +459,7 @@ func TestDegradedDeterminism(t *testing.T) {
 // TestSetMonitorStateCarriesReporters: the leader's reporters and sender reach
 // the command; the FSM reads them from level 5 on (ADR 0024).
 func TestSetMonitorStateCarriesReporters(t *testing.T) {
+	t.Parallel()
 	cmd := NewSetMonitorState(StateChange{TenantID: "t1", MonitorID: "m1", From: store.StatusUp, To: store.StatusDown,
 		SinceMs: 1, Incident: &store.Incident{ID: "i"}, Reporters: []string{"n1", "n2"}, SenderNodeID: "n1"})
 	set := cmd.GetSetMonitorState()
@@ -470,8 +484,10 @@ func (h *alertFSM) unconfirmed(nodeID string, localID int64) (store.UnconfirmedA
 // proposer, the voter counts of the replicated registry and the reporters
 // (FA-ALR-11); below it the view is absent.
 func TestStateChangeSenderView(t *testing.T) {
+	t.Parallel()
 	for _, level := range []uint32{4, 5} {
 		t.Run(fmt.Sprintf("level %d", level), func(t *testing.T) {
+			t.Parallel()
 			h := flapSetup(t, level)
 			for i, n := range []store.Node{
 				{ID: "n1", Role: store.NodeRoleVoter}, {ID: "n2", Role: store.NodeRoleVoter},

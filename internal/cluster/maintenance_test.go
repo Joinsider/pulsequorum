@@ -93,6 +93,7 @@ func applyMaintenance(t *testing.T, fsm *FSM, index uint64, s maintenanceStep) A
 // TestMaintenanceWindowCommands covers FA-MNT-01 at the FSM: create, replace
 // with revision check, delete, and structural validation.
 func TestMaintenanceWindowCommands(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	st := openStore(t, t.TempDir())
 	fsm, err := NewFSM(ctx, st, slog.New(slog.DiscardHandler), func(err error) { t.Fatalf("unexpected halt: %v", err) })
@@ -132,6 +133,7 @@ func TestMaintenanceWindowCommands(t *testing.T) {
 // TestMaintenanceWindowDeterminism checks that two replicas applying the same
 // log store identical rows (ADR 0005).
 func TestMaintenanceWindowDeterminism(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var prints []string
 	for range 2 {

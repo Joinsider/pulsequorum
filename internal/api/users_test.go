@@ -30,6 +30,7 @@ func assertNoHash(t *testing.T, res response) {
 // role rules of FA-AUTH-09, the self and last-admin protections, password
 // resets and the response shape.
 func TestUserManagement(t *testing.T) {
+	t.Parallel()
 	e, admin := newLocalAdminEnv(t)
 	adminID := decode[gen.Me](t, e.do("GET", "/api/v1/me", "", nil, bearer(admin)...)).Id
 

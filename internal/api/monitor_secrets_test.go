@@ -61,6 +61,7 @@ func assertNoPlaintext(t *testing.T, where string, data []byte, plain ...string)
 // ADR 0015: secrets are encrypted at rest, masked for every role and used
 // in plaintext only when a check runs.
 func TestMonitorSecretsAreEncryptedAndMasked(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	target := basicAuthTarget(t, pwSecret, headerSecret)
@@ -112,6 +113,7 @@ func TestMonitorSecretsAreEncryptedAndMasked(t *testing.T) {
 }
 
 func TestMonitorSecretsUpdateSemantics(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	target := basicAuthTarget(t, pwSecret, headerSecret)
 	m := decode[gen.Monitor](t, e.do("POST", "/api/v1/monitors", editor, securedMonitor(target.URL, pwSecret, headerSecret)))
@@ -169,6 +171,7 @@ func TestMonitorSecretsUpdateSemantics(t *testing.T) {
 }
 
 func TestMonitorSecretsClone(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	target := basicAuthTarget(t, pwSecret, headerSecret)
 	m := decode[gen.Monitor](t, e.do("POST", "/api/v1/monitors", editor, securedMonitor(target.URL, pwSecret, headerSecret)))
@@ -194,6 +197,7 @@ func TestMonitorSecretsClone(t *testing.T) {
 // Monitors written before ADR 0015 are masked in responses at once and
 // encrypted by the migration.
 func TestMonitorSecretsMigration(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 	target := basicAuthTarget(t, pwSecret, headerSecret)

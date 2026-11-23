@@ -29,6 +29,7 @@ func stateChange(from, to store.MonitorStatus, since int64, incidentID string) *
 // open and resolve incidents atomically, pausing ends an incident, and every
 // replica ends up with the same rows.
 func TestMonitorStateAndIncidents(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	paused := monitorDoc("one")
 	paused.Paused = true
@@ -149,6 +150,7 @@ func TestMonitorStateAndIncidents(t *testing.T) {
 }
 
 func TestErrorClassMapping(t *testing.T) {
+	t.Parallel()
 	for _, c := range []string{"dns", "connect", "tls", "timeout", "http_status", "assertion", "ssrf_blocked", "internal"} {
 		if got := ErrorClassFromProto(ErrorClassToProto(c)); got != c {
 			t.Errorf("round trip of %q = %q", c, got)

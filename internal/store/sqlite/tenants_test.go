@@ -138,6 +138,7 @@ func populateStateTenant(t *testing.T, s *StateStore, tid string, auditIndex uin
 // sqlite_master that no table with a tenant_id column keeps a row of it, while
 // the other tenant is untouched.
 func TestDeleteTenantLeavesNoRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := openState(t, t.TempDir())
 	populateStateTenant(t, s, "tenant-a", 1)
@@ -197,6 +198,7 @@ var metricsSeriesTables = []string{"minutes", "rollups"}
 // checks with sqlite_master that no metrics table keeps data of it, including
 // the tables that reference series by series_id.
 func TestPurgeTenantLeavesNoRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := openMetrics(t, t.TempDir())
 	for _, tid := range []string{"tenant-a", "tenant-b"} {

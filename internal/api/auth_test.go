@@ -97,6 +97,7 @@ func (e *env) addUser(actor, username, role string) (string, string) {
 // (FA-AUTH-01..04): setup, login, rotation with reuse detection, logout,
 // password change and the immediate effect of disabling a user.
 func TestLocalAuthFlow(t *testing.T) {
+	t.Parallel()
 	e := newEnvWith(t, true)
 
 	t.Run("protected endpoint needs a token", func(t *testing.T) {
@@ -267,6 +268,7 @@ func TestLocalAuthFlow(t *testing.T) {
 // TestLoginThrottling checks FA-AUTH-04 (ADR 0008): failures 1 to 5 answer
 // 401; the 6th attempt answers 429 with Retry-After, even with the right password.
 func TestLoginThrottling(t *testing.T) {
+	t.Parallel()
 	e := newEnvWith(t, true)
 	if res := e.setup("root-admin", testPassword); res.code != http.StatusCreated {
 		t.Fatalf("setup = %d %s", res.code, res.body)
@@ -288,6 +290,7 @@ func TestLoginThrottling(t *testing.T) {
 // TestLoginOverlongPassword checks that a password longer than the policy
 // never matches, even if its first 256 bytes are the real password.
 func TestLoginOverlongPassword(t *testing.T) {
+	t.Parallel()
 	e := newEnvWith(t, true)
 	stored := testPassword + strings.Repeat("x", auth.MaxPasswordLen-len(testPassword))
 	if res := e.setup("root-admin", stored); res.code != http.StatusCreated {
@@ -304,6 +307,7 @@ func TestLoginOverlongPassword(t *testing.T) {
 // TestChangePasswordThrottling checks that wrong current passwords count as
 // account failures: after five wrong attempts even the right one answers 429.
 func TestChangePasswordThrottling(t *testing.T) {
+	t.Parallel()
 	e, admin := newLocalAdminEnv(t)
 	for i := range 5 {
 		res := e.do("PUT", "/api/v1/me/password", "", map[string]any{

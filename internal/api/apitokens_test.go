@@ -73,6 +73,7 @@ func fieldPointers(t *testing.T, r response) []string {
 
 // TestAPITokenLifecycle covers create, list, duplicate names and revocation.
 func TestAPITokenLifecycle(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 
@@ -134,6 +135,7 @@ func TestAPITokenLifecycle(t *testing.T) {
 
 // TestAPITokenValidation checks the field errors of the create request.
 func TestAPITokenValidation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	tests := []struct {
@@ -151,6 +153,7 @@ func TestAPITokenValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.do("POST", apiTokensPath, tenantAdmin, tt.body)
 			if res.code != http.StatusUnprocessableEntity {
 				t.Fatalf("= %d, want 422: %s", res.code, res.body)
@@ -167,6 +170,7 @@ func TestAPITokenValidation(t *testing.T) {
 
 // TestAPITokenRoles: only tenant admins and platform admins manage tokens.
 func TestAPITokenRoles(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	existing := createToken(t, e, tenantAdmin, "existing", "tenant-viewer")
@@ -193,6 +197,7 @@ func TestAPITokenRoles(t *testing.T) {
 
 // TestAPITokenNeedsCommandLevel: below level 9 tokens are refused with 409.
 func TestAPITokenNeedsCommandLevel(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 8)
 	res := e.do("POST", apiTokensPath, tenantAdmin, tokenRequest("early", "tenant-viewer", day))
@@ -206,6 +211,7 @@ func TestAPITokenNeedsCommandLevel(t *testing.T) {
 
 // TestAPITokenTenantIsolation: a tenant admin never sees or revokes another tenant's tokens.
 func TestAPITokenTenantIsolation(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	raiseCommandLevel(t, e, 9)
 	mine := createToken(t, e, tenantAdmin, "mine", "tenant-viewer")
@@ -224,6 +230,7 @@ func TestAPITokenTenantIsolation(t *testing.T) {
 // TestAPITokenPrincipalsViaTokenAreRefused: a principal that authenticated with
 // a token gets 403 on every token and admin operation, from the middleware.
 func TestAPITokenPrincipalsViaTokenAreRefused(t *testing.T) {
+	t.Parallel()
 	e := newEnvTweaked(t, false, func(d *Deps) { d.Authenticator = viaTokenAuth{} })
 	raiseCommandLevel(t, e, 9)
 
@@ -260,6 +267,7 @@ func (viaTokenAuth) Authenticate(r *http.Request) (auth.Principal, error) {
 // TestAPITokenAccess uses real local logins and API tokens end to end, through
 // the real middleware.
 func TestAPITokenAccess(t *testing.T) {
+	t.Parallel()
 	// clock is read by the token authenticator; zero means the real time.
 	var clock time.Time
 	now := func() time.Time {
@@ -382,6 +390,7 @@ var wantTokenOperations = []string{
 // TestTokenOperationSet pins the operations API tokens may call. A new
 // operation stays closed to tokens until its tag is added to tokenTags.
 func TestTokenOperationSet(t *testing.T) {
+	t.Parallel()
 	ops, err := tokenOperations()
 	if err != nil {
 		t.Fatal(err)
