@@ -26,6 +26,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/store"
 	"github.com/joinsider/pulsequorum/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/sqlitetest"
 )
 
 // headerAuth reads "tenant:role" from X-Test-Principal.
@@ -74,10 +75,7 @@ func newEnvTweaked(t testing.TB, localAuth bool, tweak func(*Deps)) *env {
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	state, err := sqlite.OpenState(ctx, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	state := sqlitetest.OpenState(t, dir)
 	metrics, err := sqlite.OpenMetrics(ctx, dir, sqlite.MetricsOptions{})
 	if err != nil {
 		t.Fatal(err)

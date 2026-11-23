@@ -16,14 +16,12 @@ import (
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/store"
 	"github.com/joinsider/pulsequorum/internal/store/sqlite"
+	"github.com/joinsider/pulsequorum/internal/store/sqlite/sqlitetest"
 )
 
 func openStore(t *testing.T, dir string) *sqlite.StateStore {
 	t.Helper()
-	s, err := sqlite.OpenState(context.Background(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := sqlitetest.OpenState(t, dir)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
