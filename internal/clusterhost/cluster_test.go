@@ -239,6 +239,19 @@ func eventually(t *testing.T, what string, timeout time.Duration, cond func() bo
 	}
 }
 
+// synced returns token once via has applied everything leader has applied
+// so far. A join through a follower redeems the token against the follower's
+// state, so a token created on the leader an instant earlier may not be
+// there yet.
+func synced(t *testing.T, leader, via *testNode, token string) string {
+	t.Helper()
+	want := leader.host.Node.Status().AppliedIndex
+	eventually(t, "join token applied on "+via.id, 10*time.Second, func() bool {
+		return via.host.Node.Status().AppliedIndex >= want
+	})
+	return token
+}
+
 func isVoter(n *testNode, id string) bool {
 	members, _, err := n.host.Node.Members()
 	if err != nil {
@@ -292,7 +305,7 @@ func TestThreeVotersJoinOverMTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNode(ctx, t, []string{n2.addr}, token(pki.RoleVoter))
+	n3, err := startNode(ctx, t, []string{n2.addr}, synced(t, n1, n2, token(pki.RoleVoter)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +490,7 @@ func TestWriteForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNode(ctx, t, []string{n2.addr}, token())
+	n3, err := startNode(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,7 +645,7 @@ func TestHeartbeatReplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, token(), interval)
+	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()), interval)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,7 +713,7 @@ func TestAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNodeWithCaps(ctx, t, []string{n2.addr}, token(), nil)
+	n3, err := startNodeWithCaps(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -812,7 +825,7 @@ func TestRollingUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "a voter", 30*time.Second, func() bool { return isVoter(c, a.id) })
-	b, err := startNodeWithVersion(ctx, t, []string{a.addr}, token(), 3)
+	b, err := startNodeWithVersion(ctx, t, []string{a.addr}, synced(t, c, a, token()), 3)
 	if err != nil {
 		t.Fatal(err)
 	}

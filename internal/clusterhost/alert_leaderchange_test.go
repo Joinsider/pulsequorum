@@ -104,7 +104,7 @@ func newAlertCluster(ctx context.Context, t *testing.T) *alertCluster {
 		t.Fatal(err)
 	}
 	eventually(t, "n2 voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
-	n3, err := startNode(ctx, t, []string{n2.addr}, token())
+	n3, err := startNode(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()))
 	if err != nil {
 		t.Fatal(err)
 	}

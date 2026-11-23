@@ -112,7 +112,7 @@ func startThreeVotersForProbes(ctx context.Context, t *testing.T, replInterval t
 	}
 	eventually(t, "n2 promoted to voter", 30*time.Second, func() bool { return isVoter(n1, n2.id) })
 
-	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, token(), replInterval)
+	n3, err := startNodeInterval(ctx, t, []string{n2.addr}, synced(t, n1, n2, token()), replInterval)
 	if err != nil {
 		t.Fatal(err)
 	}
