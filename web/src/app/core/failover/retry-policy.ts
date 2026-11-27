@@ -22,6 +22,12 @@ const FAILOVER_STATUS = new Set([0, 502, 503, 504]);
 
 const AUTH_PREFIX = '/api/v1/auth';
 
+/**
+ * POST without key that is safe to repeat (ADR 0036, 3B): a stream ticket is
+ * single use and short lived, so a second one only expires unused.
+ */
+const RETRYABLE_POSTS = new Set(['/api/v1/stream/ticket']);
+
 /** Rotates the refresh cookie like the auth endpoints, so it is never retried. */
 const PASSWORD_PATH = '/api/v1/me/password';
 
@@ -32,6 +38,7 @@ const PASSWORD_PATH = '/api/v1/me/password';
  *   and never for `/api/v1/me/password`, which rotates the refresh cookie;
  * - never for URLs outside `/api/`;
  * - always for GET, HEAD, PUT and DELETE;
+ * - POST `/api/v1/stream/ticket` (single-use ticket);
  * - POST and PATCH only with a non-empty `Idempotency-Key` header, which the
  *   FSM deduplicates (ADR 0012 A8);
  * - nothing else.
@@ -45,6 +52,9 @@ export function isRetrySafe(req: HttpRequest<unknown>): boolean {
   }
   const method = req.method.toUpperCase();
   if (IDEMPOTENT_METHODS.has(method)) {
+    return true;
+  }
+  if (method === 'POST' && RETRYABLE_POSTS.has(path.toLowerCase())) {
     return true;
   }
   if (KEYED_METHODS.has(method)) {

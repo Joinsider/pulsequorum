@@ -36,10 +36,11 @@ func (s *Server) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleFrontendConfig(w http.ResponseWriter, r *http.Request) {
 	// The SPA fails over between the voters listed here (ADR 0036). Without
-	// the shared source only this voter's PUBLIC_URL is listed.
+	// the shared source only this voter's PUBLIC_URL is listed; without a
+	// PUBLIC_URL the list stays empty (same origin, no failover).
 	nodes := []string{}
 	if s.api.PublicNodes != nil {
-		nodes = append(nodes, s.api.PublicNodes.Origins(r.Context())...)
+		nodes = append(nodes, s.api.PublicNodes.ConfigOrigins(r.Context())...)
 	} else if s.cfg.PublicURL != "" {
 		nodes = append(nodes, s.cfg.PublicURL)
 	}

@@ -121,3 +121,19 @@ func TestContains(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigOriginsNeedSelf(t *testing.T) {
+	l := &fakeLister{nodes: []store.Node{voter("n2", "https://n2.example.com", true)}}
+	ctx := context.Background()
+	without := New("n1", "", l, nil, nil)
+	if got := without.ConfigOrigins(ctx); got != nil {
+		t.Fatalf("ConfigOrigins without PUBLIC_URL = %v, want none", got)
+	}
+	if got := without.Origins(ctx); !slices.Equal(got, []string{"https://n2.example.com"}) {
+		t.Fatalf("Origins (for CORS) = %v", got)
+	}
+	with := New("n1", "https://n1.example.com", l, nil, nil)
+	if got := with.ConfigOrigins(ctx); !slices.Equal(got, []string{"https://n1.example.com", "https://n2.example.com"}) {
+		t.Fatalf("ConfigOrigins = %v", got)
+	}
+}

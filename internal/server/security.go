@@ -38,7 +38,7 @@ func securityHeaders(next http.Handler, issuer string, nodes *publicnodes.Source
 		if isAPIPath(r.URL.Path) {
 			h.Set("Content-Security-Policy", cspAPI)
 		} else {
-			h.Set("Content-Security-Policy", spaCSP(issuer, nodes.Origins(r.Context())))
+			h.Set("Content-Security-Policy", spaCSP(issuer, nodes.ConfigOrigins(r.Context())))
 		}
 		next.ServeHTTP(w, r)
 	})

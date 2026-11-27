@@ -108,6 +108,18 @@ func (s *Source) Origins(ctx context.Context) []string {
 	return out
 }
 
+// ConfigOrigins returns the origins the embedded SPA of this voter may fail
+// over to: Origins, or nothing if this voter has no valid public origin
+// itself (ADR 0036). Without PUBLIC_URL the SPA stays on the page's origin,
+// because the operator gave no public address to come back to. config.json
+// and the CSP connect-src use this list; CORS uses Origins.
+func (s *Source) ConfigOrigins(ctx context.Context) []string {
+	if s == nil || s.selfURL == "" {
+		return nil
+	}
+	return s.Origins(ctx)
+}
+
 // Contains reports whether origin (as sent by a browser) is one of Origins.
 // The comparison is exact after lower-casing; "null" never matches.
 func (s *Source) Contains(ctx context.Context, origin string) bool {

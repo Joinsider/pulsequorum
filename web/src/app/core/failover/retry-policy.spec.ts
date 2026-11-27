@@ -44,6 +44,10 @@ describe('isRetrySafe', () => {
     ['PUT', '/api/v1/me/password', undefined, false],
     ['PUT', '/api/v1/ME/password', undefined, false],
     ['GET', '/api/v1/me', undefined, true],
+    ['POST', '/api/v1/stream/ticket', undefined, true],
+    ['POST', 'https://n2.example.com/api/v1/stream/ticket', undefined, true],
+    ['PATCH', '/api/v1/stream/ticket', undefined, false],
+    ['POST', '/api/v1/stream/ticket/x', undefined, false],
     ['GET', '/api/v1/authors', undefined, true],
     // Only our API.
     ['GET', '/config.json', undefined, false],
