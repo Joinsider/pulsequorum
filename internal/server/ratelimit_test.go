@@ -45,6 +45,9 @@ func TestRateLimit(t *testing.T) {
 	if got := count(http.MethodGet, "/healthz", "192.0.2.3", publicBurst+3); got != 0 {
 		t.Errorf("healthz: %d limited", got)
 	}
+	if got := count(http.MethodGet, "/api/v1/cluster/nodes", "192.0.2.4", publicBurst+3); got != 3 {
+		t.Errorf("cluster/nodes: %d limited, want 3", got)
+	}
 	if got := count(http.MethodGet, "/api/v1/monitors", "192.0.2.3", publicBurst+3); got != 0 {
 		t.Errorf("monitors: %d limited", got)
 	}

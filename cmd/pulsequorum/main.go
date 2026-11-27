@@ -44,6 +44,7 @@ import (
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/proberun"
+	"github.com/joinsider/pulsequorum/internal/publicnodes"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
@@ -685,6 +686,9 @@ func buildAPIDeps(deps voterRuntimeDeps, checkEnv *checker.Env, sender *alert.Se
 		SSRFPolicy:   deps.prober.policy,
 		// The SSRF setting of each node in the cluster view (ADR 0030).
 		SSRFProtectionByNode: deps.host.SSRFProtectionByNode,
+		// Public origins of the voters for client failover (ADR 0036).
+		PublicNodes: publicnodes.New(deps.creds.nodeID, deps.cfg.PublicURL, deps.state, deps.clock, deps.log),
+		Stale:       func() bool { return cluster.IsStale(deps.host.Node.Status()) },
 		ProbeSessions: func() map[string]api.ProbeSessionView {
 			raw := deps.host.ProbeSessionViews()
 			out := make(map[string]api.ProbeSessionView, len(raw))

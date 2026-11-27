@@ -43,9 +43,13 @@ func (s *Server) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) handleFrontendConfig(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleFrontendConfig(w http.ResponseWriter, r *http.Request) {
+	// The SPA fails over between the voters listed here (ADR 0036). Without
+	// the shared source only this voter's PUBLIC_URL is listed.
 	nodes := []string{}
-	if s.cfg.PublicURL != "" {
+	if s.api.PublicNodes != nil {
+		nodes = append(nodes, s.api.PublicNodes.Origins(r.Context())...)
+	} else if s.cfg.PublicURL != "" {
 		nodes = append(nodes, s.cfg.PublicURL)
 	}
 	auth := FrontendAuthConfig{Mode: string(s.cfg.AuthMode)}

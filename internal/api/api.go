@@ -102,6 +102,9 @@ type Deps struct {
 	// PublicNodes lists the public origins of the voters (ADR 0036) for
 	// /cluster/nodes, config.json, CORS and CSP; nil lists none.
 	PublicNodes *publicnodes.Source
+	// Stale reports whether this voter lags too far behind the leader, so
+	// reads may be outdated (ADR 0012 A9, ADR 0036). Nil omits the health field.
+	Stale func() bool
 }
 
 // Handlers implements gen.StrictServerInterface.
@@ -190,6 +193,10 @@ func (h *Handlers) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.G
 		NodeName: h.cfg.NodeName,
 		Version:  version.Version,
 		Commit:   version.Commit,
+	}
+	if h.deps.Stale != nil {
+		stale := h.deps.Stale()
+		out.Stale = &stale
 	}
 	if h.deps.Degraded != nil {
 		if st := h.deps.Degraded.State(); st.Degraded {

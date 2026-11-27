@@ -75,3 +75,37 @@ func TestToAPIIncidentReevaluated(t *testing.T) {
 		t.Errorf("reevaluated = %v, want true", out.Reevaluated)
 	}
 }
+
+// TestHealthReportsStale covers the optional stale flag (ADR 0036): it is
+// omitted when no check is wired and carries the check result otherwise.
+func TestHealthReportsStale(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		stale func() bool
+		want  *bool
+	}{
+		{name: "not wired", stale: nil, want: nil},
+		{name: "fresh", stale: func() bool { return false }, want: boolPtr(false)},
+		{name: "stale", stale: func() bool { return true }, want: boolPtr(true)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := newEnvTweaked(t, false, func(d *Deps) { d.Stale = tc.stale })
+			res := e.do("GET", "/api/v1/health", "", nil)
+			if res.code != http.StatusOK {
+				t.Fatalf("health = %d", res.code)
+			}
+			h := decode[gen.Health](t, res)
+			switch {
+			case tc.want == nil && h.Stale != nil:
+				t.Errorf("stale = %v, want omitted", *h.Stale)
+			case tc.want != nil && (h.Stale == nil || *h.Stale != *tc.want):
+				t.Errorf("stale = %v, want %v", h.Stale, *tc.want)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

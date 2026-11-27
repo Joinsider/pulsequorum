@@ -47,7 +47,7 @@ func (l *limits) limiterFor(r *http.Request) *ratelimit.Limiter {
 	switch {
 	case strings.HasPrefix(p, api.BaseURL+"/auth/") && r.Method == http.MethodPost:
 		return l.auth
-	case p == api.BaseURL+"/health", p == api.BaseURL+"/stream", p == "/config.json":
+	case p == api.BaseURL+"/health", p == api.BaseURL+"/stream", p == api.BaseURL+"/cluster/nodes", p == "/config.json":
 		return l.public
 	}
 	return nil
