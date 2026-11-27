@@ -26,6 +26,7 @@ import (
 	"github.com/joinsider/pulsequorum/internal/configsecret"
 	"github.com/joinsider/pulsequorum/internal/degraded"
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
+	"github.com/joinsider/pulsequorum/internal/publicnodes"
 	"github.com/joinsider/pulsequorum/internal/replication"
 	"github.com/joinsider/pulsequorum/internal/store"
 	"github.com/joinsider/pulsequorum/internal/stream"
@@ -98,6 +99,9 @@ type Deps struct {
 	// Degraded reports the degraded state of this voter (ADR 0024) for the
 	// health endpoint; nil omits it.
 	Degraded interface{ State() degraded.State }
+	// PublicNodes lists the public origins of the voters (ADR 0036) for
+	// /cluster/nodes, config.json, CORS and CSP; nil lists none.
+	PublicNodes *publicnodes.Source
 }
 
 // Handlers implements gen.StrictServerInterface.
