@@ -76,8 +76,12 @@ func run(args []string) int {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return admincli.Run(ctx, args[1:], admincli.Env{Getenv: os.Getenv, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
+		case "frontend":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runFrontend(ctx, args[1:], os.Getenv, os.Stdout, os.Stderr)
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck, admin)\n", args[0])
+			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck, admin, frontend)\n", args[0])
 			return 2
 		}
 	}
