@@ -70,33 +70,42 @@ func cors(allowed []string, nodes *publicnodes.Source, next http.Handler) http.H
 		origin := r.Header.Get("Origin")
 		ok := corsOriginAllowed(r.Context(), origin, allowed, nodes)
 		credentials := ok && isCredentialPath(r.URL.Path)
-		preflight := r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
-		if preflight {
-			h.Add("Vary", "Access-Control-Request-Method")
-			h.Add("Vary", "Access-Control-Request-Headers")
-			if ok {
-				h.Set("Access-Control-Allow-Origin", origin)
-				if credentials {
-					h.Set("Access-Control-Allow-Credentials", "true")
-				}
-				h.Set("Access-Control-Allow-Methods", corsMethods)
-				h.Set("Access-Control-Allow-Headers", corsHeaders)
-				h.Set("Access-Control-Max-Age", corsMaxAge)
-			}
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			setPreflightHeaders(h, ok, origin, credentials)
 			// A rejected preflight gets no CORS headers; the browser blocks
 			// the actual request.
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if ok {
-			h.Set("Access-Control-Allow-Origin", origin)
-			if credentials {
-				h.Set("Access-Control-Allow-Credentials", "true")
-			}
+			setAllowOrigin(h, origin, credentials)
 			h.Set("Access-Control-Expose-Headers", corsExpose)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// setPreflightHeaders answers a CORS preflight; only an allowed origin gets
+// the Allow-* headers.
+func setPreflightHeaders(h http.Header, ok bool, origin string, credentials bool) {
+	h.Add("Vary", "Access-Control-Request-Method")
+	h.Add("Vary", "Access-Control-Request-Headers")
+	if !ok {
+		return
+	}
+	setAllowOrigin(h, origin, credentials)
+	h.Set("Access-Control-Allow-Methods", corsMethods)
+	h.Set("Access-Control-Allow-Headers", corsHeaders)
+	h.Set("Access-Control-Max-Age", corsMaxAge)
+}
+
+// setAllowOrigin reflects origin exactly and allows credentials only where
+// the refresh cookie is used.
+func setAllowOrigin(h http.Header, origin string, credentials bool) {
+	h.Set("Access-Control-Allow-Origin", origin)
+	if credentials {
+		h.Set("Access-Control-Allow-Credentials", "true")
+	}
 }
 
 // corsOriginAllowed reports whether a browser Origin may read API responses.

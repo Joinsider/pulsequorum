@@ -63,11 +63,7 @@ func SPACSP(issuer string, nodes []string) string {
 			continue
 		}
 		add(o)
-		if rest, ok := strings.CutPrefix(o, "https://"); ok {
-			add("wss://" + rest)
-		} else if rest, ok := strings.CutPrefix(o, "http://"); ok {
-			add("ws://" + rest)
-		}
+		add(websocketOrigin(o))
 	}
 	if o, ok := IssuerOrigin(issuer); ok {
 		add(o)
@@ -157,4 +153,14 @@ func HeadersFile(headers []Header) (string, error) {
 	}
 	b.WriteString("/index.html\n  Cache-Control: no-store\n/config.json\n  Cache-Control: no-store\n")
 	return b.String(), nil
+}
+
+// websocketOrigin returns the WebSocket counterpart of a normalized node
+// origin: wss for https, and the plain variant only for the loopback http
+// origins that NormalizePublicOrigin allows (local development).
+func websocketOrigin(origin string) string {
+	if rest, ok := strings.CutPrefix(origin, "https"); ok {
+		return "wss" + rest
+	}
+	return "ws" + strings.TrimPrefix(origin, "http")
 }
