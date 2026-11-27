@@ -26,61 +26,87 @@ const DNS_NAME = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))*$/;
  *   strip or reinterpret such characters silently.
  */
 export function normalizeOrigin(raw: unknown): string | null {
-  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_NODE_URL_LENGTH) {
+  if (!isPlainOriginText(raw)) {
     return null;
   }
-  // Printable ASCII only, without space, backslash, query or fragment marks.
-  if (!/^[\x21-\x7e]+$/.test(raw) || /[\\?#]/.test(raw)) {
+  const url = parseUrl(raw);
+  if (url === null || !hasOnlyOrigin(raw, url) || !allowedScheme(url)) {
     return null;
   }
-  // The scheme must be spelled out with "//": "https:host" is relative-looking
-  // and parsed leniently by the WHATWG URL parser.
-  if (!/^https?:\/\/[^/]/i.test(raw)) {
-    return null;
-  }
-  let url: URL;
+  return hostAsWritten(raw, url) ? url.origin : null;
+}
+
+/**
+ * Checks the text before parsing: a string of printable ASCII without space,
+ * backslash, query or fragment marks, at most MAX_NODE_URL_LENGTH long, with
+ * the scheme spelled out with "//" ("https:host" is parsed leniently).
+ */
+function isPlainOriginText(raw: unknown): raw is string {
+  return (
+    typeof raw === 'string' &&
+    raw.length > 0 &&
+    raw.length <= MAX_NODE_URL_LENGTH &&
+    /^[\x21-\x7e]+$/.test(raw) &&
+    !/[\\?#@]/.test(raw) &&
+    /^https?:\/\/[^/]/i.test(raw)
+  );
+}
+
+function parseUrl(raw: string): URL | null {
   try {
-    url = new URL(raw);
+    return new URL(raw);
   } catch {
     return null;
   }
-  if (url.username !== '' || url.password !== '' || raw.includes('@')) {
-    return null;
+}
+
+/**
+ * No userinfo, query, fragment or path: "https://host/" and "https://host"
+ * are fine, any other path is not, even one the parser normalizes away
+ * ("/.", "/%2e"). WHATWG accepts port 0; the backend does not.
+ */
+function hasOnlyOrigin(raw: string, url: URL): boolean {
+  if (url.username !== '' || url.password !== '') {
+    return false;
   }
   if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
-    return null;
+    return false;
   }
-  // "https://host/" and "https://host" are fine; any other path is not, even
-  // one the parser normalizes away ("/.", "/%2e").
-  const afterScheme = raw.slice(raw.indexOf('//') + 2);
-  const slash = afterScheme.indexOf('/');
-  if (slash >= 0 && slash !== afterScheme.length - 1) {
-    return null;
+  const slash = afterScheme(raw).indexOf('/');
+  if (slash >= 0 && slash !== afterScheme(raw).length - 1) {
+    return false;
   }
-  // WHATWG accepts port 0; the backend does not.
-  if (url.port !== '' && Number(url.port) < 1) {
-    return null;
-  }
+  return url.port === '' || Number(url.port) >= 1;
+}
+
+/** `https`, or `http` only for the loopback hosts. */
+function allowedScheme(url: URL): boolean {
   if (url.protocol === 'http:') {
-    if (!LOOPBACK_HOSTS.has(url.hostname)) {
-      return null;
-    }
-  } else if (url.protocol !== 'https:') {
-    return null;
+    return LOOPBACK_HOSTS.has(url.hostname);
   }
-  // The parser maps numeric hosts such as 0x7f000001 or 127.1 to dotted IPv4.
-  // Accept only hosts the operator wrote in their canonical form, so that the
-  // list in config.json, the CSP and the backend registry agree.
-  const writtenHost = hostPart(afterScheme.slice(0, slash >= 0 ? slash : undefined));
-  if (writtenHost.toLowerCase() !== url.hostname) {
-    return null;
+  return url.protocol === 'https:';
+}
+
+/**
+ * The parser maps numeric hosts such as 0x7f000001 or 127.1 to dotted IPv4.
+ * Accept only hosts the operator wrote in their canonical form, so that the
+ * list in config.json, the CSP and the backend registry agree, and only the
+ * host alphabet of the backend: DNS labels of [a-z0-9-] without a trailing
+ * dot, or an IPv6 literal (IPv4 passes as labels of digits).
+ */
+function hostAsWritten(raw: string, url: URL): boolean {
+  const rest = afterScheme(raw);
+  const slash = rest.indexOf('/');
+  const written = hostPart(slash >= 0 ? rest.slice(0, slash) : rest);
+  if (written.toLowerCase() !== url.hostname) {
+    return false;
   }
-  // Same host alphabet as the backend: DNS labels of [a-z0-9-] without a
-  // trailing dot, or an IPv6 literal (IPv4 passes as labels of digits).
-  if (!url.hostname.startsWith('[') && !DNS_NAME.test(url.hostname)) {
-    return null;
-  }
-  return url.origin;
+  return url.hostname.startsWith('[') || DNS_NAME.test(url.hostname);
+}
+
+/** The text after "scheme://". */
+function afterScheme(raw: string): string {
+  return raw.slice(raw.indexOf('//') + 2);
 }
 
 /** Host of `host[:port]` as written, IPv6 literals with brackets. */
