@@ -40,7 +40,7 @@ func runFrontend(ctx context.Context, args []string, getenv func(string) string,
 	if len(args) > 0 {
 		switch args[0] {
 		case "-h", "--help", "help":
-			fmt.Fprint(stdout, frontendUsage)
+			_, _ = fmt.Fprint(stdout, frontendUsage)
 			return 0
 		case "headers":
 			return runFrontendHeaders(args[1:], getenv, stdout, stderr)
@@ -49,17 +49,17 @@ func runFrontend(ctx context.Context, args []string, getenv func(string) string,
 
 	cfg, err := loadFrontendConfig(getenv)
 	if err != nil {
-		fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
+		_, _ = fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
 		return 2
 	}
 	if len(args) > 0 {
-		fmt.Fprintf(stderr, "frontend: unexpected argument %q\n\n%s", args[0], frontendUsage)
+		_, _ = fmt.Fprintf(stderr, "frontend: unexpected argument %q\n\n%s", args[0], frontendUsage)
 		return 2
 	}
 
 	log := slog.New(slog.NewJSONHandler(stderr, nil))
 	if err := frontendrun.Run(ctx, cfg, log); err != nil {
-		fmt.Fprintf(stderr, "frontend: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "frontend: %v\n", err)
 		return 1
 	}
 	return 0
@@ -78,7 +78,7 @@ func runFrontendHeaders(args []string, getenv func(string) string, stdout, stder
 		return 2
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintf(stderr, "frontend headers: unexpected argument %q\n", flags.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "frontend headers: unexpected argument %q\n", flags.Arg(0))
 		return 2
 	}
 
@@ -89,21 +89,24 @@ func runFrontendHeaders(args []string, getenv func(string) string, stdout, stder
 	case "nginx":
 		render = webfront.NginxConf
 	default:
-		fmt.Fprintf(stderr, "frontend headers: unknown format %q (want netlify or nginx)\n", *format)
+		_, _ = fmt.Fprintf(stderr, "frontend headers: unknown format %q (want netlify or nginx)\n", *format)
 		return 2
 	}
 
 	cfg, err := loadFrontendConfig(getenv)
 	if err != nil {
-		fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
+		_, _ = fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
 		return 2
 	}
 	out, err := render(cfg.Headers())
 	if err != nil {
-		fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
+		_, _ = fmt.Fprintf(stderr, "invalid configuration:\n%v\n", err)
 		return 2
 	}
-	fmt.Fprint(stdout, out)
+	if _, err := fmt.Fprint(stdout, out); err != nil {
+		_, _ = fmt.Fprintf(stderr, "frontend headers: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
