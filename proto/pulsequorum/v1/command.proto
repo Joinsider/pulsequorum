@@ -268,6 +268,9 @@ message NodeInfo {
   string version = 10;
   // Highest Command.version this node can apply.
   uint32 max_command_version = 11;
+  // Normalized public origin of a voter (ADR 0036), stored from command level
+  // 11 on. Empty for probes and for voters without PUBLIC_URL.
+  string public_url = 12;
 }
 
 // RedeemJoinToken uses up a join token (FA-PKI-02). The leader checks the

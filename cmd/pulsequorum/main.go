@@ -355,6 +355,7 @@ func startVoterHost(ctx context.Context, deps voterRuntimeDeps, stop context.Can
 		Prepared: deps.creds.prepared, Log: deps.log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: deps.prober.capabilities,
+		PublicURL: cfg.PublicURL,
 		Clock:     deps.clock,
 		SelfCheck: deps.prober.selfProber.Status,
 		// The SSRF setting of this node, reported in GetStatus (ADR 0030).

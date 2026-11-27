@@ -159,6 +159,10 @@ type Options struct {
 	Name         string
 	Version      string
 	Capabilities []string
+	// PublicURL is the public address of this voter (ADR 0036, PUBLIC_URL). It is
+	// proposed to the registry from command level 11 on; an invalid value is
+	// logged at start and leaves the voter out of client failover.
+	PublicURL string
 	// MaxCommandVersion overrides cluster.CommandVersion, the highest command
 	// version this node applies and announces (ADR 0018). Zero means
 	// cluster.CommandVersion. Tests use it to simulate an older binary.
@@ -284,6 +288,9 @@ func Start(ctx context.Context, opts Options) (*Host, error) {
 	}
 	if h.clockInterval <= 0 {
 		h.clockInterval = clockSampleInterval
+	}
+	if _, err := cluster.NormalizePublicOrigin(opts.PublicURL); opts.PublicURL != "" && err != nil {
+		h.log.Warn("PUBLIC_URL is not a plain origin; client failover will not list this voter", "err", err)
 	}
 	h.Cert.Now = clock
 	if err := h.Revocations.Reload(ctx, opts.State); err != nil {

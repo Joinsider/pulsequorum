@@ -173,6 +173,7 @@ type Node struct {
 	ConnectivityChangedMs int64
 	OwnerTenantID         string
 	Incarnation           string
+	PublicUrl             string
 }
 
 type NodeIncarnation struct {

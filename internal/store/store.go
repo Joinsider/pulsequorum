@@ -887,7 +887,11 @@ type Node struct {
 	// private probes (ADR 0034, ADR 0035).
 	OwnerTenantID string
 	// Incarnation is the metrics.db incarnation last reported by a probe.
-	Incarnation  string
+	Incarnation string
+	// PublicURL is the normalized public origin of a voter, empty if the voter
+	// has none or the node is a probe (ADR 0036). The FSM stores it from
+	// command level 11 on.
+	PublicURL    string
 	Capabilities []string // sorted, e.g. "icmp" (FA-CHK-31)
 	Labels       map[string]string
 	Region       string
