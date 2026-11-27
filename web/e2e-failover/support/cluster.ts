@@ -145,7 +145,7 @@ export function findSetupToken(text: string): string | undefined {
 export function voterEnv(
   runDir: string,
   v: VoterSpec,
-  join?: { seed: string; tokenFile: string },
+  join?: { seed: string; joinToken: string },
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? '',
@@ -164,7 +164,7 @@ export function voterEnv(
   };
   if (join) {
     env.CLUSTER_JOIN = join.seed;
-    env.JOIN_TOKEN_FILE = join.tokenFile;
+    env.JOIN_TOKEN = join.joinToken;
   }
   return env;
 }

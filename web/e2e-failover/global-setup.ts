@@ -28,6 +28,8 @@ import {
   type VoterSpec,
 } from './support/cluster';
 
+/** Join tokens are printable, URL-safe text; anything else is not passed on. */
+const JOIN_TOKEN_PATTERN = /^[A-Za-z0-9._~:-]{1,512}$/;
 /**
  * Starts a three-voter cluster from the built binary: voter 1 bootstraps and
  * prints the setup token, the admin is created through the API, voters 2 and 3
@@ -140,16 +142,18 @@ async function joinVoter(runDir: string, v: VoterSpec, accessToken: string): Pro
   if (tok.status !== 201) {
     throw new Error(`join token on ${originOf(seed)} returned HTTP ${tok.status}`);
   }
-  // The token is a secret: written 0600 and removed once the voter has started.
-  const tokenFile = path.join(runDir, `join-${v.index}.token`);
-  fs.writeFileSync(tokenFile, (tok.body as { token: string }).token, { mode: 0o600 });
+  // The token is a secret: it only goes to the child's environment, never to disk.
+  const joinToken = (tok.body as { token?: unknown }).token;
+  if (typeof joinToken !== 'string' || !JOIN_TOKEN_PATTERN.test(joinToken)) {
+    throw new Error(`join token on ${originOf(seed)} has an unexpected format`);
+  }
   fs.mkdirSync(path.join(runDir, `data-${v.index}`), { recursive: true });
 
   const logPath = path.join(runDir, `voter-${v.index}.log`);
   const child = spawnLogged({
     command: BINARY,
     args: [],
-    env: voterEnv(runDir, v, { seed: `127.0.0.1:${seed.clusterPort}`, tokenFile }),
+    env: voterEnv(runDir, v, { seed: `127.0.0.1:${seed.clusterPort}`, joinToken }),
     logPath,
   });
   registerProcess({ name: `voter-${v.index}`, pid: child.pid ?? 0, log: logPath });
@@ -160,7 +164,6 @@ async function joinVoter(runDir: string, v: VoterSpec, accessToken: string): Pro
     }
     return isReady(v);
   });
-  fs.rmSync(tokenFile, { force: true });
 }
 
 /** Waits until voter 1 lists all voters with their public URL (command level 11, ADR 0036). */

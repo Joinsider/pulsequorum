@@ -408,7 +408,8 @@ describe('NodeSelector', () => {
         await h.settle(h.selector.select());
         await h.advance(DISCOVERY_INTERVAL_MS * 2);
 
-        const ignored = warn.mock.calls.filter((call) => String(call[0]).includes(Z));
+        const message = `Ignoring node ${Z} from discovery: it is not listed in config.json.`;
+        const ignored = warn.mock.calls.filter((call) => call[0] === message);
         expect(ignored).toHaveLength(1);
         expect(h.selector.nodes()).toEqual([A]);
       } finally {
