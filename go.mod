@@ -21,7 +21,7 @@ require (
 	go.etcd.io/bbolt v1.5.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.59.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0
 	google.golang.org/grpc v1.85.0
