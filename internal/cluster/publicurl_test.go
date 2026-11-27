@@ -133,7 +133,7 @@ func FuzzNormalizePublicOrigin(f *testing.F) {
 		if err != nil || u.Path != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 			t.Fatalf("origin %q is not a plain origin", got)
 		}
-		if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
+		if u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(u.Hostname())) {
 			t.Fatalf("origin %q has a disallowed scheme", got)
 		}
 	})
