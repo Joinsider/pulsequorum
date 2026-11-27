@@ -4,9 +4,9 @@
 |---|---|
 | **Dokument** | Pflichtenheft (Software Requirements Specification) |
 | **Produkt** | Pulsequorum (Arbeitstitel, E20) |
-| **Version** | 1.7 |
+| **Version** | 1.8 |
 | **Status** | Freigegeben (ADRs 0001–0027 Accepted) |
-| **Datum** | 2026-11-17 |
+| **Datum** | 2026-11-27 |
 | **Grundlage** | [Konzept v0.3](../pulsequorum-konzept.md), Recherche zu Pitfalls (Kap. 12) |
 | **Auftraggeber / Product Owner** | Projektinhaber |
 | **Verfasser** | Claude (Opus 5.5) |
@@ -23,6 +23,7 @@
 | 1.5 | 2026-11-18 | SSRF-Schutz präzisiert gemäß ADR 0030: feste Bereichsliste, schaltbar über `SSRF_PROTECTION`, Prüfung beim Speichern, DNS-Antworten (FA-SEC-SSRF) |
 | 1.6 | 2026-11-22 | Lokale Richtlinie privater Probes gemäß ADR 0044 (FA-PRB-08..10) |
 | 1.7 | 2026-11-22 | Optionales Probe-Image `pulsequorum-probe` gemäß ADR 0043 (Z-M-04, FA-NODE-01) |
+| 1.8 | 2026-11-27 | Externes Frontend und Client-Failover gemäß ADR 0036: `public_url` im Node-Register, `GET /api/v1/cluster/nodes`, `Health.stale`, CORS/CSP aus dem Register, Unterbefehl `pulsequorum frontend`, Image `pulsequorum-web`, `FRONTEND_*` (FA-UI-02/03, FA-NODE-05) |
 
 ---
 
@@ -235,7 +236,7 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | FA-NODE-02 | Konfiguration ausschließlich über Umgebungsvariablen (optional zusätzlich Datei); alle Optionen dokumentiert mit Default. Ungültige Konfiguration bricht den Start ab. | M | P0 | Tabelle aller Variablen in der Doku; Test für Validierung. |
 | FA-NODE-03 **[neu]** | Beim ersten Start erzeugt jeder Node eine **zufällige, persistente Node-ID** im Datenverzeichnis und eine **Inkarnations-ID**, die in der Heartbeat-Datenbank (`metrics.db`) selbst gespeichert wird. Fehlt `metrics.db`, entsteht immer eine neue Inkarnation, auch wenn die Node-ID erhalten bleibt (ADR 0012 B4). Die Node-ID wird nie aus IP oder Hostname abgeleitet. | M | P1 | Neustart behält ID und Inkarnation; Löschen von `metrics.db` oder des Datenverzeichnisses erzeugt eine neue Inkarnation. (PF-03, PF-07, PF-12) |
 | FA-NODE-04 | Graceful Shutdown: laufende Checks und Schreibvorgänge werden innerhalb von 10 s beendet bzw. abgeschlossen; ein Leader gibt die Führung vorher ab (Leadership Transfer). | M | P2 | SIGTERM-Test: keine abgebrochenen Transaktionen, neuer Leader < 5 s. |
-| FA-NODE-05 | `GET /api/v1/health` liefert Rolle, Node-ID, Version, Leader, Quorum-Status, Raft-Replikationsstand (`applied_index` gegenüber dem Commit-Index des Leaders, `LastContact`; Zustand `stale` ab Schwellwert, ADR 0012 A9), Heartbeat-Replikationsrückstand, Uhrzeitabweichung, ICMP-Modus. Liveness und Readiness getrennt (`/healthz`, `/readyz`). | M | P0 (Basis), P2 (Cluster-Felder) | Contract-Test gegen OpenAPI. |
+| FA-NODE-05 | `GET /api/v1/health` liefert Rolle, Node-ID, Version, Leader, Quorum-Status, Raft-Replikationsstand (`applied_index` gegenüber dem Commit-Index des Leaders, `LastContact`; Zustand `stale` ab Schwellwert, ADR 0012 A9), Heartbeat-Replikationsrückstand, Uhrzeitabweichung, ICMP-Modus. Liveness und Readiness getrennt (`/healthz`, `/readyz`). | M | P0 (Basis), P2 (Cluster-Felder) | Contract-Test gegen OpenAPI. `stale`: Follower ohne Leader, letzter Kontakt > 10 s oder > 1000 committete, nicht angewendete Einträge (ADR 0036). |
 | FA-NODE-06 **[neu]** | Start-Selbsttest: prüft Schreibbarkeit des Datenverzeichnisses, effektive SQLite-Pragmas (`journal_mode`, `busy_timeout`, `synchronous`, `foreign_keys`, `auto_vacuum` auf jeder Verbindung, `journal_size_limit` am Schreib-Handle; ADR 0013 C3), verfügbaren ICMP-Modus, Uhrzeitabweichung zu den Peers. Ergebnisse erscheinen in Health und Log. | M | P1 | Test mit absichtlich falscher Konfiguration. (PF-11, PF-17) |
 | FA-NODE-07 | Strukturierte Logs (JSON oder Text, wählbar) über `log/slog`; Log-Level zur Laufzeit nicht nötig, per Variable einstellbar. Keine Geheimnisse in Logs. | M | P0 | Log-Review-Test: maskierte Kanal-URLs. |
 
@@ -463,8 +464,8 @@ Spalten: **ID** · **Anforderung** · **P**riorität · **Ph**ase · **Abnahmekr
 | ID | Anforderung | P | Ph | Abnahmekriterium |
 |----|-------------|---|----|------------------|
 | FA-UI-01 | Angular-SPA, ein Build-Artefakt, eingebettet per `go:embed` in jeden Voter. | M | P0 | `make build` erzeugt Binary mit UI. |
-| FA-UI-02 | Laufzeit-Konfiguration über `config.json` (Node-Liste, Auth-Modus, Issuer, Client-ID); eingebettete Variante erzeugt sie dynamisch aus der Node-Konfiguration. | M | P0 (Basis), P5 (extern) | Test. |
-| FA-UI-03 | Client-Failover: Health-Check aller Nodes beim Start, Auswahl des schnellsten gesunden, Wechsel bei Fehlern, Nachladen der Node-Liste von `/api/v1/cluster/nodes`. | M | P5 | E2E-Test mit gestopptem Voter. |
+| FA-UI-02 | Laufzeit-Konfiguration über `config.json` (Node-Liste, Auth-Modus, Issuer, Client-ID); eingebettete Variante erzeugt sie dynamisch: eigene `PUBLIC_URL` zuerst, danach die `public_url` der übrigen Voter aus dem Node-Register (ab Befehlsstufe 11). Externes Frontend über `pulsequorum frontend`, das Image `pulsequorum-web` oder das statische Archiv; dort ist `config.json` (`FRONTEND_NODES`) die einzige Vertrauensquelle (ADR 0036). | M | P0 (Basis), P5 (extern) | Test. |
+| FA-UI-03 | Client-Failover: Health-Check aller Nodes beim Start (gesund = 200, nicht `degraded`, nicht `stale`), Auswahl des schnellsten gesunden mit 20 % Toleranz, Wechsel bei Netzwerkfehler, Timeout, 502/503/504; automatische Wiederholung nur für GET/HEAD/PUT/DELETE und POST/PATCH mit `Idempotency-Key`, nie für Auth-Pfade und `/me/password`. Nachladen der Node-Liste von `/api/v1/cluster/nodes` (öffentlich, rate-limitiert) darf die konfigurierte Liste nur einschränken (ADR 0036). | M | P5 | E2E-Test mit gestopptem Voter. |
 | FA-UI-04 | Ansichten Mandant: Dashboard, Monitor-Detail (Konsens + Status/Latenz je Node, Uptime-Balken, Diagramme), Monitor-Editor (dynamisch aus JSON-Schema), Benachrichtigungen, Wartungsfenster, Incidents, Mandanten-Einstellungen, private Probes. | M | P1 (Kern), P4/P5 (Rest) | E2E-Tests. |
 | FA-UI-05 | Plattform-Admin `/admin` als lazy-geladener Bereich mit Route-Guard (nur Komfort; Absicherung serverseitig): Cluster, Join-Tokens, Mandanten, Systemalerts (E21). | M | P2 (Cluster), P4 (Mandanten) | E2E-Test. |
 | FA-UI-06 | Live-Aktualisierung über WebSocket mit automatischem Reconnect (Backoff + Jitter) und Neusynchronisierung. | M | P1 | Test. |
@@ -642,7 +643,7 @@ Protobuf-Definitionen in `proto/`:
 | `DATA_DIR` | `/data` | Datenverzeichnis |
 | `HTTP_ADDR` | `:8080` | API/UI (Probe: nur `/healthz` und `/readyz`) |
 | `CLUSTER_ADDR` | `:9443` | Cluster-Port |
-| `PUBLIC_URL` | – | Öffentliche URL des Voters |
+| `PUBLIC_URL` | – | Öffentliche URL des Voters; als Origin ohne Pfad (https, http nur für Loopback) auch Eintrag im Node-Register für den Client-Failover (ADR 0036) |
 | `CLUSTER_ADVERTISE` | `<NODE_NAME>:<Cluster-Port>` | Stabile Cluster-Adresse (DNS:Port) |
 | `RAFT_TIMEOUT` | `1s` | Raft-Heartbeat- und Election-Timeout (ADR 0012 A6) |
 | `CLUSTER_JOIN` / `CLUSTER_SEEDS` | – | Beitritt (Voter) / Seeds (Probe) |
@@ -668,7 +669,12 @@ Protobuf-Definitionen in `proto/`:
 | `DEGRADED_AFTER` | `15s` | Dauer ohne bekannten Leader, ab der ein Voter in den Degraded-Modus geht und unbestätigt alarmiert; `0` schaltet den Versand im Degraded-Modus ab (FA-ALR-10, ADR 0024) |
 | `ICMP_MODE` | `auto` | `auto` \| `privileged` \| `unprivileged` \| `off` |
 | `SSRF_PROTECTION` | `auto` | `off` \| `on` \| `auto` (an im Zitadel-Modus) |
-| `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins |
+| `CORS_ORIGINS` | – | Zusätzliche erlaubte Frontend-Origins; die `public_url` aller Voter sind automatisch erlaubt (ADR 0036) |
+| `FRONTEND_NODES` | – | Nur `pulsequorum frontend` und `pulsequorum-web`: kommagetrennte Voter-Origins für `config.json` und CSP (Pflicht, ADR 0036) |
+| `FRONTEND_LISTEN` | `:8080` | Nur `pulsequorum frontend`: Listen-Adresse |
+| `FRONTEND_TLS_CERT` / `FRONTEND_TLS_KEY` | – | Nur `pulsequorum frontend`: TLS-Dateien (beide oder keine) |
+| `FRONTEND_HSTS` | `auto` | `auto` (an mit TLS) \| `on` \| `off` |
+| `OIDC_CLIENT_ID` | – | Nur externes Frontend: Client-ID der SPA beim IdP (Voter: erster Eintrag von `OIDC_CLIENT_IDS`) |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | Logging |
 | `METRICS_ADDR` | leer | Eigener Listener für `/metrics` (Prometheus), `host:port`; leer = aus (FA-OBS-02, ADR 0025) |
 | `METRICS_TOKEN` / `METRICS_TOKEN_FILE` | – | Bearer-Token für `/metrics`; nicht zusammen setzen (FA-OBS-02, ADR 0025) |

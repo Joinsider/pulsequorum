@@ -57,6 +57,7 @@ Danach `http://localhost:8080/setup` öffnen und den ersten Administrator anlege
 | [Single-Node mit Compose](docs/betrieb/compose.md) | Einzelknoten-Betrieb und Konfiguration |
 | [Cluster erweitern und verkleinern](docs/betrieb/cluster.md) | Voter hinzufügen, entfernen und ersetzen |
 | [Anmeldung über OIDC](docs/betrieb/oidc.md) | Zitadel und andere OIDC-Anbieter |
+| [Externes Frontend und Client-Failover](docs/betrieb/frontend.md) | Auslieferung der SPA, Domains, Cookies, Failover |
 | [API-Tokens, Audit-Log](docs/betrieb/api-tokens.md) | Tokens, Protokoll und Massenaktionen |
 | [Recovery](docs/betrieb/recovery.md) | Quorumverlust und Admin-Passwort |
 | [SSRF-Schutz](docs/betrieb/ssrf.md) | Zielprüfung und Ausnahmen |
