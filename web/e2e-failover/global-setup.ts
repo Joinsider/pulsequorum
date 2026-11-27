@@ -176,8 +176,8 @@ async function waitForVoterList(): Promise<void> {
         return false;
       }
       const nodes = (res.body as { nodes: { url: string }[] }).nodes ?? [];
-      const urls = nodes.map((n) => n.url);
-      return ALL_ORIGINS.every((o) => urls.includes(o));
+      const urls = new Set(nodes.map((n) => n.url));
+      return ALL_ORIGINS.every((o) => urls.has(o));
     },
     STARTUP_TIMEOUT_MS,
   );
