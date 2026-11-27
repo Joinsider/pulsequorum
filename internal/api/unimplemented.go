@@ -165,6 +165,11 @@ func (Unimplemented) Setup(context.Context, gen.SetupRequestObject) (gen.SetupRe
 	return nil, ErrNotImplemented
 }
 
+// ListPublicNodes is not implemented yet.
+func (Unimplemented) ListPublicNodes(context.Context, gen.ListPublicNodesRequestObject) (gen.ListPublicNodesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // GetHealth is not implemented yet.
 func (Unimplemented) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.GetHealthResponseObject, error) {
 	return nil, ErrNotImplemented
