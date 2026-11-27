@@ -12,8 +12,10 @@ export interface AuthConfig {
 /** Runtime configuration served as `/config.json` next to the SPA. */
 export interface AppConfig {
   /**
-   * Backend node base URLs. An empty list means "use the same origin as the page".
-   * The first entry is used as the API base URL.
+   * Backend node origins (`https://host[:port]`) the SPA may send requests and
+   * bearer tokens to (ADR 0036). An empty list means "use the same origin as
+   * the page" without failover. Entries are checked with `normalizeOrigin`;
+   * the node list the backend reports can only narrow this list.
    */
   nodes: string[];
   auth: AuthConfig;
