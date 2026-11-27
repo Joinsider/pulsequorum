@@ -1928,8 +1928,11 @@ type NodeInfo struct {
 	Version       string `protobuf:"bytes,10,opt,name=version,proto3" json:"version,omitempty"`
 	// Highest Command.version this node can apply.
 	MaxCommandVersion uint32 `protobuf:"varint,11,opt,name=max_command_version,json=maxCommandVersion,proto3" json:"max_command_version,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Normalized public origin of a voter (ADR 0036), stored from command level
+	// 11 on. Empty for probes and for voters without PUBLIC_URL.
+	PublicUrl     string `protobuf:"bytes,12,opt,name=public_url,json=publicUrl,proto3" json:"public_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeInfo) Reset() {
@@ -2037,6 +2040,13 @@ func (x *NodeInfo) GetMaxCommandVersion() uint32 {
 		return x.MaxCommandVersion
 	}
 	return 0
+}
+
+func (x *NodeInfo) GetPublicUrl() string {
+	if x != nil {
+		return x.PublicUrl
+	}
+	return ""
 }
 
 // RedeemJoinToken uses up a join token (FA-PKI-02). The leader checks the
@@ -3826,7 +3836,7 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\x14ClearMonitorFlapping\x12\x1d\n" +
 	"\n" +
 	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12*\n" +
-	"\x11expected_since_ms\x18\x02 \x01(\x03R\x0fexpectedSinceMs\"\x8f\x04\n" +
+	"\x11expected_since_ms\x18\x02 \x01(\x03R\x0fexpectedSinceMs\"\xae\x04\n" +
 	"\bNodeInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x121\n" +
@@ -3839,7 +3849,9 @@ const file_pulsequorum_v1_command_proto_rawDesc = "" +
 	"\x0fowner_tenant_id\x18\t \x01(\tR\rownerTenantId\x12\x18\n" +
 	"\aversion\x18\n" +
 	" \x01(\tR\aversion\x12.\n" +
-	"\x13max_command_version\x18\v \x01(\rR\x11maxCommandVersion\x1a9\n" +
+	"\x13max_command_version\x18\v \x01(\rR\x11maxCommandVersion\x12\x1d\n" +
+	"\n" +
+	"public_url\x18\f \x01(\tR\tpublicUrl\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"<\n" +

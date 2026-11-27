@@ -10,6 +10,7 @@ import { firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiBaseUrlInterceptor } from '../api/api-base-url.interceptor';
 import { ConfigService } from '../config/config.service';
+import { NodeSelector } from '../failover/node-selector.service';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from './auth.service';
 
@@ -33,6 +34,7 @@ describe('authInterceptor', () => {
         provideRouter([]),
         provideHttpClient(withInterceptors([authInterceptor, apiBaseUrlInterceptor])),
         provideHttpClientTesting(),
+        { provide: NodeSelector, useValue: { current: () => 'https://node-a.example' } },
         {
           provide: ConfigService,
           useValue: {

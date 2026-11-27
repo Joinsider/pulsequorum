@@ -88,6 +88,7 @@ func (t *stateTx) PutNode(ctx context.Context, n store.Node) error {
 		ConnectivityChangedMs: n.ConnectivityChangedMs,
 		OwnerTenantID:         n.OwnerTenantID,
 		Incarnation:           n.Incarnation,
+		PublicUrl:             n.PublicURL,
 	}))
 }
 
@@ -137,6 +138,7 @@ func nodeFromRow(r statedb.Node) (store.Node, error) {
 		Role:                  r.Role,
 		OwnerTenantID:         r.OwnerTenantID,
 		Incarnation:           r.Incarnation,
+		PublicURL:             r.PublicUrl,
 		Capabilities:          caps,
 		Labels:                nonNilMap(labels),
 		Region:                r.Region,

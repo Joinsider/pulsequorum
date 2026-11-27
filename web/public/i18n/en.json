@@ -32,6 +32,12 @@
     "navigation": "Main navigation",
     "skipToContent": "Skip to content"
   },
+  "failover": {
+    "connectedTo": "Connected to {{ host }}",
+    "switchedTo": "Switched to {{ host }} after a node failure",
+    "versionMismatch": "This frontend runs version {{ spa }}, the connected node runs version {{ node }}. Reload the page or update the frontend.",
+    "dismiss": "Dismiss"
+  },
   "status": {
     "UP": "Up",
     "DOWN": "Down",

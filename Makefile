@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test go-test-shard web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker release release-dry-run clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test go-test-shard web-test web-e2e web-e2e-failover lint go-lint golangci web-lint licenses notices run web-dev docker docker-web web-stage web-dist release release-dry-run clean
 
 MODULE    := github.com/joinsider/pulsequorum
 GO_PKGS   := ./cmd/... ./internal/... ./build/...
@@ -59,10 +59,25 @@ web/node_modules: web/package.json web/package-lock.json
 web-install: web/node_modules ## Install frontend dependencies
 
 web-build: web/node_modules ## Build the Angular SPA
-	cd web && npx ng build
+	cd web && npx ng build --define "PULSEQUORUM_VERSION='$(VERSION)'"
 
 web-embed: web-build ## Copy the SPA build into the Go embed directory
 	rsync -a --delete --exclude .gitkeep $(WEB_DIST)/ $(EMBED_DIR)/
+
+# Staging directory for the web image: GoReleaser copies web-dist/ into the build
+# context of Dockerfile.web.release (before hook, after web-embed). Needs a prior build.
+web-stage: ## Copy the SPA build to web-dist/ for the web image (no build; run after web-build)
+	mkdir -p web-dist
+	rsync -a --delete $(WEB_DIST)/ web-dist/
+
+# Local test archive with the same layout as the GoReleaser archive pulsequorum-web
+# (SPA plus config.example.json). GoReleaser does not use it.
+web-dist: web-build ## Build dist/pulsequorum-web.tar.gz (SPA and config.example.json) for local tests
+	rm -rf dist/pulsequorum-web && mkdir -p dist/pulsequorum-web
+	cp -R $(WEB_DIST)/. dist/pulsequorum-web/
+	cp web/public/config.example.json dist/pulsequorum-web/
+	tar -C dist -czf dist/pulsequorum-web.tar.gz pulsequorum-web
+	@echo "wrote dist/pulsequorum-web.tar.gz"
 
 test: go-test web-test ## Run all tests
 
@@ -90,6 +105,9 @@ web-test: web/node_modules ## Run frontend unit tests (writes web/coverage/pulse
 
 web-e2e: build web/node_modules ## Run Playwright E2E smoke tests against the built binary (runs make build first)
 	cd web && npx playwright test
+
+web-e2e-failover: build web/node_modules ## Run the client failover E2E test against three local voters (ADR 0036; runs make build first)
+	cd web && npx playwright test -c playwright.failover.config.ts
 
 lint: go-lint golangci web-lint api-lint proto-lint ## Run all linters
 
@@ -134,6 +152,9 @@ web-dev: web/node_modules ## Angular dev server on :4200 proxying the API to :80
 docker: ## Build the container image
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t pulsequorum:dev .
 
+docker-web: ## Build the local web image pulsequorum-web:dev (SPA and nginx, ADR 0036 6B)
+	docker build -f Dockerfile.web --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t pulsequorum-web:dev .
+
 BUMP ?= patch
 release: ## Cut a release: signed tag on master, editable changelog (BUMP=patch|minor|major, optional RELEASE_VERSION=x.y.z)
 	go run ./build/release -bump=$(BUMP) $(if $(RELEASE_VERSION),-version=$(RELEASE_VERSION))
@@ -142,5 +163,5 @@ release-dry-run: ## Show the next version and changelog without creating anythin
 	go run ./build/release -bump=$(BUMP) $(if $(RELEASE_VERSION),-version=$(RELEASE_VERSION)) -dry-run
 
 clean: ## Remove build output
-	rm -rf bin web/dist THIRD_PARTY_NOTICES.md
+	rm -rf bin dist web-dist web/dist THIRD_PARTY_NOTICES.md
 	find $(EMBED_DIR) -mindepth 1 ! -name .gitkeep -delete

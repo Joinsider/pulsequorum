@@ -76,7 +76,7 @@ func (s *Server) Handler() http.Handler {
 	if s.cfg.AuthMode == config.AuthOIDC {
 		issuer = s.cfg.OIDC.Issuer
 	}
-	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.limits.middleware(mux)), issuer))
+	return s.recoverPanics(securityHeaders(cors(s.cfg.CORSOrigins, s.api.PublicNodes, s.limits.middleware(mux)), issuer, s.api.PublicNodes))
 }
 
 // Run serves HTTP on cfg.HTTPAddr until ctx is cancelled, then shuts down
@@ -102,6 +102,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}
 
 	srv.RegisterOnShutdown(s.closeStreams)
+	warnCrossSiteOrigins(s.cfg, s.log)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

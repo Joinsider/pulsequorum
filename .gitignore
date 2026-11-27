@@ -3,6 +3,10 @@
 /internal/webui/dist/*
 !/internal/webui/dist/.gitkeep
 
+# GoReleaser output and the staged SPA for the web image (make web-stage)
+/dist/
+/web-dist/
+
 # Local runtime data
 /.data/
 

@@ -7,23 +7,14 @@ import (
 	"net/http"
 
 	"github.com/joinsider/pulsequorum/internal/config"
+	"github.com/joinsider/pulsequorum/internal/webfront"
 )
 
-// FrontendConfig is the runtime configuration consumed by the SPA (FA-UI-02).
-type FrontendConfig struct {
-	// Nodes lists API base URLs; empty means "same origin as the page".
-	Nodes []string           `json:"nodes"`
-	Auth  FrontendAuthConfig `json:"auth"`
-}
+// FrontendConfig is the runtime configuration of the SPA (webfront.Config).
+type FrontendConfig = webfront.Config
 
-// FrontendAuthConfig tells the SPA how to authenticate.
-type FrontendAuthConfig struct {
-	Mode string `json:"mode"`
-	// Issuer, ClientID and Scopes are set in oidc mode only (ADR 0027).
-	Issuer   string   `json:"issuer,omitempty"`
-	ClientID string   `json:"clientId,omitempty"`
-	Scopes   []string `json:"scopes,omitempty"`
-}
+// FrontendAuthConfig tells the SPA how to authenticate (webfront.AuthConfig).
+type FrontendAuthConfig = webfront.AuthConfig
 
 func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -43,9 +34,14 @@ func (s *Server) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) handleFrontendConfig(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleFrontendConfig(w http.ResponseWriter, r *http.Request) {
+	// The SPA fails over between the voters listed here (ADR 0036). Without
+	// the shared source only this voter's PUBLIC_URL is listed; without a
+	// PUBLIC_URL the list stays empty (same origin, no failover).
 	nodes := []string{}
-	if s.cfg.PublicURL != "" {
+	if s.api.PublicNodes != nil {
+		nodes = append(nodes, s.api.PublicNodes.ConfigOrigins(r.Context())...)
+	} else if s.cfg.PublicURL != "" {
 		nodes = append(nodes, s.cfg.PublicURL)
 	}
 	auth := FrontendAuthConfig{Mode: string(s.cfg.AuthMode)}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 
@@ -90,11 +91,13 @@ func nodeInfoFrom(n store.Node) *pb.NodeInfo {
 		Capabilities:      normalizeCapabilities(n.Capabilities),
 		Version:           n.Version,
 		MaxCommandVersion: n.MaxCommandVersion,
+		PublicUrl:         n.PublicURL,
 	}
 }
 
 // nodeFromInfo converts and validates the wire form of a node. Fields the
-// registry does not keep (incarnation, advertise address, owner) are dropped.
+// registry does not keep (incarnation, advertise address, owner) are dropped,
+// and so is the public URL: applyRegisterNode decides whether it is stored (ADR 0036).
 func nodeFromInfo(info *pb.NodeInfo) (store.Node, error) {
 	if !isNodeID(info.GetId()) {
 		return store.Node{}, invalid(errInvalidNodeID)
@@ -190,6 +193,11 @@ func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r
 	if err != nil {
 		return nil, err
 	}
+	publicURL, err := registeredPublicURL(ctx, tx, n.Role, r.GetNode().GetPublicUrl())
+	if err != nil {
+		return nil, err
+	}
+	n.PublicURL = publicURL
 	_, err = tx.GetRevokedNode(ctx, n.ID)
 	switch {
 	case err == nil:
@@ -220,6 +228,29 @@ func applyRegisterNode(ctx context.Context, tx store.StateTx, cmd *pb.Command, r
 		return nil, storeError(err)
 	}
 	return json.Marshal(nodeResult(n))
+}
+
+// registeredPublicURL returns the public URL a registration stores (ADR 0036).
+// Below PublicURLCommandLevel the field is ignored and stored as empty, so that
+// clusters of older binaries keep identical state. From that level on, only a
+// voter may have a public URL, and a non-empty one must pass
+// NormalizePublicOrigin; the stored value is the normalized origin.
+func registeredPublicURL(ctx context.Context, tx store.StateTx, role, raw string) (string, error) {
+	stored, err := tx.CommandLevel(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read command level: %w", err)
+	}
+	if EffectiveCommandLevel(stored) < PublicURLCommandLevel || raw == "" {
+		return "", nil
+	}
+	if role != store.NodeRoleVoter {
+		return "", invalid("only voters can have a public URL")
+	}
+	origin, err := NormalizePublicOrigin(raw)
+	if err != nil {
+		return "", invalid("public URL: %v", err)
+	}
+	return origin, nil
 }
 
 // applyRegisterProbe upserts a probe registry entry (ADR 0034, ADR 0035).
@@ -290,6 +321,7 @@ func applyRegisterProbe(ctx context.Context, tx store.StateTx, cmd *pb.Command, 
 	}
 	n.OwnerTenantID = owner
 	n.Incarnation = incarnation
+	n.PublicURL = ""
 	n.UpdatedMs = now
 	if err := tx.PutNode(ctx, n); err != nil {
 		return nil, storeError(err)

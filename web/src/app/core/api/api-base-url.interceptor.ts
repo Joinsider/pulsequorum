@@ -3,17 +3,17 @@
 
 import { HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { ConfigService } from '../config/config.service';
+import { NodeSelector } from '../failover/node-selector.service';
 
 /**
  * Prefixes relative API calls (`/api/...`, as produced by the generated client)
- * with the node URL from the runtime configuration. Same-origin when no node is
- * configured.
+ * with the node the {@link NodeSelector} currently uses (ADR 0036). Same-origin
+ * when no node is selected.
  */
 export const apiBaseUrlInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith('/api/')) {
     return next(req);
   }
-  const base = inject(ConfigService).apiBaseUrl();
+  const base = inject(NodeSelector).current();
   return next(base ? req.clone({ url: base + req.url }) : req);
 };

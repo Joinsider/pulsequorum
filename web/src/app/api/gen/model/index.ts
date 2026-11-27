@@ -103,6 +103,8 @@ export * from './privateProbe';
 export * from './privateProbeJoinTokenRequest';
 export * from './probeBufferStatus';
 export * from './problem';
+export * from './publicNode';
+export * from './publicNodeList';
 export * from './role';
 export * from './serviceUnavailableResponse';
 export * from './setupRequest';

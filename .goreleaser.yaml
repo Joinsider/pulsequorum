@@ -9,6 +9,7 @@ project_name: pulsequorum
 before:
   hooks:
     - make web-embed
+    - make web-stage
     - make notices
 
 builds:
@@ -54,6 +55,28 @@ builds:
       - amd64
       - arm64
 
+  # Config writer of the web image (ADR 0036 6B). Same flags and targets as the probe.
+  # It reads FRONTEND_* and OIDC_* from the environment and writes config.json and the
+  # nginx headers include; it serves nothing itself.
+  - id: pulsequorum-webconfig
+    main: ./cmd/pulsequorum-webconfig
+    binary: pulsequorum-webconfig
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/joinsider/pulsequorum/internal/version.Version={{.Version}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/joinsider/pulsequorum/internal/version.Date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
 archives:
   - id: pulsequorum
     ids:
@@ -75,6 +98,23 @@ archives:
     files:
       - LICENSE
       - LICENSING.md
+      - THIRD_PARTY_NOTICES.md
+
+  # Static SPA for any web server (ADR 0036, Option 6A). The image of the same name is
+  # built from the same web-dist/ staging directory (Dockerfile.web.release).
+  - id: pulsequorum-web
+    meta: true
+    formats:
+      - tar.gz
+    name_template: "pulsequorum-web_{{ .Version }}"
+    files:
+      - src: web/dist/pulsequorum-web/browser/*
+        dst: pulsequorum-web
+      - src: web/dist/pulsequorum-web/browser/*/**/*
+        dst: pulsequorum-web
+      - src: web/public/config.example.json
+        dst: pulsequorum-web
+      - LICENSE
       - THIRD_PARTY_NOTICES.md
 
 checksum:
@@ -130,6 +170,37 @@ dockers_v2:
       - THIRD_PARTY_NOTICES.md
     labels:
       org.opencontainers.image.title: pulsequorum-probe
+      org.opencontainers.image.source: https://github.com/Joinsider/pulsequorum
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: AGPL-3.0-only
+
+  # Web image (ADR 0036 6B): nginx-unprivileged with the SPA, the webconfig writer and
+  # the nginx configuration. Same tag rules as the other images.
+  - id: pulsequorum-web
+    ids:
+      - pulsequorum-webconfig
+    dockerfile: Dockerfile.web.release
+    images:
+      - ghcr.io/joinsider/pulsequorum-web
+    tags:
+      - "{{ .Version }}"
+      - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if and (not .Prerelease) (ge .Major 1) }}latest{{ end }}'
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    # Copied into the build context at the same relative paths that Dockerfile.web.release
+    # uses: the staged SPA (make web-stage), the nginx configuration, the entrypoint
+    # script, and the licenses.
+    extra_files:
+      - web-dist
+      - deploy/web/nginx.conf
+      - deploy/web/10-pulsequorum-webconfig.sh
+      - LICENSE
+      - THIRD_PARTY_NOTICES.md
+    labels:
+      org.opencontainers.image.title: pulsequorum-web
       org.opencontainers.image.source: https://github.com/Joinsider/pulsequorum
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"

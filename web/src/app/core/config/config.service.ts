@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The Pulsequorum Authors
 
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, Injector, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { NodeSelector } from '../failover/node-selector.service';
 import { AppConfig } from './app-config';
 
 const CONFIG_URL = '/config.json';
@@ -17,6 +18,8 @@ const FALLBACK_CONFIG: AppConfig = {
 @Injectable({ providedIn: 'root' })
 export class ConfigService {
   private readonly http = inject(HttpClient);
+  // Resolved lazily: NodeSelector depends on this service.
+  private readonly injector = inject(Injector);
   private readonly configSignal = signal<AppConfig>(FALLBACK_CONFIG);
   private resolveLoaded!: (config: AppConfig) => void;
   private readonly loaded = new Promise<AppConfig>((resolve) => {
@@ -46,9 +49,13 @@ export class ConfigService {
     this.resolveLoaded(this.configSignal());
   }
 
-  /** Base URL for API calls without trailing slash, or `''` for same-origin requests. */
+  /**
+   * Base URL for API calls without trailing slash, or `''` for same-origin requests.
+   * Delegates to the node the {@link NodeSelector} chose (ADR 0036). Before the
+   * selection has run, the first configured node stands in.
+   */
   apiBaseUrl(): string {
-    let url = this.configSignal().nodes[0] ?? '';
+    let url = this.injector.get(NodeSelector).current() || (this.configSignal().nodes[0] ?? '');
     while (url.endsWith('/')) {
       url = url.slice(0, -1);
     }

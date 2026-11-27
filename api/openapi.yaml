@@ -66,6 +66,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Health" }
 
+  /cluster/nodes:
+    get:
+      tags: [system]
+      operationId: listPublicNodes
+      summary: Public URLs of the voters for client failover (ADR 0036)
+      description: >-
+        Lists the voters that registered a public URL. Unauthenticated and rate
+        limited like /health; it carries no names, versions or addresses. An
+        external frontend only uses entries that are also in its own config.json.
+      security: []
+      responses:
+        "200":
+          description: Voters with a public URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicNodeList" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
   # --- Auth (local mode, ADR 0008) ------------------------------------------
   /auth/setup:
     post:
@@ -1577,6 +1595,30 @@ components:
           type: array
           items: { type: string }
           description: Sorted IDs of this voter and the reachable voters without a leader, set while degraded (ADR 0024)
+        stale:
+          type: boolean
+          description: >-
+            True while this voter lags too far behind the leader's log, so reads
+            may be outdated (ADR 0012 A9). Clients prefer another node (ADR 0036).
+
+    PublicNodeList:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/PublicNode" }
+
+    PublicNode:
+      type: object
+      required: [id, url, voter, healthy]
+      properties:
+        id: { type: string, description: Node ID }
+        url:
+          type: string
+          description: Normalized public origin of the voter (scheme://host[:port])
+        voter: { type: boolean, description: Always true; reserved for other roles }
+        healthy: { type: boolean, description: Health as recorded by the leader }
 
     # --- Auth ---------------------------------------------------------------
     SetupRequest:

@@ -40,6 +40,10 @@ const auditLevel = 9
 // nodes.owner_tenant_id and nodes.incarnation are left out of the fingerprint.
 const probeCommandLevel = 10
 
+// publicURLCommandLevel is the command level of ADR 0036. Below it
+// nodes.public_url is left out of the fingerprint.
+const publicURLCommandLevel = 11
+
 const orderByTenantID = "tenant_id, id"
 
 // fingerprintTables lists the replicated tables with a total order. fsm_meta
@@ -92,6 +96,23 @@ func (s *StateStore) AppliedIndex(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("read applied index: %w", err)
 	}
 	return uint64(max(v, 0)), nil
+}
+
+// nodeSkipColumns returns the columns of nodes that are left out of the
+// fingerprint at the given command level, or nil if all are hashed.
+func nodeSkipColumns(level uint32) map[string]bool {
+	skip := map[string]bool{}
+	if level < probeCommandLevel {
+		skip["owner_tenant_id"] = true
+		skip["incarnation"] = true
+	}
+	if level < publicURLCommandLevel {
+		skip["public_url"] = true
+	}
+	if len(skip) == 0 {
+		return nil
+	}
+	return skip
 }
 
 // CommandLevel returns the command level stored in state.db (ADR 0018), 0 if unset.
@@ -260,8 +281,8 @@ func fingerprint(ctx context.Context, tx *sql.Tx) (string, error) {
 		switch {
 		case t.name == "tenants" && level < tenantAdminLevel:
 			skip = map[string]bool{"source": true}
-		case t.name == "nodes" && level < probeCommandLevel:
-			skip = map[string]bool{"owner_tenant_id": true, "incarnation": true}
+		case t.name == "nodes":
+			skip = nodeSkipColumns(level)
 		}
 		if err := hashTable(ctx, tx, h, t.name, t.orderBy, skip); err != nil {
 			return "", fmt.Errorf("fingerprint %s: %w", t.name, err)

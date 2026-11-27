@@ -5,6 +5,7 @@ bin
 docs
 spikes
 deploy
+!deploy/web
 web/node_modules
 web/dist
 web/.angular

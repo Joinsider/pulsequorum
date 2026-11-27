@@ -29,7 +29,8 @@ import type {
 } from 'rxjs';
 
 import type {
-  Health
+  Health,
+  PublicNodeList
 } from '../../model';
 
 import type {
@@ -118,6 +119,41 @@ export class SystemService {
       }
     );
   }
+/**
+ * Lists the voters that registered a public URL. Unauthenticated and rate limited like /health; it carries no names, versions or addresses. An external frontend only uses entries that are also in its own config.json.
+ * @summary Public URLs of the voters for client failover (ADR 0036)
+ */
+ listPublicNodes<TData = PublicNodeList>( options?: HttpClientBodyOptions): Observable<TData>;
+ listPublicNodes<TData = PublicNodeList>( options?: HttpClientEventOptions): Observable<HttpEvent<TData>>;
+ listPublicNodes<TData = PublicNodeList>( options?: HttpClientResponseOptions): Observable<AngularHttpResponse<TData>>;
+  listPublicNodes<TData = PublicNodeList>(
+     options?: HttpClientObserveOptions): Observable<TData | HttpEvent<TData> | AngularHttpResponse<TData>> {
+    if (options?.observe === 'events') {
+      return this.http.get<TData>(
+      `/api/v1/cluster/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'events',
+      }
+    );
+    }
+
+    if (options?.observe === 'response') {
+      return this.http.get<TData>(
+      `/api/v1/cluster/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'response',
+      }
+    );
+    }
+
+    return this.http.get<TData>(
+      `/api/v1/cluster/nodes`,{
+        ...(options as Omit<NonNullable<typeof options>, 'observe'>),
+        observe: 'body',
+      }
+    );
+  }
 };
 
 export type GetHealthClientResult = NonNullable<Health>
+export type ListPublicNodesClientResult = NonNullable<PublicNodeList>

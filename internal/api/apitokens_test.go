@@ -382,7 +382,7 @@ var wantTokenOperations = []string{
 	"getMaintenanceWindow", "getMonitor", "getNotificationChannel", "getOwnTenant",
 	"getUptime", "listAssignableNodes", "listAudit", "listHeartbeats", "listIncidents",
 	"listMaintenanceWindows", "listMonitorTypes", "listMonitors",
-	"listNotificationChannels", "pauseMonitor", "resumeMonitor", "testMonitor",
+	"listNotificationChannels", "listPublicNodes", "pauseMonitor", "resumeMonitor", "testMonitor",
 	"testNotificationChannel", "updateMaintenanceWindow", "updateMonitor",
 	"updateNotificationChannel",
 }

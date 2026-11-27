@@ -51,7 +51,7 @@ func TestSPACSPWithOIDC(t *testing.T) {
 		{"://broken", cspSPA},
 	}
 	for _, tc := range tests {
-		if got := spaCSP(tc.issuer); got != tc.want {
+		if got := spaCSP(tc.issuer, nil); got != tc.want {
 			t.Errorf("spaCSP(%q) = %q, want %q", tc.issuer, got, tc.want)
 		}
 	}
@@ -122,9 +122,9 @@ func TestCORS(t *testing.T) {
 			if got == "*" {
 				t.Error("wildcard origin")
 			}
-			creds := rec.Header().Get("Access-Control-Allow-Credentials")
-			if (tc.wantAllow != "") != (creds == "true") {
-				t.Errorf("Allow-Credentials = %q", creds)
+			// Bearer requests run without credentials (ADR 0036).
+			if creds := rec.Header().Get("Access-Control-Allow-Credentials"); creds != "" {
+				t.Errorf("Allow-Credentials = %q on %s", creds, tc.path)
 			}
 			if strings.HasPrefix(tc.path, "/api/") && !strings.Contains(strings.Join(rec.Header().Values("Vary"), ","), "Origin") {
 				t.Errorf("missing Vary: Origin, got %v", rec.Header().Values("Vary"))

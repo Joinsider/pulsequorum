@@ -1,0 +1,9 @@
+{
+  "nodes": ["https://n1.example.com", "https://n2.example.com", "https://n3.example.com"],
+  "auth": {
+    "mode": "oidc",
+    "issuer": "https://id.example.com",
+    "clientId": "pulsequorum-spa",
+    "scopes": ["openid", "profile", "email", "offline_access"]
+  }
+}

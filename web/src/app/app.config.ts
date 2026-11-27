@@ -21,6 +21,8 @@ import { from, map, shareReplay } from 'rxjs';
 import { MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { routes } from './app.routes';
 import { apiBaseUrlInterceptor } from './core/api/api-base-url.interceptor';
+import { NodeSelector } from './core/failover/node-selector.service';
+import { failoverInterceptor } from './core/failover/failover.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { SplitSecurityStorage } from './core/auth/split-security-storage';
 import { toOpenIdConfiguration } from './core/auth/oidc-config';
@@ -36,10 +38,19 @@ export const appConfig: ApplicationConfig = {
       provide: MAT_FORM_FIELD_DEFAULT_OPTIONS,
       useValue: { appearance: 'outline', subscriptSizing: 'dynamic' },
     },
-    // Order matters: the auth interceptor only trusts relative /api/ URLs,
-    // before the base-URL interceptor turns them into absolute ones.
-    provideHttpClient(withFetch(), withInterceptors([authInterceptor, apiBaseUrlInterceptor])),
-    provideAppInitializer(() => inject(ConfigService).load()),
+    // Order matters: the auth interceptor only trusts relative /api/ URLs, before the
+    // base-URL interceptor turns them into absolute ones (ADR 0036). The failover
+    // interceptor comes last: it sees the absolute node URL and retries with a relative one.
+    provideHttpClient(
+      withFetch(),
+      withInterceptors([authInterceptor, apiBaseUrlInterceptor, failoverInterceptor]),
+    ),
+    provideAppInitializer(async () => {
+      const config = inject(ConfigService);
+      const selector = inject(NodeSelector);
+      await config.load();
+      await selector.select();
+    }),
     // The OIDC configuration derives from /config.json, which ConfigService loads at startup.
     provideAuth({
       loader: {

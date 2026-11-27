@@ -858,7 +858,7 @@ func (q *Queries) GetMonitorState(ctx context.Context, arg GetMonitorStateParams
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms, owner_tenant_id, incarnation FROM nodes WHERE id = ?
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms, owner_tenant_id, incarnation, public_url FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
@@ -882,6 +882,7 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 		&i.ConnectivityChangedMs,
 		&i.OwnerTenantID,
 		&i.Incarnation,
+		&i.PublicUrl,
 	)
 	return i, err
 }
@@ -2287,7 +2288,7 @@ func (q *Queries) ListNodeIncarnations(ctx context.Context) ([]NodeIncarnation, 
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms, owner_tenant_id, incarnation FROM nodes ORDER BY id
+SELECT id, name, role, capabilities_json, labels_json, region, version, max_command_version, healthy, health_changed_ms, registered_ms, updated_ms, connectivity_impaired, connectivity_reason, connectivity_changed_ms, owner_tenant_id, incarnation, public_url FROM nodes ORDER BY id
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -2317,6 +2318,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.ConnectivityChangedMs,
 			&i.OwnerTenantID,
 			&i.Incarnation,
+			&i.PublicUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -2888,8 +2890,8 @@ const putNode = `-- name: PutNode :exec
 INSERT INTO nodes (id, name, role, capabilities_json, labels_json, region, version,
                    max_command_version, healthy, health_changed_ms, registered_ms, updated_ms,
                    connectivity_impaired, connectivity_reason, connectivity_changed_ms,
-                   owner_tenant_id, incarnation)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   owner_tenant_id, incarnation, public_url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     name = excluded.name,
     role = excluded.role,
@@ -2906,7 +2908,8 @@ ON CONFLICT (id) DO UPDATE SET
     connectivity_reason = excluded.connectivity_reason,
     connectivity_changed_ms = excluded.connectivity_changed_ms,
     owner_tenant_id = excluded.owner_tenant_id,
-    incarnation = excluded.incarnation
+    incarnation = excluded.incarnation,
+    public_url = excluded.public_url
 `
 
 type PutNodeParams struct {
@@ -2927,6 +2930,7 @@ type PutNodeParams struct {
 	ConnectivityChangedMs int64
 	OwnerTenantID         string
 	Incarnation           string
+	PublicUrl             string
 }
 
 func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
@@ -2948,6 +2952,7 @@ func (q *Queries) PutNode(ctx context.Context, arg PutNodeParams) error {
 		arg.ConnectivityChangedMs,
 		arg.OwnerTenantID,
 		arg.Incarnation,
+		arg.PublicUrl,
 	)
 	return err
 }

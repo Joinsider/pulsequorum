@@ -25,4 +25,6 @@ export interface Health {
   degradedSince?: string;
   /** Sorted IDs of this voter and the reachable voters without a leader, set while degraded (ADR 0024) */
   partition?: string[];
+  /** True while this voter lags too far behind the leader's log, so reads may be outdated (ADR 0012 A9). Clients prefer another node (ADR 0036). */
+  stale?: boolean;
 }

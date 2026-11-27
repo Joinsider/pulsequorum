@@ -44,6 +44,7 @@ import (
 	pb "github.com/joinsider/pulsequorum/internal/pb/pulsequorum/v1"
 	"github.com/joinsider/pulsequorum/internal/pki"
 	"github.com/joinsider/pulsequorum/internal/proberun"
+	"github.com/joinsider/pulsequorum/internal/publicnodes"
 	"github.com/joinsider/pulsequorum/internal/scheduler"
 	"github.com/joinsider/pulsequorum/internal/secrets"
 	"github.com/joinsider/pulsequorum/internal/selfcheck"
@@ -75,8 +76,12 @@ func run(args []string) int {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return admincli.Run(ctx, args[1:], admincli.Env{Getenv: os.Getenv, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
+		case "frontend":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runFrontend(ctx, args[1:], os.Getenv, os.Stdout, os.Stderr)
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck, admin)\n", args[0])
+			fmt.Fprintf(os.Stderr, "unknown command %q (available: version, healthcheck, admin, frontend)\n", args[0])
 			return 2
 		}
 	}
@@ -355,6 +360,7 @@ func startVoterHost(ctx context.Context, deps voterRuntimeDeps, stop context.Can
 		Prepared: deps.creds.prepared, Log: deps.log,
 		RaftLogLevel: cfg.LogLevel.String(), RaftLogJSON: cfg.LogFormat == "json", OnFatal: stop,
 		Name: cfg.NodeName, Version: version.Version, Capabilities: deps.prober.capabilities,
+		PublicURL: cfg.PublicURL,
 		Clock:     deps.clock,
 		SelfCheck: deps.prober.selfProber.Status,
 		// The SSRF setting of this node, reported in GetStatus (ADR 0030).
@@ -684,6 +690,9 @@ func buildAPIDeps(deps voterRuntimeDeps, checkEnv *checker.Env, sender *alert.Se
 		SSRFPolicy:   deps.prober.policy,
 		// The SSRF setting of each node in the cluster view (ADR 0030).
 		SSRFProtectionByNode: deps.host.SSRFProtectionByNode,
+		// Public origins of the voters for client failover (ADR 0036).
+		PublicNodes: publicnodes.New(deps.creds.nodeID, deps.cfg.PublicURL, deps.state, deps.clock, deps.log),
+		Stale:       func() bool { return cluster.IsStale(deps.host.Node.Status()) },
 		ProbeSessions: func() map[string]api.ProbeSessionView {
 			raw := deps.host.ProbeSessionViews()
 			out := make(map[string]api.ProbeSessionView, len(raw))

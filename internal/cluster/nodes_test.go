@@ -656,3 +656,78 @@ func TestSubscribeChanges(t *testing.T) {
 	default:
 	}
 }
+
+func TestRegisterNodePublicURL(t *testing.T) {
+	t.Parallel()
+	voter := func(publicURL string) store.Node {
+		return store.Node{ID: "node-1", Name: "one", Role: store.NodeRoleVoter, Version: "1.0.0",
+			MaxCommandVersion: CommandVersion, PublicURL: publicURL}
+	}
+	tests := []struct {
+		name    string
+		level   uint32 // command level set before the registration; 0 means none
+		node    store.Node
+		wantErr bool
+		want    string // stored public URL
+	}{
+		{"level 10 ignores the public URL", 10, voter("https://n1.example.com"), false, ""},
+		{"level 11 stores the normalized origin", 11, voter("HTTPS://N1.Example.com:443/"), false, "https://n1.example.com"},
+		{"level 11 keeps an empty URL empty", 11, voter(""), false, ""},
+		{"level 11 rejects http for a public host", 11, voter("http://n1.example.com"), true, ""},
+		{"level 11 rejects a path", 11, voter("https://n1.example.com/path"), true, ""},
+		{"level 11 rejects a probe with a public URL", 11,
+			store.Node{ID: "node-1", Name: "one", Role: store.NodeRoleProbe, PublicURL: "https://p.example.com"}, true, ""},
+		{"no level set ignores the public URL", 0, voter("https://n1.example.com"), false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newNodeFSM(t)
+			if tt.level != 0 {
+				if r := f.apply(NewSetFeatureLevel("", tt.level), 500); r.Err != nil {
+					t.Fatal(r.Err)
+				}
+			}
+			r := f.apply(NewRegisterNode("", tt.node), 1_000)
+			if tt.wantErr {
+				if !errors.Is(r.Err, ErrInvalidCommand) {
+					t.Fatalf("err = %v, want ErrInvalidCommand", r.Err)
+				}
+				if _, ok := f.node(tt.node.ID); ok {
+					t.Error("rejected registration was stored")
+				}
+				return
+			}
+			if r.Err != nil {
+				t.Fatalf("err = %v, want success", r.Err)
+			}
+			n, ok := f.node(tt.node.ID)
+			if !ok {
+				t.Fatal("node missing")
+			}
+			if n.PublicURL != tt.want {
+				t.Errorf("public URL = %q, want %q", n.PublicURL, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegisterProbeNeverStoresPublicURL(t *testing.T) {
+	t.Parallel()
+	f := newNodeFSM(t)
+	if r := f.apply(NewSetFeatureLevel("", PublicURLCommandLevel), 500); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if r := f.apply(NewRegisterProbe("", store.Node{
+		ID: "probe-pub", Name: "pub", PublicURL: "https://p.example.com", MaxCommandVersion: ProbeCommandLevel,
+	}), 1_000); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	n, ok := f.node("probe-pub")
+	if !ok {
+		t.Fatal("probe-pub missing")
+	}
+	if n.PublicURL != "" {
+		t.Errorf("probe public URL = %q, want empty", n.PublicURL)
+	}
+}
