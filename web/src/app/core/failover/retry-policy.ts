@@ -69,10 +69,10 @@ export function isFailoverError(err: unknown): boolean {
 function apiPath(url: string): string | null {
   let path: string;
   try {
-    path = new URL(url, 'http://placeholder.invalid').pathname;
+    path = new URL(url, 'https://placeholder.invalid').pathname;
     // Decoded "%2f" or "%2e" may form new dot segments; resolve them again.
     path = decodeURIComponent(path).replace(/\/{2,}/g, '/');
-    path = new URL(path, 'http://placeholder.invalid').pathname;
+    path = new URL(path, 'https://placeholder.invalid').pathname;
   } catch {
     return null;
   }
