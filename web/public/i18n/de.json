@@ -32,6 +32,12 @@
     "navigation": "Hauptnavigation",
     "skipToContent": "Zum Inhalt springen"
   },
+  "failover": {
+    "connectedTo": "Verbunden mit {{ host }}",
+    "switchedTo": "Nach einem Node-Ausfall zu {{ host }} gewechselt",
+    "versionMismatch": "Dieses Frontend hat Version {{ spa }}, der verbundene Node läuft mit Version {{ node }}. Seite neu laden oder Frontend aktualisieren.",
+    "dismiss": "Schließen"
+  },
   "status": {
     "UP": "Erreichbar",
     "DOWN": "Ausgefallen",

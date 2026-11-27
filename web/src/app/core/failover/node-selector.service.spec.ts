@@ -180,6 +180,46 @@ describe('NodeSelector', () => {
       expect(h.selector.current()).toBe(A);
     });
 
+    it('treats nodes within 20 % of the fastest as equal and uses the configured order', async () => {
+      const h = setup([A, B]);
+      h.routes.set(A + '/api/v1/health', healthy(110));
+      h.routes.set(B + '/api/v1/health', healthy(100));
+
+      await h.settle(h.selector.select());
+
+      expect(h.selector.current()).toBe(A);
+    });
+
+    it('prefers the faster node when it is more than 20 % faster', async () => {
+      const h = setup([A, B]);
+      h.routes.set(A + '/api/v1/health', healthy(130));
+      h.routes.set(B + '/api/v1/health', healthy(100));
+
+      await h.settle(h.selector.select());
+
+      expect(h.selector.current()).toBe(B);
+    });
+
+    it('exposes the version reported by the chosen node', async () => {
+      const h = setup([A, B]);
+      h.routes.set(A + '/api/v1/health', {
+        kind: 'json',
+        status: 200,
+        body: { status: 'ok', version: '1.4.2' },
+        latency: 100,
+      });
+      h.routes.set(B + '/api/v1/health', {
+        kind: 'json',
+        status: 200,
+        body: { status: 'ok', version: '1.5.0' },
+        latency: 300,
+      });
+
+      await h.settle(h.selector.select());
+
+      expect(h.selector.nodeVersion()).toBe('1.4.2');
+    });
+
     it('does not count the first selection as a switch', async () => {
       const h = setup([A]);
       h.health(A, { status: 'ok' });
@@ -258,17 +298,17 @@ describe('NodeSelector', () => {
     it('switches to the next configured node when the current one fails', async () => {
       const h = setup([A, B, C]);
       h.health(A, { status: 'ok' });
-      h.health(B, { status: 'ok', stale: true });
+      h.health(B, { status: 'ok' });
       h.health(C, { status: 'ok' });
       await h.settle(h.selector.select());
       expect(h.selector.current()).toBe(A);
 
-      // The next configured node takes over at once, then the background check settles on a healthy one.
+      // The next configured node takes over at once; the following selection keeps it (healthy, within tolerance).
       expect(h.selector.reportFailure(A)).toBe(B);
       expect(h.selector.current()).toBe(B);
       await h.settle(h.selector.select());
 
-      expect(h.selector.current()).toBe(C);
+      expect(h.selector.current()).toBe(B);
       expect(h.selector.switchedAt()).not.toBeNull();
     });
 
@@ -352,6 +392,30 @@ describe('NodeSelector', () => {
       expect(h.selector.current()).toBe(B);
     });
 
+    it('logs a discovered node that the configuration does not list once', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const h = setup([A, B]);
+        h.health(A, { status: 'ok' });
+        h.health(B, { status: 'ok' });
+        h.discovery(A, {
+          nodes: [
+            { id: '1', url: A },
+            { id: '2', url: Z },
+          ],
+        });
+
+        await h.settle(h.selector.select());
+        await h.advance(DISCOVERY_INTERVAL_MS * 2);
+
+        const ignored = warn.mock.calls.filter((call) => String(call[0]).includes(Z));
+        expect(ignored).toHaveLength(1);
+        expect(h.selector.nodes()).toEqual([A]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('repeats discovery every 5 min', async () => {
       const h = setup([A, B]);
       h.health(A, { status: 'ok' });
@@ -377,6 +441,35 @@ describe('NodeSelector', () => {
       await h.advance(HEALTH_RECHECK_MS);
 
       expect(h.probed()).toEqual([A]);
+    });
+
+    it('does not switch to a faster node on re-check', async () => {
+      const h = setup([A, B]);
+      h.routes.set(A + '/api/v1/health', healthy(300));
+      h.routes.set(B + '/api/v1/health', healthy(100));
+      await h.settle(h.selector.select());
+      expect(h.selector.current()).toBe(B);
+
+      h.routes.set(A + '/api/v1/health', healthy(10));
+      await h.advance(HEALTH_RECHECK_MS + 1_000);
+
+      expect(h.probed()).toContain(A);
+      expect(h.selector.current()).toBe(B);
+      expect(h.selector.switchedAt()).toBeNull();
+    });
+
+    it('switches when the current node fails the re-check', async () => {
+      const h = setup([A, B]);
+      h.routes.set(A + '/api/v1/health', healthy(100));
+      h.routes.set(B + '/api/v1/health', healthy(200));
+      await h.settle(h.selector.select());
+      expect(h.selector.current()).toBe(A);
+
+      h.healthStatus(A, 503);
+      await h.advance(HEALTH_RECHECK_MS + 1_000);
+
+      expect(h.selector.current()).toBe(B);
+      expect(h.selector.switchedAt()).not.toBeNull();
     });
 
     it('does not check while the tab is hidden', async () => {

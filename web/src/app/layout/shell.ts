@@ -15,6 +15,8 @@ import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 import { catchError, map, of } from 'rxjs';
 import { SystemService } from '../api/gen/endpoints/system/system.service';
 import { AuthService } from '../core/auth/auth.service';
+import { NodeIndicator } from '../core/failover/node-indicator';
+import { VersionNotice } from '../core/failover/version-notice';
 import { LANGUAGES, Language, storeLanguage } from '../core/i18n/language';
 import { LiveStreamService } from '../core/stream/live-stream.service';
 import { Icon } from '../shared/icon/icon';
@@ -84,6 +86,7 @@ const THEME_ICON: Record<ThemeChoice, IconName> = {
     MatTooltipModule,
     TranslocoPipe,
     Icon,
+    NodeIndicator,
   ],
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
@@ -93,6 +96,8 @@ export class Shell {
   protected readonly auth = inject(AuthService);
   /** Injected so the live stream starts once the user is signed in. */
   protected readonly live = inject(LiveStreamService);
+  /** Injected so the version notice can react to the connected node (ADR 0036). */
+  protected readonly versionNotice = inject(VersionNotice);
   private readonly transloco = inject(TranslocoService);
   private readonly system = inject(SystemService);
   private readonly breakpoints = inject(BreakpointObserver);

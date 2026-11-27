@@ -41,7 +41,18 @@ const STICKY_TOLERANCE = 0.2;
 interface Probe {
   origin: string;
   latency: number;
+  /** `version` from `/api/v1/health`, empty when the node does not report one. */
+  version: string;
 }
+
+/**
+ * `select` (startup, after a failure, after discovery dropped the current node):
+ * the fastest healthy node wins, nodes within {@link STICKY_TOLERANCE} of it are
+ * equal and the configured order decides; a healthy current node keeps its place.
+ * `recheck` (background): only health and latency knowledge and the block list
+ * change; the current node is replaced only when it is no longer healthy.
+ */
+type CheckMode = 'select' | 'recheck';
 
 /**
  * Chooses the voter node the SPA talks to (ADR 0036, question 2, option 2B):
@@ -68,10 +79,15 @@ export class NodeSelector {
   private discoveryTimer: ReturnType<typeof setInterval> | undefined;
   private readonly failures = new Map<string, number>();
   private readonly blockedUntil = new Map<string, number>();
+  /** Last reported version per origin, from the health checks. */
+  private readonly versions = new Map<string, string>();
+  /** Discovered origins already reported as ignored; each is logged once. */
+  private readonly warnedOrigins = new Set<string>();
 
   private readonly currentSignal = signal('');
   private readonly usableSignal = signal<string[]>([]);
   private readonly switchedAtSignal = signal<number | null>(null);
+  private readonly nodeVersionSignal = signal('');
 
   /** Selected node origin, or `''` for same-origin mode. */
   readonly current = this.currentSignal.asReadonly();
@@ -79,6 +95,8 @@ export class NodeSelector {
   readonly nodes = this.usableSignal.asReadonly();
   /** Time (ms since epoch) of the last automatic switch, for a UI indicator. */
   readonly switchedAt = this.switchedAtSignal.asReadonly();
+  /** Version reported by the current node's health check; `''` if unknown. */
+  readonly nodeVersion = this.nodeVersionSignal.asReadonly();
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.stopTimers());
@@ -99,9 +117,7 @@ export class NodeSelector {
       return this.current();
     }
     const now = this.clock();
-    const count = (this.failures.get(node) ?? 0) + 1;
-    this.failures.set(node, count);
-    this.blockedUntil.set(node, now + this.blockDuration(count));
+    this.markFailed(node, now);
 
     if (this.current() === node) {
       const next = this.nextNode(node, now);
@@ -131,33 +147,60 @@ export class NodeSelector {
     }
     this.startTimers();
     this.usableSignal.set(this.usable());
-    await this.chooseNode();
+    await this.chooseNode('select');
     await this.discoverAndRepair();
   }
 
-  /** Health check of all usable, non-blocked nodes; keeps or changes the current node. */
-  private async chooseNode(): Promise<void> {
+  /** Health check of all usable, non-blocked nodes; see {@link CheckMode}. */
+  private async chooseNode(mode: CheckMode): Promise<void> {
+    await this.checkNodes(mode);
+    this.syncVersion();
+  }
+
+  private async checkNodes(mode: CheckMode): Promise<void> {
     const started = this.clock();
     this.lastCheck = started;
     const candidates = this.usable().filter((origin) => !this.isBlocked(origin, started));
-    const probes = await Promise.all(candidates.map((origin) => this.probe(origin)));
+    const results = await Promise.all(candidates.map((origin) => this.probe(origin)));
 
     // Re-read the clock and the block list: a failure may have been reported while we waited.
     const now = this.clock();
-    const healthy = probes
-      .filter((p): p is Probe => p !== null && !this.isBlocked(p.origin, now))
-      .sort((a, b) => a.latency - b.latency);
+    const healthy: Probe[] = [];
+    candidates.forEach((origin, index) => {
+      const result = results[index];
+      if (result === null) {
+        if (!this.isBlocked(origin, now)) {
+          this.markFailed(origin, now);
+        }
+        return;
+      }
+      this.versions.set(origin, result.version);
+      if (!this.isBlocked(origin, now)) {
+        healthy.push(result);
+      }
+    });
+
+    const current = this.current();
+    const currentHealthy = healthy.some((p) => p.origin === current);
+    // A faster node never causes a switch by itself; only a failing current node does.
+    if (mode === 'recheck' && currentHealthy) {
+      return;
+    }
     if (healthy.length === 0) {
       this.setCurrent(this.fallback(now));
       return;
     }
 
-    const fastest = healthy[0];
-    const kept = healthy.find((p) => p.origin === this.current());
-    if (kept !== undefined && kept.latency <= fastest.latency * (1 + STICKY_TOLERANCE)) {
+    const fastest = Math.min(...healthy.map((p) => p.latency));
+    const near = new Set(
+      healthy.filter((p) => p.latency <= fastest * (1 + STICKY_TOLERANCE)).map((p) => p.origin),
+    );
+    if (currentHealthy && near.has(current)) {
       return;
     }
-    this.setCurrent(fastest.origin);
+    // Nodes within the tolerance are equal: the configured order decides.
+    const pick = this.usable().find((origin) => near.has(origin)) ?? [...near][0];
+    this.setCurrent(pick);
   }
 
   /** Healthy means HTTP 200, a JSON object, and neither `degraded` nor `stale` set. */
@@ -172,7 +215,8 @@ export class NodeSelector {
       if (!isRecord(body) || body['degraded'] === true || body['stale'] === true) {
         return null;
       }
-      return { origin, latency: this.clock() - started };
+      const version = typeof body['version'] === 'string' ? body['version'] : '';
+      return { origin, latency: this.clock() - started, version };
     } catch {
       return null;
     }
@@ -185,7 +229,7 @@ export class NodeSelector {
       await this.discover(origin);
     }
     if (!this.usable().includes(this.current())) {
-      await this.chooseNode();
+      await this.chooseNode('select');
     }
   }
 
@@ -199,10 +243,22 @@ export class NodeSelector {
     } catch {
       urls = [];
     }
+    const configured = this.configured();
+    this.warnIgnored(urls, configured);
     // Discovery narrows the configured list; an empty or failed result keeps it.
-    const trusted = trustedNodes(this.configured(), urls);
+    const trusted = trustedNodes(configured, urls);
     this.discovered = trusted.length > 0 ? trusted : null;
     this.usableSignal.set(this.usable());
+  }
+
+  /** Logs each discovered node that the configuration does not list, once per origin. */
+  private warnIgnored(reported: string[], configured: string[]): void {
+    for (const origin of normalizeOrigins(reported)) {
+      if (!configured.includes(origin) && !this.warnedOrigins.has(origin)) {
+        this.warnedOrigins.add(origin);
+        console.warn(`Ignoring node ${origin} from discovery: it is not listed in config.json.`);
+      }
+    }
   }
 
   private startTimers(): void {
@@ -212,7 +268,7 @@ export class NodeSelector {
     this.timersStarted = true;
     this.recheckTimer = setInterval(() => {
       if (isVisible()) {
-        void this.run(() => this.chooseNode());
+        void this.run(() => this.chooseNode('recheck'));
       }
     }, HEALTH_RECHECK_MS);
     this.discoveryTimer = setInterval(() => {
@@ -235,7 +291,7 @@ export class NodeSelector {
   /** A tab that becomes visible again re-checks at once if the last check is old. */
   private readonly onVisibilityChange = (): void => {
     if (isVisible() && this.clock() - this.lastCheck >= HEALTH_RECHECK_MS) {
-      void this.run(() => this.chooseNode());
+      void this.run(() => this.chooseNode('recheck'));
     }
   };
 
@@ -284,6 +340,18 @@ export class NodeSelector {
     return best;
   }
 
+  /** Counts a failure of `origin` and blocks it for the next backoff step. */
+  private markFailed(origin: string, now: number): void {
+    const count = (this.failures.get(origin) ?? 0) + 1;
+    this.failures.set(origin, count);
+    this.blockedUntil.set(origin, now + this.blockDuration(count));
+  }
+
+  /** Publishes the version of the current node. */
+  private syncVersion(): void {
+    this.nodeVersionSignal.set(this.versions.get(this.current()) ?? '');
+  }
+
   /** 30 s doubling per consecutive failure, capped at 5 min, with +/- 20 % jitter. */
   private blockDuration(count: number): number {
     const base = Math.min(BLOCK_MAX_MS, BLOCK_BASE_MS * 2 ** (count - 1));
@@ -301,6 +369,7 @@ export class NodeSelector {
     if (previous !== '') {
       this.switchedAtSignal.set(Date.now());
     }
+    this.syncVersion();
   }
 }
 
