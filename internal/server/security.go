@@ -13,68 +13,20 @@ import (
 	"strings"
 
 	"github.com/joinsider/pulsequorum/internal/api"
-	"github.com/joinsider/pulsequorum/internal/cluster"
 	"github.com/joinsider/pulsequorum/internal/config"
 	"github.com/joinsider/pulsequorum/internal/publicnodes"
+	"github.com/joinsider/pulsequorum/internal/webfront"
 	"golang.org/x/net/publicsuffix"
 )
 
-// Content security policies (NFA-SEC-05). The SPA needs inline styles
-// (Angular component styles, ECharts); scripts only come from this origin and
-// eval is never allowed. API responses are data and get the strictest policy.
+// Policies and the SPA CSP live in webfront, shared with the standalone
+// frontend hosts (ADR 0036).
 const (
-	cspSPA = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
-		"base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-	cspAPI = "default-src 'none'; frame-ancestors 'none'"
+	cspSPA = webfront.CSPSPA
+	cspAPI = webfront.CSPAPI
 )
 
-// spaCSP returns the SPA policy. connect-src allows this origin, the public
-// origins of the voters the SPA may fail over to, with their WebSocket
-// counterparts (ADR 0036), and with OIDC the issuer's origin for the token
-// endpoint (ADR 0027). Every origin is checked again, so that no value can
-// inject a directive; nothing else is widened.
-func spaCSP(issuer string, nodes []string) string {
-	sources := make([]string, 0, 2*len(nodes)+1)
-	add := func(src string) {
-		if !slices.Contains(sources, src) {
-			sources = append(sources, src)
-		}
-	}
-	for _, n := range nodes {
-		o, err := cluster.NormalizePublicOrigin(n)
-		if err != nil || o != n {
-			continue
-		}
-		add(o)
-		if rest, ok := strings.CutPrefix(o, "https://"); ok {
-			add("wss://" + rest)
-		} else if rest, ok := strings.CutPrefix(o, "http://"); ok {
-			add("ws://" + rest)
-		}
-	}
-	if o, ok := issuerOrigin(issuer); ok {
-		add(o)
-	}
-	if len(sources) == 0 {
-		return cspSPA
-	}
-	return strings.Replace(cspSPA, "connect-src 'self';", "connect-src 'self' "+strings.Join(sources, " ")+";", 1)
-}
-
-// issuerOrigin returns the origin of the OIDC issuer if it is safe to put
-// into a CSP source list.
-func issuerOrigin(issuer string) (string, bool) {
-	if issuer == "" {
-		return "", false
-	}
-	u, err := url.Parse(issuer)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
-		strings.ContainsAny(u.Host, " ;,'\"\r\n\t") {
-		return "", false
-	}
-	return u.Scheme + "://" + u.Host, true
-}
+func spaCSP(issuer string, nodes []string) string { return webfront.SPACSP(issuer, nodes) }
 
 // securityHeaders sets headers that are safe for every response. issuer is
 // the OIDC issuer, empty in local mode; nodes lists the voter origins for the
@@ -82,10 +34,7 @@ func issuerOrigin(issuer string) (string, bool) {
 func securityHeaders(next http.Handler, issuer string, nodes *publicnodes.Source) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		webfront.SetCommon(h)
 		if isAPIPath(r.URL.Path) {
 			h.Set("Content-Security-Policy", cspAPI)
 		} else {
