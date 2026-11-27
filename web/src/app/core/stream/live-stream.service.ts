@@ -6,7 +6,7 @@ import { Observable, Subject, firstValueFrom } from 'rxjs';
 import { StreamService as StreamApi } from '../../api/gen/endpoints/stream/stream.service';
 import { StreamEvent, StreamEventType } from '../../api/gen/model';
 import { AuthService } from '../auth/auth.service';
-import { ConfigService } from '../config/config.service';
+import { NodeSelector } from '../failover/node-selector.service';
 
 /** Application close codes of /api/v1/stream (internal/api/stream.go). */
 const CLOSE_SESSION_ENDED = 4001;
@@ -28,12 +28,16 @@ export type StreamState = 'idle' | 'connecting' | 'open' | 'reconnecting';
  * a one-time ticket fetched with the bearer token (FA-AUTH-11), so no
  * long-lived credential ever appears in a URL. Events are pushed into an RxJS
  * stream and signals only (zoneless, PF-40).
+ *
+ * Each attempt is pinned to the node the {@link NodeSelector} chose when the
+ * attempt started: the ticket is issued there and the socket opened there,
+ * since tickets are valid on the issuing node only (ADR 0036).
  */
 @Injectable({ providedIn: 'root' })
 export class LiveStreamService {
   private readonly api = inject(StreamApi);
   private readonly auth = inject(AuthService);
-  private readonly config = inject(ConfigService);
+  private readonly selector = inject(NodeSelector);
 
   private socket: WebSocket | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -88,6 +92,9 @@ export class LiveStreamService {
 
   private async connect(gen: number): Promise<void> {
     this.stateSignal.set(this.attempt === 0 ? 'connecting' : 'reconnecting');
+    // The ticket request is relative, so the base-URL interceptor sends it to the
+    // node selected right now. Read it synchronously, before the request starts.
+    const pinned = this.selector.current();
     let ticket: string;
     try {
       ticket = (await firstValueFrom(this.api.createStreamTicket())).ticket;
@@ -100,12 +107,29 @@ export class LiveStreamService {
     if (gen !== this.generation) {
       return;
     }
+    if (this.selector.current() !== pinned) {
+      // The node changed while the ticket was in flight: the ticket belongs to
+      // the old one. Retry with the usual backoff, so a node that keeps
+      // changing cannot cause a tight loop.
+      this.scheduleRetry(gen);
+      return;
+    }
 
-    const socket = new WebSocket(this.streamUrl(ticket));
+    const socket = new WebSocket(streamUrlFor(pinned, ticket));
     this.socket = socket;
+    let failureReported = false;
+    const reportFailure = (): void => {
+      if (!failureReported && pinned !== '') {
+        failureReported = true;
+        this.selector.reportFailure(pinned);
+      }
+    };
     socket.onopen = () => {
       if (gen !== this.generation) {
         return;
+      }
+      if (pinned !== '') {
+        this.selector.reportSuccess(pinned);
       }
       const reconnected = this.attempt > 0;
       this.attempt = 0;
@@ -123,11 +147,19 @@ export class LiveStreamService {
         }
       }
     };
+    socket.onerror = () => {
+      if (gen === this.generation) {
+        reportFailure();
+      }
+    };
     socket.onclose = (ev) => {
       if (gen !== this.generation) {
         return;
       }
       this.socket = null;
+      if (ev.code !== CLOSE_SESSION_ENDED && ev.code !== CLOSE_FORBIDDEN) {
+        reportFailure();
+      }
       void this.handleClose(gen, ev.code);
     };
   }
@@ -167,14 +199,17 @@ export class LiveStreamService {
       this.socket.send(JSON.stringify({ monitorIds: this.monitorIds }));
     }
   }
+}
 
-  private streamUrl(ticket: string): string {
-    const base = this.config.apiBaseUrl() || window.location.origin;
-    const url = new URL('/api/v1/stream', base);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.searchParams.set('ticket', ticket);
-    return url.toString();
-  }
+/**
+ * WebSocket URL of the stream on `origin` (`https` becomes `wss`, `http` becomes
+ * `ws`). An empty origin means the page's own origin.
+ */
+export function streamUrlFor(origin: string, ticket: string): string {
+  const url = new URL('/api/v1/stream', origin || window.location.origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('ticket', ticket);
+  return url.toString();
 }
 
 /** Accepts only well-formed events; anything else is dropped. */

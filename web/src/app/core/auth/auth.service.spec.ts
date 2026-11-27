@@ -94,6 +94,43 @@ describe('AuthService', () => {
     expect(auth.accessToken()).toBeNull();
   });
 
+  it('keeps a valid session when a refresh fails on the node (ADR 0036)', async () => {
+    const login = auth.login('alice', 'secret-secret');
+    http.expectOne('/api/v1/auth/login').flush(token('a1'));
+    await flushMe();
+    await login;
+
+    const refreshed = auth.refresh();
+    http.expectOne('/api/v1/auth/refresh').flush(null, { status: 0, statusText: 'Unknown Error' });
+    expect(await refreshed).toBe(true);
+    expect(auth.authenticated()).toBe(true);
+    expect(auth.accessToken()).toBe('a1');
+  });
+
+  it('ends the session when a refresh fails on the node and the token is about to expire', async () => {
+    const login = auth.login('alice', 'secret-secret');
+    http.expectOne('/api/v1/auth/login').flush(token('a1', 3_000));
+    await flushMe();
+    await login;
+
+    const refreshed = auth.refresh();
+    http.expectOne('/api/v1/auth/refresh').flush(null, { status: 503, statusText: 'Unavailable' });
+    expect(await refreshed).toBe(false);
+    expect(auth.authenticated()).toBe(false);
+  });
+
+  it('does not keep the session when another node rejects the cookie', async () => {
+    const login = auth.login('alice', 'secret-secret');
+    http.expectOne('/api/v1/auth/login').flush(token('a1'));
+    await flushMe();
+    await login;
+
+    const refreshed = auth.refresh();
+    http.expectOne('/api/v1/auth/refresh').flush({}, { status: 401, statusText: 'Unauthorized' });
+    expect(await refreshed).toBe(false);
+    expect(auth.accessToken()).toBeNull();
+  });
+
   it('does not return an expired access token', async () => {
     const done = auth.login('alice', 'secret-secret');
     http.expectOne('/api/v1/auth/login').flush(token('old', -1000));

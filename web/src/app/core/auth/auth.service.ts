@@ -16,6 +16,7 @@ import { Me, Role, TokenResponse } from '../../api/gen/model';
 import { ConfigService } from '../config/config.service';
 import { CALLBACK_PATH, OIDC_CONFIG_ID } from './oidc-config';
 import { SplitSecurityStorage } from './split-security-storage';
+import { isFailoverError } from '../failover/retry-policy';
 
 /** Marks requests that must not carry the bearer token or trigger a refresh. */
 export const SKIP_AUTH = new HttpContextToken<boolean>(() => false);
@@ -202,7 +203,21 @@ export class AuthService {
       const t = await firstValueFrom(this.api.refresh(this.cookieOptions()));
       await this.start(t);
       return true;
-    } catch {
+    } catch (err) {
+      // A node failure is not the end of the session (ADR 0036): the failover
+      // interceptor has reported the node and switched, but never repeats a
+      // refresh, because the server may already have rotated the cookie. The
+      // next refresh occasion (this timer, or a 401) tries the new node while
+      // the access token is still valid; a reused cookie there revokes the
+      // family and ends the session as before.
+      if (
+        isFailoverError(err) &&
+        this.token !== null &&
+        this.expiresAt - Date.now() > MIN_REFRESH_DELAY_MS
+      ) {
+        this.scheduleIn(MIN_REFRESH_DELAY_MS);
+        return true;
+      }
       this.clear();
       return false;
     }
@@ -355,8 +370,11 @@ export class AuthService {
   }
 
   private schedule(): void {
+    this.scheduleIn(Math.max(this.expiresAt - Date.now() - REFRESH_LEAD_MS, MIN_REFRESH_DELAY_MS));
+  }
+
+  private scheduleIn(delay: number): void {
     clearTimeout(this.refreshTimer);
-    const delay = Math.max(this.expiresAt - Date.now() - REFRESH_LEAD_MS, MIN_REFRESH_DELAY_MS);
     this.refreshTimer = setTimeout(() => {
       void this.refresh().then((ok) => {
         if (!ok) {
