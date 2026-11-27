@@ -41,6 +41,9 @@ describe('isRetrySafe', () => {
     ['POST', '/api/v1/%61uth/refresh', 'k-1', false],
     ['POST', '/api/v1/x%2f..%2fauth/refresh', 'k-1', false],
     ['POST', '/api/v1/%2e%2e/v1/auth/refresh', 'k-1', false],
+    ['PUT', '/api/v1/me/password', undefined, false],
+    ['PUT', '/api/v1/ME/password', undefined, false],
+    ['GET', '/api/v1/me', undefined, true],
     ['GET', '/api/v1/authors', undefined, true],
     // Only our API.
     ['GET', '/config.json', undefined, false],

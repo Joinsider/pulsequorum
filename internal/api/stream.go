@@ -86,8 +86,8 @@ func parseMonitorIDs(ids []string) ([]string, error) {
 	return out, nil
 }
 
-// allowedOrigin accepts same-host requests, configured frontend origins and
-// non-browser clients without Origin. Comparison is exact, not a pattern.
+// allowedOrigin accepts same-host requests, configured frontend origins, the
+// public voter origins and non-browser clients without Origin. Comparison is exact, not a pattern.
 func (h *Handlers) allowedOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -100,7 +100,9 @@ func (h *Handlers) allowedOrigin(r *http.Request) bool {
 	if strings.EqualFold(u.Host, r.Host) {
 		return true
 	}
-	return slices.Contains(h.cfg.CORSOrigins, strings.ToLower(origin))
+	// The same allow list as CORS: configured origins and the public origins
+	// of the voters, for the SPA after a failover (ADR 0036).
+	return slices.Contains(h.cfg.CORSOrigins, strings.ToLower(origin)) || h.deps.PublicNodes.Contains(r.Context(), origin)
 }
 
 // revalidate checks that the tenant still exists and is not suspended, in

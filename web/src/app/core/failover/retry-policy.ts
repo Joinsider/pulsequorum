@@ -22,10 +22,14 @@ const FAILOVER_STATUS = new Set([0, 502, 503, 504]);
 
 const AUTH_PREFIX = '/api/v1/auth';
 
+/** Rotates the refresh cookie like the auth endpoints, so it is never retried. */
+const PASSWORD_PATH = '/api/v1/me/password';
+
 /**
  * Reports whether `req` may be sent again to another node:
  *
- * - never for `/api/v1/auth` and everything below it (refresh, login, logout);
+ * - never for `/api/v1/auth` and everything below it (refresh, login, logout)
+ *   and never for `/api/v1/me/password`, which rotates the refresh cookie;
  * - never for URLs outside `/api/`;
  * - always for GET, HEAD, PUT and DELETE;
  * - POST and PATCH only with a non-empty `Idempotency-Key` header, which the
@@ -81,5 +85,10 @@ function apiPath(url: string): string | null {
 
 function isAuthPath(path: string): boolean {
   const p = path.toLowerCase();
-  return p === AUTH_PREFIX || p.startsWith(AUTH_PREFIX + '/');
+  return (
+    p === AUTH_PREFIX ||
+    p.startsWith(AUTH_PREFIX + '/') ||
+    p === PASSWORD_PATH ||
+    p === PASSWORD_PATH + '/'
+  );
 }
