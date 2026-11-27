@@ -86,7 +86,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 }
 
 // writeFileAtomic replaces path with data through a temporary file in the same
-// directory, so that nginx never reads a partial file. The mode is 0644.
+// directory, so that nginx never reads a partial file. The mode is 0600.
 func writeFileAtomic(path string, data []byte) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -109,7 +109,9 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", name, err)
 	}
-	if err = os.Chmod(name, 0o644); err != nil {
+	// nginx-unprivileged runs master and workers as the same UID as this
+	// helper (101), so owner-only access is enough.
+	if err = os.Chmod(name, 0o600); err != nil {
 		return fmt.Errorf("chmod %s: %w", name, err)
 	}
 	if err = os.Rename(name, path); err != nil {

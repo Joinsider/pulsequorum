@@ -66,7 +66,7 @@ func TestRunWritesConfigAndHeaders(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if perm := info.Mode().Perm(); perm != 0o644 {
+		if perm := info.Mode().Perm(); perm != 0o600 {
 			t.Errorf("%s mode = %o, want 644", p, perm)
 		}
 	}
