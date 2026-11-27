@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/publicorigin"
 )
 
 // Config is the runtime configuration served as /config.json next to the SPA.
@@ -29,7 +29,7 @@ type AuthConfig struct {
 }
 
 // ParseNodes reads a comma-separated list of node URLs (FRONTEND_NODES) for
-// an external frontend. Every entry must pass cluster.NormalizePublicOrigin;
+// an external frontend. Every entry must pass publicorigin.Normalize;
 // unlike the registry, an invalid entry is an error, because the operator
 // wrote it. Duplicates are dropped, the order is kept.
 func ParseNodes(raw string) ([]string, error) {
@@ -39,7 +39,7 @@ func ParseNodes(raw string) ([]string, error) {
 		if entry == "" {
 			continue
 		}
-		o, err := cluster.NormalizePublicOrigin(entry)
+		o, err := publicorigin.Normalize(entry)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", entry, err)
 		}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
-package cluster
+package publicorigin
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestNormalizePublicOrigin(t *testing.T) {
+func TestNormalize(t *testing.T) {
 	tests := []struct {
 		raw  string
 		want string // "" means rejected
@@ -88,10 +88,10 @@ func TestNormalizePublicOrigin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {
-			got, err := NormalizePublicOrigin(tt.raw)
+			got, err := Normalize(tt.raw)
 			if tt.want == "" {
 				if err == nil {
-					t.Fatalf("NormalizePublicOrigin(%q) = %q, want error", tt.raw, got)
+					t.Fatalf("Normalize(%q) = %q, want error", tt.raw, got)
 				}
 				if !errors.Is(err, errInvalidPublicURL) {
 					t.Fatalf("error %v does not wrap errInvalidPublicURL", err)
@@ -99,15 +99,15 @@ func TestNormalizePublicOrigin(t *testing.T) {
 				return
 			}
 			if err != nil || got != tt.want {
-				t.Fatalf("NormalizePublicOrigin(%q) = %q, %v; want %q", tt.raw, got, err, tt.want)
+				t.Fatalf("Normalize(%q) = %q, %v; want %q", tt.raw, got, err, tt.want)
 			}
 		})
 	}
 }
 
-// FuzzNormalizePublicOrigin checks the invariants every accepted origin must
+// FuzzNormalize checks the invariants every accepted origin must
 // keep: it is short, header-safe, idempotent and a plain origin.
-func FuzzNormalizePublicOrigin(f *testing.F) {
+func FuzzNormalize(f *testing.F) {
 	for _, s := range []string{
 		"https://n1.example.com", "http://[::1]:8080", "https://a:443/", "https://u@h", "https://h?#",
 		"HTTP://LOCALHOST:80", "https://[2001:db8::1]", "https://h\r\n", "https://h/%2F",
@@ -115,17 +115,17 @@ func FuzzNormalizePublicOrigin(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		got, err := NormalizePublicOrigin(raw)
+		got, err := Normalize(raw)
 		if err != nil {
 			return
 		}
-		if len(got) > MaxPublicURLLen {
-			t.Fatalf("origin %q longer than %d", got, MaxPublicURLLen)
+		if len(got) > MaxLen {
+			t.Fatalf("origin %q longer than %d", got, MaxLen)
 		}
 		if strings.ContainsAny(got, " \t\r\n\"';,?#@\\") || got != strings.ToLower(got) {
 			t.Fatalf("origin %q has unsafe characters or upper case", got)
 		}
-		again, err := NormalizePublicOrigin(got)
+		again, err := Normalize(got)
 		if err != nil || again != got {
 			t.Fatalf("not idempotent: %q -> %q (%v)", got, again, err)
 		}

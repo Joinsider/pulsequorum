@@ -16,7 +16,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/joinsider/pulsequorum/internal/cluster"
+	"github.com/joinsider/pulsequorum/internal/publicorigin"
 )
 
 // Content security policies (NFA-SEC-05). The SPA needs inline styles
@@ -47,7 +47,7 @@ var commonHeaders = []Header{
 // SPACSP returns the SPA policy. connect-src allows this origin, the given
 // node origins with their WebSocket counterparts (ADR 0036) and, with OIDC,
 // the issuer's origin for the token endpoint (ADR 0027). Every node origin is
-// checked again with cluster.NormalizePublicOrigin and must already be in
+// checked again with publicorigin.Normalize and must already be in
 // normalized form, so that no value can inject a directive; nothing else is
 // widened.
 func SPACSP(issuer string, nodes []string) string {
@@ -58,7 +58,7 @@ func SPACSP(issuer string, nodes []string) string {
 		}
 	}
 	for _, n := range nodes {
-		o, err := cluster.NormalizePublicOrigin(n)
+		o, err := publicorigin.Normalize(n)
 		if err != nil || o != n {
 			continue
 		}
