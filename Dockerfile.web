@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+
+# Local build of the web image (ADR 0036 6B), see make docker-web. Unlike
+# Dockerfile.web.release, GoReleaser does not build the artifacts here, so this file
+# builds the SPA and pulsequorum-webconfig itself. The final stage matches
+# Dockerfile.web.release, except that it has no THIRD_PARTY_NOTICES.md (generated
+# by make notices, which needs the network).
+
+# --- Frontend ---------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY web/ ./
+RUN npm run build
+
+# --- Config writer ----------------------------------------------------------
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
+WORKDIR /src
+COPY go.* ./
+RUN go mod download
+COPY cmd/ cmd/
+COPY internal/ internal/
+
+ARG TARGETOS TARGETARCH
+ARG VERSION=dev COMMIT=unknown DATE=unknown
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+    -ldflags "-s -w \
+      -X github.com/joinsider/pulsequorum/internal/version.Version=${VERSION} \
+      -X github.com/joinsider/pulsequorum/internal/version.Commit=${COMMIT} \
+      -X github.com/joinsider/pulsequorum/internal/version.Date=${DATE}" \
+    -o /out/pulsequorum-webconfig ./cmd/pulsequorum-webconfig
+
+# --- Runtime ----------------------------------------------------------------
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+COPY --from=build /out/pulsequorum-webconfig /usr/local/bin/pulsequorum-webconfig
+COPY --from=web /src/web/dist/pulsequorum-web/browser/ /usr/share/nginx/html/
+COPY deploy/web/nginx.conf /etc/nginx/nginx.conf
+COPY --chmod=0755 deploy/web/10-pulsequorum-webconfig.sh /docker-entrypoint.d/10-pulsequorum-webconfig.sh
+COPY LICENSE /licenses/
+USER 101
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]

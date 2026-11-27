@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+
+# Web release image packaged by GoReleaser (dockers_v2 id pulsequorum-web, see
+# .goreleaser.yaml, ADR 0036 6B). GoReleaser cross-compiles pulsequorum-webconfig and
+# places it in $TARGETPLATFORM/ of the build context. The SPA build (web-dist/) and
+# the files of extra_files are copied into the context as well, so this file only
+# packages prebuilt artifacts. Local builds use Dockerfile.web instead.
+#
+# Base image: nginxinc/nginx-unprivileged, stable line, Alpine. Pinned by digest.
+# Dependabot (docker ecosystem in .github/dependabot.yml) updates the digest.
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/pulsequorum-webconfig /usr/local/bin/pulsequorum-webconfig
+COPY web-dist/ /usr/share/nginx/html/
+COPY deploy/web/nginx.conf /etc/nginx/nginx.conf
+# Runs before nginx starts; the base image executes /docker-entrypoint.d/*.sh.
+COPY --chmod=0755 deploy/web/10-pulsequorum-webconfig.sh /docker-entrypoint.d/10-pulsequorum-webconfig.sh
+COPY LICENSE THIRD_PARTY_NOTICES.md /licenses/
+# Stays nginx-unprivileged (UID 101). The root filesystem may be read-only; the
+# container writes only to /tmp (tmpfs, see deploy/frontend/compose.yaml).
+USER 101
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]

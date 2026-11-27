@@ -1,0 +1,106 @@
+# Externes Frontend mit drei Votern (ADR 0036, Auslieferung; Pflichtenheft FA-UI-03).
+# Start aus dem Repository-Wurzelverzeichnis:  docker compose -f deploy/frontend/compose.yaml up -d
+#
+# Lokaler Test auf einem Host: Die Voter laufen auf den Ports 8081 bis 8083, das
+# Frontend auf 8080. Für den Betrieb stehen in PUBLIC_URL und FRONTEND_NODES die
+# öffentlichen https-Adressen der Voter (ohne Pfad), und vor jedem Voter liegt ein TLS-Proxy.
+# Die Voter brauchen für den Failover außerdem `public_url` aus dem Register (ADR 0036).
+#
+# Das Frontend ist ein statisches nginx-Image (nginx-unprivileged). Beim Start erzeugt es
+# aus den Umgebungsvariablen die config.json und die Security-Header. Es spricht keine
+# API an. Der Browser lädt die Node-Liste aus der config.json und verbindet sich direkt.
+# Lokaler Build statt GHCR: make docker-web (erzeugt pulsequorum-web:dev).
+#
+# Anleitung: docs/betrieb/frontend.md
+services:
+  voter1:
+    image: ghcr.io/joinsider/pulsequorum:0.0
+    restart: unless-stopped
+    environment:
+      NODE_NAME: voter1
+      NODE_ROLE: voter
+      AUTH_MODE: oidc
+      OIDC_ISSUER: https://id.example.com
+      OIDC_CLIENT_IDS: pulsequorum-spa
+      # Erster Voter: ohne CLUSTER_JOIN, er bootstrappt den Cluster.
+      CLUSTER_ADVERTISE: voter1:9443
+      PUBLIC_URL: http://localhost:8081
+      # Origin des Frontends, erlaubt CORS für Bearer-Anfragen (ADR 0036).
+      CORS_ORIGINS: http://localhost:8080
+      LOG_FORMAT: json
+    volumes:
+      - voter1-data:/data
+    ports:
+      - "8081:8080"
+
+  voter2:
+    image: ghcr.io/joinsider/pulsequorum:0.0
+    restart: unless-stopped
+    environment:
+      NODE_NAME: voter2
+      NODE_ROLE: voter
+      AUTH_MODE: oidc
+      OIDC_ISSUER: https://id.example.com
+      OIDC_CLIENT_IDS: pulsequorum-spa
+      CLUSTER_JOIN: voter1:9443
+      CLUSTER_ADVERTISE: voter2:9443
+      PUBLIC_URL: http://localhost:8082
+      CORS_ORIGINS: http://localhost:8080
+      LOG_FORMAT: json
+    volumes:
+      - voter2-data:/data
+    ports:
+      - "8082:8080"
+
+  voter3:
+    image: ghcr.io/joinsider/pulsequorum:0.0
+    restart: unless-stopped
+    environment:
+      NODE_NAME: voter3
+      NODE_ROLE: voter
+      AUTH_MODE: oidc
+      OIDC_ISSUER: https://id.example.com
+      OIDC_CLIENT_IDS: pulsequorum-spa
+      CLUSTER_JOIN: voter1:9443
+      CLUSTER_ADVERTISE: voter3:9443
+      PUBLIC_URL: http://localhost:8083
+      CORS_ORIGINS: http://localhost:8080
+      LOG_FORMAT: json
+    volumes:
+      - voter3-data:/data
+    ports:
+      - "8083:8080"
+
+  web:
+    image: ghcr.io/joinsider/pulsequorum-web:0.0
+    restart: unless-stopped
+    environment:
+      # Komma-getrennte Origins der Voter (Pflicht; ungültige Werte lassen den Start scheitern).
+      FRONTEND_NODES: http://localhost:8081,http://localhost:8082,http://localhost:8083
+      AUTH_MODE: oidc
+      OIDC_ISSUER: https://id.example.com
+      OIDC_CLIENT_ID: pulsequorum-spa
+      OIDC_SCOPES: openid,profile,email,offline_access
+      # auto | on | off: HSTS nur bei https-Origins (auto) oder erzwungen.
+      FRONTEND_HSTS: auto
+    # Schreibschutz für das Root-Dateisystem. Der Container schreibt nur nach /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  voter1-data:
+  voter2-data:
+  voter3-data:
