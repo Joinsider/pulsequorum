@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 The Pulsequorum Authors
 
+/** Set at build time by `ng build --define` (Makefile `web-build`); absent in tests. */
+declare const PULSEQUORUM_VERSION: string | undefined;
+
 /**
- * Build version of this SPA. TODO: the release build should inject the version
- * (for example a generated file written by `make web-build` from `git describe`).
- * The Makefile is not wired for that yet, so the value stays `dev`, which is not
- * comparable and therefore never shows the notice.
+ * Build version of this SPA: the same `git describe` value the Go binary gets
+ * (Makefile VERSION), or `dev` when the build did not define it.
  */
-export const SPA_VERSION = 'dev';
+export const SPA_VERSION: string =
+  typeof PULSEQUORUM_VERSION === 'string' && PULSEQUORUM_VERSION !== ''
+    ? PULSEQUORUM_VERSION
+    : 'dev';
 
 /** `v1.2.3`, `1.2.3-rc.1`, `v0.7.1-3-gabc1234-dirty`: major and minor are compared. */
 const RELEASE = /^v?(\d+)\.(\d+)(?:\.\d+)?(?:[-+].*)?$/;

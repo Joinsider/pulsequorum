@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test go-test-shard web-test web-e2e lint go-lint golangci web-lint licenses notices run web-dev docker docker-web web-stage web-dist release release-dry-run clean
+.PHONY: help generate generate-check api-gen api-lint proto-gen proto-lint build go-build go-build-probe web-install web-build web-embed test go-test go-test-shard web-test web-e2e web-e2e-failover lint go-lint golangci web-lint licenses notices run web-dev docker docker-web web-stage web-dist release release-dry-run clean
 
 MODULE    := github.com/joinsider/pulsequorum
 GO_PKGS   := ./cmd/... ./internal/... ./build/...
@@ -59,7 +59,7 @@ web/node_modules: web/package.json web/package-lock.json
 web-install: web/node_modules ## Install frontend dependencies
 
 web-build: web/node_modules ## Build the Angular SPA
-	cd web && npx ng build
+	cd web && npx ng build --define "PULSEQUORUM_VERSION='$(VERSION)'"
 
 web-embed: web-build ## Copy the SPA build into the Go embed directory
 	rsync -a --delete --exclude .gitkeep $(WEB_DIST)/ $(EMBED_DIR)/
@@ -105,6 +105,9 @@ web-test: web/node_modules ## Run frontend unit tests (writes web/coverage/pulse
 
 web-e2e: build web/node_modules ## Run Playwright E2E smoke tests against the built binary (runs make build first)
 	cd web && npx playwright test
+
+web-e2e-failover: build web/node_modules ## Run the client failover E2E test against three local voters (ADR 0036; runs make build first)
+	cd web && npx playwright test -c playwright.failover.config.ts
 
 lint: go-lint golangci web-lint api-lint proto-lint ## Run all linters
 
