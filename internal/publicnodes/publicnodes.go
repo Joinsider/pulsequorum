@@ -136,6 +136,14 @@ func (s *Source) load(ctx context.Context) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	self, others := s.registryVoters(entries)
+	return s.merge(self, others), nil
+}
+
+// registryVoters returns the registry entry of this voter (nil if absent)
+// and the other voters with a valid public origin, sorted by ID. The FSM
+// stores only normalized origins; anything else is not trusted.
+func (s *Source) registryVoters(entries []store.Node) (*Node, []Node) {
 	var self *Node
 	others := make([]Node, 0, len(entries))
 	for _, e := range entries {
@@ -144,8 +152,6 @@ func (s *Source) load(ctx context.Context) ([]Node, error) {
 		}
 		o, err := cluster.NormalizePublicOrigin(e.PublicURL)
 		if err != nil || o != e.PublicURL {
-			// The FSM stores only normalized origins; anything else is not
-			// trusted.
 			continue
 		}
 		n := Node{ID: e.ID, URL: o, Healthy: e.Healthy}
@@ -156,15 +162,17 @@ func (s *Source) load(ctx context.Context) ([]Node, error) {
 		others = append(others, n)
 	}
 	slices.SortFunc(others, func(a, b Node) int { return cmp.Compare(a.ID, b.ID) })
+	return self, others
+}
 
+// merge puts this voter first, with its configured origin and the health
+// from its registry entry, then the other voters, each origin once. The
+// local configuration wins over the registry entry of this voter, which may
+// lag behind a changed PUBLIC_URL.
+func (s *Source) merge(self *Node, others []Node) []Node {
 	out := make([]Node, 0, len(others)+1)
 	if s.selfURL != "" {
-		// The local configuration wins over the registry entry of this voter,
-		// which may lag behind a changed PUBLIC_URL.
-		healthy := true
-		if self != nil {
-			healthy = self.Healthy
-		}
+		healthy := self == nil || self.Healthy
 		out = append(out, Node{ID: s.selfID, URL: s.selfURL, Healthy: healthy})
 	}
 	for _, n := range others {
@@ -172,5 +180,5 @@ func (s *Source) load(ctx context.Context) ([]Node, error) {
 			out = append(out, n)
 		}
 	}
-	return out, nil
+	return out
 }
