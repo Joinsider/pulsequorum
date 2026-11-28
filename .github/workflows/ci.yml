@@ -238,6 +238,28 @@ jobs:
       - name: gitleaks over the full history (pinned in tools/go.mod)
         run: go tool -modfile=tools/go.mod gitleaks git --redact --no-banner --exit-code 1 .
 
+  # ADR 0036 6B: same scan as in release.yml, so a new finding or a base image bump
+  # (Dependabot) shows up in the pull request and not only at release time.
+  image-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the web image locally (not pushed)
+        run: docker buildx build --load --platform linux/amd64 -f Dockerfile.web -t pulsequorum-web:scan .
+      - uses: anchore/scan-action/download-grype@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
+        id: grype
+        with:
+          grype-version: v0.122.1 # keep in step with GRYPE_VERSION in release.yml
+      - name: Scan the web image (fails on high or critical)
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: .github/scripts/image-scan.sh pulsequorum-web:scan
+
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

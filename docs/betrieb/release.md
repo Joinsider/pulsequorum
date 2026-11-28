@@ -98,8 +98,9 @@ Der Workflow `Release` startet bei einem Tag `v*` oder manuell per `workflow_dis
 |-----|----------|---------|
 | `verify-tag` | Tag-Push | Prüft, dass der Tag SemVer ist und annotiert. Prüft die Signatur gegen `.github/allowed_signers` von `origin/master`. Prüft, dass der getaggte Commit auf `master` liegt. Prüft, dass alle Pflicht-Checks auf dem Commit grün sind. Gibt Version, SHA und Notizen aus. |
 | `gates` | Tag-Push | `govulncheck` (gepinnt über `tools/go.mod`) und `npm audit` mit geprüfter Ausnahmeliste. Ein Befund bricht den Release ab (NFA-SEC-06). |
-| `goreleaser` | Tag-Push, nach `verify-tag` und `gates` | Läuft im Environment `release`. Checkt exakt den geprüften Commit aus. Baut mit GoReleaser einen **Draft** (Archive, SBOMs, Multi-Arch-Images auf GHCR). Signiert `checksums.txt` und die Images mit cosign keyless. Erzeugt Build-Provenance. Prüft Checksummen, Signaturen und Attestation und schreibt einen Link auf den Draft in die Step Summary. |
-| `snapshot` | nur `workflow_dispatch` | Probelauf: `goreleaser release --snapshot --skip=publish,sign`. Veröffentlicht nichts. Die Artefakte liegen 7 Tage als Workflow-Artefakt `snapshot-dist`. |
+| `image-scan` | Tag-Push und `workflow_dispatch` | Baut das Web-Image lokal aus `Dockerfile.web` (`linux/amd64`, wird nie gepusht) und scannt es mit Grype. Ein Fund ab `High` ohne gültige Ausnahme in `.github/image-scan-exceptions.json` bricht den Release ab (ADR 0036 6B). Die Ausnahmen folgen denselben Regeln wie bei `npm audit`: Begründung, Ablaufdatum, abgelaufene und nicht mehr gemeldete Ausnahmen schlagen fehl. Derselbe Scan läuft in CI bei jedem Pull Request. |
+| `goreleaser` | Tag-Push, nach `verify-tag`, `gates` und `image-scan` | Läuft im Environment `release`. Checkt exakt den geprüften Commit aus. Baut mit GoReleaser einen **Draft** (Archive, SBOMs, Multi-Arch-Images auf GHCR). Signiert `checksums.txt` und die Images mit cosign keyless. Erzeugt Build-Provenance. Prüft Checksummen, Signaturen und Attestation und schreibt einen Link auf den Draft in die Step Summary. |
+| `snapshot` | nur `workflow_dispatch`, nach `image-scan` | Probelauf: `goreleaser release --snapshot --skip=publish,sign`. Veröffentlicht nichts. Die Artefakte liegen 7 Tage als Workflow-Artefakt `snapshot-dist`. |
 
 Der Probelauf eignet sich, um Build und Konfiguration ohne Tag zu testen. Er verändert keinen Release.
 
@@ -110,7 +111,7 @@ Der Probelauf eignet sich, um Build und Konfiguration ohne Tag zu testen. Er ver
    - Titel `Pulsequorum vX.Y.Z` und Notizen. Die Notizen stammen aus der signierten Tag-Nachricht.
    - Archive für Linux und macOS (amd64, arm64), `checksums.txt`, `checksums.txt.sigstore.json` und die SBOMs.
    - Die Kennzeichnung als Pre-Release passt zum Suffix.
-   - Im Step Summary steht der Image-Digest.
+   - Im Step Summary stehen die Digests der drei Images (`pulsequorum`, `pulsequorum-probe`, `pulsequorum-web`).
 3. Den Draft mit **Publish release** veröffentlichen.
 
 Mit dem Veröffentlichen werden Tag und Assets **unveränderlich** (Immutable Releases). GitHub erzeugt die Release-Attestation. Danach ist ein Fehler im Tag oder in einem Asset nicht mehr korrigierbar. Siehe „Fehlerfälle“.
