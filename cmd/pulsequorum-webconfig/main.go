@@ -109,7 +109,7 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", name, err)
 	}
-	// nginx-unprivileged runs master and workers as the same UID as this
+	// The web image runs nginx master and workers as the same UID as this
 	// helper (101), so owner-only access is enough.
 	if err = os.Chmod(name, 0o600); err != nil {
 		return fmt.Errorf("chmod %s: %w", name, err)

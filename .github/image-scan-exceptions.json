@@ -1,0 +1,27 @@
+[
+  {
+    "id": "CVE-2026-84786",
+    "reason": "OpenSSL libssl3/libcrypto3 3.5.9-r1, no fixed Alpine package yet; the image serves static files over plain HTTP behind a TLS proxy. Remove once apk upgrade picks up the fix.",
+    "expires": "2026-12-12"
+  },
+  {
+    "id": "CVE-2026-107493",
+    "reason": "OpenSSL libssl3/libcrypto3 3.5.9-r1, no fixed Alpine package yet; the image serves static files over plain HTTP behind a TLS proxy. Remove once apk upgrade picks up the fix.",
+    "expires": "2026-12-12"
+  },
+  {
+    "id": "CVE-2026-107494",
+    "reason": "OpenSSL libssl3/libcrypto3 3.5.9-r1, no fixed Alpine package yet; the image serves static files over plain HTTP behind a TLS proxy. Remove once apk upgrade picks up the fix.",
+    "expires": "2026-12-12"
+  },
+  {
+    "id": "CVE-2026-121482",
+    "reason": "OpenSSL libssl3/libcrypto3 3.5.9-r1, no fixed Alpine package yet; the image serves static files over plain HTTP behind a TLS proxy. Remove once apk upgrade picks up the fix.",
+    "expires": "2026-12-12"
+  },
+  {
+    "id": "CVE-2026-124709",
+    "reason": "OpenSSL libssl3/libcrypto3 3.5.9-r1, no fixed Alpine package yet; the image serves static files over plain HTTP behind a TLS proxy. Remove once apk upgrade picks up the fix.",
+    "expires": "2026-12-12"
+  }
+]

@@ -32,7 +32,22 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -o /out/pulsequorum-webconfig ./cmd/pulsequorum-webconfig
 
 # --- Runtime ----------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+# Base image: official nginx (Docker Official Image), stable line, Alpine. Pinned by
+# digest; Dependabot updates it (ADR 0036 6B, addendum of 2026-11-28). It runs as
+# UID 101 (USER below), listens on 8080 and keeps pid and temp files under /tmp
+# (deploy/web/nginx.conf), as nginx-unprivileged did before.
+FROM nginx:1.30.8-alpine3.24@sha256:8eb04fe3b385090e9aa02961f77398ad09b6bf33ab07f6669a5bb7acce22c0d3
+# Alpine security fixes between upstream rebuilds. nginx itself comes from nginx.org
+# and must not be swapped for the Alpine build; the version check fails the build if
+# it is. The upstream entrypoint helpers and the default server are unused (our
+# nginx.conf replaces the main configuration) and would only log "can not modify"
+# as UID 101, so they are removed; our own script is copied in below.
+RUN before="$(nginx -v 2>&1)" \
+ && apk upgrade --no-cache \
+ && after="$(nginx -v 2>&1)" \
+ && test "$before" = "$after" \
+ && find /docker-entrypoint.d -mindepth 1 -delete \
+ && rm -f /etc/nginx/conf.d/default.conf
 COPY --from=build /out/pulsequorum-webconfig /usr/local/bin/pulsequorum-webconfig
 COPY --from=web /src/web/dist/pulsequorum-web/browser/ /usr/share/nginx/html/
 COPY deploy/web/nginx.conf /etc/nginx/nginx.conf

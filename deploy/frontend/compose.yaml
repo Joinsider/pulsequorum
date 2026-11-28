@@ -6,7 +6,7 @@
 # öffentlichen https-Adressen der Voter (ohne Pfad), und vor jedem Voter liegt ein TLS-Proxy.
 # Die Voter brauchen für den Failover außerdem `public_url` aus dem Register (ADR 0036).
 #
-# Das Frontend ist ein statisches nginx-Image (nginx-unprivileged). Beim Start erzeugt es
+# Das Frontend ist ein statisches nginx-Image (offizielles nginx, UID 101). Beim Start erzeugt es
 # aus den Umgebungsvariablen die config.json und die Security-Header. Es spricht keine
 # API an. Der Browser lädt die Node-Liste aus der config.json und verbindet sich direkt.
 # Lokaler Build statt GHCR: make docker-web (erzeugt pulsequorum-web:dev).

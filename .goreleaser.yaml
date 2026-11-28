@@ -175,7 +175,7 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.licenses: AGPL-3.0-only
 
-  # Web image (ADR 0036 6B): nginx-unprivileged with the SPA, the webconfig writer and
+  # Web image (ADR 0036 6B): official nginx (UID 101) with the SPA, the webconfig writer and
   # the nginx configuration. Same tag rules as the other images.
   - id: pulsequorum-web
     ids:

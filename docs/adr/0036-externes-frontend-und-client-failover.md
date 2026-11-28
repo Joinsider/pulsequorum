@@ -402,6 +402,45 @@ Entscheidung: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6B + 6C.** (6B auf Wuns
 - **O5 – Kanonischer Origin (5B, `FRONTEND_URL`-Umleitung):** in AP-5.3 mitnehmen oder später?
 - **O6 – Auslieferung:** entschieden am 2026-11-20: zusätzlich nginx-Image (6B).
 
+### Nachtrag 2026-11-28: Abweichungen der Umsetzung (AP-5.3)
+
+Die Entscheidung bleibt unverändert. Bei der Umsetzung haben sich Namen und Details gegenüber dem Text oben geändert:
+
+- **Config-Writer:** heißt `pulsequorum-webconfig` (`cmd/pulsequorum-webconfig`) statt `uc-webconfig`, passend zur
+  Umbenennung nach ADR 0041.
+- **Release-Asset:** heißt `pulsequorum-web_<version>.tar.gz` (Unterstrich wie bei den übrigen GoReleaser-Archiven)
+  statt `pulsequorum-web-<version>.tar.gz`.
+- **Header-Unterbefehl:** `pulsequorum frontend headers [--format netlify|nginx]` liest dieselben Umgebungsvariablen
+  wie `pulsequorum frontend` (`FRONTEND_NODES`, `AUTH_MODE`, `OIDC_*`) statt `--config config.json`. So gibt es nur
+  einen Konfigurationsweg, und `config.json` und Header entstehen aus denselben Werten.
+- **Image-Scan:** Grype statt Trivy. Die Trivy-Actions (`aquasecurity/trivy-action`, `setup-trivy`) wurden im März 2026
+  kompromittiert (Tags umgeschrieben). Grype stammt von Anchore wie das bereits genutzte `syft`. Das Gate
+  `.github/scripts/image-scan.sh` schlägt ab `High` fehl. Ausnahmen stehen in `.github/image-scan-exceptions.json`, nach
+  denselben Regeln wie bei npm (Begründung, Ablaufdatum, abgelaufene und nicht mehr gemeldete Ausnahmen schlagen fehl).
+  Gescannt wird vor dem GoReleaser-Lauf ein lokal gebautes `Dockerfile.web` (`linux/amd64`, nie gepusht). Seine
+  Laufzeitstufe hat dieselbe per Digest gepinnte Basis und dieselben Dateien wie `Dockerfile.web.release`. Go- und
+  npm-Abhängigkeiten decken `govulncheck` und `npm audit` in den Release-Gates ab. Derselbe Scan läuft in `ci.yml`, damit
+  neue Funde und Basis-Updates schon im Pull Request auffallen.
+- **Basis-Image: offizielles `nginx` statt `nginxinc/nginx-unprivileged`** (freigegeben vom Projektinhaber im Chat am
+  2026-11-28). `nginx-unprivileged` hing seit dem 19.10.2026 bei 1.30.6 fest, während nginx 1.30.7 und 1.30.8 mehrere
+  Critical-Lücken in nginx selbst schlossen. Das offizielle Image (Docker Official Image) war am 25.11.2026 bereits bei
+  1.30.8. Basis ist jetzt `nginx:<version>-alpine3.24`, weiter stabile Linie, per Digest gepinnt und von Dependabot
+  aktualisiert. Das Laufzeitverhalten bleibt gleich: Das Dockerfile setzt `USER 101` (Benutzer `nginx` des Images), und
+  `deploy/web/nginx.conf` ersetzt die Hauptkonfiguration, lauscht auf 8080, bindet `conf.d` nicht ein und legt pid und
+  Temp-Pfade unter `/tmp/pulsequorum`. Read-only-Root-Dateisystem mit `tmpfs` für `/tmp` funktioniert wie zuvor.
+  Unterschied: Non-root ist nicht mehr der Standard des Basis-Images, sondern hängt allein an `USER 101`. Die
+  `image-scan`-Jobs prüfen deshalb, dass das Image als UID 101 läuft und `Dockerfile.web.release` mit `USER 101` endet.
+  Die Hilfsskripte des Basis-Images unter `/docker-entrypoint.d` und `conf.d/default.conf` werden beim Build entfernt.
+  Sie werden nicht gebraucht und meldeten als UID 101 beim Start nur „can not modify“. Nur
+  `10-pulsequorum-webconfig.sh` bleibt.
+- **Alpine-Updates im Image:** Beide Web-Dockerfiles führen über der per Digest gepinnten Basis `apk upgrade` aus, damit
+  Alpine-Fixes nicht auf den nächsten Upstream-Build warten. Der erste Scan fand so behobene Critical- und High-Lücken in
+  curl, OpenSSL und libxslt. Eine Versionsprüfung bricht den Build ab, falls `apk upgrade` das nginx von nginx.org gegen
+  das Alpine-Paket tauscht. Weil das Release-Dockerfile damit einen `RUN`-Schritt hat, emuliert der Release-Workflow
+  arm64 mit QEMU (`docker/setup-qemu-action`, binfmt-Image per Digest gepinnt, ohne Actions-Cache).
+- **Signatur und Provenance:** Das Web-Image wird wie die beiden anderen Images signiert (`docker_signs`), mit
+  Build-Provenance versehen und im Release-Workflow per `cosign verify` und `gh attestation verify` geprüft.
+
 ## Approval
 
 | Datum      | Status   | Durch  | Anmerkung                                |
