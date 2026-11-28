@@ -402,6 +402,28 @@ Entscheidung: **1B, 2B, 3B, 4A, 5A (5B als Opt-in), 6A + 6B + 6C.** (6B auf Wuns
 - **O5 – Kanonischer Origin (5B, `FRONTEND_URL`-Umleitung):** in AP-5.3 mitnehmen oder später?
 - **O6 – Auslieferung:** entschieden am 2026-11-20: zusätzlich nginx-Image (6B).
 
+### Nachtrag 2026-11-28: Abweichungen der Umsetzung (AP-5.3)
+
+Die Entscheidung bleibt unverändert. Bei der Umsetzung haben sich Namen und Details gegenüber dem Text oben geändert:
+
+- **Config-Writer:** heißt `pulsequorum-webconfig` (`cmd/pulsequorum-webconfig`) statt `uc-webconfig`, passend zur
+  Umbenennung nach ADR 0041.
+- **Release-Asset:** heißt `pulsequorum-web_<version>.tar.gz` (Unterstrich wie bei den übrigen GoReleaser-Archiven)
+  statt `pulsequorum-web-<version>.tar.gz`.
+- **Header-Unterbefehl:** `pulsequorum frontend headers [--format netlify|nginx]` liest dieselben Umgebungsvariablen
+  wie `pulsequorum frontend` (`FRONTEND_NODES`, `AUTH_MODE`, `OIDC_*`) statt `--config config.json`. So gibt es nur
+  einen Konfigurationsweg, und `config.json` und Header entstehen aus denselben Werten.
+- **Image-Scan:** Grype statt Trivy. Die Trivy-Actions (`aquasecurity/trivy-action`, `setup-trivy`) wurden im März 2026
+  kompromittiert (Tags umgeschrieben). Grype stammt von Anchore wie das bereits genutzte `syft`. Das Gate
+  `.github/scripts/image-scan.sh` schlägt ab `High` fehl. Ausnahmen stehen in `.github/image-scan-exceptions.json`, nach
+  denselben Regeln wie bei npm (Begründung, Ablaufdatum, abgelaufene und nicht mehr gemeldete Ausnahmen schlagen fehl).
+  Gescannt wird vor dem GoReleaser-Lauf ein lokal gebautes `Dockerfile.web` (`linux/amd64`, nie gepusht). Seine
+  Laufzeitstufe hat dieselbe per Digest gepinnte Basis und dieselben Dateien wie `Dockerfile.web.release`. Go- und
+  npm-Abhängigkeiten decken `govulncheck` und `npm audit` in den Release-Gates ab. Derselbe Scan läuft in `ci.yml`, damit
+  neue Funde und Basis-Updates schon im Pull Request auffallen.
+- **Signatur und Provenance:** Das Web-Image wird wie die beiden anderen Images signiert (`docker_signs`), mit
+  Build-Provenance versehen und im Release-Workflow per `cosign verify` und `gh attestation verify` geprüft.
+
 ## Approval
 
 | Datum      | Status   | Durch  | Anmerkung                                |
