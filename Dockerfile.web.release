@@ -4,11 +4,20 @@
 # .goreleaser.yaml, ADR 0036 6B). GoReleaser cross-compiles pulsequorum-webconfig and
 # places it in $TARGETPLATFORM/ of the build context. The SPA build (web-dist/) and
 # the files of extra_files are copied into the context as well, so this file only
-# packages prebuilt artifacts. Local builds use Dockerfile.web instead.
+# packages prebuilt artifacts (plus the Alpine updates, which need QEMU for
+# arm64, see release.yml). Local builds use Dockerfile.web instead.
 #
 # Base image: nginxinc/nginx-unprivileged, stable line, Alpine. Pinned by digest.
 # Dependabot (docker ecosystem in .github/dependabot.yml) updates the digest.
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+# The base image is only rebuilt upstream with new nginx releases, so Alpine
+# security fixes land here first. nginx itself comes from nginx.org and must
+# not be swapped for the Alpine build; the version check fails the build if it is.
+USER root
+RUN before="$(nginx -v 2>&1)" \
+ && apk upgrade --no-cache \
+ && after="$(nginx -v 2>&1)" \
+ && test "$before" = "$after"
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/pulsequorum-webconfig /usr/local/bin/pulsequorum-webconfig
 COPY web-dist/ /usr/share/nginx/html/

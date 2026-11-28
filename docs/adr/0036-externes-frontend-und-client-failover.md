@@ -421,6 +421,12 @@ Die Entscheidung bleibt unverändert. Bei der Umsetzung haben sich Namen und Det
   Laufzeitstufe hat dieselbe per Digest gepinnte Basis und dieselben Dateien wie `Dockerfile.web.release`. Go- und
   npm-Abhängigkeiten decken `govulncheck` und `npm audit` in den Release-Gates ab. Derselbe Scan läuft in `ci.yml`, damit
   neue Funde und Basis-Updates schon im Pull Request auffallen.
+- **Alpine-Updates im Image:** Beide Web-Dockerfiles führen über der per Digest gepinnten Basis `apk upgrade` aus. Die
+  Basis wird upstream nur mit neuen nginx-Versionen neu gebaut; der erste Scan fand behobene Critical- und High-Lücken in
+  curl, OpenSSL und libxslt, für die es noch kein neues Basis-Image gab. Eine Versionsprüfung bricht den Build ab, falls
+  `apk upgrade` das nginx von nginx.org gegen das Alpine-Paket tauscht. Weil das Release-Dockerfile damit einen
+  `RUN`-Schritt hat, emuliert der Release-Workflow arm64 mit QEMU (`docker/setup-qemu-action`, binfmt-Image per Digest
+  gepinnt, ohne Actions-Cache).
 - **Signatur und Provenance:** Das Web-Image wird wie die beiden anderen Images signiert (`docker_signs`), mit
   Build-Provenance versehen und im Release-Workflow per `cosign verify` und `gh attestation verify` geprüft.
 

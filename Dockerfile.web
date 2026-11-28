@@ -33,6 +33,14 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 
 # --- Runtime ----------------------------------------------------------------
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+# The base image is only rebuilt upstream with new nginx releases, so Alpine
+# security fixes land here first. nginx itself comes from nginx.org and must
+# not be swapped for the Alpine build; the version check fails the build if it is.
+USER root
+RUN before="$(nginx -v 2>&1)" \
+ && apk upgrade --no-cache \
+ && after="$(nginx -v 2>&1)" \
+ && test "$before" = "$after"
 COPY --from=build /out/pulsequorum-webconfig /usr/local/bin/pulsequorum-webconfig
 COPY --from=web /src/web/dist/pulsequorum-web/browser/ /usr/share/nginx/html/
 COPY deploy/web/nginx.conf /etc/nginx/nginx.conf
