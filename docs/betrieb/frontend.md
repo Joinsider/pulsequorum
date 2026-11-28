@@ -75,7 +75,7 @@ Für externe Frontends gilt:
 | --- | --- | --- | --- |
 | Eingebettet im Voter | die SPA des Voters (`internal/webui`) | `PUBLIC_URL` je Voter, Register | Standardbetrieb, ein Host je Voter |
 | `pulsequorum frontend` | Unterbefehl im Image `ghcr.io/joinsider/pulsequorum:<version>` (distroless, nonroot) | Umgebungsvariablen | Frontend getrennt von den Votern, ohne eigenen Webserver |
-| nginx-Image `pulsequorum-web` | `ghcr.io/joinsider/pulsequorum-web:<version>` (nginx-unprivileged, UID 101, Port 8080) | Umgebungsvariablen, beim Start erzeugt | Container-Betrieb mit Standard-Webserver |
+| nginx-Image `pulsequorum-web` | `ghcr.io/joinsider/pulsequorum-web:<version>` (offizielles nginx, UID 101, Port 8080) | Umgebungsvariablen, beim Start erzeugt | Container-Betrieb mit Standard-Webserver |
 | Statisches Archiv `pulsequorum-web_<version>.tar.gz` | nur Dateien, für CDN oder statischen Host | `config.json` von Hand, `_headers` per Befehl | Hosts ohne Container, zum Beispiel Cloudflare Pages oder Netlify |
 
 Die Images sind mehrarchitektur (`linux/amd64`, `linux/arm64`). Eine lokale Variante des nginx-Images entsteht mit `make docker-web` als `pulsequorum-web:dev`.
@@ -95,7 +95,7 @@ Der Healthcheck des Images ruft `pulsequorum healthcheck` auf. Der liest `HTTP_A
 
 ### 3.2 nginx-Image pulsequorum-web
 
-Das Image basiert auf `nginxinc/nginx-unprivileged` (Alpine, digest-gepinnt) und enthält die SPA, den Helfer `pulsequorum-webconfig` und `deploy/web/nginx.conf`. Beim Start schreibt das Skript `10-pulsequorum-webconfig.sh` die `config.json` und die Header-Datei nach `/tmp/pulsequorum`. Ungültige Umgebungsvariablen lassen den Start scheitern.
+Das Image basiert auf dem offiziellen `nginx` (Alpine, digest-gepinnt, Alpine-Updates beim Build), läuft als UID 101 und enthält die SPA, den Helfer `pulsequorum-webconfig` und `deploy/web/nginx.conf`. Beim Start schreibt das Skript `10-pulsequorum-webconfig.sh` die `config.json` und die Header-Datei nach `/tmp/pulsequorum`. Ungültige Umgebungsvariablen lassen den Start scheitern.
 
 - `/api/` antwortet mit 404. nginx leitet nie an die Voter weiter.
 - `index.html` und `config.json` sind `no-store`, gehashte Bundles `immutable`.

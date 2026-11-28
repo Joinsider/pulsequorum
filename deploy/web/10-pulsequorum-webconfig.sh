@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs before nginx starts (nginx-unprivileged runs /docker-entrypoint.d/*.sh
+# Runs before nginx starts (the nginx image runs /docker-entrypoint.d/*.sh
 # under "set -e", so a failing step aborts the container start).
 #
 # pulsequorum-webconfig reads its settings from the environment (FRONTEND_NODES,

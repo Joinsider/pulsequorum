@@ -421,12 +421,23 @@ Die Entscheidung bleibt unverändert. Bei der Umsetzung haben sich Namen und Det
   Laufzeitstufe hat dieselbe per Digest gepinnte Basis und dieselben Dateien wie `Dockerfile.web.release`. Go- und
   npm-Abhängigkeiten decken `govulncheck` und `npm audit` in den Release-Gates ab. Derselbe Scan läuft in `ci.yml`, damit
   neue Funde und Basis-Updates schon im Pull Request auffallen.
-- **Alpine-Updates im Image:** Beide Web-Dockerfiles führen über der per Digest gepinnten Basis `apk upgrade` aus. Die
-  Basis wird upstream nur mit neuen nginx-Versionen neu gebaut; der erste Scan fand behobene Critical- und High-Lücken in
-  curl, OpenSSL und libxslt, für die es noch kein neues Basis-Image gab. Eine Versionsprüfung bricht den Build ab, falls
-  `apk upgrade` das nginx von nginx.org gegen das Alpine-Paket tauscht. Weil das Release-Dockerfile damit einen
-  `RUN`-Schritt hat, emuliert der Release-Workflow arm64 mit QEMU (`docker/setup-qemu-action`, binfmt-Image per Digest
-  gepinnt, ohne Actions-Cache).
+- **Basis-Image: offizielles `nginx` statt `nginxinc/nginx-unprivileged`** (freigegeben vom Projektinhaber im Chat am
+  2026-11-28). `nginx-unprivileged` hing seit dem 19.10.2026 bei 1.30.6 fest, während nginx 1.30.7 und 1.30.8 mehrere
+  Critical-Lücken in nginx selbst schlossen. Das offizielle Image (Docker Official Image) war am 25.11.2026 bereits bei
+  1.30.8. Basis ist jetzt `nginx:<version>-alpine3.24`, weiter stabile Linie, per Digest gepinnt und von Dependabot
+  aktualisiert. Das Laufzeitverhalten bleibt gleich: Das Dockerfile setzt `USER 101` (Benutzer `nginx` des Images), und
+  `deploy/web/nginx.conf` ersetzt die Hauptkonfiguration, lauscht auf 8080, bindet `conf.d` nicht ein und legt pid und
+  Temp-Pfade unter `/tmp/pulsequorum`. Read-only-Root-Dateisystem mit `tmpfs` für `/tmp` funktioniert wie zuvor.
+  Unterschied: Non-root ist nicht mehr der Standard des Basis-Images, sondern hängt allein an `USER 101`. Die
+  `image-scan`-Jobs prüfen deshalb, dass das Image als UID 101 läuft und `Dockerfile.web.release` mit `USER 101` endet.
+  Die Hilfsskripte des Basis-Images unter `/docker-entrypoint.d` und `conf.d/default.conf` werden beim Build entfernt.
+  Sie werden nicht gebraucht und meldeten als UID 101 beim Start nur „can not modify“. Nur
+  `10-pulsequorum-webconfig.sh` bleibt.
+- **Alpine-Updates im Image:** Beide Web-Dockerfiles führen über der per Digest gepinnten Basis `apk upgrade` aus, damit
+  Alpine-Fixes nicht auf den nächsten Upstream-Build warten. Der erste Scan fand so behobene Critical- und High-Lücken in
+  curl, OpenSSL und libxslt. Eine Versionsprüfung bricht den Build ab, falls `apk upgrade` das nginx von nginx.org gegen
+  das Alpine-Paket tauscht. Weil das Release-Dockerfile damit einen `RUN`-Schritt hat, emuliert der Release-Workflow
+  arm64 mit QEMU (`docker/setup-qemu-action`, binfmt-Image per Digest gepinnt, ohne Actions-Cache).
 - **Signatur und Provenance:** Das Web-Image wird wie die beiden anderen Images signiert (`docker_signs`), mit
   Build-Provenance versehen und im Release-Workflow per `cosign verify` und `gh attestation verify` geprüft.
 
