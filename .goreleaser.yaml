@@ -108,11 +108,14 @@ archives:
       - tar.gz
     name_template: "pulsequorum-web_{{ .Version }}"
     files:
+      # A single entry: matched directories (i18n/) are added recursively with
+      # their path. Extra entries broke the archive: GoReleaser strips the longest
+      # common prefix of a glob's matches, so "*/**/*" added i18n files a level too
+      # high, and a single-file src uses dst as the file name, so
+      # config.example.json became a file named pulsequorum-web and syft failed to
+      # unpack the archive for the SBOM (v0.0.6). config.example.json is in the
+      # build output already (web/public).
       - src: web/dist/pulsequorum-web/browser/*
-        dst: pulsequorum-web
-      - src: web/dist/pulsequorum-web/browser/*/**/*
-        dst: pulsequorum-web
-      - src: web/public/config.example.json
         dst: pulsequorum-web
       - LICENSE
       - THIRD_PARTY_NOTICES.md
