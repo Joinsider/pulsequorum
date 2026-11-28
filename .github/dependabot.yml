@@ -21,6 +21,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      # The Angular packages pin each other as exact peers (cdk and material), so a
+      # single bump cannot resolve on its own.
+      angular:
+        patterns: ["@angular/*", "@angular-devkit/*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
